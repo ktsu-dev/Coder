@@ -662,7 +662,7 @@ function New-License {
     $content = Get-Content $script:LICENSE_TEMPLATE -Raw
 
     # Project URL
-    $projectUrl = "$ServerUrl/$Owner/$Repository"
+    $projectUrl = "$ServerUrl/$Repository"
     $content = $content.Replace('{PROJECT_URL}', $projectUrl)
 
     # Copyright line
@@ -1238,7 +1238,7 @@ function Update-ProjectMetadata {
         [System.IO.File]::WriteAllText("AUTHORS.url", $authorsUrl, [System.Text.UTF8Encoding]::new($false)) | Write-InformationStream -Tags "Update-ProjectMetadata"
 
         # Create PROJECT_URL.url
-        $projectUrl = "[InternetShortcut]$($script:lineEnding)URL=$($BuildConfiguration.ServerUrl)/$($BuildConfiguration.GitHubOwner)/$($BuildConfiguration.GitHubRepo)"
+        $projectUrl = "[InternetShortcut]$($script:lineEnding)URL=$($BuildConfiguration.ServerUrl)/$($BuildConfiguration.GitHubRepo)"
         [System.IO.File]::WriteAllText("PROJECT_URL.url", $projectUrl, [System.Text.UTF8Encoding]::new($false)) | Write-InformationStream -Tags "Update-ProjectMetadata"
 
         Write-Information "Adding files to git..." -Tags "Update-ProjectMetadata"
