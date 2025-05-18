@@ -12,61 +12,60 @@ using System.Collections.Generic;
 /// </summary>
 public abstract class AstCompositeNode : AstNode
 {
-    /// <summary>
-    /// Gets or sets the collection of child nodes within this composite node.
-    /// </summary>
-    public Dictionary<string, AstNode> Children { get; set; } = new Dictionary<string, AstNode>();
+	/// <summary>
+	/// Gets or sets the collection of child nodes within this composite node.
+	/// </summary>
+	public Dictionary<string, AstNode> Children { get; set; } = [];
 
-    /// <summary>
-    /// Gets the child node with the specified key.
-    /// </summary>
-    /// <param name="key">The key of the child node to retrieve.</param>
-    /// <returns>The child node if found; otherwise, null.</returns>
-    public AstNode? GetChild(string key)
-    {
-        return Children.TryGetValue(key, out var child) ? child : null;
-    }
+	/// <summary>
+	/// Gets the child node with the specified key.
+	/// </summary>
+	/// <param name="key">The key of the child node to retrieve.</param>
+	/// <returns>The child node if found; otherwise, null.</returns>
+	public AstNode? GetChild(string key) => Children.TryGetValue(key, out var child) ? child : null;
 
-    /// <summary>
-    /// Adds or updates a child node with the specified key.
-    /// </summary>
-    /// <param name="key">The key to associate with the child node.</param>
-    /// <param name="node">The child node to add or update.</param>
-    public void SetChild(string key, AstNode node)
-    {
-        Children[key] = node;
-    }
+	/// <summary>
+	/// Adds or updates a child node with the specified key.
+	/// </summary>
+	/// <param name="key">The key to associate with the child node.</param>
+	/// <param name="node">The child node to add or update.</param>
+	public void SetChild(string key, AstNode node) => Children[key] = node;
 
-    /// <summary>
-    /// Removes the child node with the specified key.
-    /// </summary>
-    /// <param name="key">The key of the child node to remove.</param>
-    /// <returns>True if the child node was found and removed; otherwise, false.</returns>
-    public bool RemoveChild(string key)
-    {
-        return Children.Remove(key);
-    }
-    
-    /// <summary>
-    /// Creates a deep clone of this composite node.
-    /// This must be implemented by derived classes to ensure proper cloning.
-    /// </summary>
-    /// <returns>A new instance of the composite node with the same property values and cloned children.</returns>
-    public abstract override AstNode Clone();
-    
-    /// <summary>
-    /// Helper method for cloning the children of this composite node.
-    /// </summary>
-    /// <returns>A new dictionary containing cloned children.</returns>
-    protected Dictionary<string, AstNode> CloneChildren()
-    {
-        var clonedChildren = new Dictionary<string, AstNode>();
-        
-        foreach (var (key, child) in Children)
-        {
-            clonedChildren[key] = child.Clone();
-        }
-        
-        return clonedChildren;
+	/// <summary>
+	/// Removes the child node with the specified key.
+	/// </summary>
+	/// <param name="key">The key of the child node to remove.</param>
+	/// <returns>True if the child node was found and removed; otherwise, false.</returns>
+	public bool RemoveChild(string key) => Children.Remove(key);
+
+	/// <summary>
+	/// Creates a deep clone of this composite node.
+	/// This must be implemented by derived classes to ensure proper cloning.
+	/// </summary>
+	/// <returns>A new instance of the composite node with the same property values and cloned children.</returns>
+	public abstract override AstNode Clone();
+
+	/// <summary>
+	/// Helper method for cloning the children of this composite node.
+	/// </summary>
+	/// <returns>A new dictionary containing cloned children.</returns>
+	protected Dictionary<string, AstNode> CloneChildren()
+	{
+		var clonedChildren = new Dictionary<string, AstNode>();
+
+		foreach (var (key, child) in Children)
+		{
+			clonedChildren[key] = child.Clone();
+		}
+
+		return clonedChildren;
+
+<<<<<<< TODO: Unmerged change from project 'Coder.Core(net9.0)', Before:
     }
 } 
+=======
+	}
+}
+>>>>>>> After
+	}
+}

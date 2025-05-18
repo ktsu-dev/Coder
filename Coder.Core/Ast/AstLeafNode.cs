@@ -11,46 +11,50 @@ namespace ktsu.Coder.Core.Ast;
 /// <typeparam name="T">The type of value contained in this leaf node.</typeparam>
 public class AstLeafNode<T> : AstNode
 {
-    /// <summary>
-    /// Initializes a new instance of the <see cref="AstLeafNode{T}"/> class.
-    /// </summary>
-    public AstLeafNode()
-    {
-    }
+	/// <summary>
+	/// Initializes a new instance of the <see cref="AstLeafNode{T}"/> class.
+	/// </summary>
+	public AstLeafNode()
+	{
+	}
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="AstLeafNode{T}"/> class with the specified value.
-    /// </summary>
-    /// <param name="value">The value of this leaf node.</param>
-    public AstLeafNode(T value)
-    {
-        Value = value;
-    }
+	/// <summary>
+	/// Initializes a new instance of the <see cref="AstLeafNode{T}"/> class with the specified value.
+	/// </summary>
+	/// <param name="value">The value of this leaf node.</param>
+	public AstLeafNode(T value) => Value = value;
 
-    /// <summary>
-    /// Gets or sets the value contained in this leaf node.
-    /// </summary>
-    public T? Value { get; set; }
+	/// <summary>
+	/// Gets or sets the value contained in this leaf node.
+	/// </summary>
+	public T? Value { get; set; }
 
-    /// <summary>
-    /// Gets the type name of this node for serialization purposes.
-    /// </summary>
-    /// <returns>The name of the node type including the generic type parameter.</returns>
-    public override string GetNodeTypeName()
-    {
-        return $"Leaf<{typeof(T).Name}>";
-    }
+	/// <summary>
+	/// Gets the type name of this node for serialization purposes.
+	/// </summary>
+	/// <returns>The name of the node type including the generic type parameter.</returns>
+	public override string GetNodeTypeName() => $"Leaf<{typeof(T).Name}>";
 
-    /// <summary>
-    /// Creates a deep clone of this leaf node.
-    /// </summary>
-    /// <returns>A new instance of the leaf node with the same value.</returns>
-    public override AstNode Clone()
-    {
-        return new AstLeafNode<T>
-        {
-            Value = Value,
-            Metadata = Metadata != null ? new Dictionary<string, object?>(Metadata) : null
+	/// <summary>
+	/// Creates a deep clone of this leaf node.
+	/// </summary>
+	/// <returns>A new instance of the leaf node with the same value.</returns>
+	public override AstNode Clone()
+	{
+		return new AstLeafNode<T>
+		{
+			Value = Value,
+			Metadata = Metadata != null ? new Dictionary<string, object?>(Metadata) : null
+
+<<<<<<< TODO: Unmerged change from project 'Coder.Core(net9.0)', Before:
         };
     }
 } 
+=======
+		};
+	}
+}
+>>>>>>> After
+		};
+	}
+}
