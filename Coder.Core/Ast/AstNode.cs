@@ -28,10 +28,4 @@ public abstract class AstNode
 	/// </summary>
 	/// <returns>A new instance of the AST node with the same property values.</returns>
 	public abstract AstNode Clone();
-
-<<<<<<< TODO: Unmerged change from project 'Coder.Core(net9.0)', Before:
-} 
-=======
-}
->>>>>>> After
 }

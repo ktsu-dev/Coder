@@ -40,74 +40,22 @@ public class PythonGenerator : LanguageGeneratorBase
 		{
 			case FunctionDeclaration funcDecl:
 				GenerateFunctionDeclaration(funcDecl, builder, indentLevel);
-
-<<<<<<< TODO: Unmerged change from project 'Coder.Core(net9.0)', Before:
-                break;
-                
-            case ReturnStatement returnStmt:
-=======
-				break;
-
-			case ReturnStatement returnStmt:
->>>>>>> After
 				break;
 
 			case ReturnStatement returnStmt:
 				GenerateReturnStatement(returnStmt, builder, indentLevel);
-
-<<<<<<< TODO: Unmerged change from project 'Coder.Core(net9.0)', Before:
-                break;
-                
-            case AstLeafNode<string> strLeaf:
-=======
-				break;
-
-			case AstLeafNode<string> strLeaf:
->>>>>>> After
 				break;
 
 			case AstLeafNode<string> strLeaf:
 				builder.Append($"\"{EscapeString(strLeaf.Value ?? string.Empty)}\"");
-
-<<<<<<< TODO: Unmerged change from project 'Coder.Core(net9.0)', Before:
-                break;
-                
-            case AstLeafNode<int> intLeaf:
-=======
-				break;
-
-			case AstLeafNode<int> intLeaf:
->>>>>>> After
 				break;
 
 			case AstLeafNode<int> intLeaf:
 				builder.Append(intLeaf.Value);
-
-<<<<<<< TODO: Unmerged change from project 'Coder.Core(net9.0)', Before:
-                break;
-                
-            case AstLeafNode<bool> boolLeaf:
-=======
-				break;
-
-			case AstLeafNode<bool> boolLeaf:
->>>>>>> After
 				break;
 
 			case AstLeafNode<bool> boolLeaf:
 				builder.Append(boolLeaf.Value ? "True" : "False");
-
-<<<<<<< TODO: Unmerged change from project 'Coder.Core(net9.0)', Before:
-                break;
-                
-            default:
-                throw new NotSupportedException($"Unsupported node type for Python generation: {node.GetNodeTypeName()}");
-=======
-				break;
-
-			default:
-				throw new NotSupportedException($"Unsupported node type for Python generation: {node.GetNodeTypeName()}");
->>>>>>> After
 				break;
 
 			default:
@@ -206,16 +154,6 @@ public class PythonGenerator : LanguageGeneratorBase
 	}
 
 	private static string EscapeString(string value)
-
-<<<<<<< TODO: Unmerged change from project 'Coder.Core(net9.0)', Before:
-    {
-        return value
-            .Replace("\\", "\\\\")
-=======
-	{
-		return value
-			.Replace("\\", "\\\\")
->>>>>>> After
 	{
 		return value
 			.Replace("\\", "\\\\")
@@ -223,13 +161,5 @@ public class PythonGenerator : LanguageGeneratorBase
 			.Replace("\n", "\\n")
 			.Replace("\r", "\\r")
 			.Replace("\t", "\\t");
-
-<<<<<<< TODO: Unmerged change from project 'Coder.Core(net9.0)', Before:
-    }
-} 
-=======
-	}
-}
->>>>>>> After
 	}
 }

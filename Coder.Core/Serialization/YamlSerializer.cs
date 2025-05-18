@@ -55,50 +55,16 @@ public class YamlSerializer
 		if (node is AstLeafNode<string> stringLeaf && stringLeaf.Value != null)
 		{
 			target[nodeKey] = stringLeaf.Value;
-
-<<<<<<< TODO: Unmerged change from project 'Coder.Core(net9.0)', Before:
-            return;
-        }
-        else if (node is AstLeafNode<int> intLeaf)
-=======
-			return;
-		}
-		else if (node is AstLeafNode<int> intLeaf)
->>>>>>> After
 			return;
 		}
 		else if (node is AstLeafNode<int> intLeaf)
 		{
 			target[nodeKey] = intLeaf.Value;
-
-<<<<<<< TODO: Unmerged change from project 'Coder.Core(net9.0)', Before:
-            return;
-        }
-        else if (node is AstLeafNode<bool> boolLeaf)
-=======
-			return;
-		}
-		else if (node is AstLeafNode<bool> boolLeaf)
->>>>>>> After
 			return;
 		}
 		else if (node is AstLeafNode<bool> boolLeaf)
 		{
 			target[nodeKey] = boolLeaf.Value;
-
-<<<<<<< TODO: Unmerged change from project 'Coder.Core(net9.0)', Before:
-            return;
-        }
-        
-        // Handle function declarations and parameters
-        if (node is FunctionDeclaration funcDecl)
-=======
-			return;
-		}
-
-		// Handle function declarations and parameters
-		if (node is FunctionDeclaration funcDecl)
->>>>>>> After
 			return;
 		}
 
@@ -213,13 +179,5 @@ public class YamlSerializer
 		}
 
 		target[nodeKey] = nodeData;
-
-<<<<<<< TODO: Unmerged change from project 'Coder.Core(net9.0)', Before:
-    }
-} 
-=======
-	}
-}
->>>>>>> After
 	}
 }

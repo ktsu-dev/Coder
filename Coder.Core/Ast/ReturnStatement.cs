@@ -7,7 +7,7 @@ namespace ktsu.Coder.Core.Ast;
 using System.Collections.Generic;
 
 /// <summary>
-/// Represents a return statement in a function body.
+/// Represents a return statement in the abstract syntax tree.
 /// </summary>
 public class ReturnStatement : AstCompositeNode
 {
@@ -19,46 +19,52 @@ public class ReturnStatement : AstCompositeNode
 	}
 
 	/// <summary>
-	/// Initializes a new instance of the <see cref="ReturnStatement"/> class with a value.
+	/// Initializes a new instance of the <see cref="ReturnStatement"/> class with an expression.
 	/// </summary>
-	/// <param name="value">The value to return.</param>
-	public ReturnStatement(object value)
-	{
-		if (value is AstNode node)
-		{
-			SetChild("Expression", node);
-		}
-		else if (value is int intValue)
-		{
-			SetChild("Expression", new AstLeafNode<int>(intValue));
-		}
-		else if (value is string stringValue)
-		{
-			SetChild("Expression", new AstLeafNode<string>(stringValue));
-		}
-		else if (value is bool boolValue)
-		{
-			SetChild("Expression", new AstLeafNode<bool>(boolValue));
-		}
-		else
-		{
-			SetChild("Expression", new AstLeafNode<string>(value.ToString() ?? string.Empty));
-		}
-	}
+	/// <param name="expression">The expression to return.</param>
+	public ReturnStatement(AstNode expression) => SetExpression(expression);
 
 	/// <summary>
-	/// Gets the expression being returned.
+	/// Initializes a new instance of the <see cref="ReturnStatement"/> class with an integer literal.
+	/// </summary>
+	/// <param name="value">The integer value to return.</param>
+	public ReturnStatement(int value) => SetExpression(new AstLeafNode<int>(value));
+
+	/// <summary>
+	/// Initializes a new instance of the <see cref="ReturnStatement"/> class with a string literal.
+	/// </summary>
+	/// <param name="value">The string value to return.</param>
+	public ReturnStatement(string value) => SetExpression(new AstLeafNode<string>(value));
+
+	/// <summary>
+	/// Initializes a new instance of the <see cref="ReturnStatement"/> class with a boolean literal.
+	/// </summary>
+	/// <param name="value">The boolean value to return.</param>
+	public ReturnStatement(bool value) => SetExpression(new AstLeafNode<bool>(value));
+
+	/// <summary>
+	/// Gets the expression being returned, if any.
 	/// </summary>
 	public AstNode? Expression => GetChild("Expression");
 
 	/// <summary>
 	/// Sets the expression being returned.
 	/// </summary>
-	/// <param name="expression">The expression to set.</param>
-	public void SetExpression(AstNode expression) => SetChild("Expression", expression);
+	/// <param name="expression">The expression to return.</param>
+	public void SetExpression(AstNode? expression)
+	{
+		if (expression != null)
+		{
+			SetChild("Expression", expression);
+		}
+		else
+		{
+			RemoveChild("Expression");
+		}
+	}
 
 	/// <summary>
-	/// Gets the type name of this node for serialization purposes.
+	/// Gets the type name of this node for serialization.
 	/// </summary>
 	/// <returns>The name of the node type.</returns>
 	public override string GetNodeTypeName() => "ReturnStatement";
@@ -72,18 +78,6 @@ public class ReturnStatement : AstCompositeNode
 		var clone = new ReturnStatement
 		{
 			Metadata = Metadata != null ? new Dictionary<string, object?>(Metadata) : null
-
-<<<<<<< TODO: Unmerged change from project 'Coder.Core(net9.0)', Before:
-        };
-
-        // Clone the children dictionary which includes the Expression
-        foreach (var (key, child) in Children)
-=======
-		};
-
-		// Clone the children dictionary which includes the Expression
-		foreach (var (key, child) in Children)
->>>>>>> After
 		};
 
 		// Clone the children dictionary which includes the Expression
@@ -93,13 +87,5 @@ public class ReturnStatement : AstCompositeNode
 		}
 
 		return clone;
-
-<<<<<<< TODO: Unmerged change from project 'Coder.Core(net9.0)', Before:
-    }
-} 
-=======
-	}
-}
->>>>>>> After
 	}
 }

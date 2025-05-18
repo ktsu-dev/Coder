@@ -59,13 +59,5 @@ public abstract class AstCompositeNode : AstNode
 		}
 
 		return clonedChildren;
-
-<<<<<<< TODO: Unmerged change from project 'Coder.Core(net9.0)', Before:
-    }
-} 
-=======
-	}
-}
->>>>>>> After
 	}
 }

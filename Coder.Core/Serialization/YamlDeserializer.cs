@@ -12,12 +12,11 @@ using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
 /// <summary>
-/// Handles deserialization from YAML format to AST nodes.
+/// Handles deserialization of YAML strings back into AST nodes.
 /// </summary>
-public partial partial class YamlDeserializer
+public partial class YamlDeserializer
 {
 	private readonly IDeserializer _deserializer;
-	private static readonly Regex _leafNodeRegex = MyRegex();
 
 	/// <summary>
 	/// Initializes a new instance of the <see cref="YamlDeserializer"/> class.
@@ -34,92 +33,58 @@ public partial partial class YamlDeserializer
 	/// </summary>
 	/// <param name="yaml">The YAML string to deserialize.</param>
 	/// <returns>The deserialized AST node.</returns>
-	public AstNode Deserialize(string yaml)
+	public AstNode? Deserialize(string yaml)
 	{
-		if (string.IsNullOrWhiteSpace(yaml))
-		{
-			throw new ArgumentException("YAML string cannot be null or whitespace.", nameof(yaml));
-		}
+		ArgumentException.ThrowIfNullOrWhiteSpace(yaml);
 
 		// Deserialize YAML to a dictionary
-		var root = _deserializer.Deserialize<Dictionary<string, object>>(yaml);
-		if (root == null || root.Count == 0)
+		var rootDict = _deserializer.Deserialize<Dictionary<string, object>>(yaml);
+		if (rootDict == null || rootDict.Count == 0)
 		{
-			throw new InvalidOperationException("Deserialized YAML is empty.");
+			return null;
 		}
 
-		// There should be only one root node type
-		var (nodeTypeName, nodeData) = root.First();
-		return DeserializeNode(nodeTypeName, nodeData);
+		// Process the first node type found
+		var (nodeType, nodeData) = rootDict.First();
+		return DeserializeNode(nodeType, nodeData);
 	}
 
-	private AstNode DeserializeNode(string nodeTypeName, object nodeData)
+	private AstNode? DeserializeNode(string nodeType, object? nodeData)
 	{
-		if (nodeTypeName == "ReturnStatement")
+		return nodeType switch
 		{
-			return DeserializeReturnStatement(nodeData);
-		}
-		else if (nodeTypeName == "FunctionDeclaration")
-		{
-			return DeserializeFunctionDeclaration(nodeData);
-		}
-		else if (nodeTypeName == "Parameter")
-		{
-			return DeserializeParameter(nodeData);
-		}
-		else
-		{
-			// Check if it's a leaf node
-			var match = _leafNodeRegex.Match(nodeTypeName);
-			if (match.Success)
-			{
-				return DeserializeLeafNode(match.Groups[1].Value, nodeData);
-			}
-		}
-
-		throw new NotSupportedException($"Unsupported node type: {nodeTypeName}");
+			"functionDeclaration" => DeserializeFunctionDeclaration(nodeData),
+			"parameter" => DeserializeParameter(nodeData),
+			"returnStatement" => DeserializeReturnStatement(nodeData ?? new object()),
+			_ when nodeType.StartsWith("leaf<", StringComparison.OrdinalIgnoreCase) => DeserializeLeafNode(nodeType, nodeData),
+			_ => null,
+		};
 	}
 
-	private static AstNode DeserializeLeafNode(string typeNameStr, object value)
+	private static AstNode? DeserializeLeafNode(string nodeType, object? nodeData)
 	{
-		if (typeNameStr == "String")
+		var match = MyRegex().Match(nodeType);
+		if (!match.Success || match.Groups.Count < 2)
 		{
-			return new AstLeafNode<string>(value?.ToString() ?? string.Empty);
-		}
-		else if (typeNameStr == "Int32" && value != null)
-		{
-			if (value is int intValue)
-			{
-				return new AstLeafNode<int>(intValue);
-			}
-
-			if (int.TryParse(value.ToString(), out var parsedInt))
-			{
-				return new AstLeafNode<int>(parsedInt);
-			}
-		}
-		else if (typeNameStr == "Boolean" && value != null)
-		{
-			if (value is bool boolValue)
-			{
-				return new AstLeafNode<bool>(boolValue);
-			}
-
-			if (bool.TryParse(value.ToString(), out var parsedBool))
-			{
-				return new AstLeafNode<bool>(parsedBool);
-			}
+			return null;
 		}
 
-		throw new NotSupportedException($"Unsupported leaf node type: {typeNameStr}");
+		var valueType = match.Groups[1].Value;
+
+		return valueType switch
+		{
+			"String" => new AstLeafNode<string>(nodeData?.ToString() ?? string.Empty),
+			"Int32" when int.TryParse(nodeData?.ToString(), out var intValue) => new AstLeafNode<int>(intValue),
+			"Boolean" when bool.TryParse(nodeData?.ToString(), out var boolValue) => new AstLeafNode<bool>(boolValue),
+			_ => null,
+		};
 	}
 
-	private FunctionDeclaration DeserializeFunctionDeclaration(object nodeData)
+	private FunctionDeclaration DeserializeFunctionDeclaration(object? nodeData)
 	{
 		var funcDecl = new FunctionDeclaration();
 		if (nodeData is Dictionary<object, object> dict)
 		{
-			// Get the basic properties
 			if (dict.TryGetValue("name", out var nameObj))
 			{
 				funcDecl.Name = nameObj?.ToString();
@@ -130,42 +95,23 @@ public partial partial class YamlDeserializer
 				funcDecl.ReturnType = returnTypeObj?.ToString();
 			}
 
-			// Parse parameters
+			// Deserialize parameters if present
 			if (dict.TryGetValue("parameters", out var paramsObj) && paramsObj is List<object> paramsList)
 			{
 				foreach (var paramObj in paramsList)
 				{
 					if (paramObj is Dictionary<object, object> paramDict)
 					{
-						var param = new Parameter();
-
-						if (paramDict.TryGetValue("name", out var paramNameObj))
+						var param = DeserializeParameter(paramDict);
+						if (param != null)
 						{
-							param.Name = paramNameObj?.ToString();
+							funcDecl.Parameters.Add(param);
 						}
-
-						if (paramDict.TryGetValue("type", out var paramTypeObj))
-						{
-							param.Type = paramTypeObj?.ToString();
-						}
-
-						if (paramDict.TryGetValue("isOptional", out var optionalObj) &&
-							bool.TryParse(optionalObj?.ToString(), out var isOptional))
-						{
-							param.IsOptional = isOptional;
-
-							if (paramDict.TryGetValue("defaultValue", out var defaultObj))
-							{
-								param.DefaultValue = defaultObj?.ToString();
-							}
-						}
-
-						funcDecl.Parameters.Add(param);
 					}
 				}
 			}
 
-			// Parse body
+			// Deserialize body statements if present
 			if (dict.TryGetValue("body", out var bodyObj) && bodyObj is List<object> bodyList)
 			{
 				foreach (var stmtObj in bodyList)
@@ -175,7 +121,10 @@ public partial partial class YamlDeserializer
 						foreach (var (stmtType, stmtData) in stmtDict)
 						{
 							var stmt = DeserializeNode(stmtType.ToString() ?? string.Empty, stmtData);
-							funcDecl.Body.Add(stmt);
+							if (stmt != null)
+							{
+								funcDecl.Body.Add(stmt);
+							}
 						}
 					}
 				}
@@ -191,12 +140,33 @@ public partial partial class YamlDeserializer
 					funcDecl.Metadata[key.ToString() ?? string.Empty] = value;
 				}
 			}
+
+			// Deserialize other children from the dictionary
+			foreach (var (key, value) in dict)
+			{
+				if (key.ToString() != "name" &&
+					key.ToString() != "returnType" &&
+					key.ToString() != "parameters" &&
+					key.ToString() != "body" &&
+					key.ToString() != "metadata" &&
+					value is Dictionary<object, object> childDict)
+				{
+					foreach (var (childType, childData) in childDict)
+					{
+						var child = DeserializeNode(childType.ToString() ?? string.Empty, childData);
+						if (child != null)
+						{
+							funcDecl.SetChild(key.ToString() ?? string.Empty, child);
+						}
+					}
+				}
+			}
 		}
 
 		return funcDecl;
 	}
 
-	private static Parameter DeserializeParameter(object nodeData)
+	private static Parameter DeserializeParameter(object? nodeData)
 	{
 		var param = new Parameter();
 		if (nodeData is Dictionary<object, object> dict)
@@ -265,17 +235,6 @@ public partial partial class YamlDeserializer
 		}
 
 		return returnStmt;
-
-<<<<<<< TODO: Unmerged change from project 'Coder.Core(net9.0)', Before:
-    }
-} 
-=======
-	}
-
-	[GeneratedRegex(@"Leaf<(\w+)>", RegexOptions.Compiled)]
-	private static partial Regex MyRegex();
-}
->>>>>>> After
 	}
 
 	[GeneratedRegex(@"Leaf<(\w+)>", RegexOptions.Compiled)]

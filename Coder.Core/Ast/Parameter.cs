@@ -74,16 +74,6 @@ public class Parameter : AstNode
 			IsOptional = IsOptional,
 			DefaultValue = DefaultValue,
 			Metadata = Metadata != null ? new Dictionary<string, object?>(Metadata) : null
-
-<<<<<<< TODO: Unmerged change from project 'Coder.Core(net9.0)', Before:
-        };
-    }
-} 
-=======
-		};
-	}
-}
->>>>>>> After
 		};
 	}
 }

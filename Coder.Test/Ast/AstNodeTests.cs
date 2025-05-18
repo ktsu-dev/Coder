@@ -4,7 +4,6 @@
 
 namespace ktsu.Coder.Test.Ast;
 
-using System.Collections.Generic;
 using ktsu.Coder.Core.Ast;
 
 [TestClass]
@@ -69,24 +68,6 @@ public class AstNodeTests
 		var originalFunc = new FunctionDeclaration("TestFunction")
 		{
 			ReturnType = "int",
-
-<<<<<<< TODO: Unmerged change from project 'Coder.Test(net9.0)', Before:
-            Parameters = new List<Parameter>
-            {
-                new Parameter("param1", "int"),
-                new Parameter("param2", "string")
-            }
-        };
-        originalFunc.Body.Add(new ReturnStatement(42));
-=======
-			Parameters =
-			[
-				new Parameter("param1", "int"),
-				new Parameter("param2", "string")
-			]
-		};
-		originalFunc.Body.Add(new ReturnStatement(42));
->>>>>>> After
 			Parameters =
 			[
 				new Parameter("param1", "int"),
@@ -120,13 +101,5 @@ public class AstNodeTests
 		var originalReturn = (ReturnStatement)originalFunc.Body[0];
 		var clonedReturn = (ReturnStatement)clonedFunc.Body[0];
 		Assert.AreNotSame(originalReturn, clonedReturn);
-
-<<<<<<< TODO: Unmerged change from project 'Coder.Test(net9.0)', Before:
-    }
-} 
-=======
-	}
-}
->>>>>>> After
 	}
 }

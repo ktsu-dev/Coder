@@ -4,7 +4,6 @@
 
 namespace ktsu.Coder.Test.Serialization;
 
-using System.Collections.Generic;
 using ktsu.Coder.Core.Ast;
 using ktsu.Coder.Core.Serialization;
 
@@ -18,24 +17,6 @@ public class YamlSerializationTests
 		var funcDecl = new FunctionDeclaration("MyFunction")
 		{
 			ReturnType = "int",
-
-<<<<<<< TODO: Unmerged change from project 'Coder.Test(net9.0)', Before:
-            Parameters = new List<Parameter>
-            {
-                new Parameter("param1", "int"),
-                new Parameter("param2", "string") { IsOptional = true, DefaultValue = "\"default\"" }
-            }
-        };
-        funcDecl.Body.Add(new ReturnStatement(42));
-=======
-			Parameters =
-			[
-				new Parameter("param1", "int"),
-				new Parameter("param2", "string") { IsOptional = true, DefaultValue = "\"default\"" }
-			]
-		};
-		funcDecl.Body.Add(new ReturnStatement(42));
->>>>>>> After
 			Parameters =
 			[
 				new Parameter("param1", "int"),
@@ -70,24 +51,6 @@ public class YamlSerializationTests
 		var originalFuncDecl = new FunctionDeclaration("MyFunction")
 		{
 			ReturnType = "int",
-
-<<<<<<< TODO: Unmerged change from project 'Coder.Test(net9.0)', Before:
-            Parameters = new List<Parameter>
-            {
-                new Parameter("param1", "int"),
-                new Parameter("param2", "string") { IsOptional = true, DefaultValue = "\"default\"" }
-            }
-        };
-        originalFuncDecl.Body.Add(new ReturnStatement(42));
-=======
-			Parameters =
-			[
-				new Parameter("param1", "int"),
-				new Parameter("param2", "string") { IsOptional = true, DefaultValue = "\"default\"" }
-			]
-		};
-		originalFuncDecl.Body.Add(new ReturnStatement(42));
->>>>>>> After
 			Parameters =
 			[
 				new Parameter("param1", "int"),
@@ -165,13 +128,5 @@ public class YamlSerializationTests
 
 		// Act & Assert
 		Assert.ThrowsException<YamlDotNet.Core.YamlException>(() => deserializer.Deserialize(invalidYaml));
-
-<<<<<<< TODO: Unmerged change from project 'Coder.Test(net9.0)', Before:
-    }
-} 
-=======
-	}
-}
->>>>>>> After
 	}
 }

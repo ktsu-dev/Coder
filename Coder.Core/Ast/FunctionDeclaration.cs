@@ -34,22 +34,6 @@ public class FunctionDeclaration : AstCompositeNode
 	/// </summary>
 	public string? ReturnType { get; set; }
 
-
-<<<<<<< TODO: Unmerged change from project 'Coder.Core(net9.0)', Before:
-    public List<Parameter> Parameters { get; set; } = new List<Parameter>();
-
-    /// <summary>
-    /// Gets or sets a list of statements that make up the function body.
-    /// </summary>
-    public List<AstNode> Body { get; set; } = new List<AstNode>();
-=======
-    public List<Parameter> Parameters { get; set; } = [];
-
-	/// <summary>
-	/// Gets or sets a list of statements that make up the function body.
-	/// </summary>
-	public List<AstNode> Body { get; set; } = new List<AstNode>();
->>>>>>> After
 	/// <summary>
 	/// Gets or sets a list of parameters for the function.
 	/// </summary>
@@ -77,18 +61,6 @@ public class FunctionDeclaration : AstCompositeNode
 			Name = Name,
 			ReturnType = ReturnType,
 			Metadata = Metadata != null ? new Dictionary<string, object?>(Metadata) : null
-
-<<<<<<< TODO: Unmerged change from project 'Coder.Core(net9.0)', Before:
-        };
-
-        // Clone parameters
-        foreach (var parameter in Parameters)
-=======
-		};
-
-		// Clone parameters
-		foreach (var parameter in Parameters)
->>>>>>> After
 		};
 
 		// Clone parameters
@@ -110,13 +82,5 @@ public class FunctionDeclaration : AstCompositeNode
 		}
 
 		return clone;
-
-<<<<<<< TODO: Unmerged change from project 'Coder.Core(net9.0)', Before:
-    }
-} 
-=======
-	}
-}
->>>>>>> After
 	}
 }

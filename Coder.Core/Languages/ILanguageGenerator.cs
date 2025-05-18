@@ -39,10 +39,4 @@ public interface ILanguageGenerator
 	/// <param name="astNode">The AST node to check.</param>
 	/// <returns>True if this generator can generate code for the node; otherwise, false.</returns>
 	public bool CanGenerate(AstNode astNode);
-
-<<<<<<< TODO: Unmerged change from project 'Coder.Core(net9.0)', Before:
-} 
-=======
-}
->>>>>>> After
 }

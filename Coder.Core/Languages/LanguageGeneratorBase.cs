@@ -54,11 +54,11 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// <returns>True if this generator can generate code for the node; otherwise, false.</returns>
 	public virtual bool CanGenerate(AstNode astNode)
 	{
-		return astNode != null && astNode is FunctionDeclaration
+		return astNode is not null and (FunctionDeclaration
 			or ReturnStatement
 			or AstLeafNode<string>
 			or AstLeafNode<int>
-			or AstLeafNode<bool>;
+			or AstLeafNode<bool>);
 	}
 
 	/// <summary>
@@ -68,17 +68,6 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// <param name="builder">The string builder to append code to.</param>
 	/// <param name="indentLevel">The current indentation level.</param>
 	protected abstract void GenerateInternal(AstNode node, StringBuilder builder, int indentLevel);
-
-<<<<<<< TODO: Unmerged change from project 'Coder.Core(net9.0)', Before:
-    protected void Indent(StringBuilder builder, int indentLevel, int indentSize = 4)
-    {
-        builder.Append(' ', indentLevel * indentSize);
-    }
-} 
-=======
-    protected void Indent(StringBuilder builder, int indentLevel, int indentSize = 4) => builder.Append(' ', indentLevel * indentSize);
-}
->>>>>>> After
 
 	/// <summary>
 	/// Adds indentation to the code based on the current indentation level.
