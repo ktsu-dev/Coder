@@ -5,6 +5,7 @@
 namespace ktsu.Coder.Core.Ast;
 
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 
 /// <summary>
 /// Represents a function declaration in the abstract syntax tree.
@@ -37,12 +38,12 @@ public class FunctionDeclaration : AstCompositeNode
 	/// <summary>
 	/// Gets or sets a list of parameters for the function.
 	/// </summary>
-	public List<Parameter> Parameters { get; set; } = [];
+	public Collection<Parameter> Parameters { get; init; } = [];
 
 	/// <summary>
 	/// Gets or sets a list of statements that make up the function body.
 	/// </summary>
-	public List<AstNode> Body { get; set; } = [];
+	public Collection<AstNode> Body { get; init; } = [];
 
 	/// <summary>
 	/// Gets the type name of this node for serialization purposes.

@@ -134,7 +134,7 @@ public partial class YamlDeserializer
 			if (dict.TryGetValue("metadata", out var metadataObj) &&
 				metadataObj is Dictionary<object, object> metadataDict)
 			{
-				funcDecl.Metadata = [];
+				funcDecl.Metadata.Clear();
 				foreach (var (key, value) in metadataDict)
 				{
 					funcDecl.Metadata[key.ToString() ?? string.Empty] = value;

@@ -44,7 +44,7 @@ public class AstLeafNode<T> : AstNode
 		return new AstLeafNode<T>
 		{
 			Value = Value,
-			Metadata = Metadata != null ? new Dictionary<string, object?>(Metadata) : null
+			Metadata = new(Metadata),
 		};
 	}
 }

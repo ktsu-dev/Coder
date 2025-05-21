@@ -75,5 +75,9 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// <param name="builder">The string builder to append indentation to.</param>
 	/// <param name="indentLevel">The indentation level.</param>
 	/// <param name="indentSize">The number of spaces per indent level. Default is 4.</param>
-	protected static void Indent(StringBuilder builder, int indentLevel, int indentSize = 4) => builder.Append(' ', indentLevel * indentSize);
+	protected static void Indent(StringBuilder builder, int indentLevel, int indentSize = 4)
+	{
+		ArgumentNullException.ThrowIfNull(builder);
+		builder.Append(' ', indentLevel * indentSize);
+	}
 }

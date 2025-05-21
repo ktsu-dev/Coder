@@ -4,18 +4,20 @@
 
 namespace ktsu.Coder.Core.Ast;
 
+using ktsu.DeepClone;
+
 /// <summary>
 /// Represents an abstract base class for all AST (Abstract Syntax Tree) nodes.
 /// AST nodes are used to represent code structures in a language-agnostic way.
 /// </summary>
-public abstract class AstNode
+public abstract class AstNode : IDeepCloneable<AstNode>
 {
 	/// <summary>
-	/// Gets or sets additional metadata about this node.
+	/// Gets additional metadata about this node.
 	/// This can be used to store language-specific information that doesn't fit
 	/// into the standard node structure.
 	/// </summary>
-	public Dictionary<string, object?>? Metadata { get; set; }
+	public Dictionary<string, object?> Metadata { get; private init; } = [];
 
 	/// <summary>
 	/// Gets the type name of this AST node, which is used during serialization.
@@ -27,5 +29,5 @@ public abstract class AstNode
 	/// Creates a deep clone of this AST node.
 	/// </summary>
 	/// <returns>A new instance of the AST node with the same property values.</returns>
-	public abstract AstNode Clone();
+	public abstract AstNode DeepClone();
 }

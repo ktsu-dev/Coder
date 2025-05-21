@@ -36,6 +36,9 @@ public class PythonGenerator : LanguageGeneratorBase
 	/// <param name="indentLevel">The current indentation level.</param>
 	protected override void GenerateInternal(AstNode node, StringBuilder builder, int indentLevel)
 	{
+		ArgumentNullException.ThrowIfNull(node);
+		ArgumentNullException.ThrowIfNull(builder);
+
 		switch (node)
 		{
 			case FunctionDeclaration funcDecl:
