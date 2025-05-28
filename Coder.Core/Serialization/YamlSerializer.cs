@@ -92,6 +92,9 @@ public class YamlSerializer
 			case ReturnStatement returnStmt:
 				SerializeReturnStatement(returnStmt, nodeData);
 				break;
+			default:
+				// Handle unknown node types - no specific serialization needed
+				break;
 		}
 
 		// Handle generic composite node children
@@ -152,6 +155,7 @@ public class YamlSerializer
 			SerializeNode(statement, statementData);
 			bodyStatements.Add(statementData);
 		}
+
 		return bodyStatements;
 	}
 

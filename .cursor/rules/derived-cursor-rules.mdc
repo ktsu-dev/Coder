@@ -15,6 +15,7 @@ The AI coding assistant is working on a multilingual code generation library nam
 
 - .NET 7 or later
 - YamlDotNet (for YAML serialization and deserialization)
+- .NET 9 (identified during build process)
 
 ## PROJECT DOCUMENTATION & CONTEXT SYSTEM
 
@@ -31,6 +32,7 @@ The AI coding assistant is working on a multilingual code generation library nam
 - Use dependency injection to promote loose coupling.
 - All files must include a copyright notice.
 - Implement the `Clone()` method properly in AST node classes, ensuring derived classes `override` it.
+- Address code analysis warnings and errors identified during build processes (e.g., CS8852, IDE2003, CA1502, IDE0010).
 
 ## DEBUGGING
 
@@ -38,6 +40,7 @@ The AI coding assistant is working on a multilingual code generation library nam
 - Write unit tests to isolate and fix bugs.
 - Use logging to track the flow of execution and identify issues.
 - Address code analysis warnings, such as those related to cyclomatic complexity, by refactoring code into smaller, more manageable methods.
+- Analyze and fix compilation errors reported by the .NET build process.
 
 ## WORKFLOW & RELEASE RULES
 
@@ -51,3 +54,5 @@ The AI coding assistant is working on a multilingual code generation library nam
 - The AST should be language-agnostic.
 - AST nodes should be serializable and deserializable.
 - Implement a `Clone()` method for all AST nodes to enable deep copying.
+- The `Metadata` property in `AstNode` and derived classes should have a `protected init` setter to allow setting during object initialization in derived classes and prevent modification after initialization.
+- Ensure that deserialization logic respects the `protected init` setter of the `Metadata` property in `AstNode` and derived classes. Refactor deserialization logic if necessary to correctly initialize this property.

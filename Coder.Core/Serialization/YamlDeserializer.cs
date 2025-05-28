@@ -83,87 +83,111 @@ public partial class YamlDeserializer
 	private FunctionDeclaration DeserializeFunctionDeclaration(object? nodeData)
 	{
 		var funcDecl = new FunctionDeclaration();
-		if (nodeData is Dictionary<object, object> dict)
+		if (nodeData is not Dictionary<object, object> dict)
 		{
-			if (dict.TryGetValue("name", out var nameObj))
-			{
-				funcDecl.Name = nameObj?.ToString();
-			}
+			return funcDecl;
+		}
 
-			if (dict.TryGetValue("returnType", out var returnTypeObj))
-			{
-				funcDecl.ReturnType = returnTypeObj?.ToString();
-			}
+		DeserializeFunctionBasicProperties(funcDecl, dict);
+		DeserializeFunctionParameters(funcDecl, dict);
+		DeserializeFunctionBody(funcDecl, dict);
+		DeserializeMetadata(funcDecl, dict);
+		DeserializeFunctionChildren(funcDecl, dict);
 
-			// Deserialize parameters if present
-			if (dict.TryGetValue("parameters", out var paramsObj) && paramsObj is List<object> paramsList)
+		return funcDecl;
+	}
+
+	private static void DeserializeFunctionBasicProperties(FunctionDeclaration funcDecl, Dictionary<object, object> dict)
+	{
+		if (dict.TryGetValue("name", out var nameObj))
+		{
+			funcDecl.Name = nameObj?.ToString();
+		}
+
+		if (dict.TryGetValue("returnType", out var returnTypeObj))
+		{
+			funcDecl.ReturnType = returnTypeObj?.ToString();
+		}
+	}
+
+	private void DeserializeFunctionParameters(FunctionDeclaration funcDecl, Dictionary<object, object> dict)
+	{
+		if (!dict.TryGetValue("parameters", out var paramsObj) || paramsObj is not List<object> paramsList)
+		{
+			return;
+		}
+
+		foreach (var paramObj in paramsList)
+		{
+			if (paramObj is Dictionary<object, object> paramDict)
 			{
-				foreach (var paramObj in paramsList)
+				var param = DeserializeParameter(paramDict);
+				if (param != null)
 				{
-					if (paramObj is Dictionary<object, object> paramDict)
-					{
-						var param = DeserializeParameter(paramDict);
-						if (param != null)
-						{
-							funcDecl.Parameters.Add(param);
-						}
-					}
+					funcDecl.Parameters.Add(param);
 				}
 			}
+		}
+	}
 
-			// Deserialize body statements if present
-			if (dict.TryGetValue("body", out var bodyObj) && bodyObj is List<object> bodyList)
+	private void DeserializeFunctionBody(FunctionDeclaration funcDecl, Dictionary<object, object> dict)
+	{
+		if (!dict.TryGetValue("body", out var bodyObj) || bodyObj is not List<object> bodyList)
+		{
+			return;
+		}
+
+		foreach (var stmtObj in bodyList)
+		{
+			if (stmtObj is Dictionary<object, object> stmtDict)
 			{
-				foreach (var stmtObj in bodyList)
+				foreach (var (stmtType, stmtData) in stmtDict)
 				{
-					if (stmtObj is Dictionary<object, object> stmtDict)
+					var stmt = DeserializeNode(stmtType.ToString() ?? string.Empty, stmtData);
+					if (stmt != null)
 					{
-						foreach (var (stmtType, stmtData) in stmtDict)
-						{
-							var stmt = DeserializeNode(stmtType.ToString() ?? string.Empty, stmtData);
-							if (stmt != null)
-							{
-								funcDecl.Body.Add(stmt);
-							}
-						}
-					}
-				}
-			}
-
-			// Parse metadata if present
-			if (dict.TryGetValue("metadata", out var metadataObj) &&
-				metadataObj is Dictionary<object, object> metadataDict)
-			{
-				funcDecl.Metadata.Clear();
-				foreach (var (key, value) in metadataDict)
-				{
-					funcDecl.Metadata[key.ToString() ?? string.Empty] = value;
-				}
-			}
-
-			// Deserialize other children from the dictionary
-			foreach (var (key, value) in dict)
-			{
-				if (key.ToString() != "name" &&
-					key.ToString() != "returnType" &&
-					key.ToString() != "parameters" &&
-					key.ToString() != "body" &&
-					key.ToString() != "metadata" &&
-					value is Dictionary<object, object> childDict)
-				{
-					foreach (var (childType, childData) in childDict)
-					{
-						var child = DeserializeNode(childType.ToString() ?? string.Empty, childData);
-						if (child != null)
-						{
-							funcDecl.SetChild(key.ToString() ?? string.Empty, child);
-						}
+						funcDecl.Body.Add(stmt);
 					}
 				}
 			}
 		}
+	}
 
-		return funcDecl;
+	private static void DeserializeMetadata(AstNode node, Dictionary<object, object> dict)
+	{
+		if (!dict.TryGetValue("metadata", out var metadataObj) || metadataObj is not Dictionary<object, object> metadataDict)
+		{
+			return;
+		}
+
+		node.Metadata.Clear();
+		foreach (var (key, value) in metadataDict)
+		{
+			node.Metadata[key.ToString() ?? string.Empty] = value;
+		}
+	}
+
+	private void DeserializeFunctionChildren(FunctionDeclaration funcDecl, Dictionary<object, object> dict)
+	{
+		var knownKeys = new HashSet<string> { "name", "returnType", "parameters", "body", "metadata" };
+
+		foreach (var (key, value) in dict)
+		{
+			var keyString = key.ToString() ?? string.Empty;
+			if (knownKeys.Contains(keyString) || value is not Dictionary<object, object> childDict)
+			{
+				continue;
+			}
+
+			foreach (var (childType, childData) in childDict)
+			{
+				var child = DeserializeNode(childType.ToString() ?? string.Empty, childData);
+				if (child != null)
+				{
+					funcDecl.SetChild(keyString, child);
+				}
+			}
+		}
 	}
 
 	private static Parameter DeserializeParameter(object? nodeData)
@@ -193,15 +217,7 @@ public partial class YamlDeserializer
 			}
 
 			// Parse metadata if present
-			if (dict.TryGetValue("metadata", out var metadataObj) &&
-				metadataObj is Dictionary<object, object> metadataDict)
-			{
-				param.Metadata = [];
-				foreach (var (key, value) in metadataDict)
-				{
-					param.Metadata[key.ToString() ?? string.Empty] = value;
-				}
-			}
+			DeserializeMetadata(param, dict);
 		}
 
 		return param;
@@ -223,15 +239,7 @@ public partial class YamlDeserializer
 			}
 
 			// Parse metadata if present
-			if (dict.TryGetValue("metadata", out var metadataObj) &&
-				metadataObj is Dictionary<object, object> metadataDict)
-			{
-				returnStmt.Metadata = [];
-				foreach (var (key, value) in metadataDict)
-				{
-					returnStmt.Metadata[key.ToString() ?? string.Empty] = value;
-				}
-			}
+			DeserializeMetadata(returnStmt, dict);
 		}
 
 		return returnStmt;

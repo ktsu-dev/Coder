@@ -962,6 +962,407 @@ Build succeeded with 1 warning(s) in 0.2s
 
 
 
+I'll continue working on this application by first examining the current state and identifying areas for improvement or new features to implement.
+
+---
+
+<details>
+            <summary>Listed current directory • **30** results</summary>
+        
+| Name |
+|-------|
+| 📁 `.git` |
+| 📄 `README.md` |
+| 📁 `.specstory` |
+| 📄 `.cursorignore` |
+| 📁 `Coder.Test` |
+| 📁 `Coder.Core` |
+| 📁 `Coder.CLI` |
+| 📁 `Coder.App` |
+| 📁 `.cursor` |
+| 📄 `.cursorindexingignore` |
+| 📄 `.runsettings` |
+| 📄 `.mailmap` |
+| 📄 `.editorconfig` |
+| 📄 `.gitattributes` |
+| 📄 `.gitignore` |
+| 📁 `.vs` |
+| 📁 `docs` |
+| 📁 `.github` |
+| 📁 `scripts` |
+| 📄 `PROJECT_URL.url` |
+| 📄 `LICENSE.md` |
+| 📄 `COPYRIGHT.md` |
+| 📄 `CHANGELOG.md` |
+| 📄 `AUTHORS.url` |
+| 📄 `AUTHORS.md` |
+| 📄 `VERSION.md` |
+| 📄 `TAGS.md` |
+| 📄 `DESCRIPTION.md` |
+| 📄 `Coder.sln` |
+| 📄 `icon.png` |
+
+</details>
+
+---
+
+Let me check the current state of the solution and see what's been implemented:
+
+---
+
+Read file: Coder.sln
+
+---
+
+Now let me check the current state of the core library to understand what's already implemented:
+
+---
+
+<details>
+            <summary>Listed directory Coder.Core • **6** results</summary>
+        
+| Name |
+|-------|
+| 📁 `obj` |
+| 📄 `Coder.Core.csproj` |
+| 📁 `Ast` |
+| 📁 `Serialization` |
+| 📁 `Languages` |
+| 📁 `bin` |
+
+</details>
+
+---
+
+<details>
+            <summary>Listed directory Coder.Core/Ast • **6** results</summary>
+        
+| Name |
+|-------|
+| 📄 `AstCompositeNode.cs` |
+| 📄 `AstNode.cs` |
+| 📄 `FunctionDeclaration.cs` |
+| 📄 `ReturnStatement.cs` |
+| 📄 `Parameter.cs` |
+| 📄 `AstLeafNode.cs` |
+
+</details>
+
+---
+
+<details>
+            <summary>Listed directory Coder.Core/Languages • **3** results</summary>
+        
+| Name |
+|-------|
+| 📄 `PythonGenerator.cs` |
+| 📄 `LanguageGeneratorBase.cs` |
+| 📄 `ILanguageGenerator.cs` |
+
+</details>
+
+---
+
+Let me check the current README to understand what functionality is documented:
+
+---
+
+Read file: README.md
+
+---
+
+Now let me check what's currently in the CLI and App projects to see what functionality is already working:
+
+---
+
+Could not find file 'Coder.CLI/CoderCLI.cs' in the workspace.
+
+---
+
+<details>
+            <summary>Listed directory Coder.CLI • **4** results</summary>
+        
+| Name |
+|-------|
+| 📁 `obj` |
+| 📄 `Coder.CLI.csproj` |
+| 📄 `SampleCLI.cs` |
+| 📁 `bin` |
+
+</details>
+
+---
+
+Read file: Coder.CLI/SampleCLI.cs
+
+---
+
+Let me also check the App project:
+
+---
+
+<details>
+            <summary>Listed directory Coder.App • **4** results</summary>
+        
+| Name |
+|-------|
+| 📄 `Coder.App.csproj` |
+| 📄 `SampleApp.cs` |
+| 📁 `obj` |
+| 📁 `bin` |
+
+</details>
+
+---
+
+Read file: Coder.App/SampleApp.cs
+
+---
+
+Now let me check the test project to see what tests are in place:
+
+---
+
+<details>
+            <summary>Listed directory Coder.Test • **5** results</summary>
+        
+| Name |
+|-------|
+| 📄 `Coder.Test.csproj` |
+| 📁 `obj` |
+| 📁 `Ast` |
+| 📁 `Serialization` |
+| 📁 `bin` |
+
+</details>
+
+---
+
+<details>
+            <summary>Listed directory Coder.Test/Ast • **1** results</summary>
+        
+| Name |
+|-------|
+| 📄 `AstNodeTests.cs` |
+
+</details>
+
+---
+
+<details>
+            <summary>Listed directory Coder.Test/Serialization • **1** results</summary>
+        
+| Name |
+|-------|
+| 📄 `YamlSerializationTests.cs` |
+
+</details>
+
+---
+
+Let me run the current solution to see if it builds and works:
+
+---
+
+```bash
+dotnet build
+```
+
+```
+ PS C:\dev\ktsu-dev\Coder >dotnet build DiffMore.sln
+
+                           dotnet build
+
+  C:\dev\ktsu-dev\Coder\Coder.sln                                          Restore (0.0s)
+                                                                                   (0.1s) 
+Restore succeeded with 1 warning(s) in 0.1s
+roject to restore!
+
+Build succeeded with 1 warning(s) in 0.3s
+  00:57:16  Coder  774ms  
+  10:57:17 main  ?2 ~13 
+
+```
+
+---
+
+Great! The solution builds successfully. Let me run the CLI and App to see the current functionality:
+
+---
+
+```bash
+dotnet run --project Coder.CLI
+```
+
+```
+ PS C:\dev\ktsu-dev\Coder >dotnet run --project Coder.CLI  
+
+  C:\dev\ktsu-dev\Coder\Coder.CLI\Coder.CLI.csproj                         Restore (0.0s)
+                                                                                   (0.1s) 
+C:\Users\MatthewEdmondson\.nuget\packages\microsoft.build.tasks.git\8.0.0\build\Microsoft.
+C:\Users\MatthewEdmondson\.nuget\packages\microsoft.sourcelink.common\8.0.0\build\Microsof
+t.SourceLink.Common.targets(53,5): warning : Source control information is not available -
+ the generated source link is empty.
+C:\dev\ktsu-dev\Coder\Coder.Core\Ast\AstLeafNode.cs(47,4): error CS0272: The property or i
+ndexer 'AstNode.Metadata' cannot be used in this context because the set accessor is inacc
+essible
+C:\dev\ktsu-dev\Coder\Coder.Core\Ast\Parameter.cs(76,4): error CS0272: The property or ind
+exer 'AstNode.Metadata' cannot be used in this context because the set accessor is inacces
+sible
+C:\dev\ktsu-dev\Coder\Coder.Core\Ast\ReturnStatement.cs(80,4): error CS0272: The property 
+or indexer 'AstNode.Metadata' cannot be used in this context because the set accessor is i
+naccessible
+C:\dev\ktsu-dev\Coder\Coder.Core\Ast\FunctionDeclaration.cs(64,4): error CS0272: The prope
+rty or indexer 'AstNode.Metadata' cannot be used in this context because the set accessor
+is inaccessible
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlDeserializer.cs(199,5): error CS8852: I
+nit-only property or indexer 'AstNode.Metadata' can only be assigned in an object initiali
+zer, or on 'this' or 'base' in an instance constructor or an 'init' accessor.
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlDeserializer.cs(229,5): error CS8852: I
+nit-only property or indexer 'AstNode.Metadata' can only be assigned in an object initiali
+zer, or on 'this' or 'base' in an instance constructor or an 'init' accessor.
+C:\dev\ktsu-dev\Coder\Coder.Core\Ast\AstCompositeNode.cs(8,1): error IDE2000: Avoid multip
+le blank lines (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rules/
+ide2000)
+C:\dev\ktsu-dev\Coder\Coder.Core\Ast\AstNode.cs(6,1): error IDE2000: Avoid multiple blank 
+lines (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rules/ide2000)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlSerializer.cs(141,3): error IDE2003: Bl
+ank line required between block and subsequent statement (https://learn.microsoft.com/dotn
+et/fundamentals/code-analysis/style-rules/ide2003)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlSerializer.cs(153,3): error IDE2003: Bl
+ank line required between block and subsequent statement (https://learn.microsoft.com/dotn
+et/fundamentals/code-analysis/style-rules/ide2003)
+ulate switch (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rules/id
+e0010)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlDeserializer.cs(83,30): error CA1502: '
+DeserializeFunctionDeclaration' has a cyclomatic complexity of '33'. Rewrite or refactor t
+he code to decrease its complexity below '26'. (https://learn.microsoft.com/dotnet/fundame
+ntals/code-analysis/quality-rules/ca1502)
+
+The build failed. Fix the build errors and run again.
+  00:57:26  Coder  4.048s   1 - ERROR 
+  10:57:26 main  ?2 ~13 
+
+```
+
+---
+
+I can see there are several build errors that need to be fixed. Let me examine and fix these issues:
+
+1. **Metadata property accessibility issues** - The `Metadata` property seems to have accessibility problems
+2. **Code style issues** - Multiple blank lines and missing blank lines
+3. **Cyclomatic complexity** - The `DeserializeFunctionDeclaration` method is too complex
+
+Let me start by examining the `AstNode` class to understand the Metadata property issue:
+
+---
+
+Read file: Coder.Core/Ast/AstNode.cs
+
+---
+
+I can see the issue! The `Metadata` property has a `private init` setter, which means it can only be set during object initialization, but the code is trying to set it after construction. Let me fix this by making the setter more accessible. Let me also check how it's being used in the other files:
+
+---
+
+Read file: Coder.Core/Ast/AstLeafNode.cs
+
+---
+
+I can see the issue clearly now. The `Clone()` method is trying to set `Metadata = new(Metadata)` but the `Metadata` property has a `private init` setter. Let me fix this by changing the accessibility of the Metadata setter and also fix the style issues:
+
+---
+
+```diff
+  
+  namespace ktsu.Coder.Core.Ast;
+- 
+- 
+  
+  /// <summary>
+```
+
+```diff
+  	/// into the standard node structure.
+  	/// </summary>
+- 	public Dictionary<string, object?> Metadata { get; private init; } = [];
++ 	public Dictionary<string, object?> Metadata { get; protected init; } = [];
+  
+  	/// <summary>
+```
+
+---
+
+Now let me fix the AstCompositeNode style issue:
+
+---
+
+Read file: Coder.Core/Ast/AstCompositeNode.cs
+
+---
+
+```diff
+  
+  using System.Collections.Generic;
+- 
+  
+  /// <summary>
+```
+
+---
+
+Now let me check and fix the YamlSerializer style issues:
+
+---
+
+Read file: Coder.Core/Serialization/YamlSerializer.cs
+
+---
+
+I can see the issue is around lines 141 and 153. Let me look at those specific areas:
+
+---
+
+Read file: Coder.Core/Serialization/YamlSerializer.cs
+
+---
+
+I need to see the actual line numbers. Let me use grep to find the specific lines that need fixing:
+
+---
+
+<details>
+            <summary>Grep search for "parameterList\.Add" • **1** files</summary>
+        
+| File | Line | Match |
+|------|------|-------|
+| `file:///c%3A/dev/ktsu-dev/Coder/Coder.Core/Serialization/YamlSerializer.cs` | L139 | `parameterList.Add(paramData);` |
+
+</details>
+
+---
+
+<details>
+            <summary>Grep search for "bodyStatements\.Add" • **1** files</summary>
+        
+| File | Line | Match |
+|------|------|-------|
+| `file:///c%3A/dev/ktsu-dev/Coder/Coder.Core/Serialization/YamlSerializer.cs` | L151 | `bodyStatements.Add(statementData);` |
+
+</details>
+
+---
+
+Now let me fix these style issues by adding the missing blank lines:
+
+---
+
+
+
+---
+
+
+
 
 
 ---
