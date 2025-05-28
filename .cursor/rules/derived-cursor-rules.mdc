@@ -34,9 +34,10 @@ The AI coding assistant is working on a multilingual code generation library nam
 - Use dependency injection to promote loose coupling.
 - All files must include a copyright notice.
 - Implement the `Clone()` method properly in AST node classes, ensuring derived classes `override` it. When cloning `Metadata`, clear the existing dictionary and copy the values from the original instead of assigning a new dictionary.
-- Address code analysis warnings and errors identified during build processes (e.g., CS8852, IDE2003, CA1502, IDE0010, CA2227, CA1822, CS8604, CA1031, CA1062, IDE0060).
+- Address code analysis warnings and errors identified during build processes (e.g., CS8852, IDE2003, CA1502, IDE0010, CA2227, CA1822, CS8604, CA1031, CA1062, IDE0060, CS1591, IDE0055).
     - Ensure that all method parameters are validated for null values, throwing `ArgumentNullException` when necessary.
     - Suppress CA1031 warnings only when catching generic exceptions at the top level of a `Main` method, using a pragma directive.
+    - Ensure that all method parameters are validated for null values, throwing `ArgumentNullException` when necessary.
 - Ensure that deserialization logic handles the correct casing for node type names. The serializer uses capitalized names (e.g., `FunctionDeclaration`), so the deserializer should be updated to match.
 - Always validate parameters for null values and throw `ArgumentNullException` when null.
 
@@ -51,6 +52,7 @@ The AI coding assistant is working on a multilingual code generation library nam
     - **CA1502**: Refactor methods with high cyclomatic complexity into smaller, more manageable methods.
     - **IDE0010**: Populate switch statements with all possible enum values or provide a default case.
 - Analyze and fix compilation errors reported by the .NET build process.
+- When adding rows to a table, ensure that values are not null before passing them to the `AddRow` method to avoid `CS8604` errors. Use the null-coalescing operator (`??`) to provide default values if necessary.
 
 ## WORKFLOW & RELEASE RULES
 

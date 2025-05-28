@@ -47,10 +47,19 @@ public static class Program
 [Description("Launch the Coder TUI application")]
 public sealed class CoderCommand : Command<CoderCommand.Settings>
 {
+	/// <summary>
+	/// Settings for the coder command.
+	/// </summary>
 	public sealed class Settings : CommandSettings
 	{
 	}
 
+	/// <summary>
+	/// Executes the coder command.
+	/// </summary>
+	/// <param name="context">The command context.</param>
+	/// <param name="settings">The command settings.</param>
+	/// <returns>The exit code.</returns>
 	public override int Execute(CommandContext context, Settings settings) =>
 		new InteractiveCommand().Execute(context, new InteractiveCommand.Settings());
 }
@@ -61,12 +70,21 @@ public sealed class CoderCommand : Command<CoderCommand.Settings>
 [Description("Launch interactive TUI mode")]
 public sealed class InteractiveCommand : Command<InteractiveCommand.Settings>
 {
+	/// <summary>
+	/// Settings for the interactive command.
+	/// </summary>
 	public sealed class Settings : CommandSettings
 	{
 	}
 
 	private static readonly List<FunctionDeclaration> functions = [];
 
+	/// <summary>
+	/// Executes the interactive command.
+	/// </summary>
+	/// <param name="context">The command context.</param>
+	/// <param name="settings">The command settings.</param>
+	/// <returns>The exit code.</returns>
 	public override int Execute(CommandContext context, Settings settings)
 	{
 		ShowWelcome();
@@ -359,7 +377,7 @@ public sealed class InteractiveCommand : Command<InteractiveCommand.Settings>
 				? string.Join(", ", function.Parameters.Select(p => $"{p.Name}: {p.Type}"))
 				: "[dim]None[/]";
 
-			table.AddRow(function.Name, function.ReturnType, paramStr);
+			table.AddRow(function.Name ?? "Unknown", function.ReturnType ?? "void", paramStr);
 		}
 
 		AnsiConsole.Write(table);
@@ -426,18 +444,33 @@ public sealed class InteractiveCommand : Command<InteractiveCommand.Settings>
 [Description("Generate code from function definitions")]
 public sealed class GenerateCommand : Command<GenerateCommand.Settings>
 {
+	/// <summary>
+	/// Settings for the generate command.
+	/// </summary>
 	public sealed class Settings : CommandSettings
 	{
+		/// <summary>
+		/// Gets or sets the target language for code generation.
+		/// </summary>
 		[CommandOption("-l|--language")]
 		[Description("Target language for code generation")]
 		[DefaultValue("python")]
 		public string Language { get; set; } = "python";
 
+		/// <summary>
+		/// Gets or sets the output file path.
+		/// </summary>
 		[CommandOption("-o|--output")]
 		[Description("Output file path")]
 		public string? OutputPath { get; set; }
 	}
 
+	/// <summary>
+	/// Executes the generate command.
+	/// </summary>
+	/// <param name="context">The command context.</param>
+	/// <param name="settings">The command settings.</param>
+	/// <returns>The exit code.</returns>
 	public override int Execute(CommandContext context, Settings settings)
 	{
 		ArgumentNullException.ThrowIfNull(settings);
@@ -483,10 +516,19 @@ public sealed class GenerateCommand : Command<GenerateCommand.Settings>
 [Description("Run a demo showing various features")]
 public sealed class DemoCommand : Command<DemoCommand.Settings>
 {
+	/// <summary>
+	/// Settings for the demo command.
+	/// </summary>
 	public sealed class Settings : CommandSettings
 	{
 	}
 
+	/// <summary>
+	/// Executes the demo command.
+	/// </summary>
+	/// <param name="context">The command context.</param>
+	/// <param name="settings">The command settings.</param>
+	/// <returns>The exit code.</returns>
 	public override int Execute(CommandContext context, Settings settings)
 	{
 		AnsiConsole.Status()
@@ -532,7 +574,7 @@ public sealed class DemoCommand : Command<DemoCommand.Settings>
 			.AddColumn("[bold]Generated Python Code[/]")
 			.AddColumn("[bold]YAML Representation[/]");
 
-		table.AddRow(pythonCode, yamlOutput);
+		table.AddRow(pythonCode ?? "Error generating code", yamlOutput ?? "Error serializing YAML");
 		AnsiConsole.Write(table);
 	}
 }

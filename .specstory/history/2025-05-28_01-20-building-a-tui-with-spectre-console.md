@@ -1016,6 +1016,474 @@ Build failed with 2 error(s) and 4 warning(s) in 4.4s
 
 
 
+I need to fix the null reference issue in the table.AddRow call. Let me check line 362:
+
+---
+
+Read file: Coder.App/Program.cs
+
+---
+
+I can see the issue is in the table.AddRow call. The problem is that `function.Name` and `function.ReturnType` might be null. Let me fix this:
+
+---
+
+
+
+---
+
+Now let's also fix the similar issue in the demo command:
+
+---
+
+
+
+---
+
+Now let's build again:
+
+---
+
+```bash
+dotnet build Coder.App
+```
+
+```
+ PS C:\dev\ktsu-dev\Coder >dotnet build Coder.App
+
+                                                                                   (0.1s) 
+Restore complete (1.1s)
+  Coder.Core net9.0 succeeded with 2 warning(s) (0.1s) → Coder.Core\bin\Debug\net9.0\ktsu.
+Coder.Core.dll
+    C:\Users\MatthewEdmondson\.nuget\packages\microsoft.build.tasks.git\8.0.0\build\Micros
+oft.Build.Tasks.Git.targets(25,5): warning : Repository 'C:\dev\ktsu-dev\Coder' has no rem
+ote.
+    C:\Users\MatthewEdmondson\.nuget\packages\microsoft.sourcelink.common\8.0.0\build\Micr
+osoft.SourceLink.Common.targets(53,5): warning : Source control information is not availab
+le - the generated source link is empty.
+for publicly visible type or member 'GenerateCommand.Execute(CommandContext, GenerateComma
+nd.Settings)'
+    C:\dev\ktsu-dev\Coder\Coder.App\Program.cs(486,22): error CS1591: Missing XML comment 
+for publicly visible type or member 'DemoCommand.Settings'
+    C:\dev\ktsu-dev\Coder\Coder.App\Program.cs(490,22): error CS1591: Missing XML comment 
+for publicly visible type or member 'DemoCommand.Execute(CommandContext, DemoCommand.Setti
+ngs)'
+    C:\dev\ktsu-dev\Coder\Coder.App\Program.cs(356,3): error IDE0055: Fix formatting (http
+s://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rules/ide0055)
+
+Build failed with 11 error(s) and 4 warning(s) in 4.0s
+  01:31:21  Coder  4.763s   1 - ERROR 
+  11:31:22 main  ~1 
+ PS C:\dev\ktsu-dev\Coder >
+```
+
+---
+
+I need to add XML documentation comments and fix formatting. Let me add the missing XML comments:
+
+---
+
+
+
+---
+
+
+
+---
+
+
+
+---
+
+Let me be more specific with the demo command settings:
+
+---
+
+
+
+---
+
+
+
+---
+
+Now let me fix the formatting issue around line 356. Let me check what's there:
+
+---
+
+Tool call timed out after 10s (read file)
+
+---
+
+Let me try building again to see if the XML documentation fixes resolved the issues:
+
+---
+
+```bash
+dotnet build Coder.App
+```
+
+```
+ PS C:\dev\ktsu-dev\Coder >dotnet build Coder.App --verbosity normal
+Oops, something went wrong.
+Please report this bug with ALL the details below, including both the 'Environment' and 'E
+xception' sections.
+Please report on GitHub: https://github.com/PowerShell/PSReadLine/issues/new?template=Bug_
+Report.yaml
+Thank you!
+
+### Environment
+PSReadLine: 2.3.6+d2e770f93b7a53d8660a6402eb29d1ae1c35e767
+PowerShell: 7.5.1
+OS: Microsoft Windows 10.0.26100
+BufferWidth: 90
+BufferHeight: 1
+
+Last 200 Keys:
+
+ w o r k b e n c h \ c o n t r i b \ t e r m i n a l \ c o m m o n \ s c r i p t s \ s h e
+ l l I n t e g r a t i o n . p s 1 " Enter
+ Ctrl+l Enter
+ d o t n e t Spacebar b u i l d Spacebar C o d e r . A p p Enter
+ d o t n e t Spacebar b u i l d Spacebar C o d e r . A p p Spacebar - - v e r b o s i t y 
+Spacebar n o r m a l Enter
+ d o t n e t Spacebar b u i l d Spacebar C o d e r . A p p Enter
+ d o t n e t Spacebar b u i l d Spacebar C o d e r . A p p Enter
+ d o t n e t Spacebar b u i l d Spacebar C o d e r . A p p Enter
+
+
+### Exception
+
+System.ArgumentOutOfRangeException: The value must be greater than or equal to zero and le
+ss than the console's buffer size in that dimension. (Parameter 'top')
+Actual value was 13.
+   at System.ConsolePal.SetCursorPosition(Int32 left, Int32 top)
+   at Microsoft.PowerShell.PSConsoleReadLine.ReallyRender(RenderData renderData, String de
+faultColor)
+   at Microsoft.PowerShell.PSConsoleReadLine.ForceRender()
+   at Microsoft.PowerShell.PSConsoleReadLine.Render()
+   at Microsoft.PowerShell.PSConsoleReadLine.ProcessOneKey(PSKeyInfo key, Dictionary`2 dis
+patchTable, Boolean ignoreIfNoAction, Object arg)
+   at Microsoft.PowerShell.PSConsoleReadLine.InputLoop()
+   at Microsoft.PowerShell.PSConsoleReadLine.ReadLine(Runspace runspace, EngineIntrinsics 
+engineIntrinsics, CancellationToken cancellationToken, Nullable`1 lastRunStatus)
+
+
+
+  01:32:11  Coder   1 - ERROR 
+  11:32:12 main  ~3 
+ PS C:\dev\ktsu-dev\Coder >
+
+
+
+
+
+
+
+
+
+
+
+
+```
+
+---
+
+There seems to be a PowerShell issue. Let me try the build command again:
+
+---
+
+```bash
+dotnet build Coder.App
+```
+
+```
+ PS C:\dev\ktsu-dev\Coder >dotnet build Coder.App
+
+  C:\dev\ktsu-dev\Coder\Coder.App\Coder.App.csproj                         Restore (0.0s)
+                                                                                   (0.1s) 
+Restore complete (0.7s)
+  Coder.Core net9.0 succeeded with 2 warning(s) (0.2s) → Coder.Core\bin\Debug\net9.0\ktsu.
+Coder.Core.dll
+ote.
+    C:\Users\MatthewEdmondson\.nuget\packages\microsoft.sourcelink.common\8.0.0\build\Micr
+osoft.SourceLink.Common.targets(53,5): warning : Source control information is not availab
+le - the generated source link is empty.
+or publicly visible type or member 'CoderCommand.Execute(CommandContext, CoderCommand.Sett
+ings)'
+    C:\dev\ktsu-dev\Coder\Coder.App\Program.cs(64,22): error CS1591: Missing XML comment f
+or publicly visible type or member 'InteractiveCommand.Settings'
+    C:\dev\ktsu-dev\Coder\Coder.App\Program.cs(70,22): error CS1591: Missing XML comment f
+or publicly visible type or member 'InteractiveCommand.Execute(CommandContext, Interactive
+Command.Settings)'
+    C:\dev\ktsu-dev\Coder\Coder.App\Program.cs(356,3): error IDE0055: Fix formatting (http
+s://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rules/ide0055)
+
+Build failed with 5 error(s) and 4 warning(s) in 2.2s
+  01:32:19  Coder  2.519s   1 - ERROR 
+  11:32:19 main  ~3 
+ PS C:\dev\ktsu-dev\Coder >
+```
+
+---
+
+I need to add the missing XML documentation for the other classes. Let me add them:
+
+---
+
+
+
+---
+
+
+
+---
+
+Now let me try to build again:
+
+---
+
+```bash
+dotnet build Coder.App
+```
+
+```
+ PS C:\dev\ktsu-dev\Coder >dotnet build Coder.App
+
+  C:\dev\ktsu-dev\Coder\Coder.App\Coder.App.csproj                         Restore (0.0s)
+                                                                                   (0.1s) 
+Restore complete (0.6s)
+oft.Build.Tasks.Git.targets(25,5): warning : Repository 'C:\dev\ktsu-dev\Coder' has no rem
+oft.Build.Tasks.Git.targets(25,5): warning : Repository 'C:\dev\ktsu-dev\Coder' has no rem
+ote.
+    C:\Users\MatthewEdmondson\.nuget\packages\microsoft.sourcelink.common\8.0.0\build\Micr
+osoft.SourceLink.Common.targets(53,5): warning : Source control information is not availab
+le - the generated source link is empty.
+    C:\dev\ktsu-dev\Coder\Coder.App\Program.cs(374,3): error IDE0055: Fix formatting (http
+s://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rules/ide0055)
+
+Build failed with 1 error(s) and 4 warning(s) in 2.1s
+  01:33:55  Coder  2.399s   1 - ERROR 
+  11:33:55 main  ~3 
+ PS C:\dev\ktsu-dev\Coder >
+```
+
+---
+
+There's still a formatting issue. Let me check what's around line 374:
+
+---
+
+<details>
+            <summary>Grep search for "table.AddRow" • **2** files</summary>
+        
+| File | Line | Match |
+|------|------|-------|
+| `file:///c%3A/dev/ktsu-dev/Coder/Coder.App/Program.cs` | L334 | `table.AddRow("Total Functions", functions.Count.ToString());` |
+| `file:///c%3A/dev/ktsu-dev/Coder/Coder.App/Program.cs` | L335 | `table.AddRow("Functions with Parameters", functions.Count(f => f.Parameters.Count != 0).ToString());` |
+| `file:///c%3A/dev/ktsu-dev/Coder/Coder.App/Program.cs` | L336 | `table.AddRow("Functions with Return Values", functions.Count(f => f.ReturnType != "void").ToString());` |
+| `file:///c%3A/dev/ktsu-dev/Coder/Coder.App/Program.cs` | L340 | `table.AddRow("Average Parameters", functions.Average(f => f.Parameters.Count).ToString("F1"));` |
+| `file:///c%3A/dev/ktsu-dev/Coder/Coder.App/Program.cs` | L379 | `table.AddRow(function.Name ?? "Unknown", function.ReturnType ?? "void", paramStr);` |
+| `file:///c%3A/dev/ktsu-dev/Coder/Coder.App/Program.cs` | L576 | `table.AddRow(pythonCode ?? "Error generating code", yamlOutput ?? "Error serializing YAML");` |
+| `file:///c%3A/dev/ktsu-dev/Coder/Coder.App/Program.cs` | L334 | `table.AddRow("Total Functions", functions.Count.ToString());` |
+| `file:///c%3A/dev/ktsu-dev/Coder/Coder.App/Program.cs` | L335 | `table.AddRow("Functions with Parameters", functions.Count(f => f.Parameters.Count != 0).ToString());` |
+| `file:///c%3A/dev/ktsu-dev/Coder/Coder.App/Program.cs` | L336 | `table.AddRow("Functions with Return Values", functions.Count(f => f.ReturnType != "void").ToString());` |
+| `file:///c%3A/dev/ktsu-dev/Coder/Coder.App/Program.cs` | L340 | `table.AddRow("Average Parameters", functions.Average(f => f.Parameters.Count).ToString("F1"));` |
+| `file:///c%3A/dev/ktsu-dev/Coder/Coder.App/Program.cs` | L379 | `table.AddRow(function.Name ?? "Unknown", function.ReturnType ?? "void", paramStr);` |
+| `file:///c%3A/dev/ktsu-dev/Coder/Coder.App/Program.cs` | L576 | `table.AddRow(pythonCode ?? "Error generating code", yamlOutput ?? "Error serializing YAML");` |
+
+</details>
+
+---
+
+Let me check the specific area around line 374-379:
+
+---
+
+<details>
+            <summary>Searched codebase "ShowFunctionList formatting issue" • **25** results</summary>
+        
+| File | Lines |
+|------|-------|
+| `Coder.App/Program.cs` | L308-381 |
+| `Coder.App/Program.cs` | L229-308 |
+| `Coder.App/Program.cs` | L73-149 |
+| `Coder.App/Program.cs` | L1-73 |
+| `Coder.App/Program.cs` | L381-444 |
+| `Coder.App/Program.cs` | L444-515 |
+| `Coder.CLI/SampleCLI.cs` | L1-70 |
+| `Coder.App/Program.cs` | L149-229 |
+| `Coder.Core/Ast/FunctionDeclaration.cs` | L1-70 |
+| `Coder.CLI/SampleCLI.cs` | L70-130 |
+| `Coder.App/Program.cs` | L515-539 |
+| `Coder.CLI/SampleCLI.cs` | L130-146 |
+| `Coder.Core/Serialization/YamlDeserializer.cs` | L63-132 |
+| `Coder.Core/Languages/PythonGenerator.cs` | L1-68 |
+| `scripts/PSBuild.psm1` | L1904-1976 |
+| `Coder.Core/Languages/PythonGenerator.cs` | L68-144 |
+| `scripts/PSBuild.psm1` | L1354-1401 |
+| `Coder.Core/Languages/LanguageGeneratorBase.cs` | L1-63 |
+| `scripts/PSBuild.psm1` | L1754-1815 |
+| `scripts/PSBuild.psm1` | L1401-1433 |
+| `scripts/PSBuild.psm1` | L1145-1184 |
+| `scripts/PSBuild.psm1` | L1028-1079 |
+| `Coder.Core/Serialization/YamlSerializer.cs` | L63-135 |
+| `Coder.Core/Ast/FunctionDeclaration.cs` | L70-92 |
+| `scripts/PSBuild.psm1` | L1815-1866 |
+
+</details>
+
+---
+
+I'll help you convert the Coder.App project to use a TUI with Spectre.Console. Let me first explore the current structure of the Coder.App project to understand what we're working with.
+
+---
+
+<details>
+            <summary>Listed directory Coder.App • **4** results</summary>
+        
+| Name |
+|-------|
+| 📄 `Program.cs` |
+| 📄 `Coder.App.csproj` |
+| 📁 `obj` |
+| 📁 `bin` |
+
+</details>
+
+---
+
+Let me examine the current Program.cs and project file to understand the existing implementation:
+
+---
+
+Read file: Coder.App/Program.cs
+
+---
+
+Read file: Coder.App/Coder.App.csproj
+
+---
+
+Perfect! I can see that the Coder.App project has already been converted to use a TUI with Spectre.Console. The current implementation includes:
+
+1. **Spectre.Console and Spectre.Console.Cli** packages are already included
+2. **Command-line interface** with multiple commands:
+   - Default `CoderCommand` that launches interactive mode
+   - `InteractiveCommand` for the main TUI experience
+   - `GenerateCommand` for batch code generation
+   - `DemoCommand` for demonstrations
+
+3. **Interactive TUI features**:
+   - Welcome screen with ASCII art title
+   - Main menu with emoji icons
+   - Function creation workflow
+   - Code generation capabilities
+   - YAML output viewing
+   - Statistics and demo modes
+
+Let me check if there are any compilation issues by building the project:
+
+---
+
+```bash
+cd "C:\dev\ktsu-dev\Coder\Coder.App" && dotnet build
+```
+
+```
+ PS C:\dev\ktsu-dev\Coder >cd "C:\dev\ktsu-dev\Coder\Coder.App" && dotnet build   
+
+  C:\dev\ktsu-dev\Coder\Coder.App\Coder.App.csproj                         Restore (0.0s) 
+Restore complete (0.7s)
+  Coder.Core net9.0 succeeded with 2 warning(s) (0.1s) → C:\dev\ktsu-dev\Coder\Coder.Core\
+bin\Debug\net9.0\ktsu.Coder.Core.dll
+    C:\Users\MatthewEdmondson\.nuget\packages\microsoft.build.tasks.git\8.0.0\build\Micros
+  Coder.App failed with 1 error(s) and 2 warning(s) (5.0s)
+    C:\Users\MatthewEdmondson\.nuget\packages\microsoft.build.tasks.git\8.0.0\build\Micros
+oft.Build.Tasks.Git.targets(25,5): warning : Repository 'C:\dev\ktsu-dev\Coder' has no rem
+ote.
+    C:\Users\MatthewEdmondson\.nuget\packages\microsoft.sourcelink.common\8.0.0\build\Micr
+osoft.SourceLink.Common.targets(53,5): warning : Source control information is not availab
+le - the generated source link is empty.
+    C:\dev\ktsu-dev\Coder\Coder.App\Program.cs(374,3): error IDE0055: Fix formatting (http
+s://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rules/ide0055)
+
+Build failed with 1 error(s) and 4 warning(s) in 6.8s
+  01:35:03  Coder  7.121s   1 - ERROR 
+  11:35:03 main  ~3 
+ PS C:\dev\ktsu-dev\Coder\Coder.App >
+```
+
+---
+
+There's a formatting error at line 374. Let me check what's happening there:
+
+---
+
+Read file: Coder.App/Program.cs
+
+---
+
+I can see the issue! At line 374, there's an indentation problem with the `foreach` loop. Let me fix this formatting issue:
+
+---
+
+
+
+---
+
+Let me get the exact context around that line:
+
+---
+
+Read file: Coder.App/Program.cs
+
+---
+
+Now I can see the exact issue. The `foreach` loop at line 374 has incorrect indentation. Let me fix it:
+
+---
+
+
+
+---
+
+Let me try a more specific approach:
+
+---
+
+
+
+---
+
+
+
+
+
+---
+
+_**User**_
+
+continue
+
+---
+
+_**Assistant**_
+
+
+
+---
+
+I can see that the Coder.App project has already been successfully converted to use a TUI with Spectre.Console! The implementation includes a comprehensive interactive interface with multiple commands and features. However, there's one formatting error that needs to be fixed.
+
+Let me fix the indentation issue at line 374:
+
+---
+
+
+
+---
+
 
 
 ---
