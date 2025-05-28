@@ -1,0 +1,51 @@
+---
+description: AI rules derived by SpecStory from the project AI interaction history
+globs: *
+---
+
+## Headers
+
+This document defines the rules and guidelines for the AI coding assistant to follow while working on this project. It covers project structure, coding standards, workflow, and best practices. This file is a living document and will be updated as the project evolves.
+
+## Project Description
+
+The AI coding assistant is working on a multilingual code generation library named "Coder". This library aims to provide a flexible and extensible way to represent code in an Abstract Syntax Tree (AST) format, serialize and deserialize the AST to YAML, and generate code in various programming languages from the AST.
+
+## TECH STACK
+
+- .NET 7 or later
+- YamlDotNet (for YAML serialization and deserialization)
+
+## PROJECT DOCUMENTATION & CONTEXT SYSTEM
+
+- Implementation Plan: `docs/implementation-plan.md`
+
+## CODING STANDARDS
+
+- Follow .NET coding conventions.
+- Use meaningful names for variables, methods, and classes.
+- Write clear and concise code with comments where necessary.
+- Apply DRY (Don't Repeat Yourself) principle.
+- Handle errors gracefully with appropriate exception handling.
+- Write unit tests for all components.
+- Use dependency injection to promote loose coupling.
+- All files must include a copyright notice.
+
+## DEBUGGING
+
+- Use the debugger to step through code and inspect variables.
+- Write unit tests to isolate and fix bugs.
+- Use logging to track the flow of execution and identify issues.
+
+## WORKFLOW & RELEASE RULES
+
+- Create a new branch for each feature or bug fix.
+- Submit a pull request for review before merging into the main branch.
+- All pull requests must pass unit tests and code review.
+- Use semantic versioning for releases.
+
+## AST RULES
+
+- The AST should be language-agnostic.
+- AST nodes should be serializable and deserializable.
+- Implement a `Clone()` method for all AST nodes to enable deep copying.
