@@ -18,6 +18,8 @@ public static class CoderCLI
 	/// </summary>
 	public static void Main(string[] args)
 	{
+		ArgumentNullException.ThrowIfNull(args);
+
 		Console.WriteLine("=== Coder CLI - Code Generation Tool ===");
 		Console.WriteLine();
 
@@ -57,6 +59,13 @@ public static class CoderCLI
 			// Demonstrate round-trip serialization
 			var deserializer = new YamlDeserializer();
 			var deserializedAst = deserializer.Deserialize(yamlContent);
+			if (deserializedAst == null)
+			{
+				Console.WriteLine("❌ Failed to deserialize YAML content");
+				Environment.ExitCode = 1;
+				return;
+			}
+
 			var regeneratedCode = pythonGenerator.Generate(deserializedAst);
 
 			Console.WriteLine("Round-trip Test (YAML -> AST -> Python):");
@@ -66,11 +75,24 @@ public static class CoderCLI
 
 			Console.WriteLine("✓ All operations completed successfully!");
 		}
-		catch (Exception ex)
+		catch (ArgumentException ex)
 		{
-			Console.WriteLine($"❌ Error: {ex.Message}");
+			Console.WriteLine($"❌ Argument Error: {ex.Message}");
 			Environment.ExitCode = 1;
 		}
+		catch (InvalidOperationException ex)
+		{
+			Console.WriteLine($"❌ Operation Error: {ex.Message}");
+			Environment.ExitCode = 1;
+		}
+#pragma warning disable CA1031 // Do not catch general exception types
+		catch (Exception ex)
+		{
+			Console.WriteLine($"❌ Unexpected Error: {ex.Message}");
+			Console.WriteLine($"Stack trace: {ex.StackTrace}");
+			Environment.ExitCode = 1;
+		}
+#pragma warning restore CA1031 // Do not catch general exception types
 	}
 
 	private static FunctionDeclaration CreateSampleFunction()

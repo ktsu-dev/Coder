@@ -41,10 +41,17 @@ public class AstLeafNode<T> : AstNode
 	/// <returns>A new instance of the leaf node with the same value.</returns>
 	public override AstNode Clone()
 	{
-		return new AstLeafNode<T>
+		var clone = new AstLeafNode<T>
 		{
-			Value = Value,
-			Metadata = new(Metadata),
+			Value = Value
 		};
+
+		// Copy metadata
+		foreach (var (key, value) in Metadata)
+		{
+			clone.Metadata[key] = value;
+		}
+
+		return clone;
 	}
 }

@@ -4,7 +4,6 @@
 
 namespace ktsu.Coder.Core.Ast;
 
-using System.Collections.Generic;
 using System.Collections.ObjectModel;
 
 /// <summary>
@@ -60,9 +59,14 @@ public class FunctionDeclaration : AstCompositeNode
 		var clone = new FunctionDeclaration
 		{
 			Name = Name,
-			ReturnType = ReturnType,
-			Metadata = new Dictionary<string, object?>(Metadata)
+			ReturnType = ReturnType
 		};
+
+		// Copy metadata
+		foreach (var (key, value) in Metadata)
+		{
+			clone.Metadata[key] = value;
+		}
 
 		// Clone parameters
 		foreach (var parameter in Parameters)

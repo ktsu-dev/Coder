@@ -9,13 +9,15 @@ This document defines the rules and guidelines for the AI coding assistant to fo
 
 ## Project Description
 
-The AI coding assistant is working on a multilingual code generation library named "Coder". This library aims to provide a flexible and extensible way to represent code in an Abstract Syntax Tree (AST) format, serialize and deserialize the AST to YAML, and generate code in various programming languages from the AST.
+The AI coding assistant is working on a multilingual code generation library named "Coder". This library aims to provide a flexible and extensible way to represent code in an Abstract Syntax Tree (AST) format, serialize and deserialize the AST to YAML, and generate code in various programming languages from the AST. The application project should be a TUI (Text User Interface) using Spectre.Console.
 
 ## TECH STACK
 
 - .NET 7 or later
 - YamlDotNet (for YAML serialization and deserialization)
 - .NET 9 (identified during build process)
+- Spectre.Console (for TUI)
+- Spectre.Console.Cli (for command-line interface features)
 
 ## PROJECT DOCUMENTATION & CONTEXT SYSTEM
 
@@ -31,15 +33,23 @@ The AI coding assistant is working on a multilingual code generation library nam
 - Write unit tests for all components.
 - Use dependency injection to promote loose coupling.
 - All files must include a copyright notice.
-- Implement the `Clone()` method properly in AST node classes, ensuring derived classes `override` it.
-- Address code analysis warnings and errors identified during build processes (e.g., CS8852, IDE2003, CA1502, IDE0010).
+- Implement the `Clone()` method properly in AST node classes, ensuring derived classes `override` it. When cloning `Metadata`, clear the existing dictionary and copy the values from the original instead of assigning a new dictionary.
+- Address code analysis warnings and errors identified during build processes (e.g., CS8852, IDE2003, CA1502, IDE0010, CA2227, CA1822, CS8604, CA1031, CA1062, IDE0060).
+    - Ensure that all method parameters are validated for null values, throwing `ArgumentNullException` when necessary.
+    - Suppress CA1031 warnings only when catching generic exceptions at the top level of a `Main` method, using a pragma directive.
+- Ensure that deserialization logic handles the correct casing for node type names. The serializer uses capitalized names (e.g., `FunctionDeclaration`), so the deserializer should be updated to match.
+- Always validate parameters for null values and throw `ArgumentNullException` when null.
 
 ## DEBUGGING
 
 - Use the debugger to step through code and inspect variables.
 - Write unit tests to isolate and fix bugs.
 - Use logging to track the flow of execution and identify issues.
-- Address code analysis warnings, such as those related to cyclomatic complexity, by refactoring code into smaller, more manageable methods.
+- Address code analysis warnings and errors identified during build processes (e.g., CS8852, IDE2003, CA1502, IDE0010) by refactoring code or modifying code as needed. Specifically:
+    - **CS8852**: Ensure init-only properties are only assigned during object initialization, in the constructor, or in an `init` accessor.
+    - **IDE2003**: Enforce blank lines between blocks and subsequent statements.
+    - **CA1502**: Refactor methods with high cyclomatic complexity into smaller, more manageable methods.
+    - **IDE0010**: Populate switch statements with all possible enum values or provide a default case.
 - Analyze and fix compilation errors reported by the .NET build process.
 
 ## WORKFLOW & RELEASE RULES
@@ -54,5 +64,6 @@ The AI coding assistant is working on a multilingual code generation library nam
 - The AST should be language-agnostic.
 - AST nodes should be serializable and deserializable.
 - Implement a `Clone()` method for all AST nodes to enable deep copying.
-- The `Metadata` property in `AstNode` and derived classes should have a `protected init` setter to allow setting during object initialization in derived classes and prevent modification after initialization.
+- The `Metadata` property in `AstNode` and derived classes should have a `protected init` setter to allow setting during object initialization in derived classes and prevent modification after initialization. When cloning `Metadata`, clear the existing dictionary and copy the values from the original instead of assigning a new dictionary.
 - Ensure that deserialization logic respects the `protected init` setter of the `Metadata` property in `AstNode` and derived classes. Refactor deserialization logic if necessary to correctly initialize this property.
+- When cloning `Metadata`, clear the existing dictionary and copy the values from the original instead of assigning a new dictionary.

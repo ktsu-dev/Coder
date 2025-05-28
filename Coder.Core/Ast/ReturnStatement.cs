@@ -4,8 +4,6 @@
 
 namespace ktsu.Coder.Core.Ast;
 
-using System.Collections.Generic;
-
 /// <summary>
 /// Represents a return statement in the abstract syntax tree.
 /// </summary>
@@ -75,10 +73,13 @@ public class ReturnStatement : AstCompositeNode
 	/// <returns>A new instance of the return statement with the same properties and cloned children.</returns>
 	public override AstNode Clone()
 	{
-		var clone = new ReturnStatement
+		var clone = new ReturnStatement();
+
+		// Copy metadata
+		foreach (var (key, value) in Metadata)
 		{
-			Metadata = new Dictionary<string, object?>(Metadata)
-		};
+			clone.Metadata[key] = value;
+		}
 
 		// Clone the children dictionary which includes the Expression
 		foreach (var (key, child) in Children)

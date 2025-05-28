@@ -4,8 +4,6 @@
 
 namespace ktsu.Coder.Core.Ast;
 
-using System.Collections.Generic;
-
 /// <summary>
 /// Represents a parameter in a function declaration.
 /// </summary>
@@ -67,13 +65,20 @@ public class Parameter : AstNode
 	/// <returns>A new instance of the parameter with the same properties.</returns>
 	public override AstNode Clone()
 	{
-		return new Parameter
+		var clone = new Parameter
 		{
 			Name = Name,
 			Type = Type,
 			IsOptional = IsOptional,
-			DefaultValue = DefaultValue,
-			Metadata = new Dictionary<string, object?>(Metadata)
+			DefaultValue = DefaultValue
 		};
+
+		// Copy metadata
+		foreach (var (key, value) in Metadata)
+		{
+			clone.Metadata[key] = value;
+		}
+
+		return clone;
 	}
 }

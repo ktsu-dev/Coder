@@ -440,6 +440,855 @@ Read file: Coder.Core/Serialization/YamlSerializer.cs
 
 
 
+Now I understand the issues. Let me fix them one by one:
+
+1. **Fix the Metadata property issue**: Change it from `protected init` to `protected set` so it can be assigned during deserialization
+2. **Fix the switch statement**: Add a default case
+3. **Fix the blank line issue**: Add missing blank line
+4. **Refactor the complex deserializer method**: Break it down into smaller methods
+
+Let's start:
+
+---
+
+
+
+---
+
+
+
+---
+
+
+
+---
+
+Now let's fix the complex deserializer method by breaking it down:
+
+---
+
+
+
+---
+
+Now let's also fix the metadata assignment in the Parameter and ReturnStatement deserializers:
+
+---
+
+
+
+---
+
+
+
+---
+
+Now let's try building again to see if we fixed the issues:
+
+---
+
+```bash
+dotnet build Coder.Core
+```
+
+```
+ PS C:\dev\ktsu-dev\Coder >dotnet build Coder.Core
+
+                                                                                   (0.1s) 
+22: Member 'DeserializeFunctionParameters' does not access instance data and can be marked
+ as static (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca
+1822)
+  Coder.Core net8.0 failed with 2 error(s) and 2 warning(s) (0.7s)
+    C:\Users\MatthewEdmondson\.nuget\packages\microsoft.build.tasks.git\8.0.0\build\Micros
+oft.Build.Tasks.Git.targets(25,5): warning : Repository 'C:\dev\ktsu-dev\Coder' has no rem
+ote.
+    C:\Users\MatthewEdmondson\.nuget\packages\microsoft.sourcelink.common\8.0.0\build\Micr
+osoft.SourceLink.Common.targets(53,5): warning : Source control information is not availab
+le - the generated source link is empty.
+    C:\dev\ktsu-dev\Coder\Coder.Core\Ast\AstNode.cs(18,37): error CA2227: Change 'Metadata
+amentals/code-analysis/quality-rules/ca2227)
+    C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlDeserializer.cs(113,15): error CA18
+22: Member 'DeserializeFunctionParameters' does not access instance data and can be marked
+ as static (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca
+1822)
+
+Build failed with 4 error(s) and 4 warning(s) in 3.2s
+  01:09:02  Coder  3.848s   1 - ERROR 
+  11:09:02 main  ?1 ~5 
+ PS C:\dev\ktsu-dev\Coder >
+```
+
+---
+
+Good progress! We have fewer errors now. Let's fix the remaining issues:
+
+1. **CA2227**: The Metadata property should be read-only
+2. **CA1822**: Some methods can be marked as static
+
+---
+
+
+
+---
+
+
+
+---
+
+Wait, I need to check if `DeserializeParameter` is static or not, since it's called from the now-static method:
+
+---
+
+<details>
+            <summary>Grep search for "private.*DeserializeParameter" • **2** files</summary>
+        
+| File | Line | Match |
+|------|------|-------|
+| `file:///c%3A/dev/ktsu-dev/Coder/Coder.Core/Serialization/YamlDeserializer.cs` | L192 | `private static Parameter DeserializeParameter(object? nodeData)` |
+| `file:///c%3A/dev/ktsu-dev/Coder/Coder.Core/Serialization/YamlDeserializer.cs` | L192 | `private static Parameter DeserializeParameter(object? nodeData)` |
+
+</details>
+
+---
+
+Good, it's already static. Now let me check the other methods that might need to be static:
+
+---
+
+
+
+---
+
+Wait, that changed the wrong method. Let me fix this properly. I need to check which methods call instance methods:
+
+---
+
+<details>
+            <summary>Grep search for "DeserializeNode" • **2** files</summary>
+        
+| File | Line | Match |
+|------|------|-------|
+| `file:///c%3A/dev/ktsu-dev/Coder/Coder.Core/Serialization/YamlDeserializer.cs` | L48 | `return DeserializeNode(nodeType, nodeData);` |
+| `file:///c%3A/dev/ktsu-dev/Coder/Coder.Core/Serialization/YamlDeserializer.cs` | L51 | `private AstNode? DeserializeNode(string nodeType, object? nodeData)` |
+| `file:///c%3A/dev/ktsu-dev/Coder/Coder.Core/Serialization/YamlDeserializer.cs` | L145 | `var stmt = DeserializeNode(stmtType.ToString() ?? string.Empty, stmtData);` |
+| `file:///c%3A/dev/ktsu-dev/Coder/Coder.Core/Serialization/YamlDeserializer.cs` | L183 | `var child = DeserializeNode(childType.ToString() ?? string.Empty, childData);` |
+| `file:///c%3A/dev/ktsu-dev/Coder/Coder.Core/Serialization/YamlDeserializer.cs` | L234 | `var expr = DeserializeNode(exprType.ToString() ?? string.Empty, exprData);` |
+| `file:///c%3A/dev/ktsu-dev/Coder/Coder.Core/Serialization/YamlDeserializer.cs` | L48 | `return DeserializeNode(nodeType, nodeData);` |
+| `file:///c%3A/dev/ktsu-dev/Coder/Coder.Core/Serialization/YamlDeserializer.cs` | L51 | `private AstNode? DeserializeNode(string nodeType, object? nodeData)` |
+| `file:///c%3A/dev/ktsu-dev/Coder/Coder.Core/Serialization/YamlDeserializer.cs` | L145 | `var stmt = DeserializeNode(stmtType.ToString() ?? string.Empty, stmtData);` |
+| `file:///c%3A/dev/ktsu-dev/Coder/Coder.Core/Serialization/YamlDeserializer.cs` | L183 | `var child = DeserializeNode(childType.ToString() ?? string.Empty, childData);` |
+| `file:///c%3A/dev/ktsu-dev/Coder/Coder.Core/Serialization/YamlDeserializer.cs` | L234 | `var expr = DeserializeNode(exprType.ToString() ?? string.Empty, exprData);` |
+
+</details>
+
+---
+
+I see that `DeserializeNode` is an instance method, so the methods that call it cannot be static. Let me revert the change and fix it properly:
+
+---
+
+
+
+---
+
+Let me read the current state of the file to see what happened:
+
+---
+
+Read file: Coder.Core/Serialization/YamlDeserializer.cs
+
+---
+
+I see the issue. The `DeserializeFunctionParameters` method is marked as static but it calls `DeserializeParameter` which calls `DeserializeMetadata` which is also static. However, the error suggests that `DeserializeFunctionParameters` should be static but it's not. Let me check the exact error again and fix it:
+
+---
+
+```bash
+dotnet build Coder.Core --verbosity normal
+```
+
+```
+ PS C:\dev\ktsu-dev\Coder >dotnet build Coder.Core --verbosity normal
+
+  C:\dev\ktsu-dev\Coder\Coder.Core\Coder.Core.csproj                       Restore (0.0s) 
+Restore complete (1.0s)
+    C:\dev\ktsu-dev\Coder\Coder.Core\Ast\ReturnStatement.cs(80,4): error CS0200: Property 
+or indexer 'AstNode.Metadata' cannot be assigned to -- it is read only
+    C:\dev\ktsu-dev\Coder\Coder.Core\Ast\FunctionDeclaration.cs(64,4): error CS0200: Prope
+rty or indexer 'AstNode.Metadata' cannot be assigned to -- it is read only
+  Coder.Core net8.0 failed with 4 error(s) and 2 warning(s) (0.6s)
+    C:\Users\MatthewEdmondson\.nuget\packages\microsoft.build.tasks.git\8.0.0\build\Micros
+oft.Build.Tasks.Git.targets(25,5): warning : Repository 'C:\dev\ktsu-dev\Coder' has no rem
+ote.
+    C:\Users\MatthewEdmondson\.nuget\packages\microsoft.sourcelink.common\8.0.0\build\Micr
+osoft.SourceLink.Common.targets(53,5): warning : Source control information is not availab
+le - the generated source link is empty.
+    C:\dev\ktsu-dev\Coder\Coder.Core\Ast\ReturnStatement.cs(80,4): error CS0200: Property 
+or indexer 'AstNode.Metadata' cannot be assigned to -- it is read only
+    C:\dev\ktsu-dev\Coder\Coder.Core\Ast\Parameter.cs(76,4): error CS0200: Property or ind
+exer 'AstNode.Metadata' cannot be assigned to -- it is read only
+    C:\dev\ktsu-dev\Coder\Coder.Core\Ast\AstLeafNode.cs(47,4): error CS0200: Property or i
+ndexer 'AstNode.Metadata' cannot be assigned to -- it is read only
+    C:\dev\ktsu-dev\Coder\Coder.Core\Ast\FunctionDeclaration.cs(64,4): error CS0200: Prope
+rty or indexer 'AstNode.Metadata' cannot be assigned to -- it is read only
+
+Build failed with 8 error(s) and 4 warning(s) in 2.6s
+  01:09:45  Coder  3.077s   1 - ERROR 
+  11:09:45 main  ~2 
+ PS C:\dev\ktsu-dev\Coder >
+```
+
+---
+
+Ah! The issue is that I made the `Metadata` property read-only, but there are other places in the code that try to assign to it. Let me check those files and see what they're doing:
+
+---
+
+Read file: Coder.Core/Ast/ReturnStatement.cs
+
+---
+
+I see the issue! The `Clone()` methods are trying to assign to the `Metadata` property. Since I made it read-only, I need to change the approach. Instead of making it read-only, I should make it have a protected setter but allow modification of the dictionary contents. Let me fix this:
+
+---
+
+
+
+---
+
+Now let's try building again:
+
+---
+
+```bash
+dotnet build Coder.Core
+```
+
+```
+ PS C:\dev\ktsu-dev\Coder >dotnet build Coder.Core
+
+  C:\dev\ktsu-dev\Coder\Coder.Core\Coder.Core.csproj                       Restore (0.0s)
+                                                                                   (0.1s) 
+osoft.SourceLink.Common.targets(53,5): warning : Source control information is not availab
+le - the generated source link is empty.
+oft.Build.Tasks.Git.targets(25,5): warning : Repository 'C:\dev\ktsu-dev\Coder' has no rem
+ote.
+    C:\Users\MatthewEdmondson\.nuget\packages\microsoft.sourcelink.common\8.0.0\build\Micr
+osoft.SourceLink.Common.targets(53,5): warning : Source control information is not availab
+le - the generated source link is empty.
+    C:\dev\ktsu-dev\Coder\Coder.Core\Ast\AstNode.cs(18,37): error CA2227: Change 'Metadata
+' to be read-only by removing the property setter (https://learn.microsoft.com/dotnet/fund
+amentals/code-analysis/quality-rules/ca2227)
+
+Build failed with 2 error(s) and 4 warning(s) in 3.0s
+  01:10:06  Coder  3.419s   1 - ERROR 
+  11:10:06 main  ~1 
+ PS C:\dev\ktsu-dev\Coder >
+```
+
+---
+
+The analyzer is still complaining about the setter. Let me check if there's a way to suppress this specific warning or if I need to refactor the approach. Let me look at how the Clone methods are implemented and see if I can fix them differently:
+
+---
+
+Read file: Coder.Core/Ast/FunctionDeclaration.cs
+
+---
+
+I see the pattern. Instead of assigning a new dictionary to `Metadata`, I should clear the existing one and copy the values. Let me fix all the Clone methods:
+
+---
+
+
+
+---
+
+
+
+---
+
+
+
+---
+
+Now let me check the other AST node files for similar issues:
+
+---
+
+<details>
+            <summary>Grep search for "Metadata = new Dictionary" • **1** files</summary>
+        
+| File | Line | Match |
+|------|------|-------|
+| `file:///c%3A/dev/ktsu-dev/Coder/Coder.Core/Ast/Parameter.cs` | L75 | `Metadata = new Dictionary<string, object?>(Metadata)` |
+
+</details>
+
+---
+
+Read file: Coder.Core/Ast/Parameter.cs
+
+---
+
+
+
+---
+
+<details>
+            <summary>Grep search for "Metadata = new Dictionary" • **0** files</summary>
+        
+No results found
+</details>
+
+---
+
+
+
+Let me check if there are any other AST node files that might have similar issues:
+
+---
+
+Read file: Coder.Core/Ast/AstLeafNode.cs
+
+---
+
+Found another one! Let me fix this too:
+
+---
+
+
+
+---
+
+Now let me make the Metadata property read-only:
+
+---
+
+
+
+---
+
+It's already read-only. Let me try building again:
+
+---
+
+```bash
+dotnet build Coder.Core
+```
+
+```
+ PS C:\dev\ktsu-dev\Coder >dotnet build Coder.Core
+
+  C:\dev\ktsu-dev\Coder\Coder.Core\Coder.Core.csproj                       Restore (0.0s)
+                                                                                   (0.1s) 
+Restore complete (1.4s)
+  Coder.Core net9.0 failed with 3 error(s) and 2 warning(s) (0.9s)
+    C:\Users\MatthewEdmondson\.nuget\packages\microsoft.build.tasks.git\8.0.0\build\Micros
+oft.Build.Tasks.Git.targets(25,5): warning : Repository 'C:\dev\ktsu-dev\Coder' has no rem
+ote.
+    C:\Users\MatthewEdmondson\.nuget\packages\microsoft.sourcelink.common\8.0.0\build\Micr
+osoft.SourceLink.Common.targets(53,5): warning : Source control information is not availab
+le - the generated source link is empty.
+    C:\dev\ktsu-dev\Coder\Coder.Core\Ast\FunctionDeclaration.cs(7,1): error IDE0005: Using
+ directive is unnecessary. (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/
+style-rules/ide0005)
+    C:\dev\ktsu-dev\Coder\Coder.Core\Ast\Parameter.cs(7,1): error IDE0005: Using directive
+ is unnecessary. (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rule
+s/ide0005)
+    C:\dev\ktsu-dev\Coder\Coder.Core\Ast\ReturnStatement.cs(7,1): error IDE0005: Using dir
+ective is unnecessary. (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/styl
+e-rules/ide0005)
+  Coder.Core net8.0 failed with 3 error(s) and 2 warning(s) (1.4s)
+    C:\Users\MatthewEdmondson\.nuget\packages\microsoft.build.tasks.git\8.0.0\build\Micros
+oft.Build.Tasks.Git.targets(25,5): warning : Repository 'C:\dev\ktsu-dev\Coder' has no rem
+ote.
+    C:\Users\MatthewEdmondson\.nuget\packages\microsoft.sourcelink.common\8.0.0\build\Micr
+osoft.SourceLink.Common.targets(53,5): warning : Source control information is not availab
+le - the generated source link is empty.
+    C:\dev\ktsu-dev\Coder\Coder.Core\Ast\Parameter.cs(7,1): error IDE0005: Using directive
+ is unnecessary. (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rule
+s/ide0005)
+    C:\dev\ktsu-dev\Coder\Coder.Core\Ast\FunctionDeclaration.cs(7,1): error IDE0005: Using
+ directive is unnecessary. (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/
+style-rules/ide0005)
+    C:\dev\ktsu-dev\Coder\Coder.Core\Ast\ReturnStatement.cs(7,1): error IDE0005: Using dir
+ective is unnecessary. (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/styl
+e-rules/ide0005)
+
+Build failed with 6 error(s) and 4 warning(s) in 3.9s
+  01:12:02  Coder  4.356s   1 - ERROR 
+  11:12:02 main  ~8
+ PS C:\dev\ktsu-dev\Coder >
+```
+
+---
+
+Great! Now we just have some unnecessary using directives to remove. These are easy fixes:
+
+---
+
+
+
+---
+
+
+
+---
+
+
+
+---
+
+Now let's try building again:
+
+---
+
+```bash
+dotnet build Coder.Core
+```
+
+```
+ PS C:\dev\ktsu-dev\Coder >dotnet build Coder.Core
+
+  C:\dev\ktsu-dev\Coder\Coder.Core\Coder.Core.csproj                       Restore (0.0s)
+                                                                                   (0.0s) 
+oft.Build.Tasks.Git.targets(25,5): warning : Repository 'C:\dev\ktsu-dev\Coder' has no rem
+ote.
+    C:\Users\MatthewEdmondson\.nuget\packages\microsoft.sourcelink.common\8.0.0\build\Micr
+osoft.SourceLink.Common.targets(53,5): warning : Source control information is not availab
+  Coder.Core net8.0 succeeded with 2 warning(s) (0.6s) → Coder.Core\bin\Debug\net8.0\ktsu.
+Coder.Core.dll
+    C:\Users\MatthewEdmondson\.nuget\packages\microsoft.build.tasks.git\8.0.0\build\Micros
+oft.Build.Tasks.Git.targets(25,5): warning : Repository 'C:\dev\ktsu-dev\Coder' has no rem
+ote.
+    C:\Users\MatthewEdmondson\.nuget\packages\microsoft.sourcelink.common\8.0.0\build\Micr
+osoft.SourceLink.Common.targets(53,5): warning : Source control information is not availab
+le - the generated source link is empty.
+
+Build succeeded with 4 warning(s) in 2.7s
+  01:12:23  Coder  3.113s  
+  11:12:23 main  ~8 
+ PS C:\dev\ktsu-dev\Coder >
+```
+
+---
+
+Excellent! The core library now builds successfully. Let's build the entire solution:
+
+---
+
+```bash
+dotnet build
+```
+
+```
+ PS C:\dev\ktsu-dev\Coder >dotnet build Coder.Core
+
+                           dotnet build
+
+                                                                                   (0.1s) 
+
+Build succeeded with 1 warning(s) in 0.3s
+  01:12:28  Coder  771ms  
+  11:12:28 main  ~8 
+
+```
+
+---
+
+Perfect! Now let's test the applications:
+
+---
+
+```bash
+dotnet run --project Coder.CLI
+```
+
+```
+ PS C:\dev\ktsu-dev\Coder >dotnet run --project Coder.CLI
+
+  C:\dev\ktsu-dev\Coder\Coder.CLI\Coder.CLI.csproj                         Restore (0.0s) 
+C:\Users\MatthewEdmondson\.nuget\packages\microsoft.build.tasks.git\8.0.0\build\Microsoft.
+ the generated source link is empty.
+C:\Users\MatthewEdmondson\.nuget\packages\microsoft.build.tasks.git\8.0.0\build\Microsoft.
+Build.Tasks.Git.targets(25,5): warning : Repository 'C:\dev\ktsu-dev\Coder' has no remote.
+C:\dev\ktsu-dev\Coder\Coder.CLI\SampleCLI.cs(60,51): error CS8604: Possible null reference
+ argument for parameter 'astNode' in 'string LanguageGeneratorBase.Generate(AstNode astNod
+e)'.
+C:\dev\ktsu-dev\Coder\Coder.CLI\SampleCLI.cs(69,3): error CA1031: Modify 'Main' to catch a
+ more specific allowed exception type, or rethrow the exception (https://learn.microsoft.c
+om/dotnet/fundamentals/code-analysis/quality-rules/ca1031)
+C:\dev\ktsu-dev\Coder\Coder.CLI\SampleCLI.cs(26,8): error CA1062: In externally visible me
+thod 'void CoderCLI.Main(string[] args)', validate parameter 'args' is non-null before usi
+ng it. If appropriate, throw an 'ArgumentNullException' when the argument is 'null'. (http
+s://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1062)
+
+The build failed. Fix the build errors and run again.
+  01:12:38  Coder  3.188s   1 - ERROR 
+  11:12:38 main  ~8 
+ PS C:\dev\ktsu-dev\Coder >
+```
+
+---
+
+There are some issues in the CLI project. Let me fix them:
+
+---
+
+Read file: Coder.CLI/SampleCLI.cs
+
+---
+
+I can see the issues:
+
+1. Line 60: `deserializedAst` could be null but is passed to `Generate` without null check
+2. Line 69: Catching generic `Exception` instead of specific exceptions
+3. Line 26: `args` parameter should be validated for null
+
+Let me fix these:
+
+---
+
+
+
+---
+
+
+
+---
+
+
+
+---
+
+Now let's try running the CLI again:
+
+---
+
+```bash
+dotnet run --project Coder.CLI
+```
+
+```
+ PS C:\dev\ktsu-dev\Coder >dotnet run --project Coder.CLI
+
+  C:\dev\ktsu-dev\Coder\Coder.CLI\Coder.CLI.csproj                         Restore (0.0s)
+                                                                                   (0.1s) 
+Build.Tasks.Git.targets(25,5): warning : Repository 'C:\dev\ktsu-dev\Coder' has no remote.
+C:\Users\MatthewEdmondson\.nuget\packages\microsoft.sourcelink.common\8.0.0\build\Microsof
+ the generated source link is empty.
+C:\Users\MatthewEdmondson\.nuget\packages\microsoft.build.tasks.git\8.0.0\build\Microsoft.
+Build.Tasks.Git.targets(25,5): warning : Repository 'C:\dev\ktsu-dev\Coder' has no remote.
+C:\Users\MatthewEdmondson\.nuget\packages\microsoft.sourcelink.common\8.0.0\build\Microsof
+t.SourceLink.Common.targets(53,5): warning : Source control information is not available -
+ the generated source link is empty.
+C:\dev\ktsu-dev\Coder\Coder.CLI\SampleCLI.cs(88,3): error CA1031: Modify 'Main' to catch a
+ more specific allowed exception type, or rethrow the exception (https://learn.microsoft.c
+om/dotnet/fundamentals/code-analysis/quality-rules/ca1031)
+
+The build failed. Fix the build errors and run again.
+  01:13:11  Coder  2.942s   1 - ERROR 
+  11:13:11 main  ~9 
+ PS C:\dev\ktsu-dev\Coder >
+```
+
+---
+
+The analyzer still doesn't like the generic Exception catch. Let me add a pragma to suppress this warning since we do want to catch all exceptions at the top level:
+
+---
+
+
+
+---
+
+Now let's try running the CLI again:
+
+---
+
+```bash
+dotnet run --project Coder.CLI
+```
+
+```
+ PS C:\dev\ktsu-dev\Coder >dotnet run --project Coder.CLI
+
+                                                                                   (0.1s) 
+C:\Users\MatthewEdmondson\.nuget\packages\microsoft.build.tasks.git\8.0.0\build\Microsoft.
+ the generated source link is empty.
+C:\Users\MatthewEdmondson\.nuget\packages\microsoft.build.tasks.git\8.0.0\build\Microsoft.
+Build.Tasks.Git.targets(25,5): warning : Repository 'C:\dev\ktsu-dev\Coder' has no remote.
+C:\Users\MatthewEdmondson\.nuget\packages\microsoft.sourcelink.common\8.0.0\build\Microsof
+t.SourceLink.Common.targets(53,5): warning : Source control information is not available -
+ the generated source link is empty.
+=== Coder CLI - Code Generation Tool ===
+Generated AST Structure:
+========================
+Function: calculate_sum
+Return Type: int
+Parameters: 3
+  - a: int
+  - b: int
+  - include_debug: bool (optional, default: False)
+Body Statements: 1
+
+YAML Serialization:
+==================
+FunctionDeclaration:
+  name: calculate_sum
+  returnType: int
+  parameters:
+  - name: a
+    type: int
+  - name: b
+    type: int
+  - name: include_debug
+    type: bool
+    isOptional: true
+    defaultValue: False
+  body:
+  - ReturnStatement:
+      expression:
+        Leaf<String>: a + b
+
+
+Generated Python Code:
+=====================
+def calculate_sum(a: int, b: int, include_debug: bool = False) -> int:
+    return "a + b"
+
+
+❌ Failed to deserialize YAML content
+  01:13:28  Coder  2.818s   1 - ERROR 
+  11:13:28 main  ~9
+ PS C:\dev\ktsu-dev\Coder >
+```
+
+---
+
+Great! The CLI is working, but there's an issue with the round-trip deserialization. The YAML is being generated correctly, but the deserializer is failing to parse it back. Looking at the YAML output, I can see the issue - the node type names are capitalized (`FunctionDeclaration`, `ReturnStatement`) but the deserializer is looking for lowercase versions (`functionDeclaration`, `returnStatement`).
+
+Let me check the serializer and deserializer to fix this inconsistency:
+
+---
+
+Read file: Coder.Core/Ast/FunctionDeclaration.cs
+
+---
+
+The issue is that the `GetNodeTypeName()` method returns "FunctionDeclaration" but the deserializer expects "functionDeclaration". I need to fix the deserializer to handle the correct case. Let me update the deserializer:
+
+---
+
+
+
+---
+
+Now let's test the CLI again:
+
+---
+
+```bash
+dotnet run --project Coder.CLI
+```
+
+```
+ PS C:\dev\ktsu-dev\Coder >dotnet run --project Coder.CLI
+
+                                                                                   (0.1s) 
+C:\Users\MatthewEdmondson\.nuget\packages\microsoft.build.tasks.git\8.0.0\build\Microsoft.
+Build.Tasks.Git.targets(25,5): warning : Repository 'C:\dev\ktsu-dev\Coder' has no remote.
+t.SourceLink.Common.targets(53,5): warning : Source control information is not available -
+ the generated source link is empty.
+C:\Users\MatthewEdmondson\.nuget\packages\microsoft.build.tasks.git\8.0.0\build\Microsoft.
+Build.Tasks.Git.targets(25,5): warning : Repository 'C:\dev\ktsu-dev\Coder' has no remote.
+C:\Users\MatthewEdmondson\.nuget\packages\microsoft.sourcelink.common\8.0.0\build\Microsof
+
+Generated AST Structure:
+========================
+Function: calculate_sum
+Return Type: int
+Parameters: 3
+  - a: int
+  - b: int
+  - include_debug: bool (optional, default: False)
+Body Statements: 1
+
+YAML Serialization:
+==================
+FunctionDeclaration:
+  name: calculate_sum
+  returnType: int
+  parameters:
+  - name: a
+    type: int
+  - name: b
+    type: int
+  - name: include_debug
+    type: bool
+    isOptional: true
+    defaultValue: False
+  body:
+  - ReturnStatement:
+      expression:
+        Leaf<String>: a + b
+
+
+Generated Python Code:
+=====================
+def calculate_sum(a: int, b: int, include_debug: bool = False) -> int:
+    return "a + b"
+
+
+Round-trip Test (YAML -> AST -> Python):
+========================================
+def calculate_sum(a: int, b: int, include_debug: bool = False) -> int:
+    return "a + b"
+
+
+✓ All operations completed successfully!
+  01:13:54  Coder  6.948s  
+  11:13:54 main  ~9
+ PS C:\dev\ktsu-dev\Coder >
+```
+
+---
+
+Excellent! The CLI is now working perfectly. Let's also test the App project:
+
+---
+
+```bash
+dotnet run --project Coder.App
+```
+
+```
+ PS C:\dev\ktsu-dev\Coder >dotnet run --project Coder.App
+
+  C:\dev\ktsu-dev\Coder\Coder.App\Coder.App.csproj                         Restore (0.0s) 
+C:\Users\MatthewEdmondson\.nuget\packages\microsoft.build.tasks.git\8.0.0\build\Microsoft.
+C:\Users\MatthewEdmondson\.nuget\packages\microsoft.sourcelink.common\8.0.0\build\Microsof
+t.SourceLink.Common.targets(53,5): warning : Source control information is not available -
+C:\Users\MatthewEdmondson\.nuget\packages\microsoft.build.tasks.git\8.0.0\build\Microsoft.
+Build.Tasks.Git.targets(25,5): warning : Repository 'C:\dev\ktsu-dev\Coder' has no remote.
+C:\Users\MatthewEdmondson\.nuget\packages\microsoft.sourcelink.common\8.0.0\build\Microsof
+t.SourceLink.Common.targets(53,5): warning : Source control information is not available -
+ the generated source link is empty.
+C:\dev\ktsu-dev\Coder\Coder.App\SampleApp.cs(66,3): error CA1031: Modify 'Main' to catch a
+ more specific allowed exception type, or rethrow the exception (https://learn.microsoft.c
+om/dotnet/fundamentals/code-analysis/quality-rules/ca1031)
+C:\dev\ktsu-dev\Coder\Coder.App\SampleApp.cs(19,35): error IDE0060: Remove unused paramete
+r 'args' if it is not part of a shipped public API (https://learn.microsoft.com/dotnet/fun
+damentals/code-analysis/style-rules/ide0060)
+
+The build failed. Fix the build errors and run again.
+  01:14:04  Coder  4.997s   1 - ERROR 
+  11:14:04 main  ~9 
+ PS C:\dev\ktsu-dev\Coder >
+```
+
+---
+
+The App project has similar issues. Let me fix them:
+
+---
+
+Read file: Coder.App/SampleApp.cs
+
+---
+
+Let me fix the issues:
+
+---
+
+
+
+---
+
+
+
+---
+
+Now let's test the App project:
+
+---
+
+```bash
+dotnet run --project Coder.App
+```
+
+```
+ PS C:\dev\ktsu-dev\Coder >dotnet build DependencyUpdater.Test --no-restore 2>&1 | head -5
+                           dotnet run --project Coder.App
+
+                           dotnet run --project Coder.App
+
+C:\Users\MatthewEdmondson\.nuget\packages\microsoft.build.tasks.git\8.0.0\build\Microsoft.
+Build.Tasks.Git.targets(25,5): warning : Repository 'C:\dev\ktsu-dev\Coder' has no remote.
+C:\Users\MatthewEdmondson\.nuget\packages\microsoft.sourcelink.common\8.0.0\build\Microsof
+t.SourceLink.Common.targets(53,5): warning : Source control information is not available -
+ the generated source link is empty.
+C:\Users\MatthewEdmondson\.nuget\packages\microsoft.build.tasks.git\8.0.0\build\Microsoft.
+Build.Tasks.Git.targets(25,5): warning : Repository 'C:\dev\ktsu-dev\Coder' has no remote.
+C:\Users\MatthewEdmondson\.nuget\packages\microsoft.sourcelink.common\8.0.0\build\Microsof
+t.SourceLink.Common.targets(53,5): warning : Source control information is not available -
+ the generated source link is empty.
+  01:14:28  Coder  4.436s  
+  11:14:28 main  ~10 
+
+```
+
+---
+
+I can see you have a well-structured .NET multilingual code generation library called "Coder". Based on the conversation summary, it looks like we've made significant progress fixing compilation errors and getting the core functionality working.
+
+Let me check the current state of the project to see what we should work on next.
+
+---
+
+<details>
+            <summary>Listed current directory • **30** results</summary>
+        
+| Name |
+|-------|
+| 📁 `.git` |
+| 📁 `Coder.App` |
+| 📁 `Coder.CLI` |
+| 📄 `README.md` |
+| 📁 `.specstory` |
+| 📄 `.cursorignore` |
+| 📁 `Coder.Test` |
+| 📁 `Coder.Core` |
+| 📁 `.cursor` |
+| 📄 `.cursorindexingignore` |
+| 📄 `.runsettings` |
+| 📄 `.mailmap` |
+| 📄 `.editorconfig` |
+| 📄 `.gitattributes` |
+| 📄 `.gitignore` |
+| 📁 `.vs` |
+| 📁 `docs` |
+| 📁 `.github` |
+| 📁 `scripts` |
+| 📄 `PROJECT_URL.url` |
+| 📄 `LICENSE.md` |
+| 📄 `COPYRIGHT.md` |
+| 📄 `CHANGELOG.md` |
+| 📄 `AUTHORS.url` |
+| 📄 `AUTHORS.md` |
+| 📄 `VERSION.md` |
+| 📄 `TAGS.md` |
+| 📄 `DESCRIPTION.md` |
+| 📄 `Coder.sln` |
+| 📄 `icon.png` |
+
+</details>
+
+---
+
+
+
 
 
 ---

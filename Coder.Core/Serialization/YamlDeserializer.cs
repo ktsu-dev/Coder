@@ -53,10 +53,10 @@ public partial class YamlDeserializer
 	{
 		return nodeType switch
 		{
-			"functionDeclaration" => DeserializeFunctionDeclaration(nodeData),
-			"parameter" => DeserializeParameter(nodeData),
-			"returnStatement" => DeserializeReturnStatement(nodeData ?? new object()),
-			_ when nodeType.StartsWith("leaf<", StringComparison.OrdinalIgnoreCase) => DeserializeLeafNode(nodeType, nodeData),
+			"FunctionDeclaration" => DeserializeFunctionDeclaration(nodeData),
+			"Parameter" => DeserializeParameter(nodeData),
+			"ReturnStatement" => DeserializeReturnStatement(nodeData ?? new object()),
+			_ when nodeType.StartsWith("Leaf<", StringComparison.OrdinalIgnoreCase) => DeserializeLeafNode(nodeType, nodeData),
 			_ => null,
 		};
 	}
@@ -110,7 +110,7 @@ public partial class YamlDeserializer
 		}
 	}
 
-	private void DeserializeFunctionParameters(FunctionDeclaration funcDecl, Dictionary<object, object> dict)
+	private static void DeserializeFunctionParameters(FunctionDeclaration funcDecl, Dictionary<object, object> dict)
 	{
 		if (!dict.TryGetValue("parameters", out var paramsObj) || paramsObj is not List<object> paramsList)
 		{

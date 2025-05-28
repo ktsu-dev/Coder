@@ -15,7 +15,7 @@ public abstract class AstNode
 	/// This can be used to store language-specific information that doesn't fit
 	/// into the standard node structure.
 	/// </summary>
-	public Dictionary<string, object?> Metadata { get; protected set; } = [];
+	public Dictionary<string, object?> Metadata { get; } = [];
 
 	/// <summary>
 	/// Gets the type name of this AST node, which is used during serialization.
