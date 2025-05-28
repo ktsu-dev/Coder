@@ -5,7 +5,6 @@
 namespace ktsu.Coder.Core.Ast;
 
 using System.Collections.Generic;
-using ktsu.DeepClone;
 
 /// <summary>
 /// Represents a composite node in the AST structure - a node that can contain other nodes.
@@ -39,12 +38,9 @@ public abstract class AstCompositeNode : AstNode
 	/// <returns>True if the child node was found and removed; otherwise, false.</returns>
 	public bool RemoveChild(string key) => Children.Remove(key);
 
-	public override AstNode DeepClone()
-	{
-		return new AstCompositeNode
-		{
-			Children = new Dictionary<string, AstNode>(Children),
-			Metadata = new Dictionary<string, object?>(Metadata)
-		};
-	}
+	/// <summary>
+	/// Creates a deep clone of this composite node.
+	/// </summary>
+	/// <returns>A new instance of the composite node with the same properties and cloned children.</returns>
+	public abstract override AstNode Clone();
 }

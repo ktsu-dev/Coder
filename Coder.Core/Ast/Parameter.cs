@@ -73,7 +73,7 @@ public class Parameter : AstNode
 			Type = Type,
 			IsOptional = IsOptional,
 			DefaultValue = DefaultValue,
-			Metadata = Metadata != null ? new Dictionary<string, object?>(Metadata) : null
+			Metadata = new Dictionary<string, object?>(Metadata)
 		};
 	}
 }

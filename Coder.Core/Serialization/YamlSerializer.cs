@@ -47,137 +47,157 @@ public class YamlSerializer
 
 	private static void SerializeNode(AstNode node, Dictionary<string, object> target)
 	{
-		// Add the node type and properties to the dictionary
 		var nodeKey = node.GetNodeTypeName();
-		var nodeData = new Dictionary<string, object>();
 
 		// Handle leaf nodes
-		if (node is AstLeafNode<string> stringLeaf && stringLeaf.Value != null)
+		if (TrySerializeLeafNode(node, nodeKey, target))
 		{
-			target[nodeKey] = stringLeaf.Value;
 			return;
-		}
-		else if (node is AstLeafNode<int> intLeaf)
-		{
-			target[nodeKey] = intLeaf.Value;
-			return;
-		}
-		else if (node is AstLeafNode<bool> boolLeaf)
-		{
-			target[nodeKey] = boolLeaf.Value;
-			return;
-		}
-
-		// Handle function declarations and parameters
-		if (node is FunctionDeclaration funcDecl)
-		{
-			if (funcDecl.Name != null)
-			{
-				nodeData["name"] = funcDecl.Name;
-			}
-
-			if (funcDecl.ReturnType != null)
-			{
-				nodeData["returnType"] = funcDecl.ReturnType;
-			}
-
-			if (funcDecl.Parameters.Count > 0)
-			{
-				var parameters = new List<Dictionary<string, object>>();
-				foreach (var param in funcDecl.Parameters)
-				{
-					var paramData = new Dictionary<string, object>();
-					if (param.Name != null)
-					{
-						paramData["name"] = param.Name;
-					}
-
-					if (param.Type != null)
-					{
-						paramData["type"] = param.Type;
-					}
-
-					if (param.IsOptional)
-					{
-						paramData["isOptional"] = param.IsOptional;
-
-						if (param.DefaultValue != null)
-						{
-							paramData["defaultValue"] = param.DefaultValue;
-						}
-					}
-
-					parameters.Add(paramData);
-				}
-
-				nodeData["parameters"] = parameters;
-			}
-
-			if (funcDecl.Body.Count > 0)
-			{
-				var bodyStatements = new List<Dictionary<string, object>>();
-				foreach (var statement in funcDecl.Body)
-				{
-					var statementData = new Dictionary<string, object>();
-					SerializeNode(statement, statementData);
-					bodyStatements.Add(statementData);
-				}
-
-				nodeData["body"] = bodyStatements;
-			}
-		}
-		else if (node is Parameter param)
-		{
-			if (param.Name != null)
-			{
-				nodeData["name"] = param.Name;
-			}
-
-			if (param.Type != null)
-			{
-				nodeData["type"] = param.Type;
-			}
-
-			if (param.IsOptional)
-			{
-				nodeData["isOptional"] = param.IsOptional;
-
-				if (param.DefaultValue != null)
-				{
-					nodeData["defaultValue"] = param.DefaultValue;
-				}
-			}
-		}
-		else if (node is ReturnStatement returnStmt)
-		{
-			if (returnStmt.Expression != null)
-			{
-				var expressionData = new Dictionary<string, object>();
-				SerializeNode(returnStmt.Expression, expressionData);
-				nodeData["expression"] = expressionData;
-			}
 		}
 
 		// Handle composite nodes
+		var nodeData = new Dictionary<string, object>();
+		SerializeCompositeNode(node, nodeData);
+		target[nodeKey] = nodeData;
+	}
+
+	private static bool TrySerializeLeafNode(AstNode node, string nodeKey, Dictionary<string, object> target)
+	{
+		switch (node)
+		{
+			case AstLeafNode<string> stringLeaf when stringLeaf.Value != null:
+				target[nodeKey] = stringLeaf.Value;
+				return true;
+			case AstLeafNode<int> intLeaf:
+				target[nodeKey] = intLeaf.Value;
+				return true;
+			case AstLeafNode<bool> boolLeaf:
+				target[nodeKey] = boolLeaf.Value;
+				return true;
+			default:
+				return false;
+		}
+	}
+
+	private static void SerializeCompositeNode(AstNode node, Dictionary<string, object> nodeData)
+	{
+		switch (node)
+		{
+			case FunctionDeclaration funcDecl:
+				SerializeFunctionDeclaration(funcDecl, nodeData);
+				break;
+			case Parameter param:
+				SerializeParameter(param, nodeData);
+				break;
+			case ReturnStatement returnStmt:
+				SerializeReturnStatement(returnStmt, nodeData);
+				break;
+		}
+
+		// Handle generic composite node children
 		if (node is AstCompositeNode compositeNode)
 		{
-			foreach (var (key, childNode) in compositeNode.Children)
-			{
-				if (!key.Equals("Expression", StringComparison.OrdinalIgnoreCase)) // Already handled above
-				{
-					var childData = new Dictionary<string, object>();
-					SerializeNode(childNode, childData);
-					nodeData[key.ToLowerInvariant()] = childData;
-				}
-			}
+			SerializeCompositeChildren(compositeNode, nodeData);
 		}
 
 		// Add metadata if present
-		if (node.Metadata != null && node.Metadata.Count > 0)
+		if (node.Metadata.Count > 0)
 		{
 			nodeData["metadata"] = node.Metadata;
 		}
+	}
 
-		target[nodeKey] = nodeData;
+	private static void SerializeFunctionDeclaration(FunctionDeclaration funcDecl, Dictionary<string, object> nodeData)
+	{
+		if (funcDecl.Name != null)
+		{
+			nodeData["name"] = funcDecl.Name;
+		}
+
+		if (funcDecl.ReturnType != null)
+		{
+			nodeData["returnType"] = funcDecl.ReturnType;
+		}
+
+		if (funcDecl.Parameters.Count > 0)
+		{
+			nodeData["parameters"] = SerializeParameters(funcDecl.Parameters);
+		}
+
+		if (funcDecl.Body.Count > 0)
+		{
+			nodeData["body"] = SerializeBodyStatements(funcDecl.Body);
+		}
+	}
+
+	private static List<Dictionary<string, object>> SerializeParameters(IEnumerable<Parameter> parameters)
+	{
+		var parameterList = new List<Dictionary<string, object>>();
+		foreach (var param in parameters)
+		{
+			var paramData = new Dictionary<string, object>();
+			SerializeParameter(param, paramData);
+			parameterList.Add(paramData);
+		}
+
+		return parameterList;
+	}
+
+	private static List<Dictionary<string, object>> SerializeBodyStatements(IEnumerable<AstNode> statements)
+	{
+		var bodyStatements = new List<Dictionary<string, object>>();
+		foreach (var statement in statements)
+		{
+			var statementData = new Dictionary<string, object>();
+			SerializeNode(statement, statementData);
+			bodyStatements.Add(statementData);
+		}
+		return bodyStatements;
+	}
+
+	private static void SerializeParameter(Parameter param, Dictionary<string, object> nodeData)
+	{
+		if (param.Name != null)
+		{
+			nodeData["name"] = param.Name;
+		}
+
+		if (param.Type != null)
+		{
+			nodeData["type"] = param.Type;
+		}
+
+		if (param.IsOptional)
+		{
+			nodeData["isOptional"] = param.IsOptional;
+
+			if (param.DefaultValue != null)
+			{
+				nodeData["defaultValue"] = param.DefaultValue;
+			}
+		}
+	}
+
+	private static void SerializeReturnStatement(ReturnStatement returnStmt, Dictionary<string, object> nodeData)
+	{
+		if (returnStmt.Expression != null)
+		{
+			var expressionData = new Dictionary<string, object>();
+			SerializeNode(returnStmt.Expression, expressionData);
+			nodeData["expression"] = expressionData;
+		}
+	}
+
+	private static void SerializeCompositeChildren(AstCompositeNode compositeNode, Dictionary<string, object> nodeData)
+	{
+		foreach (var (key, childNode) in compositeNode.Children)
+		{
+			if (!key.Equals("Expression", StringComparison.OrdinalIgnoreCase)) // Already handled above
+			{
+				var childData = new Dictionary<string, object>();
+				SerializeNode(childNode, childData);
+				nodeData[key.ToLowerInvariant()] = childData;
+			}
+		}
 	}
 }

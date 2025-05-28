@@ -77,7 +77,7 @@ public class ReturnStatement : AstCompositeNode
 	{
 		var clone = new ReturnStatement
 		{
-			Metadata = Metadata != null ? new Dictionary<string, object?>(Metadata) : null
+			Metadata = new Dictionary<string, object?>(Metadata)
 		};
 
 		// Clone the children dictionary which includes the Expression

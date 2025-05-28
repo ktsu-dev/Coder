@@ -61,7 +61,7 @@ public class FunctionDeclaration : AstCompositeNode
 		{
 			Name = Name,
 			ReturnType = ReturnType,
-			Metadata = Metadata != null ? new Dictionary<string, object?>(Metadata) : null
+			Metadata = new Dictionary<string, object?>(Metadata)
 		};
 
 		// Clone parameters

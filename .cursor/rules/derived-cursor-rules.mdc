@@ -30,12 +30,14 @@ The AI coding assistant is working on a multilingual code generation library nam
 - Write unit tests for all components.
 - Use dependency injection to promote loose coupling.
 - All files must include a copyright notice.
+- Implement the `Clone()` method properly in AST node classes, ensuring derived classes `override` it.
 
 ## DEBUGGING
 
 - Use the debugger to step through code and inspect variables.
 - Write unit tests to isolate and fix bugs.
 - Use logging to track the flow of execution and identify issues.
+- Address code analysis warnings, such as those related to cyclomatic complexity, by refactoring code into smaller, more manageable methods.
 
 ## WORKFLOW & RELEASE RULES
 

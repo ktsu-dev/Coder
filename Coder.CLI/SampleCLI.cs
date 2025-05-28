@@ -4,11 +4,120 @@
 
 namespace ktsu.Coder.CLI;
 
+using ktsu.Coder.Core.Ast;
+using ktsu.Coder.Core.Languages;
+using ktsu.Coder.Core.Serialization;
+
 /// <summary>
-/// A sample CLI class
+/// A command-line interface for the Coder library demonstrating AST generation and code output.
 /// </summary>
-public static class SampleCLI
+public static class CoderCLI
 {
-	/// <inheritdoc/>
-	public static void Main() => Console.WriteLine(Sample.Echo("Hello, World!"));
+	/// <summary>
+	/// Entry point for the CLI application.
+	/// </summary>
+	public static void Main(string[] args)
+	{
+		Console.WriteLine("=== Coder CLI - Code Generation Tool ===");
+		Console.WriteLine();
+
+		try
+		{
+			if (args.Length > 0 && args[0] == "--help")
+			{
+				ShowHelp();
+				return;
+			}
+
+			// Create a sample function AST
+			var sampleFunction = CreateSampleFunction();
+
+			// Show the AST structure
+			Console.WriteLine("Generated AST Structure:");
+			Console.WriteLine("========================");
+			ShowAstDetails(sampleFunction);
+			Console.WriteLine();
+
+			// Serialize to YAML
+			var serializer = new YamlSerializer();
+			var yamlContent = serializer.Serialize(sampleFunction);
+			Console.WriteLine("YAML Serialization:");
+			Console.WriteLine("==================");
+			Console.WriteLine(yamlContent);
+			Console.WriteLine();
+
+			// Generate Python code
+			var pythonGenerator = new PythonGenerator();
+			var pythonCode = pythonGenerator.Generate(sampleFunction);
+			Console.WriteLine("Generated Python Code:");
+			Console.WriteLine("=====================");
+			Console.WriteLine(pythonCode);
+			Console.WriteLine();
+
+			// Demonstrate round-trip serialization
+			var deserializer = new YamlDeserializer();
+			var deserializedAst = deserializer.Deserialize(yamlContent);
+			var regeneratedCode = pythonGenerator.Generate(deserializedAst);
+
+			Console.WriteLine("Round-trip Test (YAML -> AST -> Python):");
+			Console.WriteLine("========================================");
+			Console.WriteLine(regeneratedCode);
+			Console.WriteLine();
+
+			Console.WriteLine("✓ All operations completed successfully!");
+		}
+		catch (Exception ex)
+		{
+			Console.WriteLine($"❌ Error: {ex.Message}");
+			Environment.ExitCode = 1;
+		}
+	}
+
+	private static FunctionDeclaration CreateSampleFunction()
+	{
+		var function = new FunctionDeclaration("calculate_sum")
+		{
+			ReturnType = "int"
+		};
+
+		// Add parameters
+		function.Parameters.Add(new Parameter("a", "int"));
+		function.Parameters.Add(new Parameter("b", "int"));
+		function.Parameters.Add(new Parameter("include_debug", "bool") { IsOptional = true, DefaultValue = "False" });
+
+		// Add function body
+		function.Body.Add(new ReturnStatement(new AstLeafNode<string>("a + b")));
+
+		return function;
+	}
+
+	private static void ShowAstDetails(FunctionDeclaration function)
+	{
+		Console.WriteLine($"Function: {function.Name}");
+		Console.WriteLine($"Return Type: {function.ReturnType}");
+		Console.WriteLine($"Parameters: {function.Parameters.Count}");
+
+		foreach (var param in function.Parameters)
+		{
+			var optionalInfo = param.IsOptional ? $" (optional, default: {param.DefaultValue})" : "";
+			Console.WriteLine($"  - {param.Name}: {param.Type}{optionalInfo}");
+		}
+
+		Console.WriteLine($"Body Statements: {function.Body.Count}");
+	}
+
+	private static void ShowHelp()
+	{
+		Console.WriteLine("Coder CLI - Code Generation Tool");
+		Console.WriteLine("Usage: Coder.CLI [options]");
+		Console.WriteLine();
+		Console.WriteLine("Options:");
+		Console.WriteLine("  --help    Show this help message");
+		Console.WriteLine();
+		Console.WriteLine("This tool demonstrates the Coder library's capabilities:");
+		Console.WriteLine("- Creating AST (Abstract Syntax Tree) structures");
+		Console.WriteLine("- Serializing AST to YAML format");
+		Console.WriteLine("- Generating code in supported languages (Python)");
+		Console.WriteLine("- Round-trip serialization/deserialization");
+	}
 }
