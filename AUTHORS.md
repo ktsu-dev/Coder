@@ -1,2 +1,1 @@
 ktsu.dev contributors
-
