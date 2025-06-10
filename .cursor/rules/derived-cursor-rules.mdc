@@ -40,6 +40,7 @@ The AI coding assistant is working on a multilingual code generation library nam
     - Ensure that all method parameters are validated for null values, throwing `ArgumentNullException` when necessary.
 - Ensure that deserialization logic handles the correct casing for node type names. The serializer uses capitalized names (e.g., `FunctionDeclaration`), so the deserializer should be updated to match.
 - Always validate parameters for null values and throw `ArgumentNullException` when null.
+- When constructing `ReturnStatement` objects in the TUI, always pass `AstLeafNode<string>` objects instead of raw strings to ensure type consistency within the AST.
 
 ## DEBUGGING
 
@@ -69,3 +70,4 @@ The AI coding assistant is working on a multilingual code generation library nam
 - The `Metadata` property in `AstNode` and derived classes should have a `protected init` setter to allow setting during object initialization in derived classes and prevent modification after initialization. When cloning `Metadata`, clear the existing dictionary and copy the values from the original instead of assigning a new dictionary.
 - Ensure that deserialization logic respects the `protected init` setter of the `Metadata` property in `AstNode` and derived classes. Refactor deserialization logic if necessary to correctly initialize this property.
 - When cloning `Metadata`, clear the existing dictionary and copy the values from the original instead of assigning a new dictionary.
+- **Always construct `ReturnStatement` objects using `AstLeafNode<string>` objects instead of raw strings to maintain type consistency within the AST.**

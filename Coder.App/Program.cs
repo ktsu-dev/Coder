@@ -21,6 +21,24 @@ public static class Program
 	/// </summary>
 	public static int Main(string[] args)
 	{
+		// Test basic console output first
+		Console.WriteLine("=== STARTING CODER APPLICATION ===");
+		Console.WriteLine($"Arguments: {string.Join(", ", args)}");
+
+#pragma warning disable CA1031 // Do not catch general exception types
+		try
+		{
+			// Test Spectre.Console first
+			Console.WriteLine("Testing Spectre.Console...");
+			TestProgram.TestSpectreConsole();
+			Console.WriteLine("Spectre.Console test completed.");
+		}
+		catch (Exception ex)
+		{
+			Console.WriteLine($"Error in Spectre.Console test: {ex.Message}");
+		}
+#pragma warning restore CA1031 // Do not catch general exception types
+
 		var app = new CommandApp<CoderCommand>();
 		app.Configure(config =>
 		{
@@ -242,7 +260,7 @@ public sealed class InteractiveCommand : Command<InteractiveCommand.Settings>
 			_ => "None"
 		};
 
-		function.Body.Add(new ReturnStatement(returnValue));
+		function.Body.Add(new ReturnStatement(new AstLeafNode<string>(returnValue)));
 	}
 
 	private static bool HandleLoadFunctions()
@@ -411,7 +429,7 @@ public sealed class InteractiveCommand : Command<InteractiveCommand.Settings>
 			ReturnType = "str"
 		};
 		hello.Parameters.Add(new Parameter("name", "str"));
-		hello.Body.Add(new ReturnStatement("f\"Hello, {name}!\""));
+		hello.Body.Add(new ReturnStatement(new AstLeafNode<string>("f\"Hello, {name}!\"")));
 		sampleFunctions.Add(hello);
 
 		// Function with multiple parameters
@@ -422,7 +440,7 @@ public sealed class InteractiveCommand : Command<InteractiveCommand.Settings>
 		calculate.Parameters.Add(new Parameter("a", "float"));
 		calculate.Parameters.Add(new Parameter("b", "float"));
 		calculate.Parameters.Add(new Parameter("multiplier", "float") { IsOptional = true, DefaultValue = "1.0" });
-		calculate.Body.Add(new ReturnStatement("(a + b) * multiplier"));
+		calculate.Body.Add(new ReturnStatement(new AstLeafNode<string>("(a + b) * multiplier")));
 		sampleFunctions.Add(calculate);
 
 		// Boolean function
@@ -431,7 +449,7 @@ public sealed class InteractiveCommand : Command<InteractiveCommand.Settings>
 			ReturnType = "bool"
 		};
 		validator.Parameters.Add(new Parameter("email", "str"));
-		validator.Body.Add(new ReturnStatement("\"@\" in email and \".\" in email"));
+		validator.Body.Add(new ReturnStatement(new AstLeafNode<string>("\"@\" in email and \".\" in email")));
 		sampleFunctions.Add(validator);
 
 		return sampleFunctions;
@@ -503,7 +521,7 @@ public sealed class GenerateCommand : Command<GenerateCommand.Settings>
 			ReturnType = "str"
 		};
 		hello.Parameters.Add(new Parameter("name", "str"));
-		hello.Body.Add(new ReturnStatement("f\"Hello, {name}!\""));
+		hello.Body.Add(new ReturnStatement(new AstLeafNode<string>("f\"Hello, {name}!\"")));
 		functions.Add(hello);
 
 		return functions;
@@ -547,7 +565,7 @@ public sealed class DemoCommand : Command<DemoCommand.Settings>
 			ReturnType = "str"
 		};
 		function.Parameters.Add(new Parameter("value", "int"));
-		function.Body.Add(new ReturnStatement("f\"Value is: {value}\""));
+		function.Body.Add(new ReturnStatement(new AstLeafNode<string>("f\"Value is: {value}\"")));
 
 		ctx.Status("Generating Python code...");
 		Thread.Sleep(1000);
