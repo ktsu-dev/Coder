@@ -1,6 +1,6 @@
 ## v1.0.0
 
-No significant changes detected since v1.0.0.
+Changes since v1.0.0:
 ## v1.0.0 (major)
 
 - Design and implementation plan documentation ([@matt-edmondson](https://github.com/matt-edmondson))
