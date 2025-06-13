@@ -92,6 +92,30 @@ public class YamlSerializer
 			case ReturnStatement returnStmt:
 				SerializeReturnStatement(returnStmt, nodeData);
 				break;
+			case BinaryExpression binaryExpr:
+				SerializeBinaryExpression(binaryExpr, nodeData);
+				break;
+			case LiteralExpression<string> stringLit:
+				SerializeLiteralExpression(stringLit, nodeData);
+				break;
+			case LiteralExpression<int> intLit:
+				SerializeLiteralExpression(intLit, nodeData);
+				break;
+			case LiteralExpression<bool> boolLit:
+				SerializeLiteralExpression(boolLit, nodeData);
+				break;
+			case LiteralExpression<double> doubleLit:
+				SerializeLiteralExpression(doubleLit, nodeData);
+				break;
+			case VariableReference varRef:
+				SerializeVariableReference(varRef, nodeData);
+				break;
+			case VariableDeclaration varDecl:
+				SerializeVariableDeclaration(varDecl, nodeData);
+				break;
+			case AssignmentStatement assignment:
+				SerializeAssignmentStatement(assignment, nodeData);
+				break;
 			default:
 				// Handle unknown node types - no specific serialization needed
 				break;
@@ -203,6 +227,92 @@ public class YamlSerializer
 				nodeData[key.ToLowerInvariant()] = childData;
 			}
 		}
+	}
+
+	private static void SerializeBinaryExpression(BinaryExpression binaryExpr, Dictionary<string, object> nodeData)
+	{
+		Dictionary<string, object> leftData = [];
+		SerializeNode(binaryExpr.Left, leftData);
+		nodeData["left"] = leftData;
+
+		nodeData["operator"] = binaryExpr.Operator.ToString();
+
+		Dictionary<string, object> rightData = [];
+		SerializeNode(binaryExpr.Right, rightData);
+		nodeData["right"] = rightData;
+
+		if (binaryExpr.ExpectedType != null)
+		{
+			nodeData["expectedType"] = binaryExpr.ExpectedType;
+		}
+	}
+
+	private static void SerializeLiteralExpression<T>(LiteralExpression<T> literal, Dictionary<string, object> nodeData)
+	{
+		if (literal.Value != null)
+		{
+			nodeData["value"] = literal.Value;
+		}
+
+		if (literal.ExpectedType != null)
+		{
+			nodeData["expectedType"] = literal.ExpectedType;
+		}
+	}
+
+	private static void SerializeVariableReference(VariableReference varRef, Dictionary<string, object> nodeData)
+	{
+		nodeData["name"] = varRef.Name;
+
+		if (varRef.ExpectedType != null)
+		{
+			nodeData["expectedType"] = varRef.ExpectedType;
+		}
+	}
+
+	private static void SerializeVariableDeclaration(VariableDeclaration varDecl, Dictionary<string, object> nodeData)
+	{
+		nodeData["name"] = varDecl.Name;
+
+		if (varDecl.Type != null)
+		{
+			nodeData["type"] = varDecl.Type;
+		}
+
+		if (varDecl.InitialValue != null)
+		{
+			Dictionary<string, object> initialValueData = [];
+			SerializeNode(varDecl.InitialValue, initialValueData);
+			nodeData["initialValue"] = initialValueData;
+		}
+
+		if (varDecl.IsConstant)
+		{
+			nodeData["isConstant"] = varDecl.IsConstant;
+		}
+
+		if (varDecl.IsTypeInferred)
+		{
+			nodeData["isTypeInferred"] = varDecl.IsTypeInferred;
+		}
+
+		if (varDecl.AccessModifier != null)
+		{
+			nodeData["accessModifier"] = varDecl.AccessModifier;
+		}
+	}
+
+	private static void SerializeAssignmentStatement(AssignmentStatement assignment, Dictionary<string, object> nodeData)
+	{
+		Dictionary<string, object> targetData = [];
+		SerializeNode(assignment.Target, targetData);
+		nodeData["target"] = targetData;
+
+		Dictionary<string, object> valueData = [];
+		SerializeNode(assignment.Value, valueData);
+		nodeData["value"] = valueData;
+
+		nodeData["operator"] = assignment.Operator.ToString();
 	}
 
 	/// <summary>

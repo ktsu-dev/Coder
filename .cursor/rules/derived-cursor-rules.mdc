@@ -59,6 +59,8 @@ The AI coding assistant is working on a multilingual code generation library nam
 - When copying `Metadata`, iterate over the dictionary using a `foreach` loop with `object?` to handle potential null values.
 - When serializing to YAML, the serializer should produce camelCase names like "functionDeclaration", "parameter", "returnStatement".
 - When deserializing from YAML, the deserializer must handle camelCase node names.
+    - The deserializer must also correctly deserialize leaf nodes with camelCase names (e.g., `leaf<Int32>`).
+- When serializing to YAML, ensure that the `defaultValue` property is correctly escaped (e.g., `defaultValue: '"default"'`).
 
 ## DEBUGGING
 
