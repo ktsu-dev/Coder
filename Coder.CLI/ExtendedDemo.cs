@@ -89,14 +89,14 @@ public static class ExtendedDemo
 		function.Parameters.Add(new Parameter("principal", "double"));
 		function.Parameters.Add(new Parameter("rate", "double"));
 		function.Parameters.Add(new Parameter("time", "int"));
-		function.Parameters.Add(new Parameter("compound", "int", Literal.Int(1)) { IsOptional = true });
+		function.Parameters.Add(new Parameter("compound", "int") { IsOptional = true, DefaultValue = "1" });
 
 		// Create complex expression: principal * (1 + rate/compound)^(compound*time)
 		// For demo, we'll create a simpler version: principal * (1 + rate * time)
 		BinaryExpression rateTimeProduct = new(
-			new AstLeafNode<string>("rate"),
+			new VariableReference("rate"),
 			BinaryOperator.Multiply,
-			new AstLeafNode<string>("time")
+			new VariableReference("time")
 		);
 
 		BinaryExpression onePlusRateTime = new(
@@ -106,7 +106,7 @@ public static class ExtendedDemo
 		);
 
 		BinaryExpression result = new(
-			new AstLeafNode<string>("principal"),
+			new VariableReference("principal"),
 			BinaryOperator.Multiply,
 			onePlusRateTime
 		);
@@ -140,7 +140,7 @@ public static class ExtendedDemo
 
 		// Variable declarations
 		VariableDeclaration lengthVar = new("length", "int",
-			new BinaryExpression(new AstLeafNode<string>("input.Length"), BinaryOperator.Add, Literal.Int(0)));
+			new BinaryExpression(new VariableReference("input.Length"), BinaryOperator.Add, Literal.Int(0)));
 
 		VariableDeclaration resultVar = new("result", null, Literal.String("Processing: "))
 		{
@@ -151,13 +151,13 @@ public static class ExtendedDemo
 
 		// Assignment statements
 		AssignmentStatement resultAssignment = new(
-			new AstLeafNode<string>("result"),
-			new BinaryExpression(new AstLeafNode<string>("result"), BinaryOperator.Add, new AstLeafNode<string>("input"))
+			new VariableReference("result"),
+			new BinaryExpression(new VariableReference("result"), BinaryOperator.Add, new VariableReference("input"))
 		);
 
 		AssignmentStatement counterIncrement = new(
-			new AstLeafNode<string>("counter"),
-			new AstLeafNode<string>("counter"),
+			new VariableReference("counter"),
+			new VariableReference("counter"),
 			AssignmentOperator.AddAssign
 		);
 

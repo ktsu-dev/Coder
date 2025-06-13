@@ -85,13 +85,14 @@ The AI coding assistant is working on a multilingual code generation library nam
 - Ensure that deserialization logic respects the `protected init` setter of the `Metadata` property in `AstNode` and derived classes. Refactor deserialization logic if necessary to correctly initialize this property.
 - When cloning `Metadata`, clear the existing dictionary and copy the values from the original instead of assigning a new dictionary.
 - **Always construct `ReturnStatement` objects using `AstLeafNode<string>` objects instead of raw strings to maintain type consistency within the AST.**
-- The project will use a simplified approach to AST extensions: Add VariableDeclaration/AssignmentStatement but use the existing AstLeafNode approach for expressions.
-- For variable assignments, the following approach should be used:
+- The project will no longer use a simplified approach to AST extensions, but instead will use a complete expression system with base `Expression` class, `BinaryExpression`, and `LiteralExpression` for a more robust and extensible AST, especially beneficial for visual editors.
+- For variable assignments, the following approach should no longer be used:
 ```csharp
 // Keep it simple but still structured
 var assignment = new AssignmentStatement("result", "a + b");
 var declaration = new VariableDeclaration("int", "count", "0");
 ```
+- The project will now use a complete expression system with base `Expression` class, `BinaryExpression`, `LiteralExpression`, and `VariableReference` for a more robust and extensible AST, especially beneficial for visual editors. This system supports constructing expressions, functions, and objects via a node-based visual editor, where this library serves as the authoring and storage provider for the frontend.
 
 ## DEPENDENCY INJECTION RULES
 

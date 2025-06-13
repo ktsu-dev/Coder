@@ -4,8 +4,6 @@
 
 namespace ktsu.Coder.Core.Ast;
 
-using ktsu.DeepClone;
-
 /// <summary>
 /// Represents an assignment statement.
 /// Examples: x = 5; result = a + b; items[0] = "hello";
@@ -46,8 +44,8 @@ public class AssignmentStatement : AstNode
 	/// </summary>
 	public AssignmentStatement()
 	{
-		Target = new AstLeafNode<string>("");
-		Value = new AstLeafNode<string>("");
+		Target = new VariableReference("");
+		Value = new LiteralExpression<string>("");
 		Operator = AssignmentOperator.Assign;
 	}
 
@@ -71,9 +69,9 @@ public class AssignmentStatement : AstNode
 		};
 
 		// Copy metadata
-		foreach (System.Collections.Generic.KeyValuePair<string, object?> kvp in Metadata)
+		foreach ((string key, object? value) in Metadata)
 		{
-			clone.Metadata[kvp.Key] = kvp.Value?.DeepClone();
+			clone.Metadata[key] = value;
 		}
 
 		return clone;

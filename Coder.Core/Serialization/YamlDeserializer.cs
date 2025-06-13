@@ -38,14 +38,14 @@ public partial class YamlDeserializer
 		ArgumentException.ThrowIfNullOrWhiteSpace(yaml);
 
 		// Deserialize YAML to a dictionary
-		var rootDict = _deserializer.Deserialize<Dictionary<string, object>>(yaml);
+		Dictionary<string, object> rootDict = _deserializer.Deserialize<Dictionary<string, object>>(yaml);
 		if (rootDict == null || rootDict.Count == 0)
 		{
 			return null;
 		}
 
 		// Process the first node type found
-		var (nodeType, nodeData) = rootDict.First();
+		(string nodeType, object nodeData) = rootDict.First();
 		return DeserializeNode(nodeType, nodeData);
 	}
 
@@ -63,26 +63,26 @@ public partial class YamlDeserializer
 
 	private static AstNode? DeserializeLeafNode(string nodeType, object? nodeData)
 	{
-		var match = MyRegex().Match(nodeType);
+		Match match = MyRegex().Match(nodeType);
 		if (!match.Success || match.Groups.Count < 2)
 		{
 			return null;
 		}
 
-		var valueType = match.Groups[1].Value;
+		string valueType = match.Groups[1].Value;
 
 		return valueType switch
 		{
 			"String" => new AstLeafNode<string>(nodeData?.ToString() ?? string.Empty),
-			"Int32" when int.TryParse(nodeData?.ToString(), out var intValue) => new AstLeafNode<int>(intValue),
-			"Boolean" when bool.TryParse(nodeData?.ToString(), out var boolValue) => new AstLeafNode<bool>(boolValue),
+			"Int32" when int.TryParse(nodeData?.ToString(), out int intValue) => new AstLeafNode<int>(intValue),
+			"Boolean" when bool.TryParse(nodeData?.ToString(), out bool boolValue) => new AstLeafNode<bool>(boolValue),
 			_ => null,
 		};
 	}
 
 	private FunctionDeclaration DeserializeFunctionDeclaration(object? nodeData)
 	{
-		var funcDecl = new FunctionDeclaration();
+		FunctionDeclaration funcDecl = new();
 		if (nodeData is not Dictionary<object, object> dict)
 		{
 			return funcDecl;
@@ -99,12 +99,12 @@ public partial class YamlDeserializer
 
 	private static void DeserializeFunctionBasicProperties(FunctionDeclaration funcDecl, Dictionary<object, object> dict)
 	{
-		if (dict.TryGetValue("name", out var nameObj))
+		if (dict.TryGetValue("name", out object? nameObj))
 		{
 			funcDecl.Name = nameObj?.ToString();
 		}
 
-		if (dict.TryGetValue("returnType", out var returnTypeObj))
+		if (dict.TryGetValue("returnType", out object? returnTypeObj))
 		{
 			funcDecl.ReturnType = returnTypeObj?.ToString();
 		}
@@ -112,16 +112,16 @@ public partial class YamlDeserializer
 
 	private static void DeserializeFunctionParameters(FunctionDeclaration funcDecl, Dictionary<object, object> dict)
 	{
-		if (!dict.TryGetValue("parameters", out var paramsObj) || paramsObj is not List<object> paramsList)
+		if (!dict.TryGetValue("parameters", out object? paramsObj) || paramsObj is not List<object> paramsList)
 		{
 			return;
 		}
 
-		foreach (var paramObj in paramsList)
+		foreach (object paramObj in paramsList)
 		{
 			if (paramObj is Dictionary<object, object> paramDict)
 			{
-				var param = DeserializeParameter(paramDict);
+				Parameter param = DeserializeParameter(paramDict);
 				if (param != null)
 				{
 					funcDecl.Parameters.Add(param);
@@ -132,18 +132,18 @@ public partial class YamlDeserializer
 
 	private void DeserializeFunctionBody(FunctionDeclaration funcDecl, Dictionary<object, object> dict)
 	{
-		if (!dict.TryGetValue("body", out var bodyObj) || bodyObj is not List<object> bodyList)
+		if (!dict.TryGetValue("body", out object? bodyObj) || bodyObj is not List<object> bodyList)
 		{
 			return;
 		}
 
-		foreach (var stmtObj in bodyList)
+		foreach (object stmtObj in bodyList)
 		{
 			if (stmtObj is Dictionary<object, object> stmtDict)
 			{
-				foreach (var (stmtType, stmtData) in stmtDict)
+				foreach ((object stmtType, object stmtData) in stmtDict)
 				{
-					var stmt = DeserializeNode(stmtType.ToString() ?? string.Empty, stmtData);
+					AstNode? stmt = DeserializeNode(stmtType.ToString() ?? string.Empty, stmtData);
 					if (stmt != null)
 					{
 						funcDecl.Body.Add(stmt);
@@ -155,13 +155,13 @@ public partial class YamlDeserializer
 
 	private static void DeserializeMetadata(AstNode node, Dictionary<object, object> dict)
 	{
-		if (!dict.TryGetValue("metadata", out var metadataObj) || metadataObj is not Dictionary<object, object> metadataDict)
+		if (!dict.TryGetValue("metadata", out object? metadataObj) || metadataObj is not Dictionary<object, object> metadataDict)
 		{
 			return;
 		}
 
 		node.Metadata.Clear();
-		foreach (var (key, value) in metadataDict)
+		foreach ((object key, object value) in metadataDict)
 		{
 			node.Metadata[key.ToString() ?? string.Empty] = value;
 		}
@@ -169,19 +169,19 @@ public partial class YamlDeserializer
 
 	private void DeserializeFunctionChildren(FunctionDeclaration funcDecl, Dictionary<object, object> dict)
 	{
-		var knownKeys = new HashSet<string> { "name", "returnType", "parameters", "body", "metadata" };
+		HashSet<string> knownKeys = ["name", "returnType", "parameters", "body", "metadata"];
 
-		foreach (var (key, value) in dict)
+		foreach ((object key, object value) in dict)
 		{
-			var keyString = key.ToString() ?? string.Empty;
+			string keyString = key.ToString() ?? string.Empty;
 			if (knownKeys.Contains(keyString) || value is not Dictionary<object, object> childDict)
 			{
 				continue;
 			}
 
-			foreach (var (childType, childData) in childDict)
+			foreach ((object childType, object childData) in childDict)
 			{
-				var child = DeserializeNode(childType.ToString() ?? string.Empty, childData);
+				AstNode? child = DeserializeNode(childType.ToString() ?? string.Empty, childData);
 				if (child != null)
 				{
 					funcDecl.SetChild(keyString, child);
@@ -192,25 +192,25 @@ public partial class YamlDeserializer
 
 	private static Parameter DeserializeParameter(object? nodeData)
 	{
-		var param = new Parameter();
+		Parameter param = new();
 		if (nodeData is Dictionary<object, object> dict)
 		{
-			if (dict.TryGetValue("name", out var nameObj))
+			if (dict.TryGetValue("name", out object? nameObj))
 			{
 				param.Name = nameObj?.ToString();
 			}
 
-			if (dict.TryGetValue("type", out var typeObj))
+			if (dict.TryGetValue("type", out object? typeObj))
 			{
 				param.Type = typeObj?.ToString();
 			}
 
-			if (dict.TryGetValue("isOptional", out var optionalObj) &&
-				bool.TryParse(optionalObj?.ToString(), out var isOptional))
+			if (dict.TryGetValue("isOptional", out object? optionalObj) &&
+				bool.TryParse(optionalObj?.ToString(), out bool isOptional))
 			{
 				param.IsOptional = isOptional;
 
-				if (dict.TryGetValue("defaultValue", out var defaultObj))
+				if (dict.TryGetValue("defaultValue", out object? defaultObj))
 				{
 					param.DefaultValue = defaultObj?.ToString();
 				}
@@ -225,14 +225,14 @@ public partial class YamlDeserializer
 
 	private ReturnStatement DeserializeReturnStatement(object nodeData)
 	{
-		var returnStmt = new ReturnStatement();
+		ReturnStatement returnStmt = new();
 		if (nodeData is Dictionary<object, object> dict)
 		{
-			if (dict.TryGetValue("expression", out var exprObj) && exprObj is Dictionary<object, object> exprDict)
+			if (dict.TryGetValue("expression", out object? exprObj) && exprObj is Dictionary<object, object> exprDict)
 			{
-				foreach (var (exprType, exprData) in exprDict)
+				foreach ((object exprType, object exprData) in exprDict)
 				{
-					var expr = DeserializeNode(exprType.ToString() ?? string.Empty, exprData);
+					AstNode? expr = DeserializeNode(exprType.ToString() ?? string.Empty, exprData);
 					returnStmt.SetExpression(expr);
 					break; // Only one expression in a return statement
 				}

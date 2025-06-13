@@ -13,10 +13,10 @@ public class AstNodeTests
 	public void FunctionDeclaration_HasCorrectNodeTypeName()
 	{
 		// Arrange
-		var functionDeclaration = new FunctionDeclaration("TestFunction");
+		FunctionDeclaration functionDeclaration = new("TestFunction");
 
 		// Act
-		var nodeType = functionDeclaration.GetNodeTypeName();
+		string nodeType = functionDeclaration.GetNodeTypeName();
 
 		// Assert
 		Assert.AreEqual("FunctionDeclaration", nodeType);
@@ -26,10 +26,10 @@ public class AstNodeTests
 	public void Parameter_HasCorrectNodeTypeName()
 	{
 		// Arrange
-		var parameter = new Parameter("param1", "int");
+		Parameter parameter = new("param1", "int");
 
 		// Act
-		var nodeType = parameter.GetNodeTypeName();
+		string nodeType = parameter.GetNodeTypeName();
 
 		// Assert
 		Assert.AreEqual("Parameter", nodeType);
@@ -39,10 +39,10 @@ public class AstNodeTests
 	public void ReturnStatement_HasCorrectNodeTypeName()
 	{
 		// Arrange
-		var returnStatement = new ReturnStatement(42);
+		ReturnStatement returnStatement = new(42);
 
 		// Act
-		var nodeType = returnStatement.GetNodeTypeName();
+		string nodeType = returnStatement.GetNodeTypeName();
 
 		// Assert
 		Assert.AreEqual("ReturnStatement", nodeType);
@@ -52,10 +52,10 @@ public class AstNodeTests
 	public void LeafNode_HasCorrectNodeTypeName()
 	{
 		// Arrange
-		var leafNode = new AstLeafNode<int>(42);
+		AstLeafNode<int> leafNode = new(42);
 
 		// Act
-		var nodeType = leafNode.GetNodeTypeName();
+		string nodeType = leafNode.GetNodeTypeName();
 
 		// Assert
 		Assert.AreEqual("Leaf<Int32>", nodeType);
@@ -65,7 +65,7 @@ public class AstNodeTests
 	public void FunctionDeclaration_Clone_CreatesDeepCopy()
 	{
 		// Arrange
-		var originalFunc = new FunctionDeclaration("TestFunction")
+		FunctionDeclaration originalFunc = new("TestFunction")
 		{
 			ReturnType = "int",
 			Parameters =
@@ -77,7 +77,7 @@ public class AstNodeTests
 		originalFunc.Body.Add(new ReturnStatement(42));
 
 		// Act
-		var clonedFunc = (FunctionDeclaration)originalFunc.Clone();
+		FunctionDeclaration clonedFunc = (FunctionDeclaration)originalFunc.Clone();
 
 		// Assert - Check properties match but are not reference equal
 		Assert.AreEqual(originalFunc.Name, clonedFunc.Name);
@@ -90,7 +90,7 @@ public class AstNodeTests
 		Assert.AreNotSame(originalFunc.Body, clonedFunc.Body);
 
 		// Check that parameters were cloned correctly
-		for (var i = 0; i < originalFunc.Parameters.Count; i++)
+		for (int i = 0; i < originalFunc.Parameters.Count; i++)
 		{
 			Assert.AreNotSame(originalFunc.Parameters[i], clonedFunc.Parameters[i]);
 			Assert.AreEqual(originalFunc.Parameters[i].Name, clonedFunc.Parameters[i].Name);
@@ -98,8 +98,8 @@ public class AstNodeTests
 		}
 
 		// Check that body elements were cloned correctly
-		var originalReturn = (ReturnStatement)originalFunc.Body[0];
-		var clonedReturn = (ReturnStatement)clonedFunc.Body[0];
+		ReturnStatement originalReturn = (ReturnStatement)originalFunc.Body[0];
+		ReturnStatement clonedReturn = (ReturnStatement)clonedFunc.Body[0];
 		Assert.AreNotSame(originalReturn, clonedReturn);
 	}
 }

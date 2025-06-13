@@ -22,7 +22,7 @@ public abstract class AstCompositeNode : AstNode
 	/// </summary>
 	/// <param name="key">The key of the child node to retrieve.</param>
 	/// <returns>The child node if found; otherwise, null.</returns>
-	public AstNode? GetChild(string key) => Children.TryGetValue(key, out var child) ? child : null;
+	public AstNode? GetChild(string key) => Children.TryGetValue(key, out AstNode? child) ? child : null;
 
 	/// <summary>
 	/// Adds or updates a child node with the specified key.

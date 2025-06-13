@@ -4,8 +4,6 @@
 
 namespace ktsu.Coder.Core.Ast;
 
-using ktsu.DeepClone;
-
 /// <summary>
 /// Represents a variable declaration statement.
 /// Examples: int x; string name = "hello"; var result = 42;
@@ -64,10 +62,7 @@ public class VariableDeclaration : AstNode
 	/// Initializes a new instance of the <see cref="VariableDeclaration"/> class.
 	/// Used for deserialization.
 	/// </summary>
-	public VariableDeclaration()
-	{
-		Name = string.Empty;
-	}
+	public VariableDeclaration() => Name = string.Empty;
 
 	/// <summary>
 	/// Gets the node type name for this variable declaration.
@@ -92,9 +87,9 @@ public class VariableDeclaration : AstNode
 		};
 
 		// Copy metadata
-		foreach (System.Collections.Generic.KeyValuePair<string, object?> kvp in Metadata)
+		foreach ((string key, object? value) in Metadata)
 		{
-			clone.Metadata[kvp.Key] = kvp.Value?.DeepClone();
+			clone.Metadata[key] = value;
 		}
 
 		return clone;

@@ -14,7 +14,7 @@ public class YamlSerializationTests
 	public void Serialize_FunctionDeclaration_GeneratesCorrectYaml()
 	{
 		// Arrange
-		var funcDecl = new FunctionDeclaration("MyFunction")
+		FunctionDeclaration funcDecl = new("MyFunction")
 		{
 			ReturnType = "int",
 			Parameters =
@@ -25,10 +25,10 @@ public class YamlSerializationTests
 		};
 		funcDecl.Body.Add(new ReturnStatement(42));
 
-		var serializer = new YamlSerializer();
+		YamlSerializer serializer = new();
 
 		// Act
-		var yaml = serializer.Serialize(funcDecl);
+		string yaml = serializer.Serialize(funcDecl);
 
 		// Assert
 		Assert.IsNotNull(yaml);
@@ -48,7 +48,7 @@ public class YamlSerializationTests
 	public void SerializeAndDeserialize_FunctionDeclaration_RoundTripsCorrectly()
 	{
 		// Arrange
-		var originalFuncDecl = new FunctionDeclaration("MyFunction")
+		FunctionDeclaration originalFuncDecl = new("MyFunction")
 		{
 			ReturnType = "int",
 			Parameters =
@@ -59,18 +59,18 @@ public class YamlSerializationTests
 		};
 		originalFuncDecl.Body.Add(new ReturnStatement(42));
 
-		var serializer = new YamlSerializer();
-		var deserializer = new YamlDeserializer();
+		YamlSerializer serializer = new();
+		YamlDeserializer deserializer = new();
 
 		// Act
-		var yaml = serializer.Serialize(originalFuncDecl);
-		var deserializedNode = deserializer.Deserialize(yaml);
+		string yaml = serializer.Serialize(originalFuncDecl);
+		AstNode? deserializedNode = deserializer.Deserialize(yaml);
 
 		// Assert
 		Assert.IsNotNull(deserializedNode);
 		Assert.IsInstanceOfType<FunctionDeclaration>(deserializedNode);
 
-		var deserializedFunc = (FunctionDeclaration)deserializedNode;
+		FunctionDeclaration? deserializedFunc = (FunctionDeclaration)deserializedNode;
 		Assert.AreEqual(originalFuncDecl.Name, deserializedFunc.Name);
 		Assert.AreEqual(originalFuncDecl.ReturnType, deserializedFunc.ReturnType);
 		Assert.AreEqual(originalFuncDecl.Parameters.Count, deserializedFunc.Parameters.Count);
@@ -81,7 +81,7 @@ public class YamlSerializationTests
 		Assert.AreEqual(originalFuncDecl.Body.Count, deserializedFunc.Body.Count);
 
 		Assert.IsInstanceOfType<ReturnStatement>(deserializedFunc.Body[0]);
-		var returnStmt = (ReturnStatement)deserializedFunc.Body[0];
+		ReturnStatement returnStmt = (ReturnStatement)deserializedFunc.Body[0];
 		Assert.IsNotNull(returnStmt.Expression);
 		Assert.IsInstanceOfType<AstLeafNode<int>>(returnStmt.Expression);
 		Assert.AreEqual(42, ((AstLeafNode<int>)returnStmt.Expression).Value);
@@ -91,11 +91,11 @@ public class YamlSerializationTests
 	public void Serialize_ReturnStatement_GeneratesCorrectYaml()
 	{
 		// Arrange
-		var returnStmt = new ReturnStatement(42);
-		var serializer = new YamlSerializer();
+		ReturnStatement returnStmt = new(42);
+		YamlSerializer serializer = new();
 
 		// Act
-		var yaml = serializer.Serialize(returnStmt);
+		string yaml = serializer.Serialize(returnStmt);
 
 		// Assert
 		Assert.IsNotNull(yaml);
@@ -108,11 +108,11 @@ public class YamlSerializationTests
 	public void Serialize_LeafNode_GeneratesCorrectYaml()
 	{
 		// Arrange
-		var leafNode = new AstLeafNode<string>("test value");
-		var serializer = new YamlSerializer();
+		AstLeafNode<string> leafNode = new("test value");
+		YamlSerializer serializer = new();
 
 		// Act
-		var yaml = serializer.Serialize(leafNode);
+		string yaml = serializer.Serialize(leafNode);
 
 		// Assert
 		Assert.IsNotNull(yaml);
@@ -123,8 +123,8 @@ public class YamlSerializationTests
 	public void DeserializeInvalidYaml_ThrowsException()
 	{
 		// Arrange
-		var deserializer = new YamlDeserializer();
-		var invalidYaml = "this is not valid yaml @#$%";
+		YamlDeserializer deserializer = new();
+		string invalidYaml = "this is not valid yaml @#$%";
 
 		// Act & Assert
 		Assert.ThrowsException<YamlDotNet.Core.YamlException>(() => deserializer.Deserialize(invalidYaml));

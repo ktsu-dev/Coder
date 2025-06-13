@@ -73,16 +73,16 @@ public class ReturnStatement : AstCompositeNode
 	/// <returns>A new instance of the return statement with the same properties and cloned children.</returns>
 	public override AstNode Clone()
 	{
-		var clone = new ReturnStatement();
+		ReturnStatement clone = new();
 
 		// Copy metadata
-		foreach (var (key, value) in Metadata)
+		foreach ((string key, object value) in Metadata)
 		{
 			clone.Metadata[key] = value;
 		}
 
 		// Clone the children dictionary which includes the Expression
-		foreach (var (key, child) in Children)
+		foreach ((string key, AstNode child) in Children)
 		{
 			clone.Children[key] = child.Clone();
 		}

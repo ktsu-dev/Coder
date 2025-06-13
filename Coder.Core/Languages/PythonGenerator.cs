@@ -75,9 +75,9 @@ public class PythonGenerator : LanguageGeneratorBase
 		builder.Append('(');
 
 		// Parameters
-		for (var i = 0; i < funcDecl.Parameters.Count; i++)
+		for (int i = 0; i < funcDecl.Parameters.Count; i++)
 		{
-			var param = funcDecl.Parameters[i];
+			Parameter param = funcDecl.Parameters[i];
 
 			if (i > 0)
 			{
@@ -122,7 +122,7 @@ public class PythonGenerator : LanguageGeneratorBase
 		else
 		{
 			// Generate each statement in the body
-			foreach (var statement in funcDecl.Body)
+			foreach (AstNode statement in funcDecl.Body)
 			{
 				GenerateInternal(statement, builder, indentLevel + 1);
 				builder.AppendLine();

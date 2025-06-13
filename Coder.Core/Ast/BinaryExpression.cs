@@ -4,8 +4,6 @@
 
 namespace ktsu.Coder.Core.Ast;
 
-using ktsu.DeepClone;
-
 /// <summary>
 /// Represents a binary expression with a left operand, operator, and right operand.
 /// Examples: a + b, x * y, result == expected
@@ -46,9 +44,9 @@ public class BinaryExpression : Expression
 	/// </summary>
 	public BinaryExpression()
 	{
-		Left = new AstLeafNode<string>("");
+		Left = new LiteralExpression<string>("");
 		Operator = BinaryOperator.Add;
-		Right = new AstLeafNode<string>("");
+		Right = new LiteralExpression<string>("");
 	}
 
 	/// <summary>
@@ -66,9 +64,9 @@ public class BinaryExpression : Expression
 		};
 
 		// Copy metadata
-		foreach (System.Collections.Generic.KeyValuePair<string, object?> kvp in Metadata)
+		foreach ((string key, object? value) in Metadata)
 		{
-			clone.Metadata[kvp.Key] = kvp.Value?.DeepClone();
+			clone.Metadata[key] = value;
 		}
 
 		return clone;

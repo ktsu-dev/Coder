@@ -38,7 +38,7 @@ public static class CoderCLI
 			}
 
 			// Create a sample function AST
-			var sampleFunction = CreateSampleFunction();
+			FunctionDeclaration sampleFunction = CreateSampleFunction();
 
 			// Show the AST structure
 			Console.WriteLine("Generated AST Structure:");
@@ -47,24 +47,24 @@ public static class CoderCLI
 			Console.WriteLine();
 
 			// Serialize to YAML
-			var serializer = new YamlSerializer();
-			var yamlContent = serializer.Serialize(sampleFunction);
+			YamlSerializer serializer = new();
+			string yamlContent = serializer.Serialize(sampleFunction);
 			Console.WriteLine("YAML Serialization:");
 			Console.WriteLine("==================");
 			Console.WriteLine(yamlContent);
 			Console.WriteLine();
 
 			// Generate Python code
-			var pythonGenerator = new PythonGenerator();
-			var pythonCode = pythonGenerator.Generate(sampleFunction);
+			PythonGenerator pythonGenerator = new();
+			string pythonCode = pythonGenerator.Generate(sampleFunction);
 			Console.WriteLine("Generated Python Code:");
 			Console.WriteLine("=====================");
 			Console.WriteLine(pythonCode);
 			Console.WriteLine();
 
 			// Demonstrate round-trip serialization
-			var deserializer = new YamlDeserializer();
-			var deserializedAst = deserializer.Deserialize(yamlContent);
+			YamlDeserializer deserializer = new();
+			AstNode? deserializedAst = deserializer.Deserialize(yamlContent);
 			if (deserializedAst == null)
 			{
 				Console.WriteLine("❌ Failed to deserialize YAML content");
@@ -72,7 +72,7 @@ public static class CoderCLI
 				return;
 			}
 
-			var regeneratedCode = pythonGenerator.Generate(deserializedAst);
+			string regeneratedCode = pythonGenerator.Generate(deserializedAst);
 
 			Console.WriteLine("Round-trip Test (YAML -> AST -> Python):");
 			Console.WriteLine("========================================");
@@ -103,7 +103,7 @@ public static class CoderCLI
 
 	private static FunctionDeclaration CreateSampleFunction()
 	{
-		var function = new FunctionDeclaration("calculate_sum")
+		FunctionDeclaration function = new("calculate_sum")
 		{
 			ReturnType = "int"
 		};
@@ -125,9 +125,9 @@ public static class CoderCLI
 		Console.WriteLine($"Return Type: {function.ReturnType}");
 		Console.WriteLine($"Parameters: {function.Parameters.Count}");
 
-		foreach (var param in function.Parameters)
+		foreach (Parameter param in function.Parameters)
 		{
-			var optionalInfo = param.IsOptional ? $" (optional, default: {param.DefaultValue})" : "";
+			string optionalInfo = param.IsOptional ? $" (optional, default: {param.DefaultValue})" : "";
 			Console.WriteLine($"  - {param.Name}: {param.Type}{optionalInfo}");
 		}
 

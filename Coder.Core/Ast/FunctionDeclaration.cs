@@ -56,32 +56,32 @@ public class FunctionDeclaration : AstCompositeNode
 	/// <returns>A new instance of the function declaration with the same properties and cloned children.</returns>
 	public override AstNode Clone()
 	{
-		var clone = new FunctionDeclaration
+		FunctionDeclaration clone = new()
 		{
 			Name = Name,
 			ReturnType = ReturnType
 		};
 
 		// Copy metadata
-		foreach (var (key, value) in Metadata)
+		foreach ((string key, object value) in Metadata)
 		{
 			clone.Metadata[key] = value;
 		}
 
 		// Clone parameters
-		foreach (var parameter in Parameters)
+		foreach (Parameter parameter in Parameters)
 		{
 			clone.Parameters.Add((Parameter)parameter.Clone());
 		}
 
 		// Clone body statements
-		foreach (var statement in Body)
+		foreach (AstNode statement in Body)
 		{
 			clone.Body.Add(statement.Clone());
 		}
 
 		// Clone the children dictionary
-		foreach (var (key, child) in Children)
+		foreach ((string key, AstNode child) in Children)
 		{
 			clone.Children[key] = child.Clone();
 		}

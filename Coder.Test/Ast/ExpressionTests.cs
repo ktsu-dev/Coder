@@ -5,7 +5,6 @@
 namespace ktsu.Coder.Test.Ast;
 
 using ktsu.Coder.Core.Ast;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 /// <summary>
 /// Tests for the expression system AST nodes.

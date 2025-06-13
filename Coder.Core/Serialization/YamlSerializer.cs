@@ -38,7 +38,7 @@ public class YamlSerializer
 		ArgumentNullException.ThrowIfNull(node);
 
 		// Create a dictionary to represent the YAML structure
-		var root = new Dictionary<string, object>();
+		Dictionary<string, object> root = [];
 		SerializeNode(node, root);
 
 		// Serialize the dictionary to YAML
@@ -47,7 +47,7 @@ public class YamlSerializer
 
 	private static void SerializeNode(AstNode node, Dictionary<string, object> target)
 	{
-		var nodeKey = node.GetNodeTypeName();
+		string nodeKey = node.GetNodeTypeName();
 
 		// Handle leaf nodes
 		if (TrySerializeLeafNode(node, nodeKey, target))
@@ -56,7 +56,7 @@ public class YamlSerializer
 		}
 
 		// Handle composite nodes
-		var nodeData = new Dictionary<string, object>();
+		Dictionary<string, object> nodeData = [];
 		SerializeCompositeNode(node, nodeData);
 		target[nodeKey] = nodeData;
 	}
@@ -135,10 +135,10 @@ public class YamlSerializer
 
 	private static List<Dictionary<string, object>> SerializeParameters(IEnumerable<Parameter> parameters)
 	{
-		var parameterList = new List<Dictionary<string, object>>();
-		foreach (var param in parameters)
+		List<Dictionary<string, object>> parameterList = [];
+		foreach (Parameter param in parameters)
 		{
-			var paramData = new Dictionary<string, object>();
+			Dictionary<string, object> paramData = [];
 			SerializeParameter(param, paramData);
 			parameterList.Add(paramData);
 		}
@@ -148,10 +148,10 @@ public class YamlSerializer
 
 	private static List<Dictionary<string, object>> SerializeBodyStatements(IEnumerable<AstNode> statements)
 	{
-		var bodyStatements = new List<Dictionary<string, object>>();
-		foreach (var statement in statements)
+		List<Dictionary<string, object>> bodyStatements = [];
+		foreach (AstNode statement in statements)
 		{
-			var statementData = new Dictionary<string, object>();
+			Dictionary<string, object> statementData = [];
 			SerializeNode(statement, statementData);
 			bodyStatements.Add(statementData);
 		}
@@ -186,7 +186,7 @@ public class YamlSerializer
 	{
 		if (returnStmt.Expression != null)
 		{
-			var expressionData = new Dictionary<string, object>();
+			Dictionary<string, object> expressionData = [];
 			SerializeNode(returnStmt.Expression, expressionData);
 			nodeData["expression"] = expressionData;
 		}
@@ -194,11 +194,11 @@ public class YamlSerializer
 
 	private static void SerializeCompositeChildren(AstCompositeNode compositeNode, Dictionary<string, object> nodeData)
 	{
-		foreach (var (key, childNode) in compositeNode.Children)
+		foreach ((string key, AstNode childNode) in compositeNode.Children)
 		{
 			if (!key.Equals("Expression", StringComparison.OrdinalIgnoreCase)) // Already handled above
 			{
-				var childData = new Dictionary<string, object>();
+				Dictionary<string, object> childData = [];
 				SerializeNode(childNode, childData);
 				nodeData[key.ToLowerInvariant()] = childData;
 			}

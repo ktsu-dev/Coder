@@ -4,6 +4,7 @@
 
 namespace ktsu.Coder.Core.Languages;
 
+using System.Collections.Generic;
 using System.Text;
 using ktsu.Coder.Core.Ast;
 
@@ -28,126 +29,116 @@ public class CSharpGenerator : LanguageGeneratorBase
 	public override string FileExtension => "cs";
 
 	/// <summary>
-	/// Internal method to generate code with proper indentation.
+	/// Generates code for the specified AST node.
 	/// </summary>
-	/// <param name="node">The AST node to generate code from.</param>
+	/// <param name="node">The AST node to generate code for.</param>
 	/// <param name="builder">The string builder to append code to.</param>
 	/// <param name="indentLevel">The current indentation level.</param>
 	protected override void GenerateInternal(AstNode node, StringBuilder builder, int indentLevel)
 	{
+		ArgumentNullException.ThrowIfNull(node);
+		ArgumentNullException.ThrowIfNull(builder);
+
+		string indent = new(' ', indentLevel * 4);
+
 		switch (node)
 		{
-			case FunctionDeclaration func:
-				GenerateFunctionDeclaration(func, builder, indentLevel);
+			case FunctionDeclaration function:
+				GenerateFunction(function, builder, indent);
 				break;
-			case ReturnStatement ret:
-				GenerateReturnStatement(ret, builder, indentLevel);
+			case Parameter parameter:
+				GenerateParameter(parameter, builder);
 				break;
-			case AstLeafNode<string> leafStr:
-				builder.Append(leafStr.Value ?? "null");
-				break;
-			case AstLeafNode<int> leafInt:
-				builder.Append(leafInt.Value.ToString());
-				break;
-			case AstLeafNode<bool> leafBool:
-				builder.Append(leafBool.Value ? "true" : "false");
+			case ReturnStatement returnStmt:
+				GenerateReturnStatement(returnStmt, builder, indent);
 				break;
 			default:
-				builder.Append($"/* Unsupported node type: {node.GetType().Name} */");
+				builder.AppendLine($"{indent}// Unsupported node type: {node.GetType().Name}");
 				break;
 		}
 	}
 
-	private void GenerateFunctionDeclaration(FunctionDeclaration function, StringBuilder builder, int indentLevel)
+	private void GenerateFunction(FunctionDeclaration function, StringBuilder builder, string indent)
 	{
-		ArgumentNullException.ThrowIfNull(function);
-		ArgumentNullException.ThrowIfNull(builder);
+		// Build method signature
+		builder.Append(indent);
+		builder.Append("public ");
 
-		Indent(builder, indentLevel);
+		// Add return type
+		string returnType = MapToCSType(function.ReturnType ?? "void");
+		builder.Append(returnType);
+		builder.Append(' ');
 
-		// Access modifier and method signature
-		string accessModifier = function.Metadata.ContainsKey("access") ?
-			function.Metadata["access"]?.ToString() ?? "public" : "public";
+		// Add method name
+		builder.Append(function.Name);
+		builder.Append('(');
 
-		string staticModifier = function.Metadata.ContainsKey("static") &&
-			Convert.ToBoolean(function.Metadata["static"]) ? "static " : "";
-
-		string returnType = function.ReturnType ?? "void";
-
-		builder.Append($"{accessModifier} {staticModifier}{returnType} {function.Name}(");
-
-		// Parameters
+		// Add parameters
 		for (int i = 0; i < function.Parameters.Count; i++)
 		{
-			Parameter param = function.Parameters[i];
-			GenerateParameter(param, builder);
-
-			if (i < function.Parameters.Count - 1)
+			if (i > 0)
 			{
 				builder.Append(", ");
 			}
+			GenerateParameter(function.Parameters[i], builder);
 		}
 
 		builder.AppendLine(")");
-		Indent(builder, indentLevel);
-		builder.AppendLine("{");
+		builder.AppendLine($"{indent}{{");
 
-		// Function body
+		// Add body
 		foreach (AstNode statement in function.Body)
 		{
-			GenerateInternal(statement, builder, indentLevel + 1);
-			builder.AppendLine();
+			GenerateInternal(statement, builder, 1);
 		}
 
-		Indent(builder, indentLevel);
-		builder.AppendLine("}");
+		builder.AppendLine($"{indent}}}");
 	}
 
-	private void GenerateParameter(Parameter parameter, StringBuilder builder)
+	private static void GenerateParameter(Parameter parameter, StringBuilder builder)
 	{
-		ArgumentNullException.ThrowIfNull(parameter);
-		ArgumentNullException.ThrowIfNull(builder);
+		string type = MapToCSType(parameter.Type ?? "object");
+		builder.Append(type);
+		builder.Append(' ');
+		builder.Append(parameter.Name);
 
-		string paramType = parameter.Type ?? "object";
-		builder.Append($"{paramType} {parameter.Name}");
-
-		if (parameter.IsOptional && parameter.DefaultValue != null)
+		if (parameter.IsOptional && !string.IsNullOrEmpty(parameter.DefaultValue))
 		{
-			string defaultValue = parameter.DefaultValue;
-
-			// Handle common default value conversions
-			if (paramType.ToLowerInvariant() == "bool")
-			{
-				defaultValue = defaultValue.ToLowerInvariant() == "true" ? "true" : "false";
-			}
-			else if (paramType.ToLowerInvariant() == "string")
-			{
-				if (!defaultValue.StartsWith('"'))
-				{
-					defaultValue = $"\"{defaultValue}\"";
-				}
-			}
-
-			builder.Append($" = {defaultValue}");
+			builder.Append(" = ");
+			builder.Append(parameter.DefaultValue);
 		}
 	}
 
-	private void GenerateReturnStatement(ReturnStatement returnStatement, StringBuilder builder, int indentLevel)
+	private static void GenerateReturnStatement(ReturnStatement returnStmt, StringBuilder builder, string indent)
 	{
-		ArgumentNullException.ThrowIfNull(returnStatement);
-		ArgumentNullException.ThrowIfNull(builder);
+		builder.Append(indent);
+		builder.Append("return");
 
-		Indent(builder, indentLevel);
+		if (returnStmt.Expression != null)
+		{
+			builder.Append(' ');
+			// For now, just convert to string - in a full implementation,
+			// we'd recursively generate the expression
+			builder.Append(returnStmt.Expression.ToString());
+		}
 
-		if (returnStatement.Expression == null)
-		{
-			builder.Append("return;");
-		}
-		else
-		{
-			builder.Append("return ");
-			GenerateInternal(returnStatement.Expression, builder, 0);
-			builder.Append(";");
-		}
+		builder.AppendLine(";");
 	}
+
+	private static readonly Dictionary<string, string> TypeMappings = new()
+	{
+		{ "str", "string" },
+		{ "int", "int" },
+		{ "float", "float" },
+		{ "double", "double" },
+		{ "bool", "bool" },
+		{ "list", "List<object>" },
+		{ "dict", "Dictionary<string, object>" },
+		{ "void", "void" }
+	};
+
+	private static string MapToCSType(string pythonType) =>
+		TypeMappings.TryGetValue(pythonType, out string? mapped)
+			? mapped
+			: string.Equals(pythonType, "void", StringComparison.OrdinalIgnoreCase) ? "void" : pythonType;
 }

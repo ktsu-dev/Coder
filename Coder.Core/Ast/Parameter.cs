@@ -65,7 +65,7 @@ public class Parameter : AstNode
 	/// <returns>A new instance of the parameter with the same properties.</returns>
 	public override AstNode Clone()
 	{
-		var clone = new Parameter
+		Parameter clone = new()
 		{
 			Name = Name,
 			Type = Type,
@@ -74,7 +74,7 @@ public class Parameter : AstNode
 		};
 
 		// Copy metadata
-		foreach (var (key, value) in Metadata)
+		foreach ((string key, object value) in Metadata)
 		{
 			clone.Metadata[key] = value;
 		}

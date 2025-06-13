@@ -42,7 +42,7 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 			throw new NotSupportedException($"Cannot generate code for node type: {astNode.GetNodeTypeName()}");
 		}
 
-		var builder = new StringBuilder();
+		StringBuilder builder = new();
 		GenerateInternal(astNode, builder, 0);
 		return builder.ToString();
 	}

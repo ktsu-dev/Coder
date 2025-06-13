@@ -7,8 +7,6 @@ namespace ktsu.Coder.Test;
 using ktsu.Coder.Core;
 using ktsu.Coder.Core.Languages;
 using ktsu.Coder.Core.Serialization;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 /// <summary>
 /// Tests for the ServiceCollectionExtensions class.

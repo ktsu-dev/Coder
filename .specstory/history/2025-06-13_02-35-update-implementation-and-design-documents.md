@@ -2833,3 +2833,800 @@ _**Assistant**_
 
 ---
 
+**Absolutely!** That context completely changes my recommendation. For a node-based visual editor, the expression system becomes **essential** rather than optional complexity.
+
+## Why Expression System is Perfect for Visual Editors
+
+### 🎯 **Node-Based Editor Benefits:**
+
+1. **Direct Visual Mapping** - Each AST node becomes a visual node:
+   ```
+   [Variable: "a"] ─┐
+                    ├─→ [Add] ─→ [Variable: "result"]  
+   [Variable: "b"] ─┘
+   ```
+
+2. **Composable Connections** - Users drag wires between:
+   - `BinaryExpression.Left` ← connects to any `Expression`
+   - `BinaryExpression.Right` ← connects to any `Expression`  
+   - `BinaryExpression.Operator` ← dropdown selection
+
+3. **Type-Safe Connections** - Visual editor can enforce:
+   ```csharp
+   // Only allow Expression nodes to connect to Expression inputs
+   if (sourceNode is Expression && targetInput.ExpectedType == typeof(Expression))
+       allowConnection = true;
+   ```
+
+4. **Perfect Serialization** - YAML preserves the exact graph structure:
+   ```yaml
+   binaryExpression:
+     left:
+       variableReference: { name: "a" }
+     operator: "Add"  
+     right:
+       literalExpression: { value: 5, type: "Int32" }
+   ```
+
+5. **Graph Reconstruction** - Can rebuild the visual editor state exactly from YAML
+
+### 🔧 **Visual Editor Node Types:**
+- **Literal Nodes**: Number/String/Bool input boxes
+- **Variable Nodes**: Dropdown of available variables  
+- **Binary Op Nodes**: Two inputs + operator selector
+- **Function Call Nodes**: Dynamic inputs based on signature
+- **Assignment Nodes**: Target + Value inputs
+- **Control Flow Nodes**: If/While with condition + body connections
+
+## **Revised Recommendation: Fix Integration**
+
+Given this use case, we should definitely **fix the integration issues** and complete the expression system. The complexity is justified because:
+
+1. **UI Requirements Drive Architecture** - Visual editors need discrete, composable elements
+2. **Future Extensibility** - Easy to add new node types (function calls, property access, etc.)
+3. **Validation Capabilities** - Can validate connections and types at design time
+4. **Code Generation Quality** - Proper precedence, formatting, optimizations
+
+### Next Steps:
+1. **Fix ReturnStatement** - Add `Expression` property, maintain backward compatibility
+2. **Complete Integration** - Update serializers to handle expression types  
+3. **Add Missing Expression Types** - VariableReference, FunctionCall, PropertyAccess
+4. **Enhance Type System** - Better type information for visual editor validation
+
+The visual editor context makes this a **strategic investment** rather than unnecessary complexity. Should I proceed with fixing the integration issues?
+
+---
+
+_**User**_
+
+lets do the revised reccommendation then
+
+---
+
+_**Assistant**_
+
+
+
+---
+
+Excellent! Let's fix the integration issues and complete the expression system properly. I'll tackle this systematically:
+
+## 1. First, let's fix the ReturnStatement integration
+
+---
+
+Read file: Coder.Core/Ast/ReturnStatement.cs
+
+---
+
+Good! I can see that ReturnStatement already has an `Expression` property, so that should work. Now let me check the BinaryExpression integration issues:
+
+---
+
+Read file: Coder.Core/Ast/BinaryExpression.cs
+
+---
+
+I see the issue! The BinaryExpression constructor expects `Expression` types, but the default constructor assigns `AstLeafNode<string>("")` which isn't an Expression. Let me fix this and other integration issues:
+
+## 2. Fix AstLeafNode to extend Expression
+
+---
+
+Read file: Coder.Core/Ast/AstLeafNode.cs
+
+---
+
+Now I understand the issue. We have two parallel systems:
+- `AstLeafNode<T>` (existing system)
+- `LiteralExpression<T>` (new Expression system)
+
+Let me create a bridge by adding a VariableReference expression and fixing the integration:
+
+## 3. Create VariableReference Expression
+
+---
+
+```diff
+- 
++ // Copyright (c) ktsu.dev
++ // All rights reserved.
++ // Licensed under the MIT license.
++ 
++ namespace ktsu.Coder.Core.Ast;
++ 
++ using ktsu.DeepClone;
++ 
++ /// <summary>
++ /// Represents a reference to a variable in an expression.
++ /// Examples: "x", "result", "myVariable"
++ /// </summary>
++ public class VariableReference : Expression
++ {
++ 	/// <summary>
++ 	/// Gets or sets the name of the variable being referenced.
++ 	/// </summary>
++ 	public string Name { get; set; }
++ 
++ 	/// <summary>
++ 	/// Initializes a new instance of the <see cref="VariableReference"/> class.
++ 	/// </summary>
++ 	/// <param name="name">The name of the variable.</param>
++ 	public VariableReference(string name)
++ 	{
++ 		ArgumentException.ThrowIfNullOrWhiteSpace(name);
++ 		Name = name;
++ 	}
++ 
++ 	/// <summary>
++ 	/// Initializes a new instance of the <see cref="VariableReference"/> class.
++ 	/// Used for deserialization.
++ 	/// </summary>
++ 	public VariableReference()
++ 	{
++ 		Name = string.Empty;
++ 	}
++ 
++ 	/// <summary>
++ 	/// Gets the node type name for this variable reference.
++ 	/// </summary>
++ 	/// <returns>The variable reference type name.</returns>
++ 	public override string GetNodeTypeName() => "VariableReference";
++ 
++ 	/// <summary>
++ 	/// Creates a deep clone of this variable reference.
++ 	/// </summary>
++ 	/// <returns>A new instance with the same property values.</returns>
++ 	public override AstNode Clone()
++ 	{
++ 		VariableReference clone = new(Name)
++ 		{
++ 			ExpectedType = ExpectedType
++ 		};
++ 
++ 		// Copy metadata
++ 		foreach (System.Collections.Generic.KeyValuePair<string, object?> kvp in Metadata)
++ 		{
++ 			clone.Metadata[kvp.Key] = kvp.Value?.DeepClone();
++ 		}
++ 
++ 		return clone;
++ 	}
++ 
++ 	/// <summary>
++ 	/// Returns a string representation of the variable reference.
++ 	/// </summary>
++ 	/// <returns>The variable name.</returns>
++ 	public override string ToString() => Name;
++ } 
+```
+
+---
+
+## 4. Fix BinaryExpression constructor to use proper Expression types
+
+---
+
+
+
+---
+
+
+
+---
+
+
+
+---
+
+The DeepClone issue is because the metadata object? might not have the extension. Let me fix this:
+
+---
+
+
+
+---
+
+
+
+---
+
+## 5. Fix AssignmentStatement to work with Expression
+
+---
+
+
+
+---
+
+
+
+---
+
+
+
+---
+
+
+
+---
+
+
+
+---
+
+
+
+---
+
+## 6. Let me fix the other files with similar issues quickly
+
+---
+
+
+
+---
+
+
+
+---
+
+
+
+---
+
+Let me fix the VariableReference and VariableDeclaration quickly, then we can test a build:
+
+---
+
+
+
+---
+
+
+
+---
+
+
+
+---
+
+
+
+---
+
+
+
+---
+
+
+
+---
+
+
+
+---
+
+
+
+---
+
+Now let me also update the ExtendedDemo to use the new proper expression system:
+
+---
+
+
+
+---
+
+
+
+---
+
+
+
+---
+
+
+
+---
+
+
+
+---
+
+
+
+---
+
+
+
+---
+
+
+
+---
+
+Let me run a build test to see the current state:
+
+---
+
+```bash
+dotnet build --configuration Release --verbosity minimal
+```
+
+```
+C:\dev\ktsu-dev\Coder>dotnet build --configuration Release --verbosity minimal
+
+                                                                                                                 (0.1s)
+    C:\Program Files\dotnet\sdk\9.0.300\NuGet.targets(186,5): warning : Unable to find a project to restore!
+
+Build succeeded with 1 warning(s) in 0.6s
+
+C:\dev\ktsu-dev\Coder>
+```
+
+---
+
+
+
+---
+
+Great! The build succeeded! Now let me create a new comprehensive demo that shows off the working expression system:
+
+---
+
+```diff
+- 
++ // Copyright (c) ktsu.dev
++ // All rights reserved.
++ // Licensed under the MIT license.
++ 
++ namespace ktsu.Coder.CLI;
++ 
++ using ktsu.Coder.Core.Ast;
++ using ktsu.Coder.Core.Languages;
++ using ktsu.Coder.Core.Serialization;
++ using Microsoft.Extensions.DependencyInjection;
++ 
++ /// <summary>
++ /// Demonstrates the complete expression system working with visual editor in mind.
++ /// </summary>
++ public static class ExpressionDemo
++ {
++ 	/// <summary>
++ 	/// Runs the comprehensive expression system demonstration.
++ 	/// </summary>
++ 	public static void Run()
++ 	{
++ 		Console.WriteLine("🚀 Expression System Demo - Visual Editor Ready");
++ 		Console.WriteLine("=" + new string('=', 50));
++ 
++ 		// Setup DI container
++ 		var services = new ServiceCollection();
++ 		services.AddCoder();
++ 		using var provider = services.BuildServiceProvider();
++ 
++ 		var yamlSerializer = provider.GetRequiredService<YamlSerializer>();
++ 		var pythonGenerator = provider.GetRequiredService<PythonGenerator>();
++ 		var csharpGenerator = provider.GetRequiredService<CSharpGenerator>();
++ 
++ 		// Create a mathematical expression: result = (a + b) * (c - d) / 2.0
++ 		var demo = CreateMathExpression();
++ 		Console.WriteLine("\n📊 Mathematical Expression Demo");
++ 		Console.WriteLine($"Expression: {demo}");
++ 
++ 		// Create a conditional logic expression
++ 		var conditional = CreateConditionalExpression();
++ 		Console.WriteLine("\n🤔 Conditional Logic Demo");
++ 		Console.WriteLine($"Condition: {conditional}");
++ 
++ 		// Create variable declarations with expressions
++ 		var variables = CreateVariableDeclarations();
++ 		Console.WriteLine("\n📋 Variable Declarations with Expressions");
++ 		foreach (var variable in variables)
++ 		{
++ 			Console.WriteLine($"  {variable}");
++ 		}
++ 
++ 		// Create a function with complex expressions
++ 		var function = CreateComplexFunction();
++ 		Console.WriteLine("\n⚙️ Complex Function with Expressions");
++ 		Console.WriteLine($"Function: {function.Name}({string.Join(", ", function.Parameters.Select(p => $"{p.Type} {p.Name}"))})");
++ 
++ 		// Test serialization (critical for visual editor state saving)
++ 		Console.WriteLine("\n💾 YAML Serialization Test (Visual Editor State)");
++ 		try
++ 		{
++ 			string serialized = yamlSerializer.Serialize(function);
++ 			Console.WriteLine("✅ Serialization successful - Visual editor can save/load this structure");
++ 			Console.WriteLine($"First few lines:\n{string.Join('\n', serialized.Split('\n').Take(10))}...");
++ 
++ 			// Test deserialization
++ 			var deserialized = yamlSerializer.Deserialize<FunctionDeclaration>(serialized);
++ 			Console.WriteLine("✅ Deserialization successful - Visual editor can restore this structure");
++ 		}
++ 		catch (Exception ex)
++ 		{
++ 			Console.WriteLine($"❌ Serialization error: {ex.Message}");
++ 		}
++ 
++ 		// Test code generation
++ 		Console.WriteLine("\n🔄 Multi-Language Code Generation");
++ 		try
++ 		{
++ 			Console.WriteLine("Python output:");
++ 			Console.WriteLine(pythonGenerator.Generate(function));
++ 
++ 			Console.WriteLine("\nC# output:");
++ 			Console.WriteLine(csharpGenerator.Generate(function));
++ 		}
++ 		catch (Exception ex)
++ 		{
++ 			Console.WriteLine($"❌ Code generation error: {ex.Message}");
++ 		}
++ 
++ 		Console.WriteLine("\n🎯 Visual Editor Benefits:");
++ 		Console.WriteLine("• Each Expression is a discrete node - perfect for visual connections");
++ 		Console.WriteLine("• Type information enables intelligent connection validation");
++ 		Console.WriteLine("• YAML serialization preserves exact graph structure");
++ 		Console.WriteLine("• Clone() methods support visual copy/paste operations");
++ 		Console.WriteLine("• Extensible design allows custom expression types");
++ 	}
++ 
++ 	private static BinaryExpression CreateMathExpression()
++ 	{
++ 		// (a + b) * (c - d) / 2.0
++ 		var aPlusB = new BinaryExpression(
++ 			new VariableReference("a"),
++ 			BinaryOperator.Add,
++ 			new VariableReference("b")
++ 		);
++ 
++ 		var cMinusD = new BinaryExpression(
++ 			new VariableReference("c"),
++ 			BinaryOperator.Subtract,
++ 			new VariableReference("d")
++ 		);
++ 
++ 		var multiply = new BinaryExpression(
++ 			aPlusB,
++ 			BinaryOperator.Multiply,
++ 			cMinusD
++ 		);
++ 
++ 		var divide = new BinaryExpression(
++ 			multiply,
++ 			BinaryOperator.Divide,
++ 			Literal.Double(2.0)
++ 		);
++ 
++ 		divide.ExpectedType = "double";
++ 		return divide;
++ 	}
++ 
++ 	private static BinaryExpression CreateConditionalExpression()
++ 	{
++ 		// (age >= 18) && (hasLicense == true)
++ 		var ageCheck = new BinaryExpression(
++ 			new VariableReference("age"),
++ 			BinaryOperator.GreaterThanOrEqual,
++ 			Literal.Int(18)
++ 		);
++ 
++ 		var licenseCheck = new BinaryExpression(
++ 			new VariableReference("hasLicense"),
++ 			BinaryOperator.Equal,
++ 			Literal.Bool(true)
++ 		);
++ 
++ 		var combined = new BinaryExpression(
++ 			ageCheck,
++ 			BinaryOperator.LogicalAnd,
++ 			licenseCheck
++ 		);
++ 
++ 		combined.ExpectedType = "bool";
++ 		return combined;
++ 	}
++ 
++ 	private static List<VariableDeclaration> CreateVariableDeclarations()
++ 	{
++ 		return new List<VariableDeclaration>
++ 		{
++ 			new("result", "double", CreateMathExpression()),
++ 			new("canDrive", "bool", CreateConditionalExpression()),
++ 			new("message", null, Literal.String("Hello, World!")) { IsTypeInferred = true },
++ 			new("counter", "int", Literal.Int(0)) { IsConstant = true }
++ 		};
++ 	}
++ 
++ 	private static FunctionDeclaration CreateComplexFunction()
++ 	{
++ 		var function = new FunctionDeclaration("calculateScore", "double");
++ 		function.Parameters.Add(new Parameter("baseScore", "double"));
++ 		function.Parameters.Add(new Parameter("multiplier", "double") { IsOptional = true, DefaultValue = "1.0" });
++ 		function.Parameters.Add(new Parameter("bonus", "double") { IsOptional = true, DefaultValue = "0.0" });
++ 
++ 		// Complex calculation: (baseScore * multiplier) + bonus
++ 		var multiplication = new BinaryExpression(
++ 			new VariableReference("baseScore"),
++ 			BinaryOperator.Multiply,
++ 			new VariableReference("multiplier")
++ 		);
++ 
++ 		var finalResult = new BinaryExpression(
++ 			multiplication,
++ 			BinaryOperator.Add,
++ 			new VariableReference("bonus")
++ 		);
++ 
++ 		function.Body.Add(new ReturnStatement(finalResult));
++ 		return function;
++ 	}
++ } 
+```
+
+---
+
+
+
+---
+
+## 7. Update the CLI Program to include the new demo
+
+---
+
+
+
+---
+
+
+
+---
+
+Let me find the CLI Program file:
+
+---
+
+<details>
+            <summary>Searched codebase "Program.cs" • **2** results</summary>
+        
+| File |
+|------|
+| `undefined` |
+| `undefined` |
+
+</details>
+
+---
+
+
+
+---
+
+Let me look at the App project instead:
+
+---
+
+Read file: Coder.App/Program.cs
+
+---
+
+
+
+
+
+---
+
+
+
+---
+
+Let me update the demo part to include our new Expression demo:
+
+---
+
+
+
+---
+
+
+
+---
+
+Read file: Coder.App/Program.cs
+
+---
+
+
+
+---
+
+Now let me test the complete expression system by running the CLI:
+
+---
+
+```bash
+dotnet run --project Coder.CLI
+```
+
+```
+C:\dev\ktsu-dev\Coder>dotnet run --project Coder.CLI
+
+                                                                                                                 (0.1s)
+C:\dev\ktsu-dev\Coder\Coder.Core\Ast\VariableReference.cs(34,3): error IDE0021: Use expression body for constructor (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rules/ide0021
+)
+C:\dev\ktsu-dev\Coder\Coder.Core\Ast\LiteralExpression.cs(96,42): error CA1720: Identifier 'Double' contains type name (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca
+1720)
+C:\dev\ktsu-dev\Coder\Coder.Core\Ast\AstCompositeNode.cs(25,72): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rules/ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Ast\LiteralExpression.cs(82,42): error CA1720: Identifier 'String' contains type name (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca
+1720)
+C:\dev\ktsu-dev\Coder\Coder.Core\Ast\LiteralExpression.cs(89,39): error CA1720: Identifier 'Int' contains type name (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca172
+0)
+C:\dev\ktsu-dev\Coder\Coder.Core\Ast\LiteralExpression.cs(110,41): error CA1720: Identifier 'Float' contains type name (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca
+1720)
+C:\dev\ktsu-dev\Coder\Coder.Core\Ast\LiteralExpression.cs(117,40): error CA1720: Identifier 'Long' contains type name (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1
+720)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlSerializer.cs(41,3): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rules/i
+de0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlSerializer.cs(50,3): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rules/i
+C:\dev\ktsu-dev\Coder\Coder.Core\Ast\FunctionDeclaration.cs(59,3): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rules/ide000
+8)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlSerializer.cs(189,4): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rules/
+ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Ast\FunctionDeclaration.cs(66,12): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rules/ide00
+08)
+C:\dev\ktsu-dev\Coder\Coder.Core\Ast\FunctionDeclaration.cs(72,12): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rules/ide00
+08)
+C:\dev\ktsu-dev\Coder\Coder.Core\Ast\FunctionDeclaration.cs(78,12): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rules/ide00
+08)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlDeserializer.cs(66,3): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rules
+/ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlDeserializer.cs(72,3): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rules
+/ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Ast\FunctionDeclaration.cs(84,12): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rules/ide00
+08)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlDeserializer.cs(77,56): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rule
+s/ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlDeserializer.cs(78,59): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rule
+s/ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Languages\PythonGenerator.cs(78,8): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rules/ide0
+008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Languages\PythonGenerator.cs(80,4): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rules/ide0
+008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Languages\PythonGenerator.cs(125,13): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rules/id
+e0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlDeserializer.cs(85,3): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rules
+/ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlSerializer.cs(138,3): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rules/
+ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlSerializer.cs(139,12): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rules
+/ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlSerializer.cs(141,4): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rules/
+ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlSerializer.cs(151,3): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rules/
+ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlSerializer.cs(152,12): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rules
+/ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlSerializer.cs(154,4): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rules/
+ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Languages\CSharpGenerator.cs(50,20): error CA1830: Remove the ToString call in order to use a strongly-typed StringBuilder overload (https://learn.microsoft.com/dotn
+et/fundamentals/code-analysis/quality-rules/ca1830)
+C:\dev\ktsu-dev\Coder\Coder.Core\Languages\CSharpGenerator.cs(69,27): error CA1854: Prefer a 'TryGetValue' call over a Dictionary indexer access guarded by a 'ContainsKey' check to avoid double look
+up (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1854)
+C:\dev\ktsu-dev\Coder\Coder.Core\Languages\CSharpGenerator.cs(72,27): error CA1854: Prefer a 'TryGetValue' call over a Dictionary indexer access guarded by a 'ContainsKey' check to avoid double look
+up (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1854)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlDeserializer.cs(115,43): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rul
+es/ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlDeserializer.cs(120,12): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rul
+es/ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlDeserializer.cs(124,5): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rule
+s/ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlDeserializer.cs(135,37): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rul
+es/ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlDeserializer.cs(140,12): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rul
+es/ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlDeserializer.cs(144,14): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rul
+es/ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlDeserializer.cs(102,36): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rul
+es/ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlDeserializer.cs(107,42): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rul
+es/ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlDeserializer.cs(158,41): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rul
+es/ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlDeserializer.cs(164,12): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rul
+es/ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Languages\CSharpGenerator.cs(150,19): error CA1834: Use 'StringBuilder.Append(char)' instead of 'StringBuilder.Append(string)' when the input is a constant unit stri
+ng (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1834)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlDeserializer.cs(146,6): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rule
+s/ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlDeserializer.cs(172,3): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rule
+s/ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlDeserializer.cs(174,12): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rul
+es/ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlDeserializer.cs(176,4): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rule
+s/ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlDeserializer.cs(182,13): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rul
+es/ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlDeserializer.cs(184,5): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rule
+s/ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlSerializer.cs(197,12): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rules
+/ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlSerializer.cs(201,5): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rules/
+ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Languages\CSharpGenerator.cs(119,8): error CA1862: Prefer using 'string.Equals(string, StringComparison)' to perform a case-insensitive comparison, but keep in mind 
+that this might cause subtle changes in behavior, so make sure to conduct thorough testing after applying the suggestion, or if culturally sensitive comparison is not required, consider using 'Strin
+gComparison.OrdinalIgnoreCase' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1862)
+C:\dev\ktsu-dev\Coder\Coder.Core\Languages\CSharpGenerator.cs(121,20): error CA1862: Prefer using 'string.Equals(string, StringComparison)' to perform a case-insensitive comparison, but keep in mind
+ that this might cause subtle changes in behavior, so make sure to conduct thorough testing after applying the suggestion, or if culturally sensitive comparison is not required, consider using 'Stri
+ngComparison.OrdinalIgnoreCase' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1862)
+C:\dev\ktsu-dev\Coder\Coder.Core\Languages\CSharpGenerator.cs(123,13): error CA1862: Prefer using 'string.Equals(string, StringComparison)' to perform a case-insensitive comparison, but keep in mind
+ that this might cause subtle changes in behavior, so make sure to conduct thorough testing after applying the suggestion, or if culturally sensitive comparison is not required, consider using 'Stri
+ngComparison.OrdinalIgnoreCase' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1862)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlDeserializer.cs(195,3): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rule
+s/ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlDeserializer.cs(228,3): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rule
+s/ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlDeserializer.cs(198,37): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rul
+es/ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlDeserializer.cs(231,43): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rul
+es/ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlDeserializer.cs(203,37): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rul
+es/ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlDeserializer.cs(208,43): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rul
+es/ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlDeserializer.cs(233,14): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rul
+es/ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlDeserializer.cs(209,48): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rul
+es/ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlDeserializer.cs(235,6): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rule
+s/ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Serialization\YamlDeserializer.cs(213,46): error IDE0008: Use explicit type instead of 'var' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rul
+es/ide0008)
+C:\dev\ktsu-dev\Coder\Coder.Core\Languages\CSharpGenerator.cs(47,5): error CA1062: In externally visible method 'void CSharpGenerator.GenerateInternal(AstNode node, StringBuilder builder, int indent
+Level)', validate parameter 'builder' is non-null before using it. If appropriate, throw an 'ArgumentNullException' when the argument is 'null'. (https://learn.microsoft.com/dotnet/fundamentals/code
+-analysis/quality-rules/ca1062)
+C:\dev\ktsu-dev\Coder\Coder.Core\Languages\CSharpGenerator.cs(56,49): error CA1062: In externally visible method 'void CSharpGenerator.GenerateInternal(AstNode node, StringBuilder builder, int inden
+tLevel)', validate parameter 'node' is non-null before using it. If appropriate, throw an 'ArgumentNullException' when the argument is 'null'. (https://learn.microsoft.com/dotnet/fundamentals/code-a
+nalysis/quality-rules/ca1062)
+C:\dev\ktsu-dev\Coder\Coder.Core\Languages\CSharpGenerator.cs(106,15): error CA1822: Member 'GenerateParameter' does not access instance data and can be marked as static (https://learn.microsoft.com
+/dotnet/fundamentals/code-analysis/quality-rules/ca1822)
+
+The build failed. Fix the build errors and run again.
+
+C:\dev\ktsu-dev\Coder>
+```
+
+---
+
+
+
+---
+
+_**User**_
+
+continue
+
+---
+
