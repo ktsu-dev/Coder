@@ -28,6 +28,7 @@ public static class ExpressionDemo
 		using ServiceProvider provider = services.BuildServiceProvider();
 
 		YamlSerializer yamlSerializer = provider.GetRequiredService<YamlSerializer>();
+		YamlDeserializer yamlDeserializer = provider.GetRequiredService<YamlDeserializer>();
 		PythonGenerator pythonGenerator = provider.GetRequiredService<PythonGenerator>();
 		CSharpGenerator csharpGenerator = provider.GetRequiredService<CSharpGenerator>();
 
@@ -63,7 +64,7 @@ public static class ExpressionDemo
 			Console.WriteLine($"First few lines:\n{string.Join('\n', serialized.Split('\n').Take(10))}...");
 
 			// Test deserialization
-			var deserialized = yamlSerializer.Deserialize<FunctionDeclaration>(serialized);
+			FunctionDeclaration? deserialized = yamlDeserializer.Deserialize(serialized) as FunctionDeclaration;
 			Console.WriteLine("✅ Deserialization successful - Visual editor can restore this structure");
 		}
 		catch (Exception ex)
@@ -97,73 +98,78 @@ public static class ExpressionDemo
 	private static BinaryExpression CreateMathExpression()
 	{
 		// (a + b) * (c - d) / 2.0
-		var aPlusB = new BinaryExpression(
+		BinaryExpression aPlusB = new(
 			new VariableReference("a"),
 			BinaryOperator.Add,
 			new VariableReference("b")
 		);
 
-		var cMinusD = new BinaryExpression(
+		BinaryExpression cMinusD = new(
 			new VariableReference("c"),
 			BinaryOperator.Subtract,
 			new VariableReference("d")
 		);
 
-		var multiply = new BinaryExpression(
+		BinaryExpression multiply = new(
 			aPlusB,
 			BinaryOperator.Multiply,
 			cMinusD
 		);
 
-		var divide = new BinaryExpression(
+		BinaryExpression divide = new(
 			multiply,
 			BinaryOperator.Divide,
 			Literal.DecimalValue(2.0)
-		);
-
-		divide.ExpectedType = "double";
+		)
+		{
+			ExpectedType = "double"
+		};
 		return divide;
 	}
 
 	private static BinaryExpression CreateConditionalExpression()
 	{
 		// (age >= 18) && (hasLicense == true)
-		var ageCheck = new BinaryExpression(
+		BinaryExpression ageCheck = new(
 			new VariableReference("age"),
 			BinaryOperator.GreaterThanOrEqual,
 			Literal.Number(18)
 		);
 
-		var licenseCheck = new BinaryExpression(
+		BinaryExpression licenseCheck = new(
 			new VariableReference("hasLicense"),
 			BinaryOperator.Equal,
 			Literal.Bool(true)
 		);
 
-		var combined = new BinaryExpression(
+		BinaryExpression combined = new(
 			ageCheck,
 			BinaryOperator.LogicalAnd,
 			licenseCheck
-		);
-
-		combined.ExpectedType = "bool";
+		)
+		{
+			ExpectedType = "bool"
+		};
 		return combined;
 	}
 
 	private static List<VariableDeclaration> CreateVariableDeclarations()
 	{
-		return new List<VariableDeclaration>
-		{
+		return
+		[
 			new("result", "double", CreateMathExpression()),
 			new("canDrive", "bool", CreateConditionalExpression()),
 			new("message", null, Literal.Text("Hello, World!")) { IsTypeInferred = true },
 			new("counter", "int", Literal.Number(0)) { IsConstant = true }
-		};
+		];
 	}
 
 	private static FunctionDeclaration CreateComplexFunction()
 	{
-		FunctionDeclaration function = new("calculateScore", "double");
+		FunctionDeclaration function = new("calculateScore")
+		{
+			ReturnType = "double"
+		};
 		function.Parameters.Add(new Parameter("baseScore", "double"));
 		function.Parameters.Add(new Parameter("multiplier", "double") { IsOptional = true, DefaultValue = "1.0" });
 		function.Parameters.Add(new Parameter("bonus", "double") { IsOptional = true, DefaultValue = "0.0" });
