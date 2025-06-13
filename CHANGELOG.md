@@ -1,3 +1,11 @@
+## v1.0.2 (patch)
+
+Changes since v1.0.1:
+
+- Enhance expression handling in ExpressionDemo ([@matt-edmondson](https://github.com/matt-edmondson))
+- Refactor project structure and enhance expression handling ([@matt-edmondson](https://github.com/matt-edmondson))
+- Enhance YAML serialization and deserialization handling ([@matt-edmondson](https://github.com/matt-edmondson))
+- Refactor expression handling and improve code consistency ([@matt-edmondson](https://github.com/matt-edmondson))
 ## v1.0.1 (patch)
 
 Changes since v1.0.0:
