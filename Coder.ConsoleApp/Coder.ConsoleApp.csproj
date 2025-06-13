@@ -1,6 +1,6 @@
-<Project Sdk="ktsu.Sdk.CLI/1.11.0">
+<Project Sdk="ktsu.Sdk.ConsoleApp">
   <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
   </ItemGroup>
 
   <ItemGroup>

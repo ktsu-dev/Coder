@@ -2,7 +2,7 @@
 // All rights reserved.
 // Licensed under the MIT license.
 
-namespace ktsu.Coder.CLI;
+namespace ktsu.Coder.ConsoleApp;
 
 using ktsu.Coder.Core.Ast;
 using ktsu.Coder.Core.Languages;
@@ -67,7 +67,11 @@ public static class ExpressionDemo
 			FunctionDeclaration? deserialized = yamlDeserializer.Deserialize(serialized) as FunctionDeclaration;
 			Console.WriteLine("✅ Deserialization successful - Visual editor can restore this structure");
 		}
-		catch (Exception ex)
+		catch (InvalidOperationException ex)
+		{
+			Console.WriteLine($"❌ Serialization error: {ex.Message}");
+		}
+		catch (ArgumentException ex)
 		{
 			Console.WriteLine($"❌ Serialization error: {ex.Message}");
 		}
@@ -82,7 +86,11 @@ public static class ExpressionDemo
 			Console.WriteLine("\nC# output:");
 			Console.WriteLine(csharpGenerator.Generate(function));
 		}
-		catch (Exception ex)
+		catch (NotSupportedException ex)
+		{
+			Console.WriteLine($"❌ Code generation error: {ex.Message}");
+		}
+		catch (InvalidOperationException ex)
 		{
 			Console.WriteLine($"❌ Code generation error: {ex.Message}");
 		}

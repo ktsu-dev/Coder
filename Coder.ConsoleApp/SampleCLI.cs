@@ -2,7 +2,7 @@
 // All rights reserved.
 // Licensed under the MIT license.
 
-namespace ktsu.Coder.CLI;
+namespace ktsu.Coder.ConsoleApp;
 
 using ktsu.Coder.Core.Ast;
 using ktsu.Coder.Core.Languages;

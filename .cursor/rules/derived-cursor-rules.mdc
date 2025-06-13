@@ -55,6 +55,8 @@ The AI coding assistant is working on a multilingual code generation library nam
     - CS0029: Avoid implicit type conversions that can lead to errors.
     - CS1061: Ensure objects have the DeepClone definition when calling DeepClone.
     - IDE0021: Use expression body for constructor.
+- Use expression body for constructor.
+- When copying `Metadata`, iterate over the dictionary using a `foreach` loop with `object?` to handle potential null values.
 
 ## DEBUGGING
 
@@ -93,6 +95,7 @@ var assignment = new AssignmentStatement("result", "a + b");
 var declaration = new VariableDeclaration("int", "count", "0");
 ```
 - The project will now use a complete expression system with base `Expression` class, `BinaryExpression`, `LiteralExpression`, and `VariableReference` for a more robust and extensible AST, especially beneficial for visual editors. This system supports constructing expressions, functions, and objects via a node-based visual editor, where this library serves as the authoring and storage provider for the frontend.
+- The project will now use `Literal.Text()` instead of `Literal.String()`, `Literal.Number()` instead of `Literal.Int()`, `Literal.DecimalValue()` instead of `Literal.Double()`, `Literal.SingleValue()` instead of `Literal.Float()`, and `Literal.BigNumberValue()` instead of `Literal.Long()`.
 
 ## DEPENDENCY INJECTION RULES
 

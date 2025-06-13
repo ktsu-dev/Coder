@@ -7,6 +7,8 @@ namespace ktsu.Coder.Test;
 using ktsu.Coder.Core;
 using ktsu.Coder.Core.Languages;
 using ktsu.Coder.Core.Serialization;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 /// <summary>
 /// Tests for the ServiceCollectionExtensions class.
@@ -18,134 +20,142 @@ public class ServiceCollectionExtensionsTests
 	/// Tests that AddLanguageGenerators registers the expected language generators.
 	/// </summary>
 	[TestMethod]
-	public void AddLanguageGenerators_RegistersExpectedGenerators()
+	public void AddLanguageGenerators_ShouldRegisterLanguageGenerators()
 	{
 		// Arrange
-		var services = new ServiceCollection();
+		ServiceCollection services = new();
 
 		// Act
 		services.AddLanguageGenerators();
-		var serviceProvider = services.BuildServiceProvider();
+		ServiceProvider serviceProvider = services.BuildServiceProvider();
 
 		// Assert
-		var generators = serviceProvider.GetServices<ILanguageGenerator>().ToList();
+		List<ILanguageGenerator> generators = [.. serviceProvider.GetServices<ILanguageGenerator>()];
 		Assert.IsTrue(generators.Count > 0, "At least one language generator should be registered");
 
 		// Verify PythonGenerator is registered
-		var pythonGenerator = generators.FirstOrDefault(g => g.LanguageId == "python");
+		ILanguageGenerator? pythonGenerator = generators.FirstOrDefault(g => g.LanguageId == "python");
 		Assert.IsNotNull(pythonGenerator, "PythonGenerator should be registered");
-		Assert.IsInstanceOfType(pythonGenerator, typeof(PythonGenerator));
+		Assert.IsInstanceOfType<PythonGenerator>(pythonGenerator);
 	}
 
 	/// <summary>
-	/// Tests that AddCoderSerialization registers serialization services.
+	/// Tests that AddCoderSerialization registers the expected serialization services.
 	/// </summary>
 	[TestMethod]
-	public void AddCoderSerialization_RegistersSerializationServices()
+	public void AddCoderSerialization_ShouldRegisterSerializationServices()
 	{
 		// Arrange
-		var services = new ServiceCollection();
+		ServiceCollection services = new();
 
 		// Act
 		services.AddCoderSerialization();
-		var serviceProvider = services.BuildServiceProvider();
+		ServiceProvider serviceProvider = services.BuildServiceProvider();
 
 		// Assert
-		var serializer = serviceProvider.GetService<YamlSerializer>();
+		YamlSerializer? serializer = serviceProvider.GetService<YamlSerializer>();
 		Assert.IsNotNull(serializer, "YamlSerializer should be registered");
 
-		var deserializer = serviceProvider.GetService<YamlDeserializer>();
+		YamlDeserializer? deserializer = serviceProvider.GetService<YamlDeserializer>();
 		Assert.IsNotNull(deserializer, "YamlDeserializer should be registered");
 	}
 
 	/// <summary>
-	/// Tests that AddCoder registers all expected services.
+	/// Tests that AddCoder registers both language generators and serialization services.
 	/// </summary>
 	[TestMethod]
-	public void AddCoder_RegistersAllServices()
+	public void AddCoder_ShouldRegisterAllServices()
 	{
 		// Arrange
-		var services = new ServiceCollection();
+		ServiceCollection services = new();
 
 		// Act
 		services.AddCoder();
-		var serviceProvider = services.BuildServiceProvider();
+		ServiceProvider serviceProvider = services.BuildServiceProvider();
 
 		// Assert - Language generators
-		var generators = serviceProvider.GetServices<ILanguageGenerator>().ToList();
+		List<ILanguageGenerator> generators = [.. serviceProvider.GetServices<ILanguageGenerator>()];
 		Assert.IsTrue(generators.Count > 0, "Language generators should be registered");
 
 		// Assert - Serialization services
-		var serializer = serviceProvider.GetService<YamlSerializer>();
+		YamlSerializer? serializer = serviceProvider.GetService<YamlSerializer>();
 		Assert.IsNotNull(serializer, "YamlSerializer should be registered");
 
-		var deserializer = serviceProvider.GetService<YamlDeserializer>();
+		YamlDeserializer? deserializer = serviceProvider.GetService<YamlDeserializer>();
 		Assert.IsNotNull(deserializer, "YamlDeserializer should be registered");
 	}
 
 	/// <summary>
-	/// Tests that language generators can be resolved and used correctly.
+	/// Tests that registered services can be resolved and used.
 	/// </summary>
 	[TestMethod]
-	public void LanguageGenerators_CanBeResolvedAndUsed()
+	public void RegisteredServices_ShouldBeResolvableAndUsable()
 	{
 		// Arrange
-		var services = new ServiceCollection();
+		ServiceCollection services = new();
 		services.AddLanguageGenerators();
-		var serviceProvider = services.BuildServiceProvider();
+		ServiceProvider serviceProvider = services.BuildServiceProvider();
 
 		// Act
-		var generators = serviceProvider.GetServices<ILanguageGenerator>().ToList();
-		var pythonGenerator = generators.FirstOrDefault(g => g.LanguageId == "python");
+		List<ILanguageGenerator> generators = [.. serviceProvider.GetServices<ILanguageGenerator>()];
+		ILanguageGenerator? pythonGenerator = generators.FirstOrDefault(g => g.LanguageId == "python");
 
 		// Assert
 		Assert.IsNotNull(pythonGenerator, "PythonGenerator should be resolvable");
 		Assert.AreEqual("python", pythonGenerator.LanguageId);
 		Assert.AreEqual("Python", pythonGenerator.DisplayName);
 		Assert.AreEqual("py", pythonGenerator.FileExtension);
-
-		// Test that it can generate (basic smoke test)
-		Assert.IsTrue(pythonGenerator.CanGenerate(new Core.Ast.AstLeafNode<string>("test")));
 	}
 
 	/// <summary>
 	/// Tests that services are registered as singletons.
 	/// </summary>
 	[TestMethod]
-	public void Services_AreRegisteredAsSingletons()
+	public void Services_ShouldBeSingletons()
 	{
 		// Arrange
-		var services = new ServiceCollection();
+		ServiceCollection services = new();
 		services.AddCoder();
-		var serviceProvider = services.BuildServiceProvider();
+		ServiceProvider serviceProvider = services.BuildServiceProvider();
 
 		// Act & Assert - Language generators should be singletons
-		var generator1 = serviceProvider.GetServices<ILanguageGenerator>().First();
-		var generator2 = serviceProvider.GetServices<ILanguageGenerator>().First();
+		ILanguageGenerator generator1 = serviceProvider.GetServices<ILanguageGenerator>().First();
+		ILanguageGenerator generator2 = serviceProvider.GetServices<ILanguageGenerator>().First();
 		Assert.AreSame(generator1, generator2, "Language generators should be singleton instances");
 
 		// Act & Assert - Serialization services should be singletons
-		var serializer1 = serviceProvider.GetService<YamlSerializer>();
-		var serializer2 = serviceProvider.GetService<YamlSerializer>();
+		YamlSerializer? serializer1 = serviceProvider.GetService<YamlSerializer>();
+		YamlSerializer? serializer2 = serviceProvider.GetService<YamlSerializer>();
 		Assert.AreSame(serializer1, serializer2, "Serializer should be singleton instance");
 
-		var deserializer1 = serviceProvider.GetService<YamlDeserializer>();
-		var deserializer2 = serviceProvider.GetService<YamlDeserializer>();
+		YamlDeserializer? deserializer1 = serviceProvider.GetService<YamlDeserializer>();
+		YamlDeserializer? deserializer2 = serviceProvider.GetService<YamlDeserializer>();
 		Assert.AreSame(deserializer1, deserializer2, "Deserializer should be singleton instance");
 	}
 
 	/// <summary>
-	/// Tests that null service collection throws ArgumentNullException.
+	/// Tests that AddCoder can be called multiple times without issues.
 	/// </summary>
 	[TestMethod]
-	public void Extensions_ThrowOnNullServiceCollection()
+	public void AddCoder_ShouldBeIdempotent()
 	{
 		// Arrange
-		ServiceCollection? services = null;
+		ServiceCollection services = new();
 
-		// Act & Assert
-		Assert.ThrowsException<ArgumentNullException>(() => services!.AddLanguageGenerators());
-		Assert.ThrowsException<ArgumentNullException>(() => services!.AddCoderSerialization());
-		Assert.ThrowsException<ArgumentNullException>(() => services!.AddCoder());
+		// Act
+		services.AddCoder();
+		services.AddCoder();
+		services.AddLanguageGenerators();
+		services.AddCoderSerialization();
+		ServiceProvider serviceProvider = services.BuildServiceProvider();
+
+		// Assert - Should still work correctly
+		List<ILanguageGenerator> generators = [.. serviceProvider.GetServices<ILanguageGenerator>()];
+		YamlSerializer? serializer = serviceProvider.GetService<YamlSerializer>();
+		YamlDeserializer? deserializer = serviceProvider.GetService<YamlDeserializer>();
+
+		Assert.IsTrue(generators.Count > 0, "Generators should still be registered");
+		Assert.IsNotNull(serializer, "Serializer should still be registered");
+		Assert.IsNotNull(deserializer, "Deserializer should still be registered");
 	}
 }

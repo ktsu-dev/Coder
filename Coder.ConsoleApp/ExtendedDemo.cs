@@ -2,7 +2,7 @@
 // All rights reserved.
 // Licensed under the MIT license.
 
-namespace ktsu.Coder.CLI;
+namespace ktsu.Coder.ConsoleApp;
 
 using ktsu.Coder.Core;
 using ktsu.Coder.Core.Ast;
@@ -21,8 +21,8 @@ public static class ExtendedDemo
 	/// </summary>
 	public static void RunDemo()
 	{
-		Console.WriteLine("=== Extended Coder Demo - Advanced Features ===");
-		Console.WriteLine();
+		Console.WriteLine("Extended Demo: Advanced Features");
+		Console.WriteLine("=================================");
 
 		try
 		{
@@ -40,9 +40,17 @@ public static class ExtendedDemo
 
 			Console.WriteLine("✓ All extended demos completed successfully!");
 		}
-		catch (Exception ex)
+		catch (InvalidOperationException ex)
 		{
-			Console.WriteLine($"❌ Demo failed: {ex.Message}");
+			Console.WriteLine($"❌ Demo failed with invalid operation: {ex.Message}");
+		}
+		catch (ArgumentException ex)
+		{
+			Console.WriteLine($"❌ Demo failed with invalid argument: {ex.Message}");
+		}
+		catch (NotSupportedException ex)
+		{
+			Console.WriteLine($"❌ Demo failed with unsupported operation: {ex.Message}");
 		}
 	}
 
@@ -57,10 +65,10 @@ public static class ExtendedDemo
 		ServiceProvider provider = services.BuildServiceProvider();
 
 		// Get all language generators
-		IEnumerable<ILanguageGenerator> generators = provider.GetServices<ILanguageGenerator>();
+		List<ILanguageGenerator> generatorsList = [.. provider.GetServices<ILanguageGenerator>()];
 
-		Console.WriteLine($"Registered language generators: {generators.Count()}");
-		foreach (ILanguageGenerator generator in generators)
+		Console.WriteLine($"Registered language generators: {generatorsList.Count}");
+		foreach (ILanguageGenerator generator in generatorsList)
 		{
 			Console.WriteLine($"  - {generator.DisplayName} ({generator.LanguageId}) -> .{generator.FileExtension}");
 		}
@@ -197,9 +205,9 @@ public static class ExtendedDemo
 		mathFunction.Parameters.Add(new Parameter("b", "int"));
 
 		BinaryExpression sum = new(
-			new AstLeafNode<string>("a"),
+			new VariableReference("a"),
 			BinaryOperator.Add,
-			new AstLeafNode<string>("b")
+			new VariableReference("b")
 		);
 
 		mathFunction.Body.Add(new ReturnStatement(sum));

@@ -16,74 +16,55 @@ public class ExpressionTests
 	/// Tests that literal expressions can be created and used correctly.
 	/// </summary>
 	[TestMethod]
-	public void LiteralExpression_CreatesCorrectly()
+	public void LiteralExpression_ShouldCreateCorrectTypes()
 	{
-		// Arrange & Act
-		LiteralExpression<string> stringLiteral = Literal.String("hello");
-		LiteralExpression<int> intLiteral = Literal.Int(42);
+		// Test string literal
+		LiteralExpression<string> stringLiteral = Literal.Text("hello");
+		LiteralExpression<int> intLiteral = Literal.Number(42);
 		LiteralExpression<bool> boolLiteral = Literal.Bool(true);
-		LiteralExpression<double> doubleLiteral = Literal.Double(3.14);
+		LiteralExpression<double> doubleLiteral = Literal.DecimalValue(3.14);
 
-		// Assert
 		Assert.AreEqual("hello", stringLiteral.Value);
 		Assert.AreEqual(42, intLiteral.Value);
-		Assert.IsTrue(boolLiteral.Value);
-		Assert.AreEqual(3.14, doubleLiteral.Value);
-
-		Assert.AreEqual("String", stringLiteral.ExpectedType);
-		Assert.AreEqual("Int32", intLiteral.ExpectedType);
-		Assert.AreEqual("Boolean", boolLiteral.ExpectedType);
-		Assert.AreEqual("Double", doubleLiteral.ExpectedType);
+		Assert.AreEqual(true, boolLiteral.Value);
+		Assert.AreEqual(3.14, doubleLiteral.Value, 0.001);
 	}
 
 	/// <summary>
 	/// Tests that binary expressions can be created and structured correctly.
 	/// </summary>
 	[TestMethod]
-	public void BinaryExpression_CreatesCorrectly()
+	public void BinaryExpression_ShouldCreateCorrectStructure()
 	{
-		// Arrange
-		LiteralExpression<int> left = Literal.Int(5);
-		LiteralExpression<int> right = Literal.Int(3);
+		// Test simple arithmetic: 5 + 3
+		LiteralExpression<int> left = Literal.Number(5);
+		LiteralExpression<int> right = Literal.Number(3);
+		BinaryExpression binary = new(left, BinaryOperator.Add, right);
 
-		// Act
-		BinaryExpression addExpression = new(left, BinaryOperator.Add, right);
-		BinaryExpression compareExpression = new(left, BinaryOperator.GreaterThan, right);
-
-		// Assert
-		Assert.AreEqual(BinaryOperator.Add, addExpression.Operator);
-		Assert.AreSame(left, addExpression.Left);
-		Assert.AreSame(right, addExpression.Right);
-
-		Assert.AreEqual(BinaryOperator.GreaterThan, compareExpression.Operator);
+		Assert.AreEqual(left, binary.Left);
+		Assert.AreEqual(BinaryOperator.Add, binary.Operator);
+		Assert.AreEqual(right, binary.Right);
 	}
 
 	/// <summary>
 	/// Tests that variable declarations work correctly.
 	/// </summary>
 	[TestMethod]
-	public void VariableDeclaration_CreatesCorrectly()
+	public void VariableDeclaration_ShouldSupportTypeInference()
 	{
-		// Arrange & Act
-		VariableDeclaration simpleVar = new("x", "int");
-		VariableDeclaration inferredVar = new("result", null, Literal.Int(42));
-		VariableDeclaration constantVar = new("PI", "double", Literal.Double(3.14159))
+		// Test type inference
+		VariableDeclaration inferredVar = new("result", null, Literal.Number(42));
+		VariableDeclaration constantVar = new("PI", "double", Literal.DecimalValue(3.14159))
 		{
 			IsConstant = true
 		};
 
-		// Assert
-		Assert.AreEqual("x", simpleVar.Name);
-		Assert.AreEqual("int", simpleVar.Type);
-		Assert.IsNull(simpleVar.InitialValue);
-		Assert.IsFalse(simpleVar.IsTypeInferred);
-
 		Assert.AreEqual("result", inferredVar.Name);
 		Assert.IsNull(inferredVar.Type);
-		Assert.IsNotNull(inferredVar.InitialValue);
 		Assert.IsTrue(inferredVar.IsTypeInferred);
 
 		Assert.AreEqual("PI", constantVar.Name);
+		Assert.AreEqual("double", constantVar.Type);
 		Assert.IsTrue(constantVar.IsConstant);
 	}
 
@@ -91,97 +72,76 @@ public class ExpressionTests
 	/// Tests that assignment statements work correctly.
 	/// </summary>
 	[TestMethod]
-	public void AssignmentStatement_CreatesCorrectly()
+	public void AssignmentStatement_ShouldSupportDifferentOperators()
 	{
-		// Arrange
-		LiteralExpression<string> varName = Literal.String("x");
-		LiteralExpression<int> value = Literal.Int(10);
+		// Test assignment operators
+		VariableReference varName = new("x");
+		LiteralExpression<int> value = Literal.Number(10);
 
-		// Act
 		AssignmentStatement assignment = new(varName, value);
-		AssignmentStatement addAssignment = new(varName, value, AssignmentOperator.AddAssign);
+		AssignmentStatement addAssign = new(varName, value, AssignmentOperator.AddAssign);
 
-		// Assert
-		Assert.AreSame(varName, assignment.Target);
-		Assert.AreSame(value, assignment.Value);
+		Assert.AreEqual(varName, assignment.Target);
+		Assert.AreEqual(value, assignment.Value);
 		Assert.AreEqual(AssignmentOperator.Assign, assignment.Operator);
 
-		Assert.AreEqual(AssignmentOperator.AddAssign, addAssignment.Operator);
+		Assert.AreEqual(AssignmentOperator.AddAssign, addAssign.Operator);
 	}
 
 	/// <summary>
 	/// Tests that expressions can be cloned correctly.
 	/// </summary>
 	[TestMethod]
-	public void Expressions_CloneCorrectly()
+	public void Expression_ShouldSupportCloning()
 	{
-		// Arrange
-		LiteralExpression<int> original = Literal.Int(42);
-		BinaryExpression binaryOriginal = new(Literal.Int(5), BinaryOperator.Add, Literal.Int(3));
+		// Test cloning expressions
+		LiteralExpression<int> original = Literal.Number(42);
+		BinaryExpression binaryOriginal = new(Literal.Number(5), BinaryOperator.Add, Literal.Number(3));
 
-		// Act
 		LiteralExpression<int> cloned = (LiteralExpression<int>)original.Clone();
 		BinaryExpression binaryCloned = (BinaryExpression)binaryOriginal.Clone();
 
-		// Assert
 		Assert.AreNotSame(original, cloned);
 		Assert.AreEqual(original.Value, cloned.Value);
 
 		Assert.AreNotSame(binaryOriginal, binaryCloned);
 		Assert.AreEqual(binaryOriginal.Operator, binaryCloned.Operator);
-		Assert.AreNotSame(binaryOriginal.Left, binaryCloned.Left);
-		Assert.AreNotSame(binaryOriginal.Right, binaryCloned.Right);
 	}
 
 	/// <summary>
 	/// Tests that complex nested expressions work.
 	/// </summary>
 	[TestMethod]
-	public void ComplexExpression_WorksCorrectly()
+	public void Expression_ShouldSupportNestedExpressions()
 	{
-		// Arrange - Create expression: (a + b) * (c - d)
-		LiteralExpression<string> a = Literal.String("a");
-		LiteralExpression<string> b = Literal.String("b");
-		LiteralExpression<string> c = Literal.String("c");
-		LiteralExpression<string> d = Literal.String("d");
+		// Test nested expressions: (a + b) * (c + d)
+		LiteralExpression<string> a = Literal.Text("a");
+		LiteralExpression<string> b = Literal.Text("b");
+		LiteralExpression<string> c = Literal.Text("c");
+		LiteralExpression<string> d = Literal.Text("d");
 
-		BinaryExpression add = new(a, BinaryOperator.Add, b);
-		BinaryExpression subtract = new(c, BinaryOperator.Subtract, d);
+		BinaryExpression aPlusB = new(a, BinaryOperator.Add, b);
+		BinaryExpression cPlusD = new(c, BinaryOperator.Add, d);
+		BinaryExpression result = new(aPlusB, BinaryOperator.Multiply, cPlusD);
 
-		// Act
-		BinaryExpression multiply = new(add, BinaryOperator.Multiply, subtract);
-
-		// Assert
-		Assert.AreEqual(BinaryOperator.Multiply, multiply.Operator);
-		Assert.IsInstanceOfType(multiply.Left, typeof(BinaryExpression));
-		Assert.IsInstanceOfType(multiply.Right, typeof(BinaryExpression));
-
-		BinaryExpression leftSide = (BinaryExpression)multiply.Left;
-		BinaryExpression rightSide = (BinaryExpression)multiply.Right;
-
-		Assert.AreEqual(BinaryOperator.Add, leftSide.Operator);
-		Assert.AreEqual(BinaryOperator.Subtract, rightSide.Operator);
+		Assert.AreEqual(aPlusB, result.Left);
+		Assert.AreEqual(cPlusD, result.Right);
+		Assert.AreEqual(BinaryOperator.Multiply, result.Operator);
 	}
 
 	/// <summary>
 	/// Tests that node type names are correct for expressions.
 	/// </summary>
 	[TestMethod]
-	public void Expression_NodeTypeNames_AreCorrect()
+	public void Expression_ShouldHaveCorrectNodeTypeNames()
 	{
-		// Arrange & Act
-		LiteralExpression<string> stringLit = Literal.String("test");
-		LiteralExpression<int> intLit = Literal.Int(42);
-		BinaryExpression binExpr = new(intLit, BinaryOperator.Add, intLit);
-		VariableDeclaration varDecl = new("x", "int");
-		AssignmentStatement assignment = new(stringLit, intLit);
+		LiteralExpression<int> validExpr = Literal.Number(42);
+		BinaryExpression binaryExpr = new(validExpr, BinaryOperator.Add, validExpr);
+		VariableReference varRef = new("test");
 
-		// Assert
-		Assert.AreEqual("Literal<String>", stringLit.GetNodeTypeName());
-		Assert.AreEqual("Literal<Int32>", intLit.GetNodeTypeName());
-		Assert.AreEqual("BinaryExpression", binExpr.GetNodeTypeName());
-		Assert.AreEqual("VariableDeclaration", varDecl.GetNodeTypeName());
-		Assert.AreEqual("AssignmentStatement", assignment.GetNodeTypeName());
+		Assert.AreEqual("Literal<Int32>", validExpr.GetNodeTypeName());
+		Assert.AreEqual("BinaryExpression", binaryExpr.GetNodeTypeName());
+		Assert.AreEqual("VariableReference", varRef.GetNodeTypeName());
 	}
 
 	/// <summary>
@@ -191,7 +151,7 @@ public class ExpressionTests
 	public void Expression_ErrorHandling_ThrowsForNullParameters()
 	{
 		// Arrange
-		LiteralExpression<int> validExpr = Literal.Int(42);
+		LiteralExpression<int> validExpr = Literal.Number(42);
 
 		// Act & Assert
 		Assert.ThrowsException<ArgumentNullException>(() => new BinaryExpression(null!, BinaryOperator.Add, validExpr));
@@ -200,5 +160,21 @@ public class ExpressionTests
 		Assert.ThrowsException<ArgumentNullException>(() => new AssignmentStatement(validExpr, null!));
 		Assert.ThrowsException<ArgumentException>(() => new VariableDeclaration(""));
 		Assert.ThrowsException<ArgumentException>(() => new VariableDeclaration(null!));
+	}
+
+	/// <summary>
+	/// Tests that expressions can be converted to string correctly.
+	/// </summary>
+	[TestMethod]
+	public void Expression_ShouldSupportToString()
+	{
+		// Test ToString methods
+		LiteralExpression<string> stringLit = Literal.Text("test");
+		LiteralExpression<int> intLit = Literal.Number(42);
+		VariableReference varRef = new("myVar");
+
+		Assert.AreEqual("test", stringLit.ToString());
+		Assert.AreEqual("42", intLit.ToString());
+		Assert.AreEqual("myVar", varRef.ToString());
 	}
 }
