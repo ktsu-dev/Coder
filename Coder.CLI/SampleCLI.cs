@@ -31,6 +31,12 @@ public static class CoderCLI
 				return;
 			}
 
+			if (args.Length > 0 && args[0] == "--extended")
+			{
+				ExtendedDemo.RunDemo();
+				return;
+			}
+
 			// Create a sample function AST
 			var sampleFunction = CreateSampleFunction();
 
@@ -134,12 +140,16 @@ public static class CoderCLI
 		Console.WriteLine("Usage: Coder.CLI [options]");
 		Console.WriteLine();
 		Console.WriteLine("Options:");
-		Console.WriteLine("  --help    Show this help message");
+		Console.WriteLine("  --help       Show this help message");
+		Console.WriteLine("  --extended   Run extended demo with advanced features");
 		Console.WriteLine();
 		Console.WriteLine("This tool demonstrates the Coder library's capabilities:");
 		Console.WriteLine("- Creating AST (Abstract Syntax Tree) structures");
 		Console.WriteLine("- Serializing AST to YAML format");
-		Console.WriteLine("- Generating code in supported languages (Python)");
+		Console.WriteLine("- Generating code in supported languages (Python, C#)");
 		Console.WriteLine("- Round-trip serialization/deserialization");
+		Console.WriteLine("- Expression system (binary operators, literals)");
+		Console.WriteLine("- Variable declarations and assignments");
+		Console.WriteLine("- Dependency injection configuration");
 	}
 }

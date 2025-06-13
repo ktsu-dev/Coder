@@ -9,7 +9,7 @@ This document defines the rules and guidelines for the AI coding assistant to fo
 
 ## Project Description
 
-The AI coding assistant is working on a multilingual code generation library named "Coder". This library aims to provide a flexible and extensible way to represent code in an Abstract Syntax Tree (AST) format, serialize and deserialize the AST to YAML, and generate code in various programming languages from the AST. The application project should be a TUI (Text User Interface) using Spectre.Console.
+The AI coding assistant is working on a multilingual code generation library named "Coder". This library aims to provide a flexible and extensible way to represent code in an Abstract Syntax Tree (AST) format, serialize and deserialize the AST to YAML, and generate code in various programming languages from the AST. The application project should be a TUI (Text User Interface) using Spectre.Console. One use case is to construct expressions, functions, objects via a node based visual editor, using this library as the authoring and storage provider for that frontend.
 
 ## TECH STACK
 
@@ -18,6 +18,7 @@ The AI coding assistant is working on a multilingual code generation library nam
 - .NET 9 (identified during build process)
 - Spectre.Console (for TUI)
 - Spectre.Console.Cli (for command-line interface features)
+- Microsoft.Extensions.DependencyInjection
 
 ## PROJECT DOCUMENTATION & CONTEXT SYSTEM
 
@@ -42,6 +43,18 @@ The AI coding assistant is working on a multilingual code generation library nam
 - Ensure that deserialization logic handles the correct casing for node type names. The serializer uses capitalized names (e.g., `FunctionDeclaration`), so the deserializer should be updated to match.
 - Always validate parameters for null values and throw `ArgumentNullException` when null.
 - When constructing `ReturnStatement` objects in the TUI, always pass `AstLeafNode<string>` objects instead of raw strings to ensure type consistency within the AST.
+- Follow code style rules and resolve warnings, including:
+    - IDE0008: Use explicit type instead of 'var' where applicable.
+    - CA1720: Avoid type names in identifiers (e.g., avoid "String" in `Literal.String`).
+    - CA1830: Use strongly-typed StringBuilder overload.
+    - CA1854: Prefer TryGetValue over ContainsKey check for dictionaries.
+    - CA1834: Use StringBuilder.Append(char) for constant unit strings.
+    - CA1862: Prefer string.Equals(string, StringComparison) for case-insensitive comparisons.
+    - CA1062: Validate non-null parameters in externally visible methods.
+    - CA1822: Mark members that do not access instance data as static.
+    - CS0029: Avoid implicit type conversions that can lead to errors.
+    - CS1061: Ensure objects have the DeepClone definition when calling DeepClone.
+    - IDE0021: Use expression body for constructor.
 
 ## DEBUGGING
 
@@ -72,3 +85,16 @@ The AI coding assistant is working on a multilingual code generation library nam
 - Ensure that deserialization logic respects the `protected init` setter of the `Metadata` property in `AstNode` and derived classes. Refactor deserialization logic if necessary to correctly initialize this property.
 - When cloning `Metadata`, clear the existing dictionary and copy the values from the original instead of assigning a new dictionary.
 - **Always construct `ReturnStatement` objects using `AstLeafNode<string>` objects instead of raw strings to maintain type consistency within the AST.**
+- The project will use a simplified approach to AST extensions: Add VariableDeclaration/AssignmentStatement but use the existing AstLeafNode approach for expressions.
+- For variable assignments, the following approach should be used:
+```csharp
+// Keep it simple but still structured
+var assignment = new AssignmentStatement("result", "a + b");
+var declaration = new VariableDeclaration("int", "count", "0");
+```
+
+## DEPENDENCY INJECTION RULES
+
+- Use `ServiceCollectionExtensions` to register language generators and serialization services.
+- Always use `ArgumentNullException.ThrowIfNull(services)` at the beginning of each extension method to validate the service collection.
+- All Coder services should be registered as singletons within the dependency injection container.

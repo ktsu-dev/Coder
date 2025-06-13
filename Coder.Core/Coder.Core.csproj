@@ -3,6 +3,7 @@
 <Project Sdk="ktsu.Sdk.Lib/1.11.0">
   <ItemGroup>
     <PackageReference Include="ktsu.DeepClone" Version="2.0.1" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.0" />
     <PackageReference Include="YamlDotNet" Version="16.3.0" />
   </ItemGroup>
 </Project>

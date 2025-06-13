@@ -1,2 +1,9 @@
 <Project Sdk="ktsu.Sdk.Test/1.11.0">
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Coder.Core\Coder.Core.csproj" />
+  </ItemGroup>
 </Project>
