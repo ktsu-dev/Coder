@@ -1,3 +1,8 @@
+## v1.0.3 (patch)
+
+Changes since v1.0.2:
+
+- Enhance YAML serialization and deserialization for new node types ([@matt-edmondson](https://github.com/matt-edmondson))
 ## v1.0.2 (patch)
 
 Changes since v1.0.1:
