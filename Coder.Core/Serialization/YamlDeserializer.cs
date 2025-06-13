@@ -309,7 +309,7 @@ public partial class YamlDeserializer
 		return binaryExpr;
 	}
 
-	private static AstNode? DeserializeLiteralExpression(string nodeType, object? nodeData)
+	private static Expression? DeserializeLiteralExpression(string nodeType, object? nodeData)
 	{
 		Match match = LiteralRegex().Match(nodeType);
 		if (!match.Success || match.Groups.Count < 2)

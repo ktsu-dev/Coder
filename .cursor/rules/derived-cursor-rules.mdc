@@ -60,7 +60,9 @@ The AI coding assistant is working on a multilingual code generation library nam
 - When serializing to YAML, the serializer should produce camelCase names like "functionDeclaration", "parameter", "returnStatement".
 - When deserializing from YAML, the deserializer must handle camelCase node names.
     - The deserializer must also correctly deserialize leaf nodes with camelCase names (e.g., `leaf<Int32>`).
+    - The deserializer must handle both PascalCase and camelCase leaf nodes (e.g., `Leaf<Int32>` and `leaf<Int32>`).
 - When serializing to YAML, ensure that the `defaultValue` property is correctly escaped (e.g., `defaultValue: '"default"'`).
+- **YamlDeserializer.DeserializeLiteralExpression should return type `Expression?` instead of `AstNode?`.**
 
 ## DEBUGGING
 
@@ -101,9 +103,109 @@ var declaration = new VariableDeclaration("int", "count", "0");
 ```
 - The project will now use a complete expression system with base `Expression` class, `BinaryExpression`, `LiteralExpression`, and `VariableReference` for a more robust and extensible AST, especially beneficial for visual editors. This system supports constructing expressions, functions, and objects via a node-based visual editor, where this library serves as the authoring and storage provider for the frontend.
 - The project will now use `Literal.Text()` instead of `Literal.String()`, `Literal.Number()` instead of `Literal.Int()`, `Literal.DecimalValue()` instead of `Literal.Double()`, `Literal.SingleValue()` instead of `Literal.Float()`, and `Literal.BigNumberValue()` instead of `Literal.Long()`.
+- The expression system is now complete, including:
+    - `BinaryExpression` with full operator support
+    - `LiteralExpression<T>` for typed literals
+    - `VariableDeclaration` and `AssignmentStatement`
+    - `VariableReference` for variable usage
+    - Full serialization/deserialization support
+    - Working code generation for Python and C#
+    - Comprehensive test coverage
 
 ## DEPENDENCY INJECTION RULES
 
 - Use `ServiceCollectionExtensions` to register language generators and serialization services.
 - Always use `ArgumentNullException.ThrowIfNull(services)` at the beginning of each extension method to validate the service collection.
 - All Coder services should be registered as singletons within the dependency injection container.
+
+## PRIORITIES & RECOMMENDED PATH FORWARD
+
+1.  **Complete Expression Serialization Integration**:
+    - Fix the linter error `CA1859: Change return type of method 'DeserializeLiteralExpression' from 'AstNode?' to 'Expression?'` to improve performance.
+    - Ensure full serialization/deserialization support for `BinaryExpression`, `LiteralExpression`, and `VariableReference`.
+
+2.  **High Priority Items (Visual Editor Ready):**
+    - **Language Generator Enhancement:**
+        - Add expression support to Python/C# generators (currently they only handle basic AST nodes).
+        - Test complex expressions like `(a + b) * (c - d)` in code generation.
+    - **Testing Enhancement:**
+        - Add tests for new expression serialization/deserialization.
+        - Add integration tests for complex expression graphs.
+        - Test round-trip serialization of nested expressions.
+    - **Visual Editor Foundation:**
+        - Add expression builder to TUI - Allow users to create complex expressions interactively.
+        - Visual expression preview - Show expression trees in ASCII art.
+        - Expression templates - Pre-built common expressions.
+
+3.  **Medium Priority:**
+    - **Additional Language Support:**
+        - JavaScript generator (framework exists, needs implementation).
+        - More language templates.
+    - **Advanced Features:**
+        - Control flow statements (if/else, loops).
+        - Function calls in expressions.
+        - Array/object access expressions.
+
+4.  **Long-term Vision (Perfect for Visual Editor):**
+    - The expression system is already perfectly designed for visual programming:
+        - Discrete AST nodes - Each expression is a separate object
+        - Type information - ExpectedType enables connection validation
+        - Deep cloning - Supports copy/paste operations
+        - YAML serialization - Perfect for saving/loading visual graphs
+        - Metadata support - Can store visual editor specific data (position, color, etc.)
+
+## RECOMMENDED DEVELOPMENT ROADMAP
+
+### Phase 1: Complete Current Work (1-2 days)
+
+1. **Immediate Fix (30 minutes)**
+   - Fix linter error in `YamlDeserializer.cs` - change return type from `AstNode?` to `Expression?`
+2. **Expression Serialization Tests**
+   - Run tests to ensure expression serialization works end-to-end
+   - **Status:** Complete. Linter error fixed, tests passed.
+
+### Phase 2: Expression Integration (1 day)
+
+3. **Code Generator Updates**
+   - Update `PythonGenerator` and `CSharpGenerator` to handle:
+     - `BinaryExpression` → `a + b`, `x * y`, etc.
+     - `VariableReference` → variable names
+     - `LiteralExpression<T>` → proper literals
+4. **Comprehensive Expression Tests**
+   - Create comprehensive expression tests - Test complex nested expressions and round-trip serialization
+
+### Phase 3: Visual Editor Foundation (1 week)
+
+5. **Enhanced TUI (3-4 days)**
+   - Add expression builder to existing TUI - Your `Coder.App` already has great interactive features:
+     - Add "Create Expression" menu option
+     - Visual expression tree display (ASCII art)
+     - Step-by-step expression construction
+6. **Expression templates** - Pre-built common expressions (math, conditionals, assignments)
+
+7. **Core Validation (1-2 days)**
+   - Type checking system - Use the `ExpectedType` field for connection validation
+8. **Expression validation** - Ensure expressions are well-formed before code generation
+
+### Phase 4: Production Ready (1-2 weeks)
+
+9. **Robust Language Support**
+   - JavaScript generator - Complete the third language for broader appeal
+10. **Enhanced error handling** - Better validation and user feedback
+
+### Visual Editor Core
+11. **Node positioning system** - Add X/Y coordinates to metadata
+12. **Connection validation** - Type-compatible expression linking
+13. **Save/Load visual projects** - Full YAML-based project persistence
+
+### Phase 5: Advanced Features (2-3 weeks)
+
+14. **Control Flow**
+    - If/Else statements - Conditional logic nodes
+15. **Loop constructs** - For/while loop support
+16. **Function calls** - Call other functions as expressions
+
+### User Experience
+17. **Expression preview** - Live code generation as you build
+18. **Undo/Redo system** - Using clone() methods for state management
+19. **Expression library** - Reusable expression components

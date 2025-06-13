@@ -52,10 +52,54 @@ public class CSharpGenerator : LanguageGeneratorBase
 			case ReturnStatement returnStmt:
 				GenerateReturnStatement(returnStmt, builder, indent);
 				break;
+			case BinaryExpression binaryExpr:
+				GenerateBinaryExpression(binaryExpr, builder);
+				break;
+			case VariableReference varRef:
+				builder.Append(varRef.Name);
+				break;
+			case LiteralExpression<string> stringLit:
+				builder.Append($"\"{EscapeString(stringLit.Value ?? string.Empty)}\"");
+				break;
+			case LiteralExpression<int> intLit:
+				builder.Append(intLit.Value);
+				break;
+			case LiteralExpression<bool> boolLit:
+				builder.Append(boolLit.Value ? "true" : "false");
+				break;
+			case LiteralExpression<double> doubleLit:
+				builder.Append($"{doubleLit.Value}d");
+				break;
+			case VariableDeclaration varDecl:
+				GenerateVariableDeclaration(varDecl, builder, indent);
+				break;
+			case AssignmentStatement assignment:
+				GenerateAssignmentStatement(assignment, builder, indent);
+				break;
 			default:
 				builder.AppendLine($"{indent}// Unsupported node type: {node.GetType().Name}");
 				break;
 		}
+	}
+
+	/// <summary>
+	/// Determines whether this generator can generate code for the specified AST node.
+	/// </summary>
+	/// <param name="astNode">The AST node to check.</param>
+	/// <returns>True if this generator can generate code for the node; otherwise, false.</returns>
+	public override bool CanGenerate(AstNode astNode)
+	{
+		return astNode is not null and (FunctionDeclaration
+			or Parameter
+			or ReturnStatement
+			or BinaryExpression
+			or VariableReference
+			or LiteralExpression<string>
+			or LiteralExpression<int>
+			or LiteralExpression<bool>
+			or LiteralExpression<double>
+			or VariableDeclaration
+			or AssignmentStatement);
 	}
 
 	private void GenerateFunction(FunctionDeclaration function, StringBuilder builder, string indent)
@@ -141,4 +185,102 @@ public class CSharpGenerator : LanguageGeneratorBase
 		TypeMappings.TryGetValue(pythonType, out string? mapped)
 			? mapped
 			: string.Equals(pythonType, "void", StringComparison.OrdinalIgnoreCase) ? "void" : pythonType;
+
+	private void GenerateBinaryExpression(BinaryExpression binaryExpr, StringBuilder builder)
+	{
+		// Add parentheses for clarity
+		builder.Append('(');
+		GenerateInternal(binaryExpr.Left, builder, 0);
+		builder.Append(' ');
+		builder.Append(GetCSharpOperator(binaryExpr.Operator));
+		builder.Append(' ');
+		GenerateInternal(binaryExpr.Right, builder, 0);
+		builder.Append(')');
+	}
+
+	private void GenerateVariableDeclaration(VariableDeclaration varDecl, StringBuilder builder, string indent)
+	{
+		builder.Append(indent);
+
+		// Use type or var for type inference
+		if (varDecl.IsTypeInferred || string.IsNullOrEmpty(varDecl.Type))
+		{
+			builder.Append("var ");
+		}
+		else
+		{
+			builder.Append(MapToCSType(varDecl.Type));
+			builder.Append(' ');
+		}
+
+		builder.Append(varDecl.Name);
+
+		if (varDecl.InitialValue != null)
+		{
+			builder.Append(" = ");
+			GenerateInternal(varDecl.InitialValue, builder, 0);
+		}
+
+		builder.AppendLine(";");
+	}
+
+	private void GenerateAssignmentStatement(AssignmentStatement assignment, StringBuilder builder, string indent)
+	{
+		builder.Append(indent);
+		GenerateInternal(assignment.Target, builder, 0);
+		builder.Append(' ');
+		builder.Append(GetCSharpAssignmentOperator(assignment.Operator));
+		builder.Append(' ');
+		GenerateInternal(assignment.Value, builder, 0);
+		builder.AppendLine(";");
+	}
+
+	private static string EscapeString(string value)
+	{
+		return value
+			.Replace("\\", "\\\\")
+			.Replace("\"", "\\\"")
+			.Replace("\n", "\\n")
+			.Replace("\r", "\\r")
+			.Replace("\t", "\\t");
+	}
+
+	private static string GetCSharpOperator(BinaryOperator op) => op switch
+	{
+		BinaryOperator.Add => "+",
+		BinaryOperator.Subtract => "-",
+		BinaryOperator.Multiply => "*",
+		BinaryOperator.Divide => "/",
+		BinaryOperator.Modulo => "%",
+		BinaryOperator.Equal => "==",
+		BinaryOperator.NotEqual => "!=",
+		BinaryOperator.LessThan => "<",
+		BinaryOperator.LessThanOrEqual => "<=",
+		BinaryOperator.GreaterThan => ">",
+		BinaryOperator.GreaterThanOrEqual => ">=",
+		BinaryOperator.LogicalAnd => "&&",
+		BinaryOperator.LogicalOr => "||",
+		BinaryOperator.BitwiseAnd => "&",
+		BinaryOperator.BitwiseOr => "|",
+		BinaryOperator.BitwiseXor => "^",
+		BinaryOperator.LeftShift => "<<",
+		BinaryOperator.RightShift => ">>",
+		_ => throw new NotSupportedException($"Unsupported binary operator: {op}")
+	};
+
+	private static string GetCSharpAssignmentOperator(AssignmentOperator op) => op switch
+	{
+		AssignmentOperator.Assign => "=",
+		AssignmentOperator.AddAssign => "+=",
+		AssignmentOperator.SubtractAssign => "-=",
+		AssignmentOperator.MultiplyAssign => "*=",
+		AssignmentOperator.DivideAssign => "/=",
+		AssignmentOperator.ModuloAssign => "%=",
+		AssignmentOperator.BitwiseAndAssign => "&=",
+		AssignmentOperator.BitwiseOrAssign => "|=",
+		AssignmentOperator.BitwiseXorAssign => "^=",
+		AssignmentOperator.LeftShiftAssign => "<<=",
+		AssignmentOperator.RightShiftAssign => ">>=",
+		_ => throw new NotSupportedException($"Unsupported assignment operator: {op}")
+	};
 }
