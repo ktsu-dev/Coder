@@ -159,7 +159,7 @@ public class ExpressionTests
 		Assert.ThrowsException<ArgumentNullException>(() => new AssignmentStatement(null!, validExpr));
 		Assert.ThrowsException<ArgumentNullException>(() => new AssignmentStatement(validExpr, null!));
 		Assert.ThrowsException<ArgumentException>(() => new VariableDeclaration(""));
-		Assert.ThrowsException<ArgumentException>(() => new VariableDeclaration(null!));
+		Assert.ThrowsException<ArgumentNullException>(() => new VariableDeclaration(null!));
 	}
 
 	/// <summary>

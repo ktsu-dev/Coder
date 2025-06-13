@@ -39,7 +39,7 @@ public class YamlSerializationTests
 		StringAssert.Contains(yaml, "name: param1");
 		StringAssert.Contains(yaml, "type: int");
 		StringAssert.Contains(yaml, "isOptional: true");
-		StringAssert.Contains(yaml, "defaultValue: \"\\\"default\\\"\"");
+		StringAssert.Contains(yaml, "defaultValue: '\"default\"'");
 		StringAssert.Contains(yaml, "body:");
 		StringAssert.Contains(yaml, "returnStatement:");
 	}
@@ -101,7 +101,7 @@ public class YamlSerializationTests
 		Assert.IsNotNull(yaml);
 		StringAssert.Contains(yaml, "returnStatement:");
 		StringAssert.Contains(yaml, "expression:");
-		StringAssert.Contains(yaml, "Leaf<Int32>: 42");
+		StringAssert.Contains(yaml, "leaf<Int32>: 42");
 	}
 
 	[TestMethod]
@@ -116,7 +116,7 @@ public class YamlSerializationTests
 
 		// Assert
 		Assert.IsNotNull(yaml);
-		StringAssert.Contains(yaml, "Leaf<String>: test value");
+		StringAssert.Contains(yaml, "leaf<String>: test value");
 	}
 
 	[TestMethod]

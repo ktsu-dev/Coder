@@ -47,7 +47,7 @@ public class YamlSerializer
 
 	private static void SerializeNode(AstNode node, Dictionary<string, object> target)
 	{
-		string nodeKey = node.GetNodeTypeName();
+		string nodeKey = ToCamelCase(node.GetNodeTypeName());
 
 		// Handle leaf nodes
 		if (TrySerializeLeafNode(node, nodeKey, target))
@@ -204,4 +204,12 @@ public class YamlSerializer
 			}
 		}
 	}
+
+	/// <summary>
+	/// Converts a PascalCase string to camelCase.
+	/// </summary>
+	/// <param name="pascalCase">The PascalCase string to convert.</param>
+	/// <returns>The camelCase equivalent string.</returns>
+	private static string ToCamelCase(string pascalCase) =>
+		string.IsNullOrEmpty(pascalCase) ? pascalCase : char.ToLowerInvariant(pascalCase[0]) + pascalCase[1..];
 }

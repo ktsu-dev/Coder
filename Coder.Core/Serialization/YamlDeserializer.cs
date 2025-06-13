@@ -53,10 +53,13 @@ public partial class YamlDeserializer
 	{
 		return nodeType switch
 		{
+			"functionDeclaration" => DeserializeFunctionDeclaration(nodeData),
 			"FunctionDeclaration" => DeserializeFunctionDeclaration(nodeData),
+			"parameter" => DeserializeParameter(nodeData),
 			"Parameter" => DeserializeParameter(nodeData),
+			"returnStatement" => DeserializeReturnStatement(nodeData ?? new object()),
 			"ReturnStatement" => DeserializeReturnStatement(nodeData ?? new object()),
-			_ when nodeType.StartsWith("Leaf<", StringComparison.OrdinalIgnoreCase) => DeserializeLeafNode(nodeType, nodeData),
+			_ when nodeType.StartsWith("leaf<", StringComparison.OrdinalIgnoreCase) || nodeType.StartsWith("Leaf<", StringComparison.OrdinalIgnoreCase) => DeserializeLeafNode(nodeType, nodeData),
 			_ => null,
 		};
 	}
@@ -245,6 +248,6 @@ public partial class YamlDeserializer
 		return returnStmt;
 	}
 
-	[GeneratedRegex(@"Leaf<(\w+)>", RegexOptions.Compiled)]
+	[GeneratedRegex(@"[Ll]eaf<(\w+)>", RegexOptions.Compiled)]
 	private static partial Regex MyRegex();
 }

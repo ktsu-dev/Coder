@@ -57,6 +57,8 @@ The AI coding assistant is working on a multilingual code generation library nam
     - IDE0021: Use expression body for constructor.
 - Use expression body for constructor.
 - When copying `Metadata`, iterate over the dictionary using a `foreach` loop with `object?` to handle potential null values.
+- When serializing to YAML, the serializer should produce camelCase names like "functionDeclaration", "parameter", "returnStatement".
+- When deserializing from YAML, the deserializer must handle camelCase node names.
 
 ## DEBUGGING
 
@@ -70,6 +72,7 @@ The AI coding assistant is working on a multilingual code generation library nam
     - **IDE0010**: Populate switch statements with all possible enum values or provide a default case.
 - Analyze and fix compilation errors reported by the .NET build process.
 - When adding rows to a table, ensure that values are not null before passing them to the `AddRow` method to avoid `CS8604` errors. Use the null-coalescing operator (`??`) to provide default values if necessary.
+- Before addressing any failing tests, examine the relevant test files to understand the cause of the failures.
 
 ## WORKFLOW & RELEASE RULES
 
