@@ -22,6 +22,7 @@ The AI coding assistant is working on a multilingual code generation library nam
 ## PROJECT DOCUMENTATION & CONTEXT SYSTEM
 
 - Implementation Plan: `docs/implementation-plan.md`
+- Design Document: `docs/design.md`
 
 ## CODING STANDARDS
 

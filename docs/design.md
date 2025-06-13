@@ -2,6 +2,12 @@
 
 This document outlines the architecture and design decisions for building a multilingual code generation library using .NET technologies. The library leverages Tree-sitter's AST structure, serialized to YAML, and employs SOLID principles, including a dependency injection model for language-specific conversions.
 
+## Implementation Status
+
+**Status: Core Infrastructure Implemented, Extensions In Progress**
+
+This library has successfully implemented the core infrastructure with working AST nodes, YAML serialization, and basic Python code generation. The CLI and TUI applications are functional and demonstrate the library's capabilities.
+
 ## Objectives
 
 * Allow users to programmatically generate code structures using an intermediate Tree-sitter-compatible representation.
@@ -17,158 +23,211 @@ The IR is structured based on Tree-sitter AST conventions, represented clearly a
 **Example YAML representation:**
 
 ```yaml
-function_declaration:
-  name: "MyFunction"
+functionDeclaration:
+  name: "calculate_sum"
+  returnType: "int"
   parameters:
-    - name: "param1"
+    - name: "a"
       type: "int"
+    - name: "b" 
+      type: "int"
+    - name: "include_debug"
+      type: "bool"
+      isOptional: true
+      defaultValue: "False"
   body:
-    - return_statement:
-        integer: "42"
+    - returnStatement:
+        leaf:
+          value: "a + b"
+          type: "String"
 ```
 
 ### Core Components
 
-1. **AST Node Classes**:
+1. **AST Node Classes** ✅ **IMPLEMENTED**:
 
    * Define generic AST node classes (`AstNode`, `AstLeafNode`, `AstCompositeNode`) to represent hierarchical structures using C#.
+   * Specific node types: `FunctionDeclaration`, `Parameter`, `ReturnStatement`
+   * Deep cloning support and metadata attachments
 
-2. **Serializer and Deserializer**:
+2. **Serializer and Deserializer** ✅ **IMPLEMENTED**:
 
-   * `YamlSerializer`: Converts AST node structures into YAML format.
-   * `YamlDeserializer`: Parses YAML back into AST structures.
+   * `YamlSerializer`: Converts AST node structures into YAML format using YamlDotNet.
+   * `YamlDeserializer`: Parses YAML back into AST structures with proper type resolution.
+   * Round-trip serialization/deserialization verified
 
-3. **Language Conversion Interfaces**:
+3. **Language Conversion Interfaces** 🔄 **PARTIALLY IMPLEMENTED**:
 
    * Abstract interface (`ILanguageGenerator`) for converting AST nodes into specific languages.
-   * Each supported language implements this interface, allowing clean separation of language-specific logic.
+   * Base implementation (`LanguageGeneratorBase`) provides common functionality.
+   * Python generator fully implemented with proper indentation and type hints.
+   * **MISSING**: Dependency injection configuration (ServiceCollectionExtensions)
 
-4. **Dependency Injection Container**:
+4. **Applications** ✅ **IMPLEMENTED**:
 
-   * Utilize Microsoft's built-in Dependency Injection (`Microsoft.Extensions.DependencyInjection`) to manage language-specific converters dynamically at runtime, adhering to the Open/Closed Principle.
+   * **CLI Application**: Command-line interface with demo functionality and code generation.
+   * **TUI Application**: Interactive terminal user interface using Spectre.Console for creating and managing functions.
 
 ### Architectural Design (SOLID Principles)
 
-#### Single Responsibility Principle (SRP)
+#### Single Responsibility Principle (SRP) ✅
 
 * Each class/module handles only one responsibility:
 
   * AST classes: Structure representation
   * YAML serialization: IR conversion
   * Language-specific modules: Code generation
+  * CLI/TUI: User interface and interaction
 
-#### Open/Closed Principle (OCP)
+#### Open/Closed Principle (OCP) 🔄
 
 * Extensible language support without modifying core library code by injecting language converters at runtime.
+* **STATUS**: Interface structure supports this, but DI configuration is missing.
 
-#### Liskov Substitution Principle (LSP)
+#### Liskov Substitution Principle (LSP) ✅
 
 * Language-specific classes adhere to the `ILanguageGenerator` interface and can substitute each other seamlessly.
 
-#### Interface Segregation Principle (ISP)
+#### Interface Segregation Principle (ISP) ✅
 
 * Clearly separated interfaces ensure no component depends on methods it does not use.
 
-#### Dependency Inversion Principle (DIP)
+#### Dependency Inversion Principle (DIP) 🔄
 
 * High-level modules (core library) depend on abstract interfaces rather than concrete implementations of language-specific converters.
+* **STATUS**: Partially implemented - interfaces exist but DI container setup is missing.
 
 ## Implementation Plan
 
-### Project Structure (.NET Solution)
+### Project Structure (.NET Solution) ✅ **IMPLEMENTED**
 
 ```plaintext
-CodegenLibrary/
-├── Ast/
-│   ├── AstNode.cs
-│   ├── AstLeafNode.cs
-│   └── AstCompositeNode.cs
-├── Serialization/
-│   ├── YamlSerializer.cs
-│   └── YamlDeserializer.cs
-├── Languages/
-│   ├── ILanguageGenerator.cs
-│   ├── PythonGenerator.cs
-│   ├── CppGenerator.cs
-│   ├── TypeScriptGenerator.cs
-│   └── ...
-├── DependencyInjection/
-│   └── ServiceCollectionExtensions.cs
-└── Tests/
-    ├── YamlSerializerTests.cs
-    ├── LanguageGeneratorsTests.cs
-    └── ...
+Coder/
+├── Coder.Core/
+│   ├── Ast/
+│   │   ├── AstNode.cs ✅
+│   │   ├── AstLeafNode.cs ✅
+│   │   ├── AstCompositeNode.cs ✅
+│   │   ├── FunctionDeclaration.cs ✅
+│   │   ├── Parameter.cs ✅
+│   │   └── ReturnStatement.cs ✅
+│   ├── Serialization/
+│   │   ├── YamlSerializer.cs ✅
+│   │   └── YamlDeserializer.cs ✅
+│   └── Languages/
+│       ├── ILanguageGenerator.cs ✅
+│       ├── LanguageGeneratorBase.cs ✅
+│       └── PythonGenerator.cs ✅
+├── Coder.Test/
+│   ├── Ast/
+│   │   └── AstNodeTests.cs ✅
+│   └── Serialization/
+│       └── YamlSerializationTests.cs ✅
+├── Coder.CLI/
+│   └── SampleCLI.cs ✅
+└── Coder.App/
+    └── Program.cs ✅ (TUI with Spectre.Console)
 ```
 
 ### Core Interfaces and Classes
 
-**Abstract Interface:**
+**Abstract Interface:** ✅ **IMPLEMENTED**
 
 ```csharp
 public interface ILanguageGenerator
 {
+    string LanguageId { get; }
+    string DisplayName { get; }
+    string FileExtension { get; }
     string Generate(AstNode astNode);
+    bool CanGenerate(AstNode astNode);
 }
 ```
 
-**Example Language Implementation:**
+**Example Language Implementation:** ✅ **IMPLEMENTED**
 
 ```csharp
-public class PythonGenerator : ILanguageGenerator
+public class PythonGenerator : LanguageGeneratorBase
 {
-    public string Generate(AstNode astNode)
+    public override string LanguageId => "python";
+    public override string DisplayName => "Python";
+    public override string FileExtension => "py";
+    
+    public override string Generate(AstNode astNode)
     {
-        // Conversion logic here
+        // Full implementation with proper indentation and type hints
     }
 }
 ```
 
-**Dependency Injection Configuration Example:**
+**Dependency Injection Configuration:** ❌ **NOT IMPLEMENTED**
 
 ```csharp
+// TODO: Implement this class
 public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddLanguageGenerators(this IServiceCollection services)
     {
         services.AddSingleton<ILanguageGenerator, PythonGenerator>();
-        services.AddSingleton<ILanguageGenerator, CppGenerator>();
-        // additional languages...
-
+        // Additional languages when implemented...
         return services;
     }
 }
 ```
 
-## Workflow Example
+## Current Workflow Example ✅ **WORKING**
 
-1. User creates AST structure programmatically.
+1. User creates AST structure programmatically (via CLI/TUI or code).
 2. AST structure serialized to YAML for readability and diff-ability.
-3. Language-specific generator is retrieved from the DI container.
-4. The generator converts AST to target language code.
+3. Language-specific generator processes AST to target language code.
+4. Generated code can be displayed, saved, or further processed.
 
-## Usage Example (C# Pseudo-code)
+## Usage Example (C# Working Code)
 
 ```csharp
-var ast = new FunctionDeclaration("MyFunction", new [] { new Parameter("param1", "int") }, new [] { new ReturnStatement(42) });
+// This works in the current implementation
+var function = new FunctionDeclaration("calculate_sum")
+{
+    ReturnType = "int"
+};
+
+function.Parameters.Add(new Parameter("a", "int"));
+function.Parameters.Add(new Parameter("b", "int"));
+function.Body.Add(new ReturnStatement(new AstLeafNode<string>("a + b")));
 
 // Serialize to YAML
 var serializer = new YamlSerializer();
-string yamlStr = serializer.Serialize(ast);
+string yamlStr = serializer.Serialize(function);
 
 // Deserialize from YAML
 var deserializer = new YamlDeserializer();
 AstNode astLoaded = deserializer.Deserialize(yamlStr);
 
-// Setup DI container
-var services = new ServiceCollection();
-services.AddLanguageGenerators();
-var provider = services.BuildServiceProvider();
-
 // Generate Python code
-var pythonGenerator = provider.GetService<ILanguageGenerator>();
+var pythonGenerator = new PythonGenerator();
 string pythonCode = pythonGenerator.Generate(astLoaded);
 ```
 
+## What's Missing for Full Implementation
+
+### High Priority
+1. **ServiceCollectionExtensions** for proper DI configuration
+2. **Comprehensive testing** for all existing functionality
+3. **Additional AST node types** (variables, assignments, control flow)
+4. **Expression system** (binary operators, function calls)
+
+### Medium Priority
+5. **Additional language generators** (C#, JavaScript, C++)
+6. **Error handling and validation** improvements
+7. **Performance optimization** and benchmarking
+
+### Low Priority
+8. **Advanced documentation** and API reference
+9. **Example projects** for each supported language
+10. **Mutation testing and advanced QA**
+
 ## Conclusion
 
-This .NET-based design provides a robust, flexible, and scalable framework to programmatically generate and serialize AST-based intermediate representations and convert them into multiple target languages, ensuring adherence to SOLID principles and ease of future extensibility.
+This .NET-based design has successfully implemented a robust, flexible foundation for AST-based code generation. The core infrastructure adheres to SOLID principles and provides working serialization and Python code generation. The CLI and TUI applications demonstrate practical usage. 
+
+The next development phase should focus on completing the dependency injection infrastructure and expanding the AST node types to support more complex code structures.
