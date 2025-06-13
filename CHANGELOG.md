@@ -1,6 +1,10 @@
-## v1.0.0
+## v1.0.1 (patch)
 
 Changes since v1.0.0:
+
+- Implement dependency injection and enhance AST expression handling ([@matt-edmondson](https://github.com/matt-edmondson))
+- Refactor AST expression handling and enhance visual editor support ([@matt-edmondson](https://github.com/matt-edmondson))
+- Update implementation and design documents to reflect current project status ([@matt-edmondson](https://github.com/matt-edmondson))
 ## v1.0.0 (major)
 
 - Design and implementation plan documentation ([@matt-edmondson](https://github.com/matt-edmondson))
