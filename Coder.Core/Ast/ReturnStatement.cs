@@ -76,7 +76,7 @@ public class ReturnStatement : AstCompositeNode
 		ReturnStatement clone = new();
 
 		// Copy metadata
-		foreach ((string key, object value) in Metadata)
+		foreach ((string key, object? value) in Metadata)
 		{
 			clone.Metadata[key] = value;
 		}

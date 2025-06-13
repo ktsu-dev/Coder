@@ -100,7 +100,7 @@ public static class ExtendedDemo
 		);
 
 		BinaryExpression onePlusRateTime = new(
-			Literal.Int(1),
+			Literal.Number(1),
 			BinaryOperator.Add,
 			rateTimeProduct
 		);
@@ -140,14 +140,14 @@ public static class ExtendedDemo
 
 		// Variable declarations
 		VariableDeclaration lengthVar = new("length", "int",
-			new BinaryExpression(new VariableReference("input.Length"), BinaryOperator.Add, Literal.Int(0)));
+			new BinaryExpression(new VariableReference("input.Length"), BinaryOperator.Add, Literal.Number(0)));
 
-		VariableDeclaration resultVar = new("result", null, Literal.String("Processing: "))
+		VariableDeclaration resultVar = new("result", null, Literal.Text("Processing: "))
 		{
 			IsTypeInferred = true
 		};
 
-		VariableDeclaration counterVar = new("counter", "int", Literal.Int(0));
+		VariableDeclaration counterVar = new("counter", "int", Literal.Number(0));
 
 		// Assignment statements
 		AssignmentStatement resultAssignment = new(

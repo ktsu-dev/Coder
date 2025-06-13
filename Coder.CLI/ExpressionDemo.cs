@@ -97,70 +97,68 @@ public static class ExpressionDemo
 	private static BinaryExpression CreateMathExpression()
 	{
 		// (a + b) * (c - d) / 2.0
-		BinaryExpression aPlusB = new(
+		var aPlusB = new BinaryExpression(
 			new VariableReference("a"),
 			BinaryOperator.Add,
 			new VariableReference("b")
 		);
 
-		BinaryExpression cMinusD = new(
+		var cMinusD = new BinaryExpression(
 			new VariableReference("c"),
 			BinaryOperator.Subtract,
 			new VariableReference("d")
 		);
 
-		BinaryExpression multiply = new(
+		var multiply = new BinaryExpression(
 			aPlusB,
 			BinaryOperator.Multiply,
 			cMinusD
 		);
 
-		BinaryExpression divide = new(
+		var divide = new BinaryExpression(
 			multiply,
 			BinaryOperator.Divide,
-			Literal.Double(2.0)
-		)
-		{
-			ExpectedType = "double"
-		};
+			Literal.DecimalValue(2.0)
+		);
+
+		divide.ExpectedType = "double";
 		return divide;
 	}
 
 	private static BinaryExpression CreateConditionalExpression()
 	{
 		// (age >= 18) && (hasLicense == true)
-		BinaryExpression ageCheck = new(
+		var ageCheck = new BinaryExpression(
 			new VariableReference("age"),
 			BinaryOperator.GreaterThanOrEqual,
-			Literal.Int(18)
+			Literal.Number(18)
 		);
 
-		BinaryExpression licenseCheck = new(
+		var licenseCheck = new BinaryExpression(
 			new VariableReference("hasLicense"),
 			BinaryOperator.Equal,
 			Literal.Bool(true)
 		);
 
-		BinaryExpression combined = new(
+		var combined = new BinaryExpression(
 			ageCheck,
 			BinaryOperator.LogicalAnd,
 			licenseCheck
-		)
-		{
-			ExpectedType = "bool"
-		};
+		);
+
+		combined.ExpectedType = "bool";
 		return combined;
 	}
 
 	private static List<VariableDeclaration> CreateVariableDeclarations()
 	{
-		return
-		[
+		return new List<VariableDeclaration>
+		{
 			new("result", "double", CreateMathExpression()),
 			new("canDrive", "bool", CreateConditionalExpression()),
-			new("message", null, Literal.String("Hello, World!")) { IsTypeInferred = true },
-			new("counter", "int", Literal.Int(0)) { IsConstant = true }
-		];
+			new("message", null, Literal.Text("Hello, World!")) { IsTypeInferred = true },
+			new("counter", "int", Literal.Number(0)) { IsConstant = true }
+		};
 	}
 
 	private static FunctionDeclaration CreateComplexFunction()

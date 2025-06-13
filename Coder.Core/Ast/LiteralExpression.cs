@@ -85,7 +85,7 @@ public static class Literal
 	/// </summary>
 	/// <param name="value">The double value.</param>
 	/// <returns>A new double literal expression.</returns>
-	public static LiteralExpression<double> Decimal(double value) => new(value);
+	public static LiteralExpression<double> DecimalValue(double value) => new(value);
 
 	/// <summary>
 	/// Creates a boolean literal expression.
@@ -99,24 +99,12 @@ public static class Literal
 	/// </summary>
 	/// <param name="value">The float value.</param>
 	/// <returns>A new float literal expression.</returns>
-	public static LiteralExpression<float> Single(float value) => new(value);
+	public static LiteralExpression<float> SingleValue(float value) => new(value);
 
 	/// <summary>
 	/// Creates a long integer literal expression.
 	/// </summary>
 	/// <param name="value">The long value.</param>
 	/// <returns>A new long literal expression.</returns>
-	public static LiteralExpression<long> BigNumber(long value) => new(value);
-
-	// Keep the old names for backwards compatibility
-	/// <summary>Creates a string literal expression.</summary>
-	public static LiteralExpression<string> String(string value) => Text(value);
-	/// <summary>Creates an integer literal expression.</summary>
-	public static LiteralExpression<int> Int(int value) => Number(value);
-	/// <summary>Creates a double literal expression.</summary>
-	public static LiteralExpression<double> Double(double value) => Decimal(value);
-	/// <summary>Creates a float literal expression.</summary>
-	public static LiteralExpression<float> Float(float value) => Single(value);
-	/// <summary>Creates a long literal expression.</summary>
-	public static LiteralExpression<long> Long(long value) => BigNumber(value);
+	public static LiteralExpression<long> BigNumberValue(long value) => new(value);
 }

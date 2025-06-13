@@ -63,7 +63,7 @@ public class FunctionDeclaration : AstCompositeNode
 		};
 
 		// Copy metadata
-		foreach ((string key, object value) in Metadata)
+		foreach ((string key, object? value) in Metadata)
 		{
 			clone.Metadata[key] = value;
 		}
