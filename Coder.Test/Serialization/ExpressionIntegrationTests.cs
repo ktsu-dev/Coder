@@ -4,9 +4,9 @@
 
 namespace ktsu.Coder.Test.Serialization;
 
-using ktsu.Coder.Core.Ast;
-using ktsu.Coder.Core.Languages;
-using ktsu.Coder.Core.Serialization;
+using ktsu.Coder.Ast;
+using ktsu.Coder.Languages;
+using ktsu.Coder.Serialization;
 
 /// <summary>
 /// Tests for the complete expression system integration including serialization and code generation.

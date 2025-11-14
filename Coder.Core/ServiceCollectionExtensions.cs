@@ -2,9 +2,9 @@
 // All rights reserved.
 // Licensed under the MIT license.
 
-namespace ktsu.Coder.Core;
+namespace ktsu.Coder;
 
-using ktsu.Coder.Core.Languages;
+using ktsu.Coder.Languages;
 using Microsoft.Extensions.DependencyInjection;
 
 /// <summary>

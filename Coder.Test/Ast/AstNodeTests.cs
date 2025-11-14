@@ -4,7 +4,7 @@
 
 namespace ktsu.Coder.Test.Ast;
 
-using ktsu.Coder.Core.Ast;
+using ktsu.Coder.Ast;
 
 [TestClass]
 public class AstNodeTests

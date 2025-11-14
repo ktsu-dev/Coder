@@ -4,9 +4,9 @@
 
 namespace ktsu.Coder.ConsoleApp;
 
-using ktsu.Coder.Core.Ast;
-using ktsu.Coder.Core.Languages;
-using ktsu.Coder.Core.Serialization;
+using ktsu.Coder.Ast;
+using ktsu.Coder.Languages;
+using ktsu.Coder.Serialization;
 using Microsoft.Extensions.DependencyInjection;
 
 /// <summary>

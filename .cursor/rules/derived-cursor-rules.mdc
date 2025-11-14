@@ -63,6 +63,7 @@ The AI coding assistant is working on a multilingual code generation library nam
     - The deserializer must handle both PascalCase and camelCase leaf nodes (e.g., `Leaf<Int32>` and `leaf<Int32>`).
 - When serializing to YAML, ensure that the `defaultValue` property is correctly escaped (e.g., `defaultValue: '"default"'`).
 - **YamlDeserializer.DeserializeLiteralExpression should return type `Expression?` instead of `AstNode?`.**
+- **All occurrences of `ktsu.Coder.Core` have been replaced with `ktsu.Coder` in the code and documentation.**
 
 ## DEBUGGING
 
@@ -134,7 +135,7 @@ var declaration = new VariableDeclaration("int", "count", "0");
         - Test round-trip serialization of nested expressions.
     - **Visual Editor Foundation:**
         - Add expression builder to TUI - Allow users to create complex expressions interactively.
-        - Visual expression preview - Show expression trees in ASCII art.
+        - Visual expression tree display (ASCII art)
         - Expression templates - Pre-built common expressions.
 
 3.  **Medium Priority:**

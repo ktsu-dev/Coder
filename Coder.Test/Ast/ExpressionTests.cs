@@ -4,7 +4,7 @@
 
 namespace ktsu.Coder.Test.Ast;
 
-using ktsu.Coder.Core.Ast;
+using ktsu.Coder.Ast;
 
 /// <summary>
 /// Tests for the expression system AST nodes.

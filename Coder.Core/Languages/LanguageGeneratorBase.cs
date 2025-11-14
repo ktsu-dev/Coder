@@ -2,11 +2,11 @@
 // All rights reserved.
 // Licensed under the MIT license.
 
-namespace ktsu.Coder.Core.Languages;
+namespace ktsu.Coder.Languages;
 
 using System;
 using System.Text;
-using ktsu.Coder.Core.Ast;
+using ktsu.Coder.Ast;
 
 /// <summary>
 /// Provides a base implementation for language generators with common functionality.

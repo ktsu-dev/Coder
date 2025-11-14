@@ -2,7 +2,7 @@
 // All rights reserved.
 // Licensed under the MIT license.
 
-namespace ktsu.Coder.Core.Ast;
+namespace ktsu.Coder.Ast;
 
 /// <summary>
 /// Represents a leaf node in the AST structure - a node that contains a value but no child nodes.

@@ -2,12 +2,12 @@
 // All rights reserved.
 // Licensed under the MIT license.
 
-namespace ktsu.Coder.Core.Serialization;
+namespace ktsu.Coder.Serialization;
 
 using System;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
-using ktsu.Coder.Core.Ast;
+using ktsu.Coder.Ast;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 

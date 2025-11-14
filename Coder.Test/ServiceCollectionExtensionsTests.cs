@@ -4,9 +4,9 @@
 
 namespace ktsu.Coder.Test;
 
-using ktsu.Coder.Core;
-using ktsu.Coder.Core.Languages;
-using ktsu.Coder.Core.Serialization;
+using ktsu.Coder;
+using ktsu.Coder.Languages;
+using ktsu.Coder.Serialization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 

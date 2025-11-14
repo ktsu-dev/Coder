@@ -2,7 +2,7 @@
 // All rights reserved.
 // Licensed under the MIT license.
 
-namespace ktsu.Coder.Core.Ast;
+namespace ktsu.Coder.Ast;
 
 /// <summary>
 /// Represents a reference to a variable in an expression.

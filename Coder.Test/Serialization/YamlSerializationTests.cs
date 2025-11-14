@@ -4,8 +4,8 @@
 
 namespace ktsu.Coder.Test.Serialization;
 
-using ktsu.Coder.Core.Ast;
-using ktsu.Coder.Core.Serialization;
+using ktsu.Coder.Ast;
+using ktsu.Coder.Serialization;
 
 [TestClass]
 public class YamlSerializationTests

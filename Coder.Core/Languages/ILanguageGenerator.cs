@@ -2,9 +2,9 @@
 // All rights reserved.
 // Licensed under the MIT license.
 
-namespace ktsu.Coder.Core.Languages;
+namespace ktsu.Coder.Languages;
 
-using ktsu.Coder.Core.Ast;
+using ktsu.Coder.Ast;
 
 /// <summary>
 /// Defines the interface for language-specific code generators.
