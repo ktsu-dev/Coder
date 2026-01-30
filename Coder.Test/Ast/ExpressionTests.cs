@@ -61,11 +61,11 @@ public class ExpressionTests
 
 		Assert.AreEqual("result", inferredVar.Name);
 		Assert.IsNull(inferredVar.Type);
-		Assert.IsTrue(inferredVar.IsTypeInferred);
+		Assert.IsTrue(inferredVar.IsTypeInferred, "Variable with null type should be type-inferred");
 
 		Assert.AreEqual("PI", constantVar.Name);
 		Assert.AreEqual("double", constantVar.Type);
-		Assert.IsTrue(constantVar.IsConstant);
+		Assert.IsTrue(constantVar.IsConstant, "Variable marked as constant should have IsConstant set to true");
 	}
 
 	/// <summary>

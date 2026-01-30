@@ -53,9 +53,9 @@ public class ExpressionIntegrationTests
 		string yaml = serializer.Serialize(divide);
 
 		Assert.IsNotNull(yaml);
-		Assert.IsTrue(yaml.Contains("binaryExpression"));
-		Assert.IsTrue(yaml.Contains("operator: Divide"));
-		Assert.IsTrue(yaml.Contains("expectedType: double"));
+		Assert.IsTrue(yaml.Contains("binaryExpression"), "Serialized YAML should contain 'binaryExpression'");
+		Assert.IsTrue(yaml.Contains("operator: Divide"), "Serialized YAML should contain 'operator: Divide'");
+		Assert.IsTrue(yaml.Contains("expectedType: double"), "Serialized YAML should contain 'expectedType: double'");
 
 		// Test deserialization
 		YamlDeserializer deserializer = new();
@@ -75,10 +75,10 @@ public class ExpressionIntegrationTests
 		Console.WriteLine($"Generated Python code: '{pythonCode}'");
 		Assert.IsNotNull(pythonCode);
 		// Expected: (((a + b) * (c - d)) / 2.0)
-		Assert.IsTrue(pythonCode.Contains('a'));
-		Assert.IsTrue(pythonCode.Contains('b'));
-		Assert.IsTrue(pythonCode.Contains('c'));
-		Assert.IsTrue(pythonCode.Contains('d'));
+		Assert.IsTrue(pythonCode.Contains('a'), "Python code should contain variable 'a'");
+		Assert.IsTrue(pythonCode.Contains('b'), "Python code should contain variable 'b'");
+		Assert.IsTrue(pythonCode.Contains('c'), "Python code should contain variable 'c'");
+		Assert.IsTrue(pythonCode.Contains('d'), "Python code should contain variable 'd'");
 
 		// Test C# code generation
 		CSharpGenerator csharpGen = new();
@@ -86,10 +86,10 @@ public class ExpressionIntegrationTests
 
 		Console.WriteLine($"Generated C# code: '{csharpCode}'");
 		Assert.IsNotNull(csharpCode);
-		Assert.IsTrue(csharpCode.Contains('a'));
-		Assert.IsTrue(csharpCode.Contains('b'));
-		Assert.IsTrue(csharpCode.Contains('c'));
-		Assert.IsTrue(csharpCode.Contains('d'));
+		Assert.IsTrue(csharpCode.Contains('a'), "C# code should contain variable 'a'");
+		Assert.IsTrue(csharpCode.Contains('b'), "C# code should contain variable 'b'");
+		Assert.IsTrue(csharpCode.Contains('c'), "C# code should contain variable 'c'");
+		Assert.IsTrue(csharpCode.Contains('d'), "C# code should contain variable 'd'");
 	}
 
 	/// <summary>
@@ -124,9 +124,9 @@ public class ExpressionIntegrationTests
 		string yaml = serializer.Serialize(function);
 
 		Assert.IsNotNull(yaml);
-		Assert.IsTrue(yaml.Contains("functionDeclaration"));
-		Assert.IsTrue(yaml.Contains("name: Calculate"));
-		Assert.IsTrue(yaml.Contains("returnType: double"));
+		Assert.IsTrue(yaml.Contains("functionDeclaration"), "Serialized YAML should contain 'functionDeclaration'");
+		Assert.IsTrue(yaml.Contains("name: Calculate"), "Serialized YAML should contain 'name: Calculate'");
+		Assert.IsTrue(yaml.Contains("returnType: double"), "Serialized YAML should contain 'returnType: double'");
 
 		// Test deserialization
 		YamlDeserializer deserializer = new();
@@ -141,10 +141,10 @@ public class ExpressionIntegrationTests
 
 		Console.WriteLine($"Generated Python function: '{pythonCode}'");
 		Assert.IsNotNull(pythonCode);
-		Assert.IsTrue(pythonCode.Contains("def Calculate"));
-		Assert.IsTrue(pythonCode.Contains('x'));
-		Assert.IsTrue(pythonCode.Contains('y'));
-		Assert.IsTrue(pythonCode.Contains("return"));
+		Assert.IsTrue(pythonCode.Contains("def Calculate"), "Python code should contain 'def Calculate'");
+		Assert.IsTrue(pythonCode.Contains('x'), "Python code should contain parameter 'x'");
+		Assert.IsTrue(pythonCode.Contains('y'), "Python code should contain parameter 'y'");
+		Assert.IsTrue(pythonCode.Contains("return"), "Python code should contain 'return' statement");
 
 		// Test C# code generation
 		CSharpGenerator csharpGen = new();
@@ -152,10 +152,10 @@ public class ExpressionIntegrationTests
 
 		Console.WriteLine($"Generated C# function: '{csharpCode}'");
 		Assert.IsNotNull(csharpCode);
-		Assert.IsTrue(csharpCode.Contains("Calculate"));
-		Assert.IsTrue(csharpCode.Contains('x'));
-		Assert.IsTrue(csharpCode.Contains('y'));
-		Assert.IsTrue(csharpCode.Contains("return"));
+		Assert.IsTrue(csharpCode.Contains("Calculate"), "C# code should contain method name 'Calculate'");
+		Assert.IsTrue(csharpCode.Contains('x'), "C# code should contain parameter 'x'");
+		Assert.IsTrue(csharpCode.Contains('y'), "C# code should contain parameter 'y'");
+		Assert.IsTrue(csharpCode.Contains("return"), "C# code should contain 'return' statement");
 	}
 
 	/// <summary>
@@ -187,16 +187,16 @@ public class ExpressionIntegrationTests
 		string pythonVarCode = pythonGen.Generate(varDecl);
 		string pythonAssignCode = pythonGen.Generate(assignment);
 
-		Assert.IsTrue(pythonVarCode.Contains("result = (a + b)"));
-		Assert.IsTrue(pythonAssignCode.Contains("result *= 2"));
+		Assert.IsTrue(pythonVarCode.Contains("result = (a + b)"), "Python variable declaration should contain 'result = (a + b)'");
+		Assert.IsTrue(pythonAssignCode.Contains("result *= 2"), "Python assignment should contain 'result *= 2'");
 
 		// Test C# generation
 		CSharpGenerator csharpGen = new();
 		string csharpVarCode = csharpGen.Generate(varDecl);
 		string csharpAssignCode = csharpGen.Generate(assignment);
 
-		Assert.IsTrue(csharpVarCode.Contains("var result = (a + b)"));
-		Assert.IsTrue(csharpAssignCode.Contains("result *= 2"));
+		Assert.IsTrue(csharpVarCode.Contains("var result = (a + b)"), "C# variable declaration should contain 'var result = (a + b)'");
+		Assert.IsTrue(csharpAssignCode.Contains("result *= 2"), "C# assignment should contain 'result *= 2'");
 	}
 
 	/// <summary>
@@ -228,13 +228,13 @@ public class ExpressionIntegrationTests
 		PythonGenerator pythonGen = new();
 		string pythonCode = pythonGen.Generate(condition);
 
-		Assert.IsTrue(pythonCode.Contains("(x > 0) and (y < 100)"));
+		Assert.IsTrue(pythonCode.Contains("(x > 0) and (y < 100)"), "Python code should contain '(x > 0) and (y < 100)'");
 
 		// Test C# generation
 		CSharpGenerator csharpGen = new();
 		string csharpCode = csharpGen.Generate(condition);
 
-		Assert.IsTrue(csharpCode.Contains("(x > 0) && (y < 100)"));
+		Assert.IsTrue(csharpCode.Contains("(x > 0) && (y < 100)"), "C# code should contain '(x > 0) && (y < 100)'");
 	}
 
 	/// <summary>
