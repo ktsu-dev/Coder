@@ -2,6 +2,7 @@
 
 Changes since v1.0.3:
 
+- Remove serena/cursor files ([@matt-edmondson](https://github.com/matt-edmondson))
 - Regenerate TAGS.md with NuGet package tags ([@matt-edmondson](https://github.com/matt-edmondson))
 - Remove legacy build scripts ([@matt-edmondson](https://github.com/matt-edmondson))
 - Enhance test assertions with descriptive messages in ExpressionTests and ExpressionIntegrationTests ([@matt-edmondson](https://github.com/matt-edmondson))
