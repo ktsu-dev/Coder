@@ -127,6 +127,6 @@ public class YamlSerializationTests
 		string invalidYaml = "this is not valid yaml @#$%";
 
 		// Act & Assert
-		Assert.ThrowsException<YamlDotNet.Core.YamlException>(() => deserializer.Deserialize(invalidYaml));
+		Assert.ThrowsExactly<YamlDotNet.Core.YamlException>(() => deserializer.Deserialize(invalidYaml));
 	}
 }

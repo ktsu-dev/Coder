@@ -33,9 +33,11 @@ public class BinaryExpression : Expression
 	/// <param name="right">The right operand.</param>
 	public BinaryExpression(Expression left, BinaryOperator @operator, Expression right)
 	{
-		Left = left ?? throw new ArgumentNullException(nameof(left));
+		Ensure.NotNull(left);
+		Ensure.NotNull(right);
+		Left = left;
 		Operator = @operator;
-		Right = right ?? throw new ArgumentNullException(nameof(right));
+		Right = right;
 	}
 
 	/// <summary>

@@ -18,7 +18,7 @@ public static class CoderCLI
 	/// </summary>
 	public static void Main(string[] args)
 	{
-		ArgumentNullException.ThrowIfNull(args);
+		Ensure.NotNull(args);
 
 		Console.WriteLine("=== Coder CLI - Code Generation Tool ===");
 		Console.WriteLine();

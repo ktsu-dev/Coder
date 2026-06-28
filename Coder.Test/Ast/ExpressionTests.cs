@@ -154,12 +154,12 @@ public class ExpressionTests
 		LiteralExpression<int> validExpr = Literal.Number(42);
 
 		// Act & Assert
-		Assert.ThrowsException<ArgumentNullException>(() => new BinaryExpression(null!, BinaryOperator.Add, validExpr));
-		Assert.ThrowsException<ArgumentNullException>(() => new BinaryExpression(validExpr, BinaryOperator.Add, null!));
-		Assert.ThrowsException<ArgumentNullException>(() => new AssignmentStatement(null!, validExpr));
-		Assert.ThrowsException<ArgumentNullException>(() => new AssignmentStatement(validExpr, null!));
-		Assert.ThrowsException<ArgumentException>(() => new VariableDeclaration(""));
-		Assert.ThrowsException<ArgumentNullException>(() => new VariableDeclaration(null!));
+		Assert.ThrowsExactly<ArgumentNullException>(() => new BinaryExpression(null!, BinaryOperator.Add, validExpr));
+		Assert.ThrowsExactly<ArgumentNullException>(() => new BinaryExpression(validExpr, BinaryOperator.Add, null!));
+		Assert.ThrowsExactly<ArgumentNullException>(() => new AssignmentStatement(null!, validExpr));
+		Assert.ThrowsExactly<ArgumentNullException>(() => new AssignmentStatement(validExpr, null!));
+		Assert.ThrowsExactly<ArgumentException>(() => new VariableDeclaration(""));
+		Assert.ThrowsExactly<ArgumentNullException>(() => new VariableDeclaration(null!));
 	}
 
 	/// <summary>

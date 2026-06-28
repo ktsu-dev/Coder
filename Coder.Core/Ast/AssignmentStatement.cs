@@ -33,8 +33,10 @@ public class AssignmentStatement : AstNode
 	/// <param name="operator">The assignment operator (defaults to simple assignment).</param>
 	public AssignmentStatement(Expression target, Expression value, AssignmentOperator @operator = AssignmentOperator.Assign)
 	{
-		Target = target ?? throw new ArgumentNullException(nameof(target));
-		Value = value ?? throw new ArgumentNullException(nameof(value));
+		Ensure.NotNull(target);
+		Ensure.NotNull(value);
+		Target = target;
+		Value = value;
 		Operator = @operator;
 	}
 
