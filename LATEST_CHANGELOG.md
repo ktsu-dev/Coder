@@ -1,13 +1,8 @@
-## v1.0.4 (patch)
+## v1.0.5 (patch)
 
-Changes since v1.0.3:
+Changes since v1.0.4:
 
-- fix: standardize null checks and exact exception assertions ([@matt-edmondson](https://github.com/matt-edmondson))
-- chore: modernize project SDKs and target frameworks ([@matt-edmondson](https://github.com/matt-edmondson))
-- Remove serena/cursor files ([@matt-edmondson](https://github.com/matt-edmondson))
-- Regenerate TAGS.md with NuGet package tags ([@matt-edmondson](https://github.com/matt-edmondson))
-- Remove legacy build scripts ([@matt-edmondson](https://github.com/matt-edmondson))
-- Enhance test assertions with descriptive messages in ExpressionTests and ExpressionIntegrationTests ([@matt-edmondson](https://github.com/matt-edmondson))
-- Refactor codebase to replace all instances of 'ktsu.Coder.Core' with 'ktsu.Coder' across files, enhancing consistency. Updated .runsettings for coverage configuration and modified .gitattributes for clarity. Removed obsolete test-expression-demo.cs file. Added new scripts for updating winget manifests and improved PSBuild.psm1 for better package publishing support. ([@matt-edmondson](https://github.com/matt-edmondson))
-- Update configuration files and scripts for improved build and test processes ([@matt-edmondson](https://github.com/matt-edmondson))
+- Merge remote-tracking branch 'refs/remotes/origin/main' ([@ktsu[bot]](https://github.com/ktsu[bot]))
+- Sync .github\workflows\dotnet.yml ([@ktsu[bot]](https://github.com/ktsu[bot]))
+- Sync global.json ([@ktsu[bot]](https://github.com/ktsu[bot]))
 

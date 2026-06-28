@@ -1,3 +1,11 @@
+## v1.0.5 (patch)
+
+Changes since v1.0.4:
+
+- Merge remote-tracking branch 'refs/remotes/origin/main' ([@ktsu[bot]](https://github.com/ktsu[bot]))
+- Sync .github\workflows\dotnet.yml ([@ktsu[bot]](https://github.com/ktsu[bot]))
+- Sync global.json ([@ktsu[bot]](https://github.com/ktsu[bot]))
+
 ## v1.0.4 (patch)
 
 Changes since v1.0.3:
@@ -13,9 +21,7 @@ Changes since v1.0.3:
 
 ## v1.0.4-pre.1 (prerelease)
 
-Changes since v1.0.3:
-
-- Bump the microsoft group with 2 updates ([@dependabot[bot]](https://github.com/dependabot[bot]))
+No significant changes detected since v1.0.4.
 
 ## v1.0.3 (patch)
 
