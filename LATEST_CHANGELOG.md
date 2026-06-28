@@ -2,6 +2,7 @@
 
 Changes since v1.0.3:
 
+- chore: modernize project SDKs and target frameworks ([@matt-edmondson](https://github.com/matt-edmondson))
 - Remove serena/cursor files ([@matt-edmondson](https://github.com/matt-edmondson))
 - Regenerate TAGS.md with NuGet package tags ([@matt-edmondson](https://github.com/matt-edmondson))
 - Remove legacy build scripts ([@matt-edmondson](https://github.com/matt-edmondson))
