@@ -40,7 +40,7 @@ public class LiteralExpression<T> : Expression
 	/// <returns>A new instance with the same property values.</returns>
 	public override AstNode Clone()
 	{
-		LiteralExpression<T> clone = new(Value ?? default!)
+		LiteralExpression<T> clone = new(Value ?? default)
 		{
 			ExpectedType = ExpectedType
 		};

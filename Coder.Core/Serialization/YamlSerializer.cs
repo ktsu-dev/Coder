@@ -35,7 +35,7 @@ public class YamlSerializer
 	/// <returns>A YAML string representation of the AST node.</returns>
 	public string Serialize(AstNode node)
 	{
-		ArgumentNullException.ThrowIfNull(node);
+		Ensure.NotNull(node);
 
 		// Create a dictionary to represent the YAML structure
 		Dictionary<string, object> root = [];

@@ -1,4 +1,8 @@
-<Project Sdk="ktsu.Sdk.App">
+<Project>
+  <Sdk Name="Microsoft.NET.Sdk" />
+  <Sdk Name="ktsu.Sdk" />
+  <Sdk Name="ktsu.Sdk.App" />
+
 
   <ItemGroup>
     <PackageReference Include="Spectre.Console" />

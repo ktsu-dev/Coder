@@ -35,7 +35,7 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// <returns>A string containing the generated code in the target language.</returns>
 	public string Generate(AstNode astNode)
 	{
-		ArgumentNullException.ThrowIfNull(astNode);
+		Ensure.NotNull(astNode);
 
 		if (!CanGenerate(astNode))
 		{
@@ -77,7 +77,7 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// <param name="indentSize">The number of spaces per indent level. Default is 4.</param>
 	protected static void Indent(StringBuilder builder, int indentLevel, int indentSize = 4)
 	{
-		ArgumentNullException.ThrowIfNull(builder);
+		Ensure.NotNull(builder);
 		builder.Append(' ', indentLevel * indentSize);
 	}
 }

@@ -19,7 +19,7 @@ public static class ServiceCollectionExtensions
 	/// <returns>The service collection for method chaining.</returns>
 	public static IServiceCollection AddLanguageGenerators(this IServiceCollection services)
 	{
-		ArgumentNullException.ThrowIfNull(services);
+		Ensure.NotNull(services);
 
 		// Register all available language generators
 		services.AddSingleton<ILanguageGenerator, PythonGenerator>();
@@ -39,7 +39,7 @@ public static class ServiceCollectionExtensions
 	/// <returns>The service collection for method chaining.</returns>
 	public static IServiceCollection AddCoderSerialization(this IServiceCollection services)
 	{
-		ArgumentNullException.ThrowIfNull(services);
+		Ensure.NotNull(services);
 
 		services.AddSingleton<Serialization.YamlSerializer>();
 		services.AddSingleton<Serialization.YamlDeserializer>();
@@ -54,7 +54,7 @@ public static class ServiceCollectionExtensions
 	/// <returns>The service collection for method chaining.</returns>
 	public static IServiceCollection AddCoder(this IServiceCollection services)
 	{
-		ArgumentNullException.ThrowIfNull(services);
+		Ensure.NotNull(services);
 
 		return services
 			.AddLanguageGenerators()
