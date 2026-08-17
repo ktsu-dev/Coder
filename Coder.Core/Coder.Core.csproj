@@ -11,5 +11,5 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
     <PackageReference Include="YamlDotNet" />
   
-    <PackageReference Include="Polyfill" /></ItemGroup>
+    <PackageReference Include="Polyfill" PrivateAssets="all" /></ItemGroup>
 </Project>

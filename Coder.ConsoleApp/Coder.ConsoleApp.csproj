@@ -7,7 +7,7 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
   
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
-    <PackageReference Include="Polyfill" /></ItemGroup>
+    <PackageReference Include="Polyfill" PrivateAssets="all" /></ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Coder.Core\Coder.Core.csproj" />
