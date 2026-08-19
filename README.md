@@ -2,6 +2,14 @@
 
 A flexible and extensible .NET library for representing code as Abstract Syntax Trees (AST), serializing to YAML, and generating code in multiple programming languages.
 
+[![License](https://img.shields.io/github/license/ktsu-dev/Coder.svg?label=License&logo=nuget)](LICENSE.md)
+[![NuGet Version](https://img.shields.io/nuget/v/ktsu.Coder.Core?label=Stable&logo=nuget)](https://nuget.org/packages/ktsu.Coder.Core)
+[![NuGet Version](https://img.shields.io/nuget/vpre/ktsu.Coder.Core?label=Latest&logo=nuget)](https://nuget.org/packages/ktsu.Coder.Core)
+[![NuGet Downloads](https://img.shields.io/nuget/dt/ktsu.Coder.Core?label=Downloads&logo=nuget)](https://nuget.org/packages/ktsu.Coder.Core)
+[![GitHub commit activity](https://img.shields.io/github/commit-activity/m/ktsu-dev/Coder?label=Commits&logo=github)](https://github.com/ktsu-dev/Coder/commits/main)
+[![GitHub contributors](https://img.shields.io/github/contributors/ktsu-dev/Coder?label=Contributors&logo=github)](https://github.com/ktsu-dev/Coder/graphs/contributors)
+[![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/ktsu-dev/Coder/dotnet.yml?label=Build&logo=github)](https://github.com/ktsu-dev/Coder/actions)
+
 ## Overview
 
 ktsu.Coder provides a language-agnostic way to represent code structures using Abstract Syntax Trees. The library allows you to:

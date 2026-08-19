@@ -1,2 +1,1 @@
-Placeholder description, a single line concise description of the project, suitable for the package description in the nuget list UI.
-
+A flexible and extensible .NET library for representing code as language-agnostic Abstract Syntax Trees, serializing them to human-readable YAML for round-trip storage and version control, and generating source code in multiple target languages. Provides strongly-typed AST nodes for function declarations, parameters, return statements, and generic literals, with a plugin-based architecture for adding new target languages, full deep-cloning support, and custom metadata on any node. Python generation with type hints and correct indentation is supported out of the box.
