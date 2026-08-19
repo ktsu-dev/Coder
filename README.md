@@ -8,7 +8,7 @@ A flexible and extensible .NET library for representing code as Abstract Syntax 
 [![NuGet Downloads](https://img.shields.io/nuget/dt/ktsu.Coder.Core?label=Downloads&logo=nuget)](https://nuget.org/packages/ktsu.Coder.Core)
 [![GitHub commit activity](https://img.shields.io/github/commit-activity/m/ktsu-dev/Coder?label=Commits&logo=github)](https://github.com/ktsu-dev/Coder/commits/main)
 [![GitHub contributors](https://img.shields.io/github/contributors/ktsu-dev/Coder?label=Contributors&logo=github)](https://github.com/ktsu-dev/Coder/graphs/contributors)
-[![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/ktsu-dev/Coder/dotnet.yml?label=Build&logo=github)](https://github.com/ktsu-dev/Coder/actions)
+[![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/ktsu-dev/Coder/dotnet.yml?branch=main&label=Build&logo=github)](https://github.com/ktsu-dev/Coder/actions)
 
 ## Overview
 
