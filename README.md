@@ -52,6 +52,36 @@ Increment and decrement are deliberately absent from `UnaryOperator`: Python has
 them, and an `AssignmentStatement` with `AssignmentOperator.AddAssign` expresses the same effect in
 every target language.
 
+### Visual graph editor
+
+`ktsu.Coder.Graph` renders an AST as an editable node graph, built on
+[`ktsu.ImGuiNodeEditor`](https://github.com/ktsu-dev/ImGuiApp) with its force-directed layout.
+
+```csharp
+AstGraphEditor editor = new(functionDeclaration);
+
+// once per frame, inside your ImGui render loop
+editor.Draw(new Vector2(1200, 800), deltaTime);
+
+foreach (AstGraphProblem problem in editor.Problems)
+{
+    Console.WriteLine(problem.Message);
+}
+```
+
+Each AST node becomes one editor node with a single output pin — itself — and one input pin per slot
+it can hold a child in, so a link reads "this node fills that slot of that parent". Right-click for
+the palette, drag between pins to connect, Delete to remove, and Undo/Redo on the toolbar.
+
+The AST is the document and the graph is a view of it: every edit is applied to the AST and the
+graph rebuilt from it, preserving on-screen positions by node identity. A graph is allowed to be
+incomplete while you work — `AstGraphEditor.Problems` (or `AstGraph.Validate()`) lists outstanding
+operands and disconnected nodes rather than throwing, so consult it before handing the AST to a
+generator.
+
+The package targets `net10.0` only, since the node editor does. `ktsu.Coder` itself has no UI
+dependency and continues to cross-target.
+
 ### Supported Target Languages
 
 Resolve `IEnumerable<ILanguageGenerator>` and select on `LanguageId`, or construct a generator

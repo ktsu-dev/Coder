@@ -1,4 +1,4 @@
-<Project>
+﻿<Project>
   <Sdk Name="MSTest.Sdk" />
   <Sdk Name="ktsu.Sdk" />
 
@@ -10,9 +10,13 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <!-- Drives the ImGui surface of Coder.Graph headlessly, through the CPU rasterizer. -->
+    <PackageReference Include="ktsu.ImGui.App" />
+    <PackageReference Include="ktsu.ImGui.App.Testing" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Coder.Core\Coder.Core.csproj" />
+    <ProjectReference Include="..\Coder.Graph\Coder.Graph.csproj" />
   </ItemGroup>
 </Project>
