@@ -6,7 +6,7 @@ This document outlines the architecture and design decisions for building a mult
 
 **Status: Core Infrastructure Implemented, Extensions In Progress**
 
-This library has successfully implemented the core infrastructure with working AST nodes, YAML serialization, and basic Python code generation. The CLI and TUI applications are functional and demonstrate the library's capabilities.
+This library has successfully implemented the core infrastructure with working AST nodes, YAML serialization, and code generation for Python, C#, JavaScript and C++. The CLI and TUI applications are functional and demonstrate the library's capabilities.
 
 ## Objectives
 
@@ -56,12 +56,13 @@ functionDeclaration:
    * `YamlDeserializer`: Parses YAML back into AST structures with proper type resolution.
    * Round-trip serialization/deserialization verified
 
-3. **Language Conversion Interfaces** 🔄 **PARTIALLY IMPLEMENTED**:
+3. **Language Conversion Interfaces** ✅ **IMPLEMENTED**:
 
    * Abstract interface (`ILanguageGenerator`) for converting AST nodes into specific languages.
    * Base implementation (`LanguageGeneratorBase`) provides common functionality.
-   * Python generator fully implemented with proper indentation and type hints.
-   * **MISSING**: Dependency injection configuration (ServiceCollectionExtensions)
+   * Four generators, each with proper indentation and language-appropriate type handling:
+     Python (type hints), C#, JavaScript (untyped, strict equality), and C++ (mapped type spellings).
+   * Dependency injection configuration (`ServiceCollectionExtensions`) registers all four.
 
 4. **Applications** ✅ **IMPLEMENTED**:
 
@@ -114,15 +115,23 @@ Coder/
 │   ├── Serialization/
 │   │   ├── YamlSerializer.cs ✅
 │   │   └── YamlDeserializer.cs ✅
-│   └── Languages/
-│       ├── ILanguageGenerator.cs ✅
-│       ├── LanguageGeneratorBase.cs ✅
-│       └── PythonGenerator.cs ✅
+│   ├── Languages/
+│   │   ├── ILanguageGenerator.cs ✅
+│   │   ├── LanguageGeneratorBase.cs ✅
+│   │   ├── PythonGenerator.cs ✅
+│   │   ├── CSharpGenerator.cs ✅
+│   │   ├── JavaScriptGenerator.cs ✅
+│   │   └── CppGenerator.cs ✅
+│   └── ServiceCollectionExtensions.cs ✅
 ├── Coder.Test/
 │   ├── Ast/
 │   │   └── AstNodeTests.cs ✅
-│   └── Serialization/
-│       └── YamlSerializationTests.cs ✅
+│   ├── Languages/
+│   │   ├── JavaScriptGeneratorTests.cs ✅
+│   │   └── CppGeneratorTests.cs ✅
+│   ├── Serialization/
+│   │   └── YamlSerializationTests.cs ✅
+│   └── ServiceCollectionExtensionsTests.cs ✅
 ├── Coder.CLI/
 │   └── SampleCLI.cs ✅
 └── Coder.App/
@@ -160,20 +169,25 @@ public class PythonGenerator : LanguageGeneratorBase
 }
 ```
 
-**Dependency Injection Configuration:** ❌ **NOT IMPLEMENTED**
+**Dependency Injection Configuration:** ✅ **IMPLEMENTED**
 
 ```csharp
-// TODO: Implement this class
 public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddLanguageGenerators(this IServiceCollection services)
     {
         services.AddSingleton<ILanguageGenerator, PythonGenerator>();
-        // Additional languages when implemented...
+        services.AddSingleton<ILanguageGenerator, CSharpGenerator>();
+        services.AddSingleton<ILanguageGenerator, JavaScriptGenerator>();
+        services.AddSingleton<ILanguageGenerator, CppGenerator>();
         return services;
     }
 }
 ```
+
+A generator is reached by resolving `IEnumerable<ILanguageGenerator>` and selecting on `LanguageId`
+(`python`, `csharp`, `javascript`, `cpp`), so adding a language is one registration and no caller
+changes.
 
 ## Current Workflow Example ✅ **WORKING**
 
@@ -211,15 +225,14 @@ string pythonCode = pythonGenerator.Generate(astLoaded);
 ## What's Missing for Full Implementation
 
 ### High Priority
-1. **ServiceCollectionExtensions** for proper DI configuration
-2. **Comprehensive testing** for all existing functionality
-3. **Additional AST node types** (variables, assignments, control flow)
-4. **Expression system** (binary operators, function calls)
+1. **Comprehensive testing** for all existing functionality
+2. **Additional AST node types** (control flow: conditionals and loops)
+3. **Expression system** — function calls (binary operators are implemented)
 
 ### Medium Priority
-5. **Additional language generators** (C#, JavaScript, C++)
-6. **Error handling and validation** improvements
-7. **Performance optimization** and benchmarking
+4. **Further language generators** beyond the four that exist
+5. **Error handling and validation** improvements
+6. **Performance optimization** and benchmarking
 
 ### Low Priority
 8. **Advanced documentation** and API reference
@@ -228,6 +241,6 @@ string pythonCode = pythonGenerator.Generate(astLoaded);
 
 ## Conclusion
 
-This .NET-based design has successfully implemented a robust, flexible foundation for AST-based code generation. The core infrastructure adheres to SOLID principles and provides working serialization and Python code generation. The CLI and TUI applications demonstrate practical usage. 
+This .NET-based design has successfully implemented a robust, flexible foundation for AST-based code generation. The core infrastructure adheres to SOLID principles and provides working serialization and code generation for four target languages. The CLI and TUI applications demonstrate practical usage. 
 
 The next development phase should focus on completing the dependency injection infrastructure and expanding the AST node types to support more complex code structures.
