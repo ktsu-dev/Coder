@@ -1,4 +1,4 @@
-# ktsu.Coder
+﻿# ktsu.Coder
 
 A flexible and extensible .NET library for representing code as Abstract Syntax Trees (AST), serializing to YAML, and generating code in multiple programming languages.
 
@@ -35,7 +35,22 @@ This makes it ideal for code generation tools, transpilers, and any application 
 -   **FunctionDeclaration**: Represents function/method declarations with parameters and body
 -   **Parameter**: Function parameters with optional default values
 -   **ReturnStatement**: Return statements with optional expressions
+-   **VariableDeclaration**: Variable declarations, optionally constant or type-inferred
+-   **AssignmentStatement**: Assignments, including the compound operators (`+=`, `<<=`, …)
+-   **BinaryExpression**: Two operands and an operator (`a + b`, `x == y`, `p && q`)
+-   **UnaryExpression**: One operator applied to one operand (`-x`, `!ready`, `~mask`)
+-   **VariableReference**: A reference to a variable by name
+-   **LiteralExpression<T>**: Typed literals (string, int, bool, double)
 -   **AstLeafNode<T>**: Generic leaf nodes for literals (strings, numbers, booleans)
+
+Every operator in `UnaryOperator` and `BinaryOperator` exists in all four target languages, so no
+AST built from them is untranslatable. Only the spelling varies — Python's `not`/`and`/`or`,
+JavaScript's strict `===`/`!==` — and each generator overrides just the operators it spells
+differently.
+
+Increment and decrement are deliberately absent from `UnaryOperator`: Python has no spelling for
+them, and an `AssignmentStatement` with `AssignmentOperator.AddAssign` expresses the same effect in
+every target language.
 
 ### Supported Target Languages
 

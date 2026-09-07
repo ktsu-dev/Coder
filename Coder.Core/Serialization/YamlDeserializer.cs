@@ -1,4 +1,4 @@
-// Copyright (c) 2023-2026 ktsu-dev contributors
+﻿// Copyright (c) 2023-2026 ktsu-dev contributors
 
 namespace ktsu.Coder.Serialization;
 
@@ -59,6 +59,8 @@ public partial class YamlDeserializer
 			"ReturnStatement" => DeserializeReturnStatement(nodeData ?? new object()),
 			"binaryExpression" => DeserializeBinaryExpression(nodeData),
 			"BinaryExpression" => DeserializeBinaryExpression(nodeData),
+			"unaryExpression" => DeserializeUnaryExpression(nodeData),
+			"UnaryExpression" => DeserializeUnaryExpression(nodeData),
 			"variableReference" => DeserializeVariableReference(nodeData),
 			"VariableReference" => DeserializeVariableReference(nodeData),
 			"variableDeclaration" => DeserializeVariableDeclaration(nodeData),
@@ -305,6 +307,44 @@ public partial class YamlDeserializer
 		}
 
 		return binaryExpr;
+	}
+
+	private UnaryExpression DeserializeUnaryExpression(object? nodeData)
+	{
+		UnaryExpression unaryExpr = new();
+		if (nodeData is Dictionary<object, object> dict)
+		{
+			// Deserialize operator
+			if (dict.TryGetValue("operator", out object? operatorObj) &&
+				Enum.TryParse<UnaryOperator>(operatorObj.ToString(), out UnaryOperator unaryOp))
+			{
+				unaryExpr.Operator = unaryOp;
+			}
+
+			// Deserialize operand
+			if (dict.TryGetValue("operand", out object? operandObj) && operandObj is Dictionary<object, object> operandDict)
+			{
+				foreach ((object operandType, object operandData) in operandDict)
+				{
+					AstNode? operandNode = DeserializeNode(operandType.ToString() ?? string.Empty, operandData);
+					if (operandNode is Expression operandExpr)
+					{
+						unaryExpr.Operand = operandExpr;
+						break;
+					}
+				}
+			}
+
+			// Deserialize expected type
+			if (dict.TryGetValue("expectedType", out object? typeObj))
+			{
+				unaryExpr.ExpectedType = typeObj.ToString();
+			}
+
+			DeserializeMetadata(unaryExpr, dict);
+		}
+
+		return unaryExpr;
 	}
 
 	private static Expression? DeserializeLiteralExpression(string nodeType, object? nodeData)

@@ -4,6 +4,7 @@ namespace ktsu.Coder.Test.Languages;
 
 using ktsu.Coder.Ast;
 using ktsu.Coder.Languages;
+using ktsu.CodeBlocker;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 /// <summary>
@@ -35,7 +36,7 @@ public class CppGeneratorTests
 
 		string code = Generator.Generate(function);
 
-		string nl = Environment.NewLine;
+		string nl = CodeBlocker.DefaultNewLineString;
 		Assert.AreEqual($"void doNothing(){nl}{{{nl}}}{nl}", code);
 	}
 
@@ -95,7 +96,7 @@ public class CppGeneratorTests
 		VariableDeclaration inferred = new("count", initialValue: Literal.Number(1)) { IsTypeInferred = true };
 		VariableDeclaration inferredEmpty = new("later") { IsTypeInferred = true };
 
-		string nl = Environment.NewLine;
+		string nl = CodeBlocker.DefaultNewLineString;
 		Assert.AreEqual($"std::string name = \"ktsu\";{nl}", Generator.Generate(typed));
 		Assert.AreEqual($"auto count = 1;{nl}", Generator.Generate(inferred));
 
@@ -111,7 +112,7 @@ public class CppGeneratorTests
 	{
 		VariableDeclaration constant = new("limit", "int", Literal.Number(10)) { IsConstant = true };
 
-		Assert.AreEqual($"const int limit = 10;{Environment.NewLine}", Generator.Generate(constant));
+		Assert.AreEqual($"const int limit = 10;{CodeBlocker.DefaultNewLineString}", Generator.Generate(constant));
 	}
 
 	/// <summary>

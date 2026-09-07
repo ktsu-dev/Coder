@@ -4,8 +4,8 @@ namespace ktsu.Coder.Languages;
 
 using System;
 using System.Collections.Generic;
-using System.Text;
 using ktsu.Coder.Ast;
+using ktsu.CodeBlocker;
 
 /// <summary>
 /// Generates C++ code from AST nodes.
@@ -52,67 +52,54 @@ public class CppGenerator : StandardLanguageGenerator
 	public override string FileExtension => "cpp";
 
 	/// <inheritdoc/>
-	protected override void GenerateFunctionDeclaration(FunctionDeclaration funcDecl, StringBuilder builder, int indentLevel)
+	protected override void GenerateFunctionDeclaration(FunctionDeclaration funcDecl, CodeBlocker code)
 	{
 		Ensure.NotNull(funcDecl);
-		Ensure.NotNull(builder);
+		Ensure.NotNull(code);
 
-		Indent(builder, indentLevel);
-		builder.Append(MapToCppType(funcDecl.ReturnType ?? "void"));
-		builder.Append(' ');
-		builder.Append(funcDecl.Name ?? "unnamedFunction");
-		builder.Append('(');
-		GenerateParameterList(funcDecl.Parameters, builder);
-		builder.AppendLine(")");
-		Indent(builder, indentLevel);
-		builder.AppendLine("{");
+		code.Write($"{MapToCppType(funcDecl.ReturnType ?? "void")} {funcDecl.Name ?? "unnamedFunction"}(");
+		GenerateParameterList(funcDecl.Parameters, code);
 
+		// The line is ended before the scope opens, so C++'s brace lands on its own line.
+		code.WriteLine(")");
+
+		using Scope body = new(code);
 		foreach (AstNode statement in funcDecl.Body)
 		{
-			GenerateInternal(statement, builder, indentLevel + 1);
+			GenerateInternal(statement, code);
 		}
-
-		Indent(builder, indentLevel);
-		builder.AppendLine("}");
 	}
 
 	/// <inheritdoc/>
-	protected override void GenerateParameter(Parameter parameter, StringBuilder builder, int position)
+	protected override void GenerateParameter(Parameter parameter, CodeBlocker code, int position)
 	{
 		Ensure.NotNull(parameter);
-		Ensure.NotNull(builder);
+		Ensure.NotNull(code);
 
-		builder.Append(MapToCppType(parameter.Type ?? "object"));
-		builder.Append(' ');
-		builder.Append(parameter.Name ?? $"param{position}");
-		AppendDefaultValue(parameter, builder);
+		code.Write($"{MapToCppType(parameter.Type ?? "object")} {parameter.Name ?? $"param{position}"}");
+		AppendDefaultValue(parameter, code);
 	}
 
 	/// <inheritdoc/>
-	protected override void GenerateVariableDeclaration(VariableDeclaration varDecl, StringBuilder builder, int indentLevel)
+	protected override void GenerateVariableDeclaration(VariableDeclaration varDecl, CodeBlocker code)
 	{
 		Ensure.NotNull(varDecl);
-		Ensure.NotNull(builder);
-
-		Indent(builder, indentLevel);
+		Ensure.NotNull(code);
 
 		if (varDecl.IsConstant)
 		{
-			builder.Append("const ");
+			code.Write("const ");
 		}
 
-		builder.Append(GetDeclaredType(varDecl));
-
-		builder.Append(' ');
-		builder.Append(varDecl.Name);
+		code.Write($"{GetDeclaredType(varDecl)} {varDecl.Name}");
 
 		if (varDecl.InitialValue is not null)
 		{
-			builder.Append(" = ");
-			GenerateInternal(varDecl.InitialValue, builder, 0);
+			code.Write(" = ");
+			GenerateInternal(varDecl.InitialValue, code);
 		}
 
-		EndStatement(builder);
+		EndStatement(code);
 	}
 
 	/// <summary>

@@ -2,8 +2,8 @@
 
 namespace ktsu.Coder.Languages;
 
-using System.Text;
 using ktsu.Coder.Ast;
+using ktsu.CodeBlocker;
 
 /// <summary>
 /// Generates Python code from AST nodes.
@@ -36,69 +36,67 @@ public class PythonGenerator : StandardLanguageGenerator
 	/// Ends a statement. Python has no terminator, and the function body emits the line breaks, so
 	/// this deliberately writes nothing.
 	/// </summary>
-	/// <param name="builder">The string builder, left untouched.</param>
-	protected override void EndStatement(StringBuilder builder)
+	/// <param name="code">The writer, left untouched.</param>
+	protected override void EndStatement(CodeBlocker code)
 	{
 		// Python statements end at the newline the caller writes.
 	}
 
 	/// <inheritdoc/>
-	protected override void GenerateFunctionDeclaration(FunctionDeclaration funcDecl, StringBuilder builder, int indentLevel)
+	protected override void GenerateFunctionDeclaration(FunctionDeclaration funcDecl, CodeBlocker code)
 	{
 		Ensure.NotNull(funcDecl);
-		Ensure.NotNull(builder);
+		Ensure.NotNull(code);
 
 		// Function signature
-		Indent(builder, indentLevel);
-		builder.Append("def ");
-		builder.Append(funcDecl.Name ?? "unnamed_function");
-		builder.Append('(');
-		GenerateParameterList(funcDecl.Parameters, builder);
-		builder.Append(')');
+		code.Write($"def {funcDecl.Name ?? "unnamed_function"}(");
+		GenerateParameterList(funcDecl.Parameters, code);
+		code.Write(")");
 
 		// Add return type hint if available
 		if (funcDecl.ReturnType != null)
 		{
-			builder.Append(" -> ");
-			builder.Append(PythonTypeFromGenericType(funcDecl.ReturnType));
+			code.Write($" -> {PythonTypeFromGenericType(funcDecl.ReturnType)}");
 		}
 
-		builder.AppendLine(":");
+		code.WriteLine(":");
+
+		// Python's body is delimited by indentation alone, so there is no brace scope to open.
+		using IndentScope body = new(code);
 
 		// Function body
 		if (funcDecl.Body.Count == 0)
 		{
 			// Empty function body needs a pass statement
-			Indent(builder, indentLevel + 1);
-			builder.AppendLine("pass");
+			code.WriteLine("pass");
 		}
 		else
 		{
-			// Generate each statement in the body
+			// Generate each statement in the body. EndStatement writes nothing for Python, so the
+			// line break is this loop's to write.
 			foreach (AstNode statement in funcDecl.Body)
 			{
-				GenerateInternal(statement, builder, indentLevel + 1);
-				builder.AppendLine();
+				GenerateInternal(statement, code);
+				code.WriteLine();
 			}
 		}
 	}
 
 	/// <inheritdoc/>
-	protected override void GenerateParameter(Parameter parameter, StringBuilder builder, int position)
+	protected override void GenerateParameter(Parameter parameter, CodeBlocker code, int position)
 	{
 		Ensure.NotNull(parameter);
-		Ensure.NotNull(builder);
+		Ensure.NotNull(code);
 
-		builder.Append(parameter.Name ?? $"param{position}");
+		code.Write(parameter.Name ?? $"param{position}");
 
 		// Type hints are optional in Python, so they are emitted only when the AST carries one.
 		if (parameter.Type is not null)
 		{
-			builder.Append(": ");
-			builder.Append(PythonTypeFromGenericType(parameter.Type));
+			code.Write($": {PythonTypeFromGenericType(parameter.Type)}");
 		}
 
-		AppendDefaultValue(parameter, builder);
+		AppendDefaultValue(parameter, code);
 	}
 
 	private static string PythonTypeFromGenericType(string genericType)
@@ -116,23 +114,22 @@ public class PythonGenerator : StandardLanguageGenerator
 	}
 
 	/// <inheritdoc/>
-	protected override void GenerateVariableDeclaration(VariableDeclaration varDecl, StringBuilder builder, int indentLevel)
+	protected override void GenerateVariableDeclaration(VariableDeclaration varDecl, CodeBlocker code)
 	{
 		Ensure.NotNull(varDecl);
-		Ensure.NotNull(builder);
+		Ensure.NotNull(code);
 
-		Indent(builder, indentLevel);
-		builder.Append(varDecl.Name);
+		code.Write(varDecl.Name);
 
 		if (varDecl.InitialValue != null)
 		{
-			builder.Append(" = ");
-			GenerateInternal(varDecl.InitialValue, builder, 0);
+			code.Write(" = ");
+			GenerateInternal(varDecl.InitialValue, code);
 		}
 		else
 		{
 			// Python requires initialization, so use None for uninitialized variables
-			builder.Append(" = None");
+			code.Write(" = None");
 		}
 	}
 
@@ -147,5 +144,20 @@ public class PythonGenerator : StandardLanguageGenerator
 		BinaryOperator.LogicalAnd => "and",
 		BinaryOperator.LogicalOr => "or",
 		_ => GetBinaryOperator(op)
+	};
+
+	/// <summary>
+	/// Maps a unary operator to its Python spelling.
+	/// </summary>
+	/// <param name="op">The operator to map.</param>
+	/// <returns>The operator's source spelling.</returns>
+	/// <remarks>
+	/// Only logical negation differs from the C-family set: Python spells it as a word. The emitter
+	/// supplies the separating space, so this returns the bare keyword.
+	/// </remarks>
+	protected override string GetUnaryOperatorSpelling(UnaryOperator op) => op switch
+	{
+		UnaryOperator.LogicalNot => "not",
+		_ => GetUnaryOperator(op)
 	};
 }

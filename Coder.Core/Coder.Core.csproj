@@ -1,4 +1,4 @@
-<Project>
+﻿<Project>
   <Sdk Name="Microsoft.NET.Sdk" />
   <Sdk Name="ktsu.Sdk" />
 
@@ -7,6 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="ktsu.CodeBlocker" />
     <PackageReference Include="ktsu.DeepClone" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
     <PackageReference Include="YamlDotNet" />

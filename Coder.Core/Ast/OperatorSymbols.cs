@@ -39,6 +39,17 @@ public static class OperatorSymbols
 			: throw new NotSupportedException($"Unsupported binary operator: {op}");
 
 	/// <summary>
+	/// Gets the C-family source spelling of a unary operator.
+	/// </summary>
+	/// <param name="op">The operator to spell.</param>
+	/// <returns>The operator's source spelling.</returns>
+	/// <exception cref="NotSupportedException"><paramref name="op"/> has no spelling.</exception>
+	public static string GetSymbol(UnaryOperator op) =>
+		TryGetSymbol(op, out string? symbol) && symbol is not null
+			? symbol
+			: throw new NotSupportedException($"Unsupported unary operator: {op}");
+
+	/// <summary>
 	/// Tries to get the source spelling of an assignment operator.
 	/// </summary>
 	/// <param name="op">The operator to spell.</param>
@@ -95,6 +106,27 @@ public static class OperatorSymbols
 			BinaryOperator.BitwiseXor => "^",
 			BinaryOperator.LeftShift => "<<",
 			BinaryOperator.RightShift => ">>",
+			_ => null
+		};
+
+		return symbol is not null;
+	}
+
+	/// <summary>
+	/// Tries to get the C-family source spelling of a unary operator.
+	/// </summary>
+	/// <param name="op">The operator to spell.</param>
+	/// <param name="symbol">The operator's source spelling, or null.</param>
+	/// <returns>True if the operator has a spelling; otherwise, false.</returns>
+	/// <remarks>For callers that must not throw on an out-of-range value, such as <c>ToString</c>.</remarks>
+	public static bool TryGetSymbol(UnaryOperator op, out string? symbol)
+	{
+		symbol = op switch
+		{
+			UnaryOperator.Negate => "-",
+			UnaryOperator.Plus => "+",
+			UnaryOperator.LogicalNot => "!",
+			UnaryOperator.BitwiseNot => "~",
 			_ => null
 		};
 
