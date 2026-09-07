@@ -3,6 +3,9 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
+    <PackageVersion Include="Hexa.NET.ImGui" Version="2.2.9" />
+    <PackageVersion Include="Hexa.NET.ImNodes" Version="2.2.9" />
+    <PackageVersion Include="ktsu.ImGuiNodeEditor" Version="3.16.10" />
     <PackageVersion Include="ktsu.CodeBlocker" Version="2.0.4" />
     <PackageVersion Include="ktsu.DeepClone" Version="2.0.2" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="9.0.7" />
