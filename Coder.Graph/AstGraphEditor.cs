@@ -238,6 +238,50 @@ public sealed class AstGraphEditor(AstNode root)
 				DrawSlotCount(node, slot);
 			}
 		}
+
+		DrawConversions(node);
+	}
+
+	/// <summary>
+	/// Draws the menu of kinds the selected node could be turned into.
+	/// </summary>
+	/// <param name="node">The node being inspected.</param>
+	/// <remarks>
+	/// Grouped the same way the palette is, so the entry a user is looking for is where they last saw
+	/// it — and because eighteen binary operators do not belong in a flat list either.
+	/// </remarks>
+	private void DrawConversions(AstNode node)
+	{
+		List<AstNodeTemplate> conversions = [.. ConversionsFor(node)];
+		if (conversions.Count == 0)
+		{
+			return;
+		}
+
+		if (!ImGui.BeginMenu("Convert to"))
+		{
+			return;
+		}
+
+		foreach (string category in conversions.Select(template => template.Category).Distinct())
+		{
+			if (!ImGui.BeginMenu(category))
+			{
+				continue;
+			}
+
+			foreach (AstNodeTemplate template in conversions.Where(entry => string.Equals(entry.Category, category, StringComparison.Ordinal)))
+			{
+				if (ImGui.MenuItem(template.Group is null ? template.Label : $"{template.Group}: {template.Label}"))
+				{
+					Convert(node, template.Create());
+				}
+			}
+
+			ImGui.EndMenu();
+		}
+
+		ImGui.EndMenu();
 	}
 
 	/// <summary>
@@ -502,6 +546,34 @@ public sealed class AstGraphEditor(AstNode root)
 	}
 
 	/// <summary>
+	/// Selects a node, so the inspector shows it and the graph highlights it.
+	/// </summary>
+	/// <param name="node">The node to select.</param>
+	/// <returns>True if the node is in the graph and was selected.</returns>
+	/// <remarks>
+	/// Selecting is not an edit, so it is not recorded: undo should not step back through what the
+	/// user was looking at.
+	/// </remarks>
+	public bool Select(AstNode node)
+	{
+		Ensure.NotNull(node);
+
+		if (!Graph.Nodes.Values.Any(candidate => ReferenceEquals(candidate, node)))
+		{
+			return false;
+		}
+
+		SelectedNode = node;
+
+		// ImNodes keeps its own selection, and the highlight in the graph comes from that rather than
+		// from the field above.
+		int nodeId = Graph.Nodes.First(pair => ReferenceEquals(pair.Value, node)).Key;
+		ImNodes.ClearNodeSelection();
+		ImNodes.SelectNode(nodeId);
+		return true;
+	}
+
+	/// <summary>
 	/// Writes one of a node's own properties as one undoable edit.
 	/// </summary>
 	/// <param name="node">The node to edit.</param>
@@ -547,6 +619,80 @@ public sealed class AstGraphEditor(AstNode root)
 	{
 		AstFields.TryWrite(node, fieldName, value);
 		Graph.Rebuild();
+	}
+
+	/// <summary>
+	/// Puts a different kind of node in a node's place, as one undoable edit.
+	/// </summary>
+	/// <param name="existing">The node to replace.</param>
+	/// <param name="replacement">The node to put there.</param>
+	/// <returns>True if the document changed.</returns>
+	/// <remarks>
+	/// This is how a number literal becomes a text one, or a binary expression becomes a unary one,
+	/// without rebuilding the connections around it. The operands the replacement can take move
+	/// across; any it cannot are left on the replaced node, which stays in the graph as a loose node
+	/// rather than taking them with it.
+	/// </remarks>
+	public bool Convert(AstNode existing, AstNode replacement)
+	{
+		Ensure.NotNull(existing);
+		Ensure.NotNull(replacement);
+
+		if (ReferenceEquals(existing, Graph.Root))
+		{
+			statusMessage = "The document's own node cannot be converted.";
+			return false;
+		}
+
+		AstLocation from = Graph.LocationOf(existing);
+		IReadOnlyList<(AstNode Child, AstLocation From)> moved = [];
+
+		Record(
+			$"Convert {AstSchema.Describe(existing)} to {AstSchema.Describe(replacement)}",
+			ChangeType.Modify,
+			existing,
+			() => moved = Graph.Replace(existing, replacement),
+			() =>
+			{
+				// Undone in the order the replacement was made: the original goes back into its place,
+				// then each child that moved goes back into the slot it came from.
+				Graph.Replace(replacement, existing);
+				Graph.MoveTo(existing, from);
+				foreach ((AstNode child, AstLocation origin) in moved)
+				{
+					Graph.MoveTo(child, origin);
+				}
+
+				Graph.RemoveNode(replacement);
+			});
+
+		statusMessage = $"Converted to {AstSchema.Describe(replacement)}.";
+		return true;
+	}
+
+	/// <summary>
+	/// Lists the kinds of node the selected one could be turned into.
+	/// </summary>
+	/// <param name="node">The node to convert.</param>
+	/// <returns>The palette entries whose nodes would fit where this one sits.</returns>
+	/// <remarks>
+	/// Filtered by where the node sits rather than by what it is: a slot that takes an expression will
+	/// take any expression, and offering a conversion the slot would then refuse would be offering to
+	/// break the document.
+	/// </remarks>
+	public IEnumerable<AstNodeTemplate> ConversionsFor(AstNode node)
+	{
+		Ensure.NotNull(node);
+
+		if (ReferenceEquals(node, Graph.Root))
+		{
+			return [];
+		}
+
+		AstSlot? slot = Graph.LocationOf(node).Slot;
+
+		return AstNodeCatalog.Templates.Where(template =>
+			slot is null || AstSchema.Accepts(slot, template.Create()));
 	}
 
 	/// <summary>

@@ -223,6 +223,11 @@ public sealed class CoderEditorApp(
 				Save(DocumentPath ?? pathBuffer);
 			}
 
+			if (ImGui.MenuItem("Export generated code") && (DocumentPath ?? pathBuffer).Length > 0)
+			{
+				Export(DocumentPath ?? pathBuffer);
+			}
+
 			if (Settings.RecentFiles.Count > 0 && ImGui.BeginMenu("Recent"))
 			{
 				foreach (string recent in Settings.RecentFiles.ToArray())
@@ -257,18 +262,114 @@ public sealed class CoderEditorApp(
 		IReadOnlyList<AstGraphProblem> problems = Editor.Problems;
 		if (problems.Count > 0)
 		{
-			ImGui.TextUnformatted($"{problems.Count} thing(s) to finish before this generates:");
-			foreach (AstGraphProblem problem in problems)
-			{
-				ImGui.BulletText(problem.Message);
-			}
-
+			DrawProblems(problems);
 			return;
 		}
 
 		Regenerate();
+
+		ImGui.SameLine();
+		if (ImGui.Button("Copy"))
+		{
+			CopyGeneratedCode();
+		}
+
 		ImGui.TextUnformatted(GeneratedCode);
 	}
+
+	/// <summary>
+	/// Draws what is still outstanding, in place of the code that cannot be generated yet.
+	/// </summary>
+	/// <param name="problems">What the document is missing.</param>
+	/// <remarks>
+	/// Each is a button rather than a bullet: a problem names the node it is about, and the fastest
+	/// way to fix one is to be looking at that node with the inspector open.
+	/// </remarks>
+	private void DrawProblems(IReadOnlyList<AstGraphProblem> problems)
+	{
+		ImGui.TextUnformatted($"{problems.Count} thing(s) to finish before this generates:");
+
+		for (int i = 0; i < problems.Count; i++)
+		{
+			if (ImGui.Selectable($"{problems[i].Message}##problem-{i}"))
+			{
+				Editor.Select(problems[i].Node);
+				Status = $"Selected {AstSchema.Describe(problems[i].Node)}.";
+			}
+		}
+	}
+
+	/// <summary>
+	/// Puts the generated code on the clipboard.
+	/// </summary>
+	/// <returns>True if there was code to copy.</returns>
+	/// <remarks>
+	/// The pane exists to produce source somebody is going to paste somewhere, and selecting text
+	/// out of an ImGui label is not something a user can do.
+	/// </remarks>
+	public bool CopyGeneratedCode()
+	{
+		if (GeneratedCode.Length == 0)
+		{
+			return false;
+		}
+
+		ImGui.SetClipboardText(GeneratedCode);
+		Status = "Copied the generated code.";
+		return true;
+	}
+
+	/// <summary>
+	/// Writes the generated code beside the document, in the file extension its language uses.
+	/// </summary>
+	/// <param name="documentPath">The document the source belongs to.</param>
+	/// <returns>The file written, or null if nothing was written.</returns>
+	/// <remarks>
+	/// The point of the application is the source it produces, and a preview pane nobody can get the
+	/// text out of stops one step short of that. The name comes from the document rather than being
+	/// asked for: the two belong together, and a user who wants it elsewhere can move it.
+	/// </remarks>
+	public string? Export(string documentPath)
+	{
+		Ensure.NotNull(documentPath);
+
+		ILanguageGenerator? generator = PreviewGenerator;
+		if (generator is null)
+		{
+			Status = $"No generator for '{Settings.PreviewLanguageId}'.";
+			return null;
+		}
+
+		if (Editor.Problems.Count > 0)
+		{
+			Status = $"{Editor.Problems.Count} thing(s) to finish before this generates.";
+			return null;
+		}
+
+		Regenerate();
+
+		// The document's own extension is two parts, so it is trimmed rather than replaced.
+		string stem = documentPath.EndsWith(DocumentStore.Extension, StringComparison.OrdinalIgnoreCase)
+			? documentPath[..^DocumentStore.Extension.Length]
+			: documentPath;
+
+		DocumentResult result = documents.Export(GeneratedCode, $"{stem}.{generator.FileExtension}");
+		if (!result.Success)
+		{
+			Status = result.Error ?? "Could not write the generated code.";
+			return null;
+		}
+
+		Status = $"Wrote {result.Path}.";
+		return result.Path;
+	}
+
+	/// <summary>
+	/// Gets the generator whose output the pane is showing, or null when the remembered language is
+	/// one this build does not have.
+	/// </summary>
+	private ILanguageGenerator? PreviewGenerator => generators.FirstOrDefault(
+		g => string.Equals(g.LanguageId, Settings.PreviewLanguageId, StringComparison.Ordinal));
 
 	private void DrawStatusBar()
 	{
@@ -361,8 +462,7 @@ public sealed class CoderEditorApp(
 	/// </remarks>
 	public void Regenerate()
 	{
-		ILanguageGenerator? generator = generators.FirstOrDefault(
-			g => string.Equals(g.LanguageId, Settings.PreviewLanguageId, StringComparison.Ordinal));
+		ILanguageGenerator? generator = PreviewGenerator;
 
 		if (generator is null)
 		{
