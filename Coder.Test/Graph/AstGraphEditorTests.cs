@@ -4,6 +4,7 @@ namespace ktsu.Coder.Test.Graph;
 
 using System.Numerics;
 using Hexa.NET.ImGui;
+using Hexa.NET.ImNodes;
 using ktsu.Coder.Ast;
 using ktsu.Coder.Graph;
 using ktsu.ImGui.App;
@@ -166,6 +167,83 @@ public sealed class AstGraphEditorTests
 		harness.Step(2);
 
 		Assert.AreEqual(6, editor.Graph.Nodes.Count, "nothing was selected, so nothing should go");
+	}
+
+	/// <summary>
+	/// Tests that the inspector renders for every kind of node the document holds, which is the whole
+	/// of its draw path: text boxes, tick boxes, operator combos and the slot buttons.
+	/// </summary>
+	/// <remarks>
+	/// Selection is normally made with the mouse, and ImNodes' hit testing depends on where the view
+	/// happens to be panned to; what matters here is that the panel draws for each shape of node, so
+	/// the selection is made through the editor and the frame is rendered.
+	/// </remarks>
+	[TestMethod]
+	public void Editor_RendersTheInspectorForEveryNode()
+	{
+		FunctionDeclaration function = SampleFunction();
+		AstGraphEditor editor = new(function);
+
+		using ImGuiAppHarness harness = ImGuiAppHarness.Start(ConfigFor(editor), Options);
+		harness.Step(2);
+
+		foreach (int nodeId in editor.Graph.Nodes.Keys)
+		{
+			ImNodes.ClearNodeSelection();
+			ImNodes.SelectNode(nodeId);
+			harness.Step(2);
+
+			Assert.AreSame(editor.Graph.AstNodeFor(nodeId), editor.SelectedNode);
+		}
+	}
+
+	/// <summary>
+	/// Tests that the inspector renders with nothing selected, since that is what the user sees when
+	/// the editor first opens.
+	/// </summary>
+	[TestMethod]
+	public void Editor_RendersTheInspectorWithNothingSelected()
+	{
+		AstGraphEditor editor = new(SampleFunction());
+
+		using ImGuiAppHarness harness = ImGuiAppHarness.Start(ConfigFor(editor), Options);
+		harness.Step(2);
+
+		Assert.IsNull(editor.SelectedNode);
+	}
+
+	/// <summary>
+	/// Tests that an edit made through the inspector while the editor is drawing takes effect, which
+	/// is the path every widget in the panel goes through.
+	/// </summary>
+	[TestMethod]
+	public void Editor_AppliesAnInspectorEditWhileDrawing()
+	{
+		FunctionDeclaration function = SampleFunction();
+		AstGraphEditor editor = new(function);
+
+		using ImGuiAppHarness harness = ImGuiAppHarness.Start(ConfigFor(editor), Options);
+		harness.Step(2);
+
+		Assert.IsTrue(editor.SetField(function, "Name", "renamed"));
+		harness.Step(2);
+
+		Assert.AreEqual("renamed", function.Name);
+		Assert.AreEqual(6, editor.Graph.Nodes.Count, "renaming should not change the graph's shape");
+	}
+
+	/// <summary>
+	/// Tests that the panel can be hidden, since a user working on a large graph wants the room.
+	/// </summary>
+	[TestMethod]
+	public void Editor_RendersWithTheInspectorHidden()
+	{
+		AstGraphEditor editor = new(SampleFunction()) { ShowInspector = false };
+
+		using ImGuiAppHarness harness = ImGuiAppHarness.Start(ConfigFor(editor), Options);
+		harness.Step(2);
+
+		Assert.IsFalse(editor.ShowInspector);
 	}
 
 	/// <summary>

@@ -41,4 +41,7 @@ public enum AstSlotKind
 
 	/// <summary>A function parameter, which is neither an expression nor a statement.</summary>
 	Parameter,
+
+	/// <summary>A declaration a class can hold: a method, a field, or a nested class.</summary>
+	Member,
 }

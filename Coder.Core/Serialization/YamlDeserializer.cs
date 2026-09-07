@@ -51,6 +51,8 @@ public partial class YamlDeserializer
 	{
 		return nodeType switch
 		{
+			"classDeclaration" => DeserializeClassDeclaration(nodeData),
+			"ClassDeclaration" => DeserializeClassDeclaration(nodeData),
 			"functionDeclaration" => DeserializeFunctionDeclaration(nodeData),
 			"FunctionDeclaration" => DeserializeFunctionDeclaration(nodeData),
 			"parameter" => DeserializeParameter(nodeData),
@@ -160,6 +162,60 @@ public partial class YamlDeserializer
 					{
 						funcDecl.Body.Add(stmt);
 					}
+				}
+			}
+		}
+	}
+
+	private ClassDeclaration DeserializeClassDeclaration(object? nodeData)
+	{
+		ClassDeclaration classDecl = new();
+		if (nodeData is not Dictionary<object, object> dict)
+		{
+			return classDecl;
+		}
+
+		if (dict.TryGetValue("name", out object? nameObj))
+		{
+			classDecl.Name = nameObj?.ToString();
+		}
+
+		if (dict.TryGetValue("baseType", out object? baseTypeObj))
+		{
+			classDecl.BaseType = baseTypeObj?.ToString();
+		}
+
+		if (dict.TryGetValue("accessModifier", out object? accessObj))
+		{
+			classDecl.AccessModifier = accessObj?.ToString();
+		}
+
+		DeserializeClassMembers(classDecl, dict);
+		DeserializeMetadata(classDecl, dict);
+
+		return classDecl;
+	}
+
+	private void DeserializeClassMembers(ClassDeclaration classDecl, Dictionary<object, object> dict)
+	{
+		if (!dict.TryGetValue("members", out object? membersObj) || membersObj is not List<object> memberList)
+		{
+			return;
+		}
+
+		foreach (object memberObj in memberList)
+		{
+			if (memberObj is not Dictionary<object, object> memberDict)
+			{
+				continue;
+			}
+
+			foreach ((object memberType, object memberData) in memberDict)
+			{
+				AstNode? member = DeserializeNode(memberType.ToString() ?? string.Empty, memberData);
+				if (member != null)
+				{
+					classDecl.Members.Add(member);
 				}
 			}
 		}

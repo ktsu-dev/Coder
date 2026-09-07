@@ -34,6 +34,7 @@ public static class AstSchema
 	private static readonly AstSlot ValueSlot = new("Value", AstSlotCardinality.One, AstSlotKind.Expression);
 	private static readonly AstSlot ParametersSlot = new("Parameters", AstSlotCardinality.Many, AstSlotKind.Parameter);
 	private static readonly AstSlot BodySlot = new("Body", AstSlotCardinality.Many, AstSlotKind.Statement);
+	private static readonly AstSlot MembersSlot = new("Members", AstSlotCardinality.Many, AstSlotKind.Member);
 
 	/// <summary>
 	/// Lists the slots a node exposes, in the order the editor should draw them.
@@ -42,6 +43,7 @@ public static class AstSchema
 	/// <returns>The node's slots, empty for a leaf.</returns>
 	public static IReadOnlyList<AstSlot> SlotsOf(AstNode node) => node switch
 	{
+		ClassDeclaration => [MembersSlot],
 		FunctionDeclaration => [ParametersSlot, BodySlot],
 		ReturnStatement => [ExpressionSlot],
 		BinaryExpression => [LeftSlot, RightSlot],
@@ -82,6 +84,7 @@ public static class AstSchema
 
 		return (node, slot.Name) switch
 		{
+			(ClassDeclaration classDecl, "Members") => [.. classDecl.Members],
 			(FunctionDeclaration function, "Parameters") => [.. function.Parameters],
 			(FunctionDeclaration function, "Body") => [.. function.Body],
 			_ when SlotsOf(node).Contains(slot) => [],
@@ -158,6 +161,10 @@ public static class AstSchema
 				function.Body.Add(child);
 				return true;
 
+			case (ClassDeclaration classDecl, "Members"):
+				classDecl.Members.Add(child);
+				return true;
+
 			default:
 				return false;
 		}
@@ -181,6 +188,10 @@ public static class AstSchema
 
 			case (FunctionDeclaration function, "Body"):
 				function.Body[index] = child;
+				return true;
+
+			case (ClassDeclaration classDecl, "Members"):
+				classDecl.Members[index] = child;
 				return true;
 
 			default:
@@ -255,9 +266,36 @@ public static class AstSchema
 				function.Body.RemoveAt(index);
 				return true;
 
+			case (ClassDeclaration classDecl, "Members") when index < classDecl.Members.Count:
+				classDecl.Members.RemoveAt(index);
+				return true;
+
 			default:
 				return false;
 		}
+	}
+
+	/// <summary>
+	/// Builds the node to put in a slot when the user asks for one more child in it.
+	/// </summary>
+	/// <param name="slot">The slot the child is for.</param>
+	/// <returns>A node the slot will take.</returns>
+	/// <remarks>
+	/// This is what makes "one more parameter" a single click rather than creating a node from the
+	/// palette and dragging it into a pin. Each kind's default is the emptiest thing that is still
+	/// valid there, so the user fills it in rather than clearing it out first.
+	/// </remarks>
+	public static AstNode CreateDefaultChild(AstSlot slot)
+	{
+		Ensure.NotNull(slot);
+
+		return slot.Accepts switch
+		{
+			AstSlotKind.Parameter => new Parameter("value", "int"),
+			AstSlotKind.Statement => new ReturnStatement(),
+			AstSlotKind.Member => new FunctionDeclaration("newMethod") { ReturnType = "void" },
+			_ => Unfilled(),
+		};
 	}
 
 	/// <summary>
@@ -295,6 +333,7 @@ public static class AstSchema
 			AstSlotKind.Parameter => candidate is Parameter,
 			AstSlotKind.Expression => IsExpression(candidate),
 			AstSlotKind.Statement => candidate is not Parameter,
+			AstSlotKind.Member => candidate is FunctionDeclaration or VariableDeclaration or ClassDeclaration,
 			_ => false,
 		};
 	}
@@ -326,6 +365,7 @@ public static class AstSchema
 
 		return node switch
 		{
+			ClassDeclaration classDecl => $"class {classDecl.Name ?? "<unnamed>"}",
 			FunctionDeclaration function => $"function {function.Name ?? "<unnamed>"}",
 			Parameter parameter => $"param {parameter.Name ?? "<unnamed>"}",
 			ReturnStatement => "return",

@@ -58,6 +58,12 @@ public sealed class AstGraph
 	public AstGraph(AstNode root)
 	{
 		Ensure.NotNull(root);
+
+		// The engine's physics settings default to disabled, so a caller that never says otherwise
+		// gets a layout that steps and moves nothing. The whole point of the graph view is that the
+		// user does not arrange it by hand, so it is enabled here rather than left to each caller.
+		Engine.UpdatePhysicsSettings(Engine.PhysicsSettings with { Enabled = true });
+
 		Root = root;
 		Rebuild();
 	}
@@ -117,6 +123,11 @@ public sealed class AstGraph
 		{
 			CreateLinks(subtree);
 		}
+
+		// Clearing the engine resets its world origin, which is what gravity pulls everything
+		// towards. Left at zero it would drag the whole graph off to wherever the origin happens to
+		// be on screen; re-centring it on the nodes keeps the layout where the user is looking.
+		Engine.InitializeWorldOriginToCentroid();
 	}
 
 	/// <summary>
@@ -174,10 +185,34 @@ public sealed class AstGraph
 	{
 		Ensure.NotNull(node);
 
-		positions[node] = position;
+		positions[node] = Separated(position);
 		detached.Add(node);
 		Rebuild();
 		return idsByNode[node];
+	}
+
+	/// <summary>
+	/// Nudges a position that lands on top of an existing node.
+	/// </summary>
+	/// <param name="position">Where the node was asked to go.</param>
+	/// <returns>That position, or the nearest free one along a diagonal from it.</returns>
+	/// <remarks>
+	/// Two nodes at exactly the same point stay there for ever: the layout's repulsion is computed
+	/// from the direction between them, and coincident points have no direction. Creating two nodes
+	/// from the palette without moving the mouse is enough to hit that, so the offset is applied when
+	/// the node is placed rather than left for the simulation to sort out.
+	/// </remarks>
+	private Vector2 Separated(Vector2 position)
+	{
+		const float step = 24f;
+
+		Vector2 candidate = position;
+		for (int attempt = 1; attempt <= 32 && positions.Values.Any(taken => Vector2.Distance(taken, candidate) < step); attempt++)
+		{
+			candidate = position + new Vector2(step * attempt, step * attempt);
+		}
+
+		return candidate;
 	}
 
 	/// <summary>

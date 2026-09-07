@@ -39,6 +39,9 @@ public class CSharpGenerator : LanguageGeneratorBase
 
 		switch (node)
 		{
+			case ClassDeclaration classDecl:
+				GenerateClass(classDecl, code);
+				break;
 			case FunctionDeclaration function:
 				GenerateFunction(function, code);
 				break;
@@ -46,7 +49,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 				GenerateParameter(parameter, code);
 				break;
 			case ReturnStatement returnStmt:
-				GenerateStringifiedReturnStatement(returnStmt, code);
+				GenerateReturnStatement(returnStmt, code);
 				break;
 			case BinaryExpression binaryExpr:
 				GenerateBinaryExpression(binaryExpr, code, GetBinaryOperator(binaryExpr.Operator));
@@ -94,6 +97,34 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// <returns>True if this generator can generate code for the node; otherwise, false.</returns>
 	public override bool CanGenerate(AstNode astNode) => CanGenerateStandardNodes(astNode);
 
+	/// <summary>
+	/// Emits a class declaration and its members.
+	/// </summary>
+	/// <param name="classDecl">The declaration to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// A member is emitted through the same dispatch as any other node, so a nested class, a method
+	/// and a field each come out through the emitter for their own shape.
+	/// </remarks>
+	private void GenerateClass(ClassDeclaration classDecl, CodeBlocker code)
+	{
+		code.Write($"{classDecl.AccessModifier ?? "public"} class {classDecl.Name ?? "UnnamedClass"}");
+
+		if (!string.IsNullOrEmpty(classDecl.BaseType))
+		{
+			code.Write($" : {MapToCSType(classDecl.BaseType!)}");
+		}
+
+		// The line is ended before the scope opens, so C#'s brace lands on its own line.
+		code.WriteLine();
+
+		using Scope members = new(code);
+		foreach (AstNode member in classDecl.Members)
+		{
+			GenerateInternal(member, code);
+		}
+	}
+
 	private void GenerateFunction(FunctionDeclaration function, CodeBlocker code)
 	{
 		// Build method signature
@@ -131,30 +162,6 @@ public class CSharpGenerator : LanguageGeneratorBase
 		}
 	}
 
-	/// <summary>
-	/// Emits a return statement, stringifying its expression rather than recursing into it.
-	/// </summary>
-	/// <param name="returnStmt">The statement to emit.</param>
-	/// <param name="code">The writer to emit into.</param>
-	/// <remarks>
-	/// This is not what <see cref="LanguageGeneratorBase.GenerateReturnStatement"/> does, and the
-	/// difference is a defect rather than a dialect: an expression with no <c>ToString</c> override
-	/// emits its type name, and a string literal loses its quotes. It is preserved here so that
-	/// adopting <c>CodeBlocker</c> changes no generated output; the distinct name keeps it from
-	/// silently hiding the base member. Correcting it belongs in its own change.
-	/// </remarks>
-	private static void GenerateStringifiedReturnStatement(ReturnStatement returnStmt, CodeBlocker code)
-	{
-		code.Write("return");
-
-		if (returnStmt.Expression != null)
-		{
-			code.Write($" {returnStmt.Expression}");
-		}
-
-		code.WriteLine(";");
-	}
-
 	private static readonly Dictionary<string, string> TypeMappings = new()
 	{
 		{ "str", "string" },
@@ -178,6 +185,20 @@ public class CSharpGenerator : LanguageGeneratorBase
 		string type = varDecl.IsTypeInferred || string.IsNullOrEmpty(varDecl.Type)
 			? "var"
 			: MapToCSType(varDecl.Type);
+
+		// A local has no access modifier and a field usually does, and the AST distinguishes the two
+		// by whether one was set: emitting it only when present keeps both correct.
+		if (!string.IsNullOrEmpty(varDecl.AccessModifier))
+		{
+			code.Write($"{varDecl.AccessModifier} ");
+		}
+
+		// A C# constant must name its type, so an inferred one stays a plain declaration rather than
+		// becoming source that does not compile.
+		if (varDecl.IsConstant && !string.Equals(type, "var", StringComparison.Ordinal))
+		{
+			code.Write("const ");
+		}
 
 		code.Write($"{type} {varDecl.Name}");
 

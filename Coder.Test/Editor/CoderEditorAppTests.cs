@@ -297,6 +297,60 @@ public sealed class CoderEditorAppTests
 	}
 
 	/// <summary>
+	/// Tests that a class document opens with a method in it, so the Members slot is not an empty
+	/// pin the user has to guess the meaning of.
+	/// </summary>
+	[TestMethod]
+	public void NewClassDocument_IsAClassWithAMethod()
+	{
+		ClassDeclaration document = CoderEditorApp.NewClassDocument();
+
+		Assert.AreEqual("NewClass", document.Name);
+		Assert.IsInstanceOfType<FunctionDeclaration>(document.Members.Single());
+	}
+
+	/// <summary>
+	/// Tests that starting a class document replaces what was open and generates a class, which is
+	/// the whole path from the File menu to the preview pane.
+	/// </summary>
+	[TestMethod]
+	public void NewClassFile_OpensAClassAndGeneratesIt()
+	{
+		DocumentStore store = NewStore();
+		CoderEditorApp app = NewApp(store);
+		app.Save(PathIn("old"));
+
+		app.NewClassFile();
+
+		Assert.IsNull(app.DocumentPath);
+		Assert.IsInstanceOfType<ClassDeclaration>(app.Editor.Graph.Root);
+		Assert.AreEqual(0, app.Editor.Graph.Validate().Count, "a new class should have nothing outstanding");
+
+		app.Regenerate();
+		StringAssert.Contains(app.GeneratedCode, "public class NewClass", StringComparison.Ordinal);
+	}
+
+	/// <summary>
+	/// Tests that a class document is written and read back as a class, so the editor can save the
+	/// documents it can now create.
+	/// </summary>
+	[TestMethod]
+	public void ClassDocument_SurvivesSavingAndOpening()
+	{
+		DocumentStore store = NewStore();
+		CoderEditorApp app = NewApp(store);
+		app.NewClassFile();
+
+		string path = PathIn("shape");
+		Assert.IsTrue(app.Save(path), app.Status);
+
+		CoderEditorApp reopened = NewApp(store);
+		Assert.IsTrue(reopened.Open(path), reopened.Status);
+		Assert.IsInstanceOfType<ClassDeclaration>(reopened.Editor.Graph.Root);
+		StringAssert.Contains(reopened.GeneratedCode, "class NewClass", StringComparison.Ordinal);
+	}
+
+	/// <summary>
 	/// Tests that the application renders through the real configuration its entry point uses.
 	/// </summary>
 	/// <remarks>

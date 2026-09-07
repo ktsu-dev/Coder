@@ -47,6 +47,10 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 
 		switch (node)
 		{
+			case ClassDeclaration classDecl:
+				GenerateClassDeclaration(classDecl, code);
+				break;
+
 			case FunctionDeclaration funcDecl:
 				GenerateFunctionDeclaration(funcDecl, code);
 				break;
@@ -91,6 +95,32 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	/// <param name="funcDecl">The declaration to emit.</param>
 	/// <param name="code">The writer to emit into.</param>
 	protected abstract void GenerateFunctionDeclaration(FunctionDeclaration funcDecl, CodeBlocker code);
+
+	/// <summary>
+	/// Emits a class declaration, including its members.
+	/// </summary>
+	/// <param name="classDecl">The declaration to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	protected abstract void GenerateClassDeclaration(ClassDeclaration classDecl, CodeBlocker code);
+
+	/// <summary>
+	/// Emits the members of a class, one after another.
+	/// </summary>
+	/// <param name="classDecl">The class whose members to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// A member is dispatched like any other node, so a nested class, a method and a field each come
+	/// out through the emitter for its own shape and nesting needs no separate code path.
+	/// </remarks>
+	protected void GenerateClassMembers(ClassDeclaration classDecl, CodeBlocker code)
+	{
+		Ensure.NotNull(classDecl);
+
+		foreach (AstNode member in classDecl.Members)
+		{
+			GenerateInternal(member, code);
+		}
+	}
 
 	/// <summary>
 	/// Emits a variable declaration as a complete statement.

@@ -81,6 +81,9 @@ public class YamlSerializer
 	{
 		switch (node)
 		{
+			case ClassDeclaration classDecl:
+				SerializeClassDeclaration(classDecl, nodeData);
+				break;
 			case FunctionDeclaration funcDecl:
 				SerializeFunctionDeclaration(funcDecl, nodeData);
 				break;
@@ -155,6 +158,30 @@ public class YamlSerializer
 		if (funcDecl.Body.Count > 0)
 		{
 			nodeData["body"] = SerializeBodyStatements(funcDecl.Body);
+		}
+	}
+
+	private static void SerializeClassDeclaration(ClassDeclaration classDecl, Dictionary<string, object> nodeData)
+	{
+		if (classDecl.Name != null)
+		{
+			nodeData["name"] = classDecl.Name;
+		}
+
+		if (classDecl.BaseType != null)
+		{
+			nodeData["baseType"] = classDecl.BaseType;
+		}
+
+		if (classDecl.AccessModifier != null)
+		{
+			nodeData["accessModifier"] = classDecl.AccessModifier;
+		}
+
+		if (classDecl.Members.Count > 0)
+		{
+			// Members are serialized the same way a function body is: each is a node in its own right.
+			nodeData["members"] = SerializeBodyStatements(classDecl.Members);
 		}
 	}
 

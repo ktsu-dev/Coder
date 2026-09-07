@@ -4,6 +4,7 @@ namespace ktsu.Coder.Graph;
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using Hexa.NET.ImGui;
 using Hexa.NET.ImNodes;
@@ -37,6 +38,10 @@ public sealed class AstGraphEditor(AstNode root)
 
 	private string statusMessage = string.Empty;
 
+	private string fieldBuffer = string.Empty;
+
+	private string? editingField;
+
 	/// <summary>
 	/// Gets the graph being edited.
 	/// </summary>
@@ -68,9 +73,24 @@ public sealed class AstGraphEditor(AstNode root)
 	public bool ShowDebugOverlays { get; set; }
 
 	/// <summary>
+	/// Gets or sets a value indicating whether the inspector panel is drawn.
+	/// </summary>
+	public bool ShowInspector { get; set; } = true;
+
+	/// <summary>
 	/// Gets the problems the document currently has, refreshed each frame it is drawn.
 	/// </summary>
 	public IReadOnlyList<AstGraphProblem> Problems { get; private set; } = [];
+
+	/// <summary>
+	/// Gets the node the inspector is editing, or null when nothing is selected.
+	/// </summary>
+	/// <remarks>
+	/// Held as the AST node rather than the editor's identifier for it: every structural edit rebuilds
+	/// the engine graph and reassigns those identifiers, so a selection remembered by number would
+	/// follow whichever node inherited it.
+	/// </remarks>
+	public AstNode? SelectedNode { get; private set; }
 
 	/// <summary>
 	/// Draws the editor and applies whatever the user did this frame.
@@ -86,8 +106,10 @@ public sealed class AstGraphEditor(AstNode root)
 
 		ApplyNodeMovement();
 		ApplyLinkChanges();
+		TrackSelection();
 		ApplyDeletions();
 		DrawPalette();
+		DrawInspector();
 
 		if (LayoutRunning)
 		{
@@ -139,9 +161,199 @@ public sealed class AstGraphEditor(AstNode root)
 		ImGui.EndDisabled();
 
 		ImGui.SameLine();
+		bool showInspector = ShowInspector;
+		if (ImGui.Checkbox("Inspector", ref showInspector))
+		{
+			ShowInspector = showInspector;
+		}
+
+		ImGui.SameLine();
 		ImGui.TextUnformatted(Problems.Count == 0
 			? statusMessage
 			: $"{Problems.Count} outstanding");
+	}
+
+	/// <summary>
+	/// Remembers which node the user has selected, so the inspector has something to edit.
+	/// </summary>
+	/// <remarks>
+	/// An empty selection is not treated as a deselection: clicking the canvas to pan, or opening the
+	/// palette, clears ImNodes' selection, and an inspector that emptied itself every time the user
+	/// moved the view would be unusable. The selection therefore changes only when a different node
+	/// is picked, or when the selected node leaves the graph.
+	/// </remarks>
+	private void TrackSelection()
+	{
+		int selectedCount = ImNodes.NumSelectedNodes();
+		if (selectedCount > 0)
+		{
+			int[] selected = new int[selectedCount];
+			ImNodes.GetSelectedNodes(ref selected[0]);
+			SelectedNode = Graph.AstNodeFor(selected[0]);
+			return;
+		}
+
+		if (SelectedNode is not null && !Graph.Nodes.Values.Any(node => ReferenceEquals(node, SelectedNode)))
+		{
+			SelectedNode = null;
+		}
+	}
+
+	/// <summary>
+	/// Draws the panel that edits the selected node's own properties: its name, its type, its
+	/// operator, the value of a literal, and how many children its variadic slots hold.
+	/// </summary>
+	/// <remarks>
+	/// This is the half of editing that links cannot express. A node's children are its structure and
+	/// are edited by dragging; everything else about it is a value, and a value needs somewhere to be
+	/// typed.
+	/// </remarks>
+	private void DrawInspector()
+	{
+		if (!ShowInspector)
+		{
+			return;
+		}
+
+		ImGui.Separator();
+
+		AstNode? node = SelectedNode;
+		if (node is null)
+		{
+			ImGui.TextUnformatted("Select a node to edit it.");
+			return;
+		}
+
+		ImGui.TextUnformatted(AstSchema.Describe(node));
+
+		foreach (AstField field in AstFields.Of(node))
+		{
+			DrawField(node, field);
+		}
+
+		foreach (AstSlot slot in AstSchema.SlotsOf(node))
+		{
+			if (slot.Cardinality == AstSlotCardinality.Many)
+			{
+				DrawSlotCount(node, slot);
+			}
+		}
+	}
+
+	/// <summary>
+	/// Draws one editable property, using the widget its kind calls for.
+	/// </summary>
+	/// <param name="node">The node being edited.</param>
+	/// <param name="field">The property to draw.</param>
+	/// <remarks>
+	/// Text is committed when the box is left or the user presses enter rather than on every
+	/// keystroke, so typing a name puts one step on the undo stack instead of one per character.
+	/// </remarks>
+	private void DrawField(AstNode node, AstField field)
+	{
+		ImGui.SetNextItemWidth(180f);
+
+		switch (field.Kind)
+		{
+			case AstFieldKind.Flag:
+				bool flag = string.Equals(field.Value, "true", StringComparison.Ordinal);
+				if (ImGui.Checkbox(field.Name, ref flag))
+				{
+					SetField(node, field.Name, flag ? "true" : "false");
+				}
+
+				break;
+
+			case AstFieldKind.Choice:
+				DrawChoiceField(node, field);
+				break;
+
+			default:
+				DrawTextField(node, field);
+				break;
+		}
+	}
+
+	/// <summary>
+	/// Draws a property the user types into.
+	/// </summary>
+	/// <param name="node">The node being edited.</param>
+	/// <param name="field">The property to draw.</param>
+	/// <remarks>
+	/// One buffer is shared across every field, keyed by which one is being typed into: only one box
+	/// can have the keyboard at a time, so a buffer per field would be state to keep in step with the
+	/// document for no gain. A field that is not being typed into shows the document's value, so an
+	/// undo while the box is open is reflected rather than overwritten.
+	/// </remarks>
+	private void DrawTextField(AstNode node, AstField field)
+	{
+		bool editing = string.Equals(editingField, field.Name, StringComparison.Ordinal);
+		string buffer = editing ? fieldBuffer : field.Value;
+
+		if (ImGui.InputText(field.Name, ref buffer, 256))
+		{
+			editingField = field.Name;
+			fieldBuffer = buffer;
+		}
+
+		if (ImGui.IsItemDeactivatedAfterEdit())
+		{
+			SetField(node, field.Name, buffer);
+			editingField = null;
+		}
+	}
+
+	/// <summary>
+	/// Draws a property the user picks from a fixed set, which is how an operator is chosen.
+	/// </summary>
+	/// <param name="node">The node being edited.</param>
+	/// <param name="field">The property to draw.</param>
+	private void DrawChoiceField(AstNode node, AstField field)
+	{
+		AstFieldChoice? current = field.Choices.FirstOrDefault(
+			choice => string.Equals(choice.Value, field.Value, StringComparison.Ordinal));
+
+		if (!ImGui.BeginCombo(field.Name, current?.Label ?? field.Value))
+		{
+			return;
+		}
+
+		foreach (AstFieldChoice choice in field.Choices)
+		{
+			bool isCurrent = string.Equals(choice.Value, field.Value, StringComparison.Ordinal);
+			if (ImGui.Selectable(choice.Label, isCurrent))
+			{
+				SetField(node, field.Name, choice.Value);
+			}
+		}
+
+		ImGui.EndCombo();
+	}
+
+	/// <summary>
+	/// Draws how many children a variadic slot holds, and the buttons that change it.
+	/// </summary>
+	/// <param name="node">The node whose slot to draw.</param>
+	/// <param name="slot">The slot to draw.</param>
+	private void DrawSlotCount(AstNode node, AstSlot slot)
+	{
+		int count = AstSchema.ChildrenOf(node, slot).Count;
+		ImGui.TextUnformatted($"{slot.Name}: {count}");
+
+		ImGui.SameLine();
+		if (ImGui.Button($"+##add-{slot.Name}"))
+		{
+			AddChild(node, slot);
+		}
+
+		ImGui.SameLine();
+		ImGui.BeginDisabled(count == 0);
+		if (ImGui.Button($"-##remove-{slot.Name}"))
+		{
+			RemoveLastChild(node, slot);
+		}
+
+		ImGui.EndDisabled();
 	}
 
 	/// <summary>
@@ -290,6 +502,136 @@ public sealed class AstGraphEditor(AstNode root)
 	}
 
 	/// <summary>
+	/// Writes one of a node's own properties as one undoable edit.
+	/// </summary>
+	/// <param name="node">The node to edit.</param>
+	/// <param name="fieldName">The property to write, as <see cref="AstFields"/> names it.</param>
+	/// <param name="value">The value to write, as text.</param>
+	/// <returns>True if the document changed.</returns>
+	/// <remarks>
+	/// The write is attempted before anything is recorded, because whether it is possible at all is
+	/// what <see cref="AstFields.TryWrite"/> decides: half a number typed into an integer field is
+	/// refused, and refusing must leave the undo stack alone. The recorded step then re-applies the
+	/// same write, which is a no-op the first time and the actual edit on every redo.
+	/// </remarks>
+	public bool SetField(AstNode node, string fieldName, string value)
+	{
+		Ensure.NotNull(node);
+
+		string? previous = AstFields.Read(node, fieldName);
+		if (previous is null || !AstFields.TryWrite(node, fieldName, value))
+		{
+			return false;
+		}
+
+		// Rebuilding is what refreshes the node's caption: a node is titled by what it is, and what it
+		// is has just changed.
+		Record(
+			$"Set {fieldName} of {AstSchema.Describe(node)}",
+			ChangeType.Modify,
+			node,
+			() => Write(node, fieldName, value),
+			() => Write(node, fieldName, previous));
+
+		statusMessage = $"Set {fieldName} to {value}.";
+		return true;
+	}
+
+	/// <summary>
+	/// Writes a property and refreshes the view, which is the whole of what an inspector edit does.
+	/// </summary>
+	/// <param name="node">The node to edit.</param>
+	/// <param name="fieldName">The property to write.</param>
+	/// <param name="value">The value to write.</param>
+	private void Write(AstNode node, string fieldName, string value)
+	{
+		AstFields.TryWrite(node, fieldName, value);
+		Graph.Rebuild();
+	}
+
+	/// <summary>
+	/// Adds one more child to a variadic slot, as one undoable edit.
+	/// </summary>
+	/// <param name="parent">The node whose slot to grow.</param>
+	/// <param name="slot">The slot to add to.</param>
+	/// <returns>True if a child was added.</returns>
+	/// <remarks>
+	/// The child is the emptiest thing the slot will take, which is what makes adding a parameter or a
+	/// statement one click rather than creating a node from the palette and dragging it into a pin.
+	/// </remarks>
+	public bool AddChild(AstNode parent, AstSlot slot)
+	{
+		Ensure.NotNull(parent);
+		Ensure.NotNull(slot);
+
+		if (slot.Cardinality != AstSlotCardinality.Many)
+		{
+			return false;
+		}
+
+		AstNode child = AstSchema.CreateDefaultChild(slot);
+		int index = AstSchema.ChildrenOf(parent, slot).Count;
+
+		Record(
+			$"Add {AstSchema.Describe(child)} to {slot.Name} of {AstSchema.Describe(parent)}",
+			ChangeType.Insert,
+			child,
+			() => AttachAt(parent, slot, index, child),
+			() => Graph.RemoveNode(child));
+
+		statusMessage = $"Added {AstSchema.Describe(child)} to {slot.Name}.";
+		return true;
+	}
+
+	/// <summary>
+	/// Removes the last child of a variadic slot, as one undoable edit.
+	/// </summary>
+	/// <param name="parent">The node whose slot to shrink.</param>
+	/// <param name="slot">The slot to remove from.</param>
+	/// <returns>True if a child was removed.</returns>
+	/// <remarks>
+	/// The last one rather than a chosen one: the slot is an ordered sequence, and removing from the
+	/// middle is expressed by disconnecting the child the user means, which the graph already does.
+	/// </remarks>
+	public bool RemoveLastChild(AstNode parent, AstSlot slot)
+	{
+		Ensure.NotNull(parent);
+		Ensure.NotNull(slot);
+
+		IReadOnlyList<AstNode> children = AstSchema.ChildrenOf(parent, slot);
+		if (children.Count == 0)
+		{
+			return false;
+		}
+
+		AstNode child = children[^1];
+		AstLocation from = Graph.LocationOf(child);
+
+		Record(
+			$"Remove {AstSchema.Describe(child)} from {slot.Name} of {AstSchema.Describe(parent)}",
+			ChangeType.Delete,
+			child,
+			() => Graph.RemoveNode(child),
+			() => Graph.MoveTo(child, from));
+
+		statusMessage = $"Removed {AstSchema.Describe(child)} from {slot.Name}.";
+		return true;
+	}
+
+	/// <summary>
+	/// Attaches a node at a position in a slot and refreshes the view.
+	/// </summary>
+	/// <param name="parent">The node to attach to.</param>
+	/// <param name="slot">The slot to fill.</param>
+	/// <param name="index">The position within the slot.</param>
+	/// <param name="child">The node to attach.</param>
+	private void AttachAt(AstNode parent, AstSlot slot, int index, AstNode child)
+	{
+		AstSchema.TryAttachAt(parent, slot, index, child);
+		Graph.Rebuild();
+	}
+
+	/// <summary>
 	/// Removes a node and everything under it, as one undoable edit.
 	/// </summary>
 	/// <param name="nodeId">The editor node to remove.</param>
@@ -344,6 +686,22 @@ public sealed class AstGraphEditor(AstNode root)
 			revert,
 			changeType,
 			[AstSchema.Describe(node)]));
+
+	/// <summary>
+	/// Draws one menu's worth of palette entries, creating whatever is picked.
+	/// </summary>
+	/// <param name="templates">The entries to list.</param>
+	/// <param name="dropPosition">Where a created node is placed.</param>
+	private void DrawPaletteEntries(IEnumerable<AstNodeTemplate> templates, Vector2 dropPosition)
+	{
+		foreach (AstNodeTemplate template in templates)
+		{
+			if (ImGui.MenuItem(template.Label))
+			{
+				Add(template.Create(), dropPosition);
+			}
+		}
+	}
 
 	/// <summary>
 	/// Removes the selected nodes and links when the user asks for it.
@@ -408,11 +766,16 @@ public sealed class AstGraphEditor(AstNode root)
 				continue;
 			}
 
-			foreach (AstNodeTemplate template in AstNodeCatalog.InCategory(category))
+			DrawPaletteEntries(AstNodeCatalog.InGroup(category, null), dropPosition);
+
+			// A category's operator entries are one submenu deep, so eighteen binary operators do not
+			// bury the four literals.
+			foreach (string group in AstNodeCatalog.GroupsIn(category))
 			{
-				if (ImGui.MenuItem(template.Label))
+				if (ImGui.BeginMenu(group))
 				{
-					Add(template.Create(), dropPosition);
+					DrawPaletteEntries(AstNodeCatalog.InGroup(category, group), dropPosition);
+					ImGui.EndMenu();
 				}
 			}
 
