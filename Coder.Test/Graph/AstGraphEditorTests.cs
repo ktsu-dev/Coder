@@ -193,8 +193,11 @@ public sealed class AstGraphEditorTests
 
 		foreach (ktsu.ImGuiNodeEditor.Node node in editor.Graph.Engine.Nodes)
 		{
-			Assert.IsTrue(node.Position.X is > (-200f) and < 1200f, $"{node.Name} drifted to x {node.Position.X}");
-			Assert.IsTrue(node.Position.Y is > (-200f) and < 800f, $"{node.Name} drifted to y {node.Position.Y}");
+			// One assertion per bound rather than a range: it says which edge the node went over.
+			Assert.IsGreaterThan(-200f, node.Position.X, $"{node.Name} drifted off the left to x {node.Position.X}");
+			Assert.IsLessThan(1200f, node.Position.X, $"{node.Name} drifted off the right to x {node.Position.X}");
+			Assert.IsGreaterThan(-200f, node.Position.Y, $"{node.Name} drifted off the top to y {node.Position.Y}");
+			Assert.IsLessThan(800f, node.Position.Y, $"{node.Name} drifted off the bottom to y {node.Position.Y}");
 		}
 	}
 
