@@ -1,6 +1,39 @@
-## v1.0.10
+## v1.1.0 (minor)
 
-No significant changes detected since v1.0.10.
+Changes since v1.0.0:
+
+- fix: make the new code's string comparisons explicit [patch] ([@Claude](https://github.com/Claude))
+- fix: clear the Sonar findings on the new generator code [patch] ([@Claude](https://github.com/Claude))
+- refactor: finish de-duplicating the generators [patch] ([@Claude](https://github.com/Claude))
+- refactor: single-source the generator logic the four languages share [patch] ([@Claude](https://github.com/Claude))
+- feat: implement the JavaScript and C++ language generators [minor] ([@Claude](https://github.com/Claude))
+- ci: make the SonarQube quality gate opt in [patch] ([@matt-edmondson](https://github.com/matt-edmondson))
+- ci: adopt the unified dotnet workflow [patch] ([@matt-edmondson](https://github.com/matt-edmondson))
+- chore: store icon.png in LFS as .gitattributes declares ([@matt-edmondson](https://github.com/matt-edmondson))
+- docs: scope build badge to the default branch ([@matt-edmondson](https://github.com/matt-edmondson))
+- docs: correct README, DESCRIPTION and TAGS metadata ([@matt-edmondson](https://github.com/matt-edmondson))
+- Stop Update SDKs failing when there is nothing to update ([@matt-edmondson](https://github.com/matt-edmondson))
+- Fix ktsu.Sdk 2.27 analyzer errors: Polyfill PrivateAssets, InternalsVisibleTo [patch] ([@matt-edmondson](https://github.com/matt-edmondson))
+- Sync .editorconfig ([@KtsuTools](https://github.com/KtsuTools))
+- Sync global.json ([@KtsuTools](https://github.com/KtsuTools))
+- chore: update ktsu.Sdk to 2.21.1 [patch] ([@matt-edmondson](https://github.com/matt-edmondson))
+- fix: standardize null checks and exact exception assertions ([@matt-edmondson](https://github.com/matt-edmondson))
+- chore: modernize project SDKs and target frameworks ([@matt-edmondson](https://github.com/matt-edmondson))
+- Remove serena/cursor files ([@matt-edmondson](https://github.com/matt-edmondson))
+- Regenerate TAGS.md with NuGet package tags ([@matt-edmondson](https://github.com/matt-edmondson))
+- Remove legacy build scripts ([@matt-edmondson](https://github.com/matt-edmondson))
+- Enhance test assertions with descriptive messages in ExpressionTests and ExpressionIntegrationTests ([@matt-edmondson](https://github.com/matt-edmondson))
+- Refactor codebase to replace all instances of 'ktsu.Coder.Core' with 'ktsu.Coder' across files, enhancing consistency. Updated .runsettings for coverage configuration and modified .gitattributes for clarity. Removed obsolete test-expression-demo.cs file. Added new scripts for updating winget manifests and improved PSBuild.psm1 for better package publishing support. ([@matt-edmondson](https://github.com/matt-edmondson))
+- Update configuration files and scripts for improved build and test processes ([@matt-edmondson](https://github.com/matt-edmondson))
+- Enhance expression system integration and serialization support ([@matt-edmondson](https://github.com/matt-edmondson))
+- Enhance YAML serialization and deserialization for new node types ([@matt-edmondson](https://github.com/matt-edmondson))
+- Enhance YAML serialization and deserialization handling ([@matt-edmondson](https://github.com/matt-edmondson))
+- Refactor project structure and enhance expression handling ([@matt-edmondson](https://github.com/matt-edmondson))
+- Enhance expression handling in ExpressionDemo ([@matt-edmondson](https://github.com/matt-edmondson))
+- Refactor expression handling and improve code consistency ([@matt-edmondson](https://github.com/matt-edmondson))
+- Refactor AST expression handling and enhance visual editor support ([@matt-edmondson](https://github.com/matt-edmondson))
+- Implement dependency injection and enhance AST expression handling ([@matt-edmondson](https://github.com/matt-edmondson))
+- Update implementation and design documents to reflect current project status ([@matt-edmondson](https://github.com/matt-edmondson))
 
 ## v1.0.10 (patch)
 
