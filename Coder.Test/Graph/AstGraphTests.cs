@@ -325,6 +325,57 @@ public class AstGraphTests
 	}
 
 	/// <summary>
+	/// Tests that a node with no parent reports itself as detached, which is what an undo step
+	/// recorded for a node created from the palette has to restore it to.
+	/// </summary>
+	[TestMethod]
+	public void LocationOf_ReportsADetachedNode()
+	{
+		AstGraph graph = new(SampleFunction());
+		VariableReference orphan = new("orphan");
+		graph.AddDetached(orphan, Vector2.Zero);
+
+		AstLocation location = graph.LocationOf(orphan);
+
+		Assert.AreEqual(AstLocation.Detached, location);
+		Assert.IsNull(location.Parent);
+	}
+
+	/// <summary>
+	/// Tests that the document's root cannot be moved anywhere, since a graph with no root has
+	/// nothing to generate from.
+	/// </summary>
+	[TestMethod]
+	public void MoveTo_RefusesTheRoot()
+	{
+		AstGraph graph = new(SampleFunction());
+
+		Assert.IsFalse(graph.MoveTo(graph.Root, AstLocation.Detached));
+		Assert.AreEqual(0, graph.Detached.Count);
+	}
+
+	/// <summary>
+	/// Tests that a node the target slot will not take is left in the graph unattached rather than
+	/// dropped, which is what keeps an undo step from destroying a node when the document has moved
+	/// on underneath it.
+	/// </summary>
+	[TestMethod]
+	public void MoveTo_LeavesTheNodeInTheGraphWhenTheSlotRefusesIt()
+	{
+		FunctionDeclaration function = SampleFunction();
+		ReturnStatement returnStmt = (ReturnStatement)function.Body[0];
+		BinaryExpression binary = (BinaryExpression)returnStmt.Expression!;
+		AstGraph graph = new(function);
+		AstSlot leftSlot = AstSchema.SlotsOf(binary).Single(s => s.Name == "Left");
+
+		// A statement is not an expression, so the operand slot refuses it.
+		Assert.IsFalse(graph.MoveTo(returnStmt, new AstLocation(binary, leftSlot, 0)));
+
+		CollectionAssert.Contains(graph.Detached.ToArray(), returnStmt);
+		Assert.IsNotNull(graph.Nodes.Values.SingleOrDefault(n => ReferenceEquals(n, returnStmt)));
+	}
+
+	/// <summary>
 	/// Connects a node to a named slot of a parent, looking the pins up the way the editor does.
 	/// </summary>
 	/// <param name="graph">The graph under test.</param>
