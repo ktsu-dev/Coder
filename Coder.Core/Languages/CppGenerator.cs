@@ -101,10 +101,7 @@ public class CppGenerator : StandardLanguageGenerator
 			builder.Append("const ");
 		}
 
-		// `auto` needs an initializer, so an uninitialized inferred declaration falls back to `std::any`.
-		builder.Append(varDecl.IsTypeInferred || string.IsNullOrEmpty(varDecl.Type)
-			? varDecl.InitialValue is not null ? "auto" : "std::any"
-			: MapToCppType(varDecl.Type!));
+		builder.Append(GetDeclaredType(varDecl));
 
 		builder.Append(' ');
 		builder.Append(varDecl.Name);
@@ -116,6 +113,25 @@ public class CppGenerator : StandardLanguageGenerator
 		}
 
 		EndStatement(builder);
+	}
+
+	/// <summary>
+	/// Spells the type a declaration is introduced with.
+	/// </summary>
+	/// <param name="varDecl">The declaration being emitted.</param>
+	/// <returns>The C++ type name, or a deduced placeholder.</returns>
+	/// <remarks>
+	/// <c>auto</c> needs an initializer to deduce from, so an inferred declaration without one falls
+	/// back to <c>std::any</c>.
+	/// </remarks>
+	private static string GetDeclaredType(VariableDeclaration varDecl)
+	{
+		if (!varDecl.IsTypeInferred && !string.IsNullOrEmpty(varDecl.Type))
+		{
+			return MapToCppType(varDecl.Type!);
+		}
+
+		return varDecl.InitialValue is not null ? "auto" : "std::any";
 	}
 
 	private static string MapToCppType(string type) =>

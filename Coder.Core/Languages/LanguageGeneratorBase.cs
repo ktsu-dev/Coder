@@ -53,11 +53,12 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// <returns>True if this generator can generate code for the node; otherwise, false.</returns>
 	public virtual bool CanGenerate(AstNode astNode)
 	{
-		return astNode is not null and (FunctionDeclaration
+		// No null check: a type pattern never matches null.
+		return astNode is FunctionDeclaration
 			or ReturnStatement
 			or AstLeafNode<string>
 			or AstLeafNode<int>
-			or AstLeafNode<bool>);
+			or AstLeafNode<bool>;
 	}
 
 	/// <summary>
@@ -228,7 +229,8 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// <returns>True if the node is generatable.</returns>
 	protected static bool CanGenerateStandardNodes(AstNode astNode)
 	{
-		return astNode is not null and (FunctionDeclaration
+		// No null check: a type pattern never matches null.
+		return astNode is FunctionDeclaration
 			or Parameter
 			or ReturnStatement
 			or BinaryExpression
@@ -241,7 +243,7 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 			or AssignmentStatement
 			or AstLeafNode<string>
 			or AstLeafNode<int>
-			or AstLeafNode<bool>);
+			or AstLeafNode<bool>;
 	}
 
 	/// <summary>
