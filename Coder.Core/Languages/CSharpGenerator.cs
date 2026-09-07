@@ -3,8 +3,9 @@
 namespace ktsu.Coder.Languages;
 
 using System.Collections.Generic;
-using System.Text;
+using System.Globalization;
 using ktsu.Coder.Ast;
+using ktsu.CodeBlocker;
 
 /// <summary>
 /// Generates C# code from AST nodes.
@@ -30,59 +31,56 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// Generates code for the specified AST node.
 	/// </summary>
 	/// <param name="node">The AST node to generate code for.</param>
-	/// <param name="builder">The string builder to append code to.</param>
-	/// <param name="indentLevel">The current indentation level.</param>
-	protected override void GenerateInternal(AstNode node, StringBuilder builder, int indentLevel)
+	/// <param name="code">The writer to emit into.</param>
+	protected override void GenerateInternal(AstNode node, CodeBlocker code)
 	{
 		Ensure.NotNull(node);
-		Ensure.NotNull(builder);
-
-		string indent = new(' ', indentLevel * 4);
+		Ensure.NotNull(code);
 
 		switch (node)
 		{
 			case FunctionDeclaration function:
-				GenerateFunction(function, builder, indent);
+				GenerateFunction(function, code);
 				break;
 			case Parameter parameter:
-				GenerateParameter(parameter, builder);
+				GenerateParameter(parameter, code);
 				break;
 			case ReturnStatement returnStmt:
-				GenerateReturnStatement(returnStmt, builder, indent);
+				GenerateStringifiedReturnStatement(returnStmt, code);
 				break;
 			case BinaryExpression binaryExpr:
-				GenerateBinaryExpression(binaryExpr, builder);
+				GenerateBinaryExpression(binaryExpr, code, GetBinaryOperator(binaryExpr.Operator));
 				break;
 			case UnaryExpression unaryExpr:
-				GenerateUnaryExpression(unaryExpr, builder, GetUnaryOperator(unaryExpr.Operator));
+				GenerateUnaryExpression(unaryExpr, code, GetUnaryOperator(unaryExpr.Operator));
 				break;
 			case VariableReference varRef:
-				builder.Append(varRef.Name);
+				code.Write(varRef.Name);
 				break;
 			case LiteralExpression<string> stringLit:
-				builder.Append($"\"{EscapeString(stringLit.Value ?? string.Empty)}\"");
+				code.Write($"\"{EscapeString(stringLit.Value ?? string.Empty)}\"");
 				break;
 			case LiteralExpression<int> intLit:
-				builder.Append(intLit.Value);
+				code.Write(intLit.Value.ToString(CultureInfo.InvariantCulture));
 				break;
 			case LiteralExpression<bool> boolLit:
-				builder.Append(boolLit.Value ? "true" : "false");
+				code.Write(boolLit.Value ? "true" : "false");
 				break;
 			case LiteralExpression<double> doubleLit:
-				builder.Append($"{doubleLit.Value}d");
+				code.Write($"{doubleLit.Value.ToString(CultureInfo.InvariantCulture)}d");
 				break;
 			case VariableDeclaration varDecl:
-				GenerateVariableDeclaration(varDecl, builder, indent);
+				GenerateVariableDeclaration(varDecl, code);
 				break;
 			case AssignmentStatement assignment:
-				GenerateAssignmentStatement(assignment, builder, indent);
+				GenerateAssignmentStatement(assignment, code);
 				break;
 			default:
 				// The legacy AstLeafNode shapes are spelled the same in every language, so they come
 				// from the shared path; anything else is genuinely unrecognised.
-				if (!TryGenerateCommonNode(node, builder))
+				if (!TryGenerateCommonNode(node, code))
 				{
-					builder.AppendLine($"{indent}// Unsupported node type: {node.GetType().Name}");
+					code.WriteLine($"// Unsupported node type: {node.GetType().Name}");
 				}
 
 				break;
@@ -96,71 +94,65 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// <returns>True if this generator can generate code for the node; otherwise, false.</returns>
 	public override bool CanGenerate(AstNode astNode) => CanGenerateStandardNodes(astNode);
 
-	private void GenerateFunction(FunctionDeclaration function, StringBuilder builder, string indent)
+	private void GenerateFunction(FunctionDeclaration function, CodeBlocker code)
 	{
 		// Build method signature
-		builder.Append(indent);
-		builder.Append("public ");
-
-		// Add return type
-		string returnType = MapToCSType(function.ReturnType ?? "void");
-		builder.Append(returnType);
-		builder.Append(' ');
-
-		// Add method name
-		builder.Append(function.Name);
-		builder.Append('(');
+		code.Write($"public {MapToCSType(function.ReturnType ?? "void")} {function.Name}(");
 
 		// Add parameters
 		for (int i = 0; i < function.Parameters.Count; i++)
 		{
 			if (i > 0)
 			{
-				builder.Append(", ");
+				code.Write(", ");
 			}
-			GenerateParameter(function.Parameters[i], builder);
+
+			GenerateParameter(function.Parameters[i], code);
 		}
 
-		builder.AppendLine(")");
-		builder.AppendLine($"{indent}{{");
+		// The line is ended before the scope opens, so C#'s brace lands on its own line.
+		code.WriteLine(")");
 
 		// Add body
+		using Scope body = new(code);
 		foreach (AstNode statement in function.Body)
 		{
-			GenerateInternal(statement, builder, 1);
+			GenerateInternal(statement, code);
 		}
-
-		builder.AppendLine($"{indent}}}");
 	}
 
-	private static void GenerateParameter(Parameter parameter, StringBuilder builder)
+	private static void GenerateParameter(Parameter parameter, CodeBlocker code)
 	{
-		string type = MapToCSType(parameter.Type ?? "object");
-		builder.Append(type);
-		builder.Append(' ');
-		builder.Append(parameter.Name);
+		code.Write($"{MapToCSType(parameter.Type ?? "object")} {parameter.Name}");
 
 		if (parameter.IsOptional && !string.IsNullOrEmpty(parameter.DefaultValue))
 		{
-			builder.Append(" = ");
-			builder.Append(parameter.DefaultValue);
+			code.Write($" = {parameter.DefaultValue}");
 		}
 	}
 
-	private static void GenerateReturnStatement(ReturnStatement returnStmt, StringBuilder builder, string indent)
+	/// <summary>
+	/// Emits a return statement, stringifying its expression rather than recursing into it.
+	/// </summary>
+	/// <param name="returnStmt">The statement to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// This is not what <see cref="LanguageGeneratorBase.GenerateReturnStatement"/> does, and the
+	/// difference is a defect rather than a dialect: an expression with no <c>ToString</c> override
+	/// emits its type name, and a string literal loses its quotes. It is preserved here so that
+	/// adopting <c>CodeBlocker</c> changes no generated output; the distinct name keeps it from
+	/// silently hiding the base member. Correcting it belongs in its own change.
+	/// </remarks>
+	private static void GenerateStringifiedReturnStatement(ReturnStatement returnStmt, CodeBlocker code)
 	{
-		builder.Append(indent);
-		builder.Append("return");
+		code.Write("return");
 
 		if (returnStmt.Expression != null)
 		{
-			builder.Append(' ');
-			// For now, just convert to string - in a full implementation,
-			// we'd recursively generate the expression
-			builder.Append(returnStmt.Expression.ToString());
+			code.Write($" {returnStmt.Expression}");
 		}
 
-		builder.AppendLine(";");
+		code.WriteLine(";");
 	}
 
 	private static readonly Dictionary<string, string> TypeMappings = new()
@@ -180,52 +172,21 @@ public class CSharpGenerator : LanguageGeneratorBase
 			? mapped
 			: string.Equals(pythonType, "void", StringComparison.OrdinalIgnoreCase) ? "void" : pythonType;
 
-	private void GenerateBinaryExpression(BinaryExpression binaryExpr, StringBuilder builder)
+	private void GenerateVariableDeclaration(VariableDeclaration varDecl, CodeBlocker code)
 	{
-		// Add parentheses for clarity
-		builder.Append('(');
-		GenerateInternal(binaryExpr.Left, builder, 0);
-		builder.Append(' ');
-		builder.Append(GetBinaryOperator(binaryExpr.Operator));
-		builder.Append(' ');
-		GenerateInternal(binaryExpr.Right, builder, 0);
-		builder.Append(')');
-	}
-
-	private void GenerateVariableDeclaration(VariableDeclaration varDecl, StringBuilder builder, string indent)
-	{
-		builder.Append(indent);
-
 		// Use type or var for type inference
-		if (varDecl.IsTypeInferred || string.IsNullOrEmpty(varDecl.Type))
-		{
-			builder.Append("var ");
-		}
-		else
-		{
-			builder.Append(MapToCSType(varDecl.Type));
-			builder.Append(' ');
-		}
+		string type = varDecl.IsTypeInferred || string.IsNullOrEmpty(varDecl.Type)
+			? "var"
+			: MapToCSType(varDecl.Type);
 
-		builder.Append(varDecl.Name);
+		code.Write($"{type} {varDecl.Name}");
 
 		if (varDecl.InitialValue != null)
 		{
-			builder.Append(" = ");
-			GenerateInternal(varDecl.InitialValue, builder, 0);
+			code.Write(" = ");
+			GenerateInternal(varDecl.InitialValue, code);
 		}
 
-		builder.AppendLine(";");
-	}
-
-	private void GenerateAssignmentStatement(AssignmentStatement assignment, StringBuilder builder, string indent)
-	{
-		builder.Append(indent);
-		GenerateInternal(assignment.Target, builder, 0);
-		builder.Append(' ');
-		builder.Append(GetAssignmentOperator(assignment.Operator));
-		builder.Append(' ');
-		GenerateInternal(assignment.Value, builder, 0);
-		builder.AppendLine(";");
+		code.WriteLine(";");
 	}
 }

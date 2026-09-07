@@ -4,6 +4,7 @@ namespace ktsu.Coder.Test.Languages;
 
 using ktsu.Coder.Ast;
 using ktsu.Coder.Languages;
+using ktsu.CodeBlocker;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 /// <summary>
@@ -35,7 +36,7 @@ public class JavaScriptGeneratorTests
 
 		string code = Generator.Generate(function);
 
-		Assert.AreEqual($"function doNothing() {{{Environment.NewLine}}}{Environment.NewLine}", code);
+		Assert.AreEqual($"function doNothing() {{{CodeBlocker.DefaultNewLineString}}}{CodeBlocker.DefaultNewLineString}", code);
 	}
 
 	/// <summary>
@@ -96,11 +97,11 @@ public class JavaScriptGeneratorTests
 		VariableDeclaration mutable = new("count", "int", Literal.Number(0));
 		VariableDeclaration uninitialized = new("later") { IsConstant = true };
 
-		Assert.AreEqual($"const limit = 10;{Environment.NewLine}", Generator.Generate(constant));
-		Assert.AreEqual($"let count = 0;{Environment.NewLine}", Generator.Generate(mutable));
+		Assert.AreEqual($"const limit = 10;{CodeBlocker.DefaultNewLineString}", Generator.Generate(constant));
+		Assert.AreEqual($"let count = 0;{CodeBlocker.DefaultNewLineString}", Generator.Generate(mutable));
 
 		// `const` without an initializer is a syntax error, so an uninitialized constant has to be `let`.
-		Assert.AreEqual($"let later;{Environment.NewLine}", Generator.Generate(uninitialized));
+		Assert.AreEqual($"let later;{CodeBlocker.DefaultNewLineString}", Generator.Generate(uninitialized));
 	}
 
 	/// <summary>
@@ -123,7 +124,7 @@ public class JavaScriptGeneratorTests
 		AssignmentStatement assignment = new(
 			new VariableReference("total"), Literal.Number(5), AssignmentOperator.AddAssign);
 
-		Assert.AreEqual($"total += 5;{Environment.NewLine}", Generator.Generate(assignment));
+		Assert.AreEqual($"total += 5;{CodeBlocker.DefaultNewLineString}", Generator.Generate(assignment));
 	}
 
 	/// <summary>

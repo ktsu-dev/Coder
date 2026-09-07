@@ -4,8 +4,8 @@ namespace ktsu.Coder.Languages;
 
 using System;
 using System.Collections.Generic;
-using System.Text;
 using ktsu.Coder.Ast;
+using ktsu.CodeBlocker;
 
 /// <summary>
 /// A <see cref="LanguageGeneratorBase"/> that owns the node dispatch, so a generator supplies only
@@ -38,46 +38,45 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	/// Dispatches a node to the emitter for its shape.
 	/// </summary>
 	/// <param name="node">The AST node to generate code from.</param>
-	/// <param name="builder">The string builder to append code to.</param>
-	/// <param name="indentLevel">The current indentation level.</param>
+	/// <param name="code">The writer to emit into.</param>
 	/// <exception cref="NotSupportedException">The node is not one this generator emits.</exception>
-	protected sealed override void GenerateInternal(AstNode node, StringBuilder builder, int indentLevel)
+	protected sealed override void GenerateInternal(AstNode node, CodeBlocker code)
 	{
 		Ensure.NotNull(node);
-		Ensure.NotNull(builder);
+		Ensure.NotNull(code);
 
 		switch (node)
 		{
 			case FunctionDeclaration funcDecl:
-				GenerateFunctionDeclaration(funcDecl, builder, indentLevel);
+				GenerateFunctionDeclaration(funcDecl, code);
 				break;
 
 			case Parameter parameter:
-				GenerateParameter(parameter, builder, 0);
+				GenerateParameter(parameter, code, 0);
 				break;
 
 			case VariableDeclaration varDecl:
-				GenerateVariableDeclaration(varDecl, builder, indentLevel);
+				GenerateVariableDeclaration(varDecl, code);
 				break;
 
 			case BinaryExpression binaryExpr:
-				GenerateBinaryExpression(binaryExpr, builder, GetOperatorSpelling(binaryExpr.Operator));
+				GenerateBinaryExpression(binaryExpr, code, GetOperatorSpelling(binaryExpr.Operator));
 				break;
 
 			case UnaryExpression unaryExpr:
-				GenerateUnaryExpression(unaryExpr, builder, GetUnaryOperatorSpelling(unaryExpr.Operator));
+				GenerateUnaryExpression(unaryExpr, code, GetUnaryOperatorSpelling(unaryExpr.Operator));
 				break;
 
 			case ReturnStatement returnStmt:
-				GenerateReturnStatement(returnStmt, builder, indentLevel);
+				GenerateReturnStatement(returnStmt, code);
 				break;
 
 			case AssignmentStatement assignment:
-				GenerateAssignmentStatement(assignment, builder, indentLevel);
+				GenerateAssignmentStatement(assignment, code);
 				break;
 
 			default:
-				if (!TryGenerateCommonNode(node, builder))
+				if (!TryGenerateCommonNode(node, code))
 				{
 					throw new NotSupportedException($"Unsupported node type for {DisplayName} generation: {node.GetNodeTypeName()}");
 				}
@@ -90,44 +89,41 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	/// Emits a function declaration, including its body.
 	/// </summary>
 	/// <param name="funcDecl">The declaration to emit.</param>
-	/// <param name="builder">The string builder to append code to.</param>
-	/// <param name="indentLevel">The current indentation level.</param>
-	protected abstract void GenerateFunctionDeclaration(FunctionDeclaration funcDecl, StringBuilder builder, int indentLevel);
+	/// <param name="code">The writer to emit into.</param>
+	protected abstract void GenerateFunctionDeclaration(FunctionDeclaration funcDecl, CodeBlocker code);
 
 	/// <summary>
 	/// Emits a variable declaration as a complete statement.
 	/// </summary>
 	/// <param name="varDecl">The declaration to emit.</param>
-	/// <param name="builder">The string builder to append code to.</param>
-	/// <param name="indentLevel">The current indentation level.</param>
-	protected abstract void GenerateVariableDeclaration(VariableDeclaration varDecl, StringBuilder builder, int indentLevel);
+	/// <param name="code">The writer to emit into.</param>
+	protected abstract void GenerateVariableDeclaration(VariableDeclaration varDecl, CodeBlocker code);
 
 	/// <summary>
 	/// Emits one parameter, without any separator.
 	/// </summary>
 	/// <param name="parameter">The parameter to emit.</param>
-	/// <param name="builder">The string builder to append code to.</param>
+	/// <param name="code">The writer to emit into.</param>
 	/// <param name="position">The parameter's position, used to name an unnamed parameter.</param>
-	protected abstract void GenerateParameter(Parameter parameter, StringBuilder builder, int position);
+	protected abstract void GenerateParameter(Parameter parameter, CodeBlocker code, int position);
 
 	/// <summary>
 	/// Appends a parameter's default value, when it has one.
 	/// </summary>
 	/// <param name="parameter">The parameter whose default to append.</param>
-	/// <param name="builder">The string builder to append code to.</param>
+	/// <param name="code">The writer to emit into.</param>
 	/// <remarks>
 	/// A default value is how every target language expresses <see cref="Parameter.IsOptional"/>;
 	/// none of them has separate syntax for it.
 	/// </remarks>
-	protected static void AppendDefaultValue(Parameter parameter, StringBuilder builder)
+	protected static void AppendDefaultValue(Parameter parameter, CodeBlocker code)
 	{
 		Ensure.NotNull(parameter);
-		Ensure.NotNull(builder);
+		Ensure.NotNull(code);
 
 		if (parameter.IsOptional && !string.IsNullOrEmpty(parameter.DefaultValue))
 		{
-			builder.Append(" = ");
-			builder.Append(parameter.DefaultValue);
+			code.Write($" = {parameter.DefaultValue}");
 		}
 	}
 
@@ -135,20 +131,20 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	/// Emits a comma-separated parameter list, without the surrounding parentheses.
 	/// </summary>
 	/// <param name="parameters">The parameters to emit.</param>
-	/// <param name="builder">The string builder to append code to.</param>
-	protected void GenerateParameterList(IReadOnlyList<Parameter> parameters, StringBuilder builder)
+	/// <param name="code">The writer to emit into.</param>
+	protected void GenerateParameterList(IReadOnlyList<Parameter> parameters, CodeBlocker code)
 	{
 		Ensure.NotNull(parameters);
-		Ensure.NotNull(builder);
+		Ensure.NotNull(code);
 
 		for (int i = 0; i < parameters.Count; i++)
 		{
 			if (i > 0)
 			{
-				builder.Append(", ");
+				code.Write(", ");
 			}
 
-			GenerateParameter(parameters[i], builder, i);
+			GenerateParameter(parameters[i], code, i);
 		}
 	}
 

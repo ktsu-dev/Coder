@@ -4,14 +4,30 @@ namespace ktsu.Coder.Languages;
 
 using System;
 using System.Globalization;
-using System.Text;
 using ktsu.Coder.Ast;
+using ktsu.CodeBlocker;
 
 /// <summary>
 /// Provides a base implementation for language generators with common functionality.
 /// </summary>
+/// <remarks>
+/// Output is written through <see cref="CodeBlocker"/>, which owns indentation: a generator writes
+/// the text of a line and never the whitespace in front of it, and opens a <see cref="Scope"/> or an
+/// <see cref="IndentScope"/> to indent a body. That also fixes the line terminator to
+/// <see cref="CodeBlocker.DefaultNewLineString"/> rather than <see cref="Environment.NewLine"/>, so
+/// generated source is byte-identical whichever platform produced it.
+/// </remarks>
 public abstract class LanguageGeneratorBase : ILanguageGenerator
 {
+	/// <summary>
+	/// The indentation one level of nesting adds.
+	/// </summary>
+	/// <remarks>
+	/// Four spaces rather than <see cref="CodeBlocker.DefaultIndentString"/>'s tab: Python's
+	/// indentation is syntax, and four spaces is what PEP 8 asks for.
+	/// </remarks>
+	protected const string IndentString = "    ";
+
 	/// <summary>
 	/// Gets the unique identifier for this language generator.
 	/// </summary>
@@ -41,9 +57,9 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 			throw new NotSupportedException($"Cannot generate code for node type: {astNode.GetNodeTypeName()}");
 		}
 
-		StringBuilder builder = new();
-		GenerateInternal(astNode, builder, 0);
-		return builder.ToString();
+		using CodeBlocker code = CodeBlocker.Create(IndentString);
+		GenerateInternal(astNode, code);
+		return code.ToString();
 	}
 
 	/// <summary>
@@ -62,74 +78,65 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	}
 
 	/// <summary>
-	/// Internal method to generate code with proper indentation.
+	/// Emits one node.
 	/// </summary>
 	/// <param name="node">The AST node to generate code from.</param>
-	/// <param name="builder">The string builder to append code to.</param>
-	/// <param name="indentLevel">The current indentation level.</param>
-	protected abstract void GenerateInternal(AstNode node, StringBuilder builder, int indentLevel);
-
-	/// <summary>
-	/// Adds indentation to the code based on the current indentation level.
-	/// </summary>
-	/// <param name="builder">The string builder to append indentation to.</param>
-	/// <param name="indentLevel">The indentation level.</param>
-	/// <param name="indentSize">The number of spaces per indent level. Default is 4.</param>
-	protected static void Indent(StringBuilder builder, int indentLevel, int indentSize = 4)
-	{
-		Ensure.NotNull(builder);
-		builder.Append(' ', indentLevel * indentSize);
-	}
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// There is no indentation level to pass down: <paramref name="code"/> carries the current depth,
+	/// and only the scope that opens a body changes it.
+	/// </remarks>
+	protected abstract void GenerateInternal(AstNode node, CodeBlocker code);
 
 	/// <summary>
 	/// Emits the nodes whose spelling is the same in every target language: variable references,
 	/// literals, and the legacy <see cref="AstLeafNode{T}"/> shapes.
 	/// </summary>
 	/// <param name="node">The node to emit.</param>
-	/// <param name="builder">The string builder to append code to.</param>
+	/// <param name="code">The writer to emit into.</param>
 	/// <returns>True if the node was handled; false if it is the caller's to emit.</returns>
 	/// <remarks>
 	/// A generator's dispatch handles its structural nodes and defers the rest here, so the literal
 	/// cases exist once. Where a language does differ — Python's capitalized booleans — it overrides
 	/// <see cref="FormatBoolean"/> rather than repeating the whole set.
 	/// </remarks>
-	protected bool TryGenerateCommonNode(AstNode node, StringBuilder builder)
+	protected bool TryGenerateCommonNode(AstNode node, CodeBlocker code)
 	{
-		Ensure.NotNull(builder);
+		Ensure.NotNull(code);
 
 		switch (node)
 		{
 			case VariableReference varRef:
-				builder.Append(varRef.Name);
+				code.Write(varRef.Name);
 				return true;
 
 			case LiteralExpression<string> stringLit:
-				builder.Append($"\"{EscapeString(stringLit.Value ?? string.Empty)}\"");
+				code.Write($"\"{EscapeString(stringLit.Value ?? string.Empty)}\"");
 				return true;
 
 			case LiteralExpression<int> intLit:
-				builder.Append(intLit.Value);
+				code.Write(intLit.Value.ToString(CultureInfo.InvariantCulture));
 				return true;
 
 			case LiteralExpression<bool> boolLit:
-				builder.Append(FormatBoolean(boolLit.Value));
+				code.Write(FormatBoolean(boolLit.Value));
 				return true;
 
 			case LiteralExpression<double> doubleLit:
-				builder.Append(doubleLit.Value.ToString(CultureInfo.InvariantCulture));
+				code.Write(doubleLit.Value.ToString(CultureInfo.InvariantCulture));
 				return true;
 
 			// Legacy support for AstLeafNode types
 			case AstLeafNode<string> strLeaf:
-				builder.Append($"\"{EscapeString(strLeaf.Value ?? string.Empty)}\"");
+				code.Write($"\"{EscapeString(strLeaf.Value ?? string.Empty)}\"");
 				return true;
 
 			case AstLeafNode<int> intLeaf:
-				builder.Append(intLeaf.Value);
+				code.Write(intLeaf.Value.ToString(CultureInfo.InvariantCulture));
 				return true;
 
 			case AstLeafNode<bool> boolLeaf:
-				builder.Append(FormatBoolean(boolLeaf.Value));
+				code.Write(FormatBoolean(boolLeaf.Value));
 				return true;
 
 			default:
@@ -147,86 +154,78 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// <summary>
 	/// Ends a statement with the terminator and line break the language uses.
 	/// </summary>
-	/// <param name="builder">The string builder to append to.</param>
+	/// <param name="code">The writer to emit into.</param>
 	/// <remarks>
 	/// Python has neither, and its function body writes its own line breaks, so it overrides this
 	/// with an empty body rather than each statement emitter growing a special case.
 	/// </remarks>
-	protected virtual void EndStatement(StringBuilder builder)
+	protected virtual void EndStatement(CodeBlocker code)
 	{
-		Ensure.NotNull(builder);
-		builder.AppendLine(";");
+		Ensure.NotNull(code);
+		code.WriteLine(";");
 	}
 
 	/// <summary>
 	/// Emits a return statement, recursing into its expression.
 	/// </summary>
 	/// <param name="returnStmt">The statement to emit.</param>
-	/// <param name="builder">The string builder to append code to.</param>
-	/// <param name="indentLevel">The current indentation level.</param>
-	protected void GenerateReturnStatement(ReturnStatement returnStmt, StringBuilder builder, int indentLevel)
+	/// <param name="code">The writer to emit into.</param>
+	protected void GenerateReturnStatement(ReturnStatement returnStmt, CodeBlocker code)
 	{
 		Ensure.NotNull(returnStmt);
-		Ensure.NotNull(builder);
+		Ensure.NotNull(code);
 
-		Indent(builder, indentLevel);
-		builder.Append("return");
+		code.Write("return");
 
 		if (returnStmt.Expression is not null)
 		{
-			builder.Append(' ');
-			GenerateInternal(returnStmt.Expression, builder, 0);
+			code.Write(" ");
+			GenerateInternal(returnStmt.Expression, code);
 		}
 
-		EndStatement(builder);
+		EndStatement(code);
 	}
 
 	/// <summary>
 	/// Emits an assignment statement, recursing into both sides.
 	/// </summary>
 	/// <param name="assignment">The statement to emit.</param>
-	/// <param name="builder">The string builder to append code to.</param>
-	/// <param name="indentLevel">The current indentation level.</param>
-	protected void GenerateAssignmentStatement(AssignmentStatement assignment, StringBuilder builder, int indentLevel)
+	/// <param name="code">The writer to emit into.</param>
+	protected void GenerateAssignmentStatement(AssignmentStatement assignment, CodeBlocker code)
 	{
 		Ensure.NotNull(assignment);
-		Ensure.NotNull(builder);
+		Ensure.NotNull(code);
 
-		Indent(builder, indentLevel);
-		GenerateInternal(assignment.Target, builder, 0);
-		builder.Append(' ');
-		builder.Append(GetAssignmentOperator(assignment.Operator));
-		builder.Append(' ');
-		GenerateInternal(assignment.Value, builder, 0);
-		EndStatement(builder);
+		GenerateInternal(assignment.Target, code);
+		code.Write($" {GetAssignmentOperator(assignment.Operator)} ");
+		GenerateInternal(assignment.Value, code);
+		EndStatement(code);
 	}
 
 	/// <summary>
 	/// Emits a parenthesised binary expression, recursing into both operands.
 	/// </summary>
 	/// <param name="binaryExpr">The expression to emit.</param>
-	/// <param name="builder">The string builder to append code to.</param>
+	/// <param name="code">The writer to emit into.</param>
 	/// <param name="operatorSpelling">The operator's spelling in the target language.</param>
 	/// <remarks>Always parenthesised: the AST carries no precedence, so nesting would be ambiguous otherwise.</remarks>
-	protected void GenerateBinaryExpression(BinaryExpression binaryExpr, StringBuilder builder, string operatorSpelling)
+	protected void GenerateBinaryExpression(BinaryExpression binaryExpr, CodeBlocker code, string operatorSpelling)
 	{
 		Ensure.NotNull(binaryExpr);
-		Ensure.NotNull(builder);
+		Ensure.NotNull(code);
 
-		builder.Append('(');
-		GenerateInternal(binaryExpr.Left, builder, 0);
-		builder.Append(' ');
-		builder.Append(operatorSpelling);
-		builder.Append(' ');
-		GenerateInternal(binaryExpr.Right, builder, 0);
-		builder.Append(')');
+		code.Write("(");
+		GenerateInternal(binaryExpr.Left, code);
+		code.Write($" {operatorSpelling} ");
+		GenerateInternal(binaryExpr.Right, code);
+		code.Write(")");
 	}
 
 	/// <summary>
 	/// Emits a parenthesised unary expression, recursing into its operand.
 	/// </summary>
 	/// <param name="unaryExpr">The expression to emit.</param>
-	/// <param name="builder">The string builder to append code to.</param>
+	/// <param name="code">The writer to emit into.</param>
 	/// <param name="operatorSpelling">The operator's spelling in the target language.</param>
 	/// <remarks>
 	/// Parenthesised for the same reason as a binary expression: the AST carries no precedence, so
@@ -237,22 +236,22 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// the emitter.
 	/// </para>
 	/// </remarks>
-	protected void GenerateUnaryExpression(UnaryExpression unaryExpr, StringBuilder builder, string operatorSpelling)
+	protected void GenerateUnaryExpression(UnaryExpression unaryExpr, CodeBlocker code, string operatorSpelling)
 	{
 		Ensure.NotNull(unaryExpr);
-		Ensure.NotNull(builder);
+		Ensure.NotNull(code);
 		Ensure.NotNull(operatorSpelling);
 
-		builder.Append('(');
-		builder.Append(operatorSpelling);
+		code.Write("(");
+		code.Write(operatorSpelling);
 
 		if (operatorSpelling.Length > 0 && char.IsLetter(operatorSpelling[^1]))
 		{
-			builder.Append(' ');
+			code.Write(" ");
 		}
 
-		GenerateInternal(unaryExpr.Operand, builder, 0);
-		builder.Append(')');
+		GenerateInternal(unaryExpr.Operand, code);
+		code.Write(")");
 	}
 
 	/// <summary>

@@ -1,8 +1,9 @@
-<Project>
+﻿<Project>
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
+    <PackageVersion Include="ktsu.CodeBlocker" Version="2.0.4" />
     <PackageVersion Include="ktsu.DeepClone" Version="2.0.2" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="9.0.7" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.7" />

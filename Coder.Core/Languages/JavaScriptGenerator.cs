@@ -2,8 +2,8 @@
 
 namespace ktsu.Coder.Languages;
 
-using System.Text;
 using ktsu.Coder.Ast;
+using ktsu.CodeBlocker;
 
 /// <summary>
 /// Generates JavaScript code from AST nodes.
@@ -33,56 +33,51 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	public override string FileExtension => "js";
 
 	/// <inheritdoc/>
-	protected override void GenerateFunctionDeclaration(FunctionDeclaration funcDecl, StringBuilder builder, int indentLevel)
+	protected override void GenerateFunctionDeclaration(FunctionDeclaration funcDecl, CodeBlocker code)
 	{
 		Ensure.NotNull(funcDecl);
-		Ensure.NotNull(builder);
+		Ensure.NotNull(code);
 
-		Indent(builder, indentLevel);
-		builder.Append("function ");
-		builder.Append(funcDecl.Name ?? "unnamedFunction");
-		builder.Append('(');
-		GenerateParameterList(funcDecl.Parameters, builder);
-		builder.AppendLine(") {");
+		code.Write($"function {funcDecl.Name ?? "unnamedFunction"}(");
+		GenerateParameterList(funcDecl.Parameters, code);
 
+		// The line is left open, so the scope's brace lands on it: JavaScript braces hang.
+		code.Write(") ");
+
+		using Scope body = new(code);
 		foreach (AstNode statement in funcDecl.Body)
 		{
-			GenerateInternal(statement, builder, indentLevel + 1);
+			GenerateInternal(statement, code);
 		}
-
-		Indent(builder, indentLevel);
-		builder.AppendLine("}");
 	}
 
 	/// <inheritdoc/>
-	protected override void GenerateParameter(Parameter parameter, StringBuilder builder, int position)
+	protected override void GenerateParameter(Parameter parameter, CodeBlocker code, int position)
 	{
 		Ensure.NotNull(parameter);
-		Ensure.NotNull(builder);
+		Ensure.NotNull(code);
 
-		builder.Append(parameter.Name ?? $"param{position}");
-		AppendDefaultValue(parameter, builder);
+		code.Write(parameter.Name ?? $"param{position}");
+		AppendDefaultValue(parameter, code);
 	}
 
 	/// <inheritdoc/>
-	protected override void GenerateVariableDeclaration(VariableDeclaration varDecl, StringBuilder builder, int indentLevel)
+	protected override void GenerateVariableDeclaration(VariableDeclaration varDecl, CodeBlocker code)
 	{
 		Ensure.NotNull(varDecl);
-		Ensure.NotNull(builder);
-
-		Indent(builder, indentLevel);
+		Ensure.NotNull(code);
 
 		// `const` needs an initializer, so an uninitialized constant has to be declared with `let`.
-		builder.Append(varDecl.IsConstant && varDecl.InitialValue is not null ? "const " : "let ");
-		builder.Append(varDecl.Name);
+		string keyword = varDecl.IsConstant && varDecl.InitialValue is not null ? "const" : "let";
+		code.Write($"{keyword} {varDecl.Name}");
 
 		if (varDecl.InitialValue is not null)
 		{
-			builder.Append(" = ");
-			GenerateInternal(varDecl.InitialValue, builder, 0);
+			code.Write(" = ");
+			GenerateInternal(varDecl.InitialValue, code);
 		}
 
-		EndStatement(builder);
+		EndStatement(code);
 	}
 
 	/// <summary>
