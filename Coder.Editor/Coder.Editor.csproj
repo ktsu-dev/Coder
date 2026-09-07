@@ -1,0 +1,34 @@
+<Project>
+  <Sdk Name="Microsoft.NET.Sdk" />
+  <Sdk Name="ktsu.Sdk" />
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- ktsu.ImGui.App and ktsu.Coder.Graph are net10.0 only, so this cannot cross-target. -->
+    <TargetFramework>net10.0</TargetFramework>
+    <TargetFrameworks></TargetFrameworks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Hexa.NET.ImGui" />
+    <PackageReference Include="ktsu.ImGui.App" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <!-- The editor reads and writes documents through the Essentials filesystem abstraction, and
+         keeps its preferences in the XDG config directory through the persistence one. -->
+    <PackageReference Include="ktsu.Essentials" />
+    <PackageReference Include="ktsu.Essentials.FileSystemProviders.Native" />
+    <PackageReference Include="ktsu.Essentials.PersistenceProviders.ConfigHome" />
+    <PackageReference Include="ktsu.Essentials.SerializationProviders.Yaml" />
+    <!-- IFileSystemProvider derives from this package's IFileSystem, so the editor names it directly. -->
+    <PackageReference Include="Testably.Abstractions.FileSystem.Interface" />
+    <!-- The document store catches YamlDotNet's exception for a malformed file, so it names it. -->
+    <PackageReference Include="YamlDotNet" />
+    <PackageReference Include="Polyfill" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Coder.Core\Coder.Core.csproj" />
+    <ProjectReference Include="..\Coder.Graph\Coder.Graph.csproj" />
+  </ItemGroup>
+</Project>

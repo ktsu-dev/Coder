@@ -1,0 +1,386 @@
+// Copyright (c) 2023-2026 ktsu-dev contributors
+
+namespace ktsu.Coder.Test.Editor;
+
+using ktsu.Coder.Ast;
+using ktsu.Coder.Editor;
+using ktsu.Coder.Graph;
+using ktsu.Coder.Languages;
+using ktsu.Coder.Serialization;
+using ktsu.Essentials.FileSystemProviders.Native;
+using ktsu.ImGui.App;
+using ktsu.ImGui.App.Testing;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+
+/// <summary>
+/// Tests for the editor application, including a frame rendered through the headless harness.
+/// </summary>
+/// <remarks>
+/// These drive the real <see cref="NativeFileSystemProvider"/> against a temporary directory rather
+/// than a mock, so the provider the application actually ships with is the one under test. Testably's
+/// mock filesystem is versioned separately from the abstraction Essentials pins, and building the
+/// suite on that mismatch would be testing the wrong thing.
+/// <para>
+/// ImGui contexts are process-global, so the rendering tests must not run in parallel.
+/// </para>
+/// </remarks>
+[TestClass]
+[DoNotParallelize]
+public sealed class CoderEditorAppTests
+{
+	private static readonly HarnessOptions Options = new() { Width = 1600, Height = 900 };
+
+	private string root = string.Empty;
+
+	/// <summary>
+	/// Gives each test its own directory, so one cannot see another's documents.
+	/// </summary>
+	[TestInitialize]
+	public void SetUp()
+	{
+		root = Path.Combine(Path.GetTempPath(), $"coder-editor-{Guid.NewGuid():N}");
+		Directory.CreateDirectory(root);
+	}
+
+	/// <summary>
+	/// Removes the directory the test wrote into.
+	/// </summary>
+	[TestCleanup]
+	public void TearDown()
+	{
+		if (Directory.Exists(root))
+		{
+			Directory.Delete(root, recursive: true);
+		}
+	}
+
+	private static DocumentStore NewStore() =>
+		new(new NativeFileSystemProvider(), new YamlSerializer(), new YamlDeserializer());
+
+	private string PathIn(string name) => Path.Combine(root, name + DocumentStore.Extension);
+
+	private static CoderEditorApp NewApp(DocumentStore store, EditorSettings? settings = null) =>
+		new(store, [new CSharpGenerator(), new PythonGenerator(), new CppGenerator(), new JavaScriptGenerator()],
+			settings ?? new EditorSettings());
+
+	/// <summary>
+	/// Tests that a fresh editor opens with something to attach to rather than a blank canvas.
+	/// </summary>
+	[TestMethod]
+	public void NewDocument_IsAFunctionWithSomethingToAttachTo()
+	{
+		FunctionDeclaration document = CoderEditorApp.NewDocument();
+
+		Assert.AreEqual("newFunction", document.Name);
+		Assert.AreEqual(1, document.Parameters.Count);
+	}
+
+	/// <summary>
+	/// Tests that a document written by the editor can be read back with its structure intact.
+	/// </summary>
+	[TestMethod]
+	public void Document_RoundTripsThroughTheFileSystem()
+	{
+		DocumentStore store = NewStore();
+		CoderEditorApp app = NewApp(store);
+		string path = PathIn("sample");
+
+		Assert.IsTrue(app.Save(path), app.Status);
+		Assert.IsTrue(File.Exists(path), "the document should have been written");
+
+		CoderEditorApp reopened = NewApp(store);
+		Assert.IsTrue(reopened.Open(path), reopened.Status);
+
+		Assert.IsInstanceOfType<FunctionDeclaration>(reopened.Editor.Graph.Root);
+		Assert.AreEqual("newFunction", ((FunctionDeclaration)reopened.Editor.Graph.Root).Name);
+		Assert.AreEqual(path, reopened.DocumentPath);
+	}
+
+	/// <summary>
+	/// Tests that saving creates the directory rather than failing because it does not exist, which
+	/// is what happens the first time a user saves into a new folder.
+	/// </summary>
+	[TestMethod]
+	public void Save_CreatesTheDirectory()
+	{
+		DocumentStore store = NewStore();
+		CoderEditorApp app = NewApp(store);
+		string nested = Path.Combine(root, "brand", "new", "place");
+
+		Assert.IsTrue(app.Save(Path.Combine(nested, $"doc{DocumentStore.Extension}")), app.Status);
+
+		Assert.IsTrue(Directory.Exists(nested));
+	}
+
+	/// <summary>
+	/// Tests that opening a file that is not there is reported rather than thrown, since aiming at
+	/// the wrong path is an ordinary thing for a user to do.
+	/// </summary>
+	[TestMethod]
+	public void Open_ReportsAMissingFile()
+	{
+		DocumentStore store = NewStore();
+		CoderEditorApp app = NewApp(store);
+
+		Assert.IsFalse(app.Open(PathIn("missing")));
+
+		StringAssert.Contains(app.Status, "no file", StringComparison.OrdinalIgnoreCase);
+		Assert.IsNull(app.DocumentPath);
+	}
+
+	/// <summary>
+	/// Tests that a file which is not a document is refused with a reason rather than crashing the
+	/// editor.
+	/// </summary>
+	[TestMethod]
+	public void Open_ReportsAFileThatIsNotADocument()
+	{
+		DocumentStore store = NewStore();
+		string notes = Path.Combine(root, "notes.txt");
+		File.WriteAllText(notes, "just some text, not a node");
+		CoderEditorApp app = NewApp(store);
+
+		Assert.IsFalse(app.Open(notes));
+
+		Assert.IsFalse(string.IsNullOrWhiteSpace(app.Status));
+		Assert.IsNull(app.DocumentPath);
+	}
+
+	/// <summary>
+	/// Tests that a write the filesystem refuses is reported rather than thrown, so a bad
+	/// destination cannot take the editor down mid-session.
+	/// </summary>
+	[TestMethod]
+	public void Save_ReportsAPathItCannotWrite()
+	{
+		DocumentStore store = NewStore();
+		CoderEditorApp app = NewApp(store);
+
+		// A directory is not something WriteAllText can write over.
+		string asDirectory = Path.Combine(root, "occupied");
+		Directory.CreateDirectory(asDirectory);
+
+		Assert.IsFalse(app.Save(asDirectory));
+
+		StringAssert.Contains(app.Status, "Could not write", StringComparison.Ordinal);
+		Assert.IsNull(app.DocumentPath);
+	}
+
+	/// <summary>
+	/// Tests that opening a document records it as recent, newest first and without repeats.
+	/// </summary>
+	[TestMethod]
+	public void RecentFiles_AreNewestFirstAndUnique()
+	{
+		DocumentStore store = NewStore();
+		EditorSettings settings = new();
+		CoderEditorApp app = NewApp(store, settings);
+
+		app.Save(PathIn("one"));
+		app.Save(PathIn("two"));
+		app.Save(PathIn("one"));
+
+		CollectionAssert.AreEqual(new[] { PathIn("one"), PathIn("two") }, settings.RecentFiles.ToArray());
+	}
+
+	/// <summary>
+	/// Tests that the recent list stays a menu rather than growing without bound.
+	/// </summary>
+	[TestMethod]
+	public void RecentFiles_StopAtTheLimit()
+	{
+		EditorSettings settings = new();
+
+		for (int i = 0; i < EditorSettings.RecentFileLimit + 5; i++)
+		{
+			settings.Remember(PathIn($"file{i}"));
+		}
+
+		Assert.AreEqual(EditorSettings.RecentFileLimit, settings.RecentFiles.Count);
+		Assert.AreEqual(PathIn($"file{EditorSettings.RecentFileLimit + 4}"), settings.RecentFiles[0]);
+	}
+
+	/// <summary>
+	/// Tests that the preview generates in the language the settings name, and follows a change to it.
+	/// </summary>
+	[TestMethod]
+	public void Preview_GeneratesInTheSelectedLanguage()
+	{
+		DocumentStore store = NewStore();
+		EditorSettings settings = new() { PreviewLanguageId = "csharp" };
+		CoderEditorApp app = NewApp(store, settings);
+
+		app.Regenerate();
+		StringAssert.Contains(app.GeneratedCode, "public void newFunction", StringComparison.Ordinal);
+
+		settings.PreviewLanguageId = "python";
+		app.Regenerate();
+		StringAssert.Contains(app.GeneratedCode, "def newFunction", StringComparison.Ordinal);
+	}
+
+	/// <summary>
+	/// Tests that a language with no generator is reported in the pane rather than throwing out of a
+	/// draw call, which would take the application down.
+	/// </summary>
+	[TestMethod]
+	public void Preview_ReportsAnUnknownLanguage()
+	{
+		DocumentStore store = NewStore();
+		CoderEditorApp app = NewApp(store, new EditorSettings { PreviewLanguageId = "klingon" });
+
+		app.Regenerate();
+
+		StringAssert.Contains(app.GeneratedCode, "klingon", StringComparison.Ordinal);
+	}
+
+	/// <summary>
+	/// Tests that starting a new document discards the old one and forgets its path.
+	/// </summary>
+	[TestMethod]
+	public void NewFile_ForgetsThePreviousDocument()
+	{
+		DocumentStore store = NewStore();
+		CoderEditorApp app = NewApp(store);
+		app.Save(PathIn("old"));
+
+		app.NewFile();
+
+		Assert.IsNull(app.DocumentPath);
+		StringAssert.Contains(app.Status, "New document", StringComparison.Ordinal);
+	}
+
+	/// <summary>
+	/// Tests that the application renders through the real configuration its entry point uses.
+	/// </summary>
+	/// <remarks>
+	/// This is what proves the panes, the menu bar and the embedded graph editor compose into a frame
+	/// that ImGui and ImNodes accept — none of which the unit tests above would catch.
+	/// </remarks>
+	[TestMethod]
+	public void App_RendersAFrameThroughItsRealConfiguration()
+	{
+		DocumentStore store = NewStore();
+		CoderEditorApp app = NewApp(store);
+
+		using ImGuiAppHarness harness = ImGuiAppHarness.Start(app.BuildConfig(), Options);
+		harness.Step(3);
+
+		Assert.AreEqual(3, harness.FrameCount);
+		Assert.IsFalse(string.IsNullOrEmpty(app.GeneratedCode), "a complete document should have generated something");
+	}
+
+	/// <summary>
+	/// Tests that the File menu is drawn where the application actually has a menu bar.
+	/// </summary>
+	/// <remarks>
+	/// ImGuiApp's main window carries no <c>ImGuiWindowFlags.MenuBar</c>, so a menu opened from the
+	/// render delegate never appears — <c>BeginMenuBar</c> just returns false and the whole menu is
+	/// silently dead. Drawing it through <c>OnAppMenu</c>, inside the application's own main menu bar,
+	/// is what makes it visible; this renders that path to prove the items are reached.
+	/// </remarks>
+	[TestMethod]
+	public void Menu_DrawsInsideTheApplicationMenuBar()
+	{
+		DocumentStore store = NewStore();
+		CoderEditorApp app = NewApp(store);
+		app.Save(PathIn("recent"));
+
+		ImGuiAppConfig config = app.BuildConfig();
+		Assert.IsNotNull(config.OnAppMenu, "the menu must be handed to the application, not drawn in OnRender");
+
+		using ImGuiAppHarness harness = ImGuiAppHarness.Start(config, Options);
+		harness.Step(2);
+
+		// Open the File menu, which is what makes its items run at all. The main menu bar sits at the
+		// very top-left of the viewport, so the label is a few pixels in.
+		harness.Mouse.Click(24, 10);
+		harness.Step(3);
+
+		Assert.AreEqual(1, app.Settings.RecentFiles.Count, "the saved document should be listed as recent");
+		Assert.AreEqual(PathIn("recent"), app.DocumentPath, "opening the menu must not disturb the document");
+	}
+
+	/// <summary>
+	/// Tests that the code pane refuses to show generated source while the document is incomplete,
+	/// listing what is outstanding instead.
+	/// </summary>
+	/// <remarks>
+	/// Showing code for a half-built document would be showing something that does not correspond to
+	/// what the user is looking at, so the pane lists the gaps and stops.
+	/// </remarks>
+	[TestMethod]
+	public void CodePane_ListsProblemsInsteadOfGeneratingWhileIncomplete()
+	{
+		DocumentStore store = NewStore();
+		CoderEditorApp app = NewApp(store);
+
+		// An operand nobody has filled in yet, which is what Validate reports.
+		FunctionDeclaration document = CoderEditorApp.NewDocument();
+		document.Body.Add(new ReturnStatement(
+			new BinaryExpression(AstSchema.Unfilled(), BinaryOperator.Add, AstSchema.Unfilled())));
+		Assert.IsTrue(app.Open(WriteDocument(store, document, PathIn("incomplete"))), app.Status);
+
+		using ImGuiAppHarness harness = ImGuiAppHarness.Start(app.BuildConfig(), Options);
+		harness.Step(2);
+
+		Assert.IsTrue(app.Editor.Problems.Count > 0, "the document should report outstanding operands");
+	}
+
+	/// <summary>
+	/// Tests that the File menu's items run, by opening the menu and clicking New.
+	/// </summary>
+	/// <remarks>
+	/// The menu items are the one part of the editor with no seam of their own — each is a click that
+	/// calls a method tested elsewhere — so this drives them the only way that proves the wiring:
+	/// through the mouse.
+	/// </remarks>
+	[TestMethod]
+	public void Menu_NewDiscardsTheOpenDocument()
+	{
+		DocumentStore store = NewStore();
+		CoderEditorApp app = NewApp(store);
+		app.Save(PathIn("open-document"));
+		Assert.IsNotNull(app.DocumentPath);
+
+		using ImGuiAppHarness harness = ImGuiAppHarness.Start(app.BuildConfig(), Options);
+		harness.Step(2);
+
+		// The main menu bar sits at the top-left, and its first item drops down directly beneath.
+		harness.Mouse.Click(24, 10);
+		harness.Step(2);
+		harness.Mouse.Click(34, 36);
+		harness.Step(2);
+
+		Assert.IsNull(app.DocumentPath, "New should have discarded the open document");
+	}
+
+	/// <summary>
+	/// Writes a document straight to disk so a test can open it.
+	/// </summary>
+	/// <param name="store">The store to write through.</param>
+	/// <param name="document">The document to write.</param>
+	/// <param name="path">Where to write it.</param>
+	/// <returns>The path written to.</returns>
+	private static string WriteDocument(DocumentStore store, AstNode document, string path)
+	{
+		DocumentResult result = store.Save(document, path);
+		Assert.IsTrue(result.Success, result.Error);
+		return path;
+	}
+
+	/// <summary>
+	/// Tests that the settings' layout preference reaches the embedded editor when the application
+	/// starts, rather than being read and ignored.
+	/// </summary>
+	[TestMethod]
+	public void App_AppliesTheStoredLayoutPreferenceOnStart()
+	{
+		DocumentStore store = NewStore();
+		CoderEditorApp app = NewApp(store, new EditorSettings { LayoutRunning = false });
+
+		using ImGuiAppHarness harness = ImGuiAppHarness.Start(app.BuildConfig(), Options);
+		harness.Step();
+
+		Assert.IsFalse(app.Editor.LayoutRunning);
+	}
+}

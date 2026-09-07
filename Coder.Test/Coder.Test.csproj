@@ -13,10 +13,13 @@
     <!-- Drives the ImGui surface of Coder.Graph headlessly, through the CPU rasterizer. -->
     <PackageReference Include="ktsu.ImGui.App" />
     <PackageReference Include="ktsu.ImGui.App.Testing" />
+    <!-- The editor tests drive the real filesystem provider the application ships with. -->
+    <PackageReference Include="ktsu.Essentials.FileSystemProviders.Native" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Coder.Core\Coder.Core.csproj" />
     <ProjectReference Include="..\Coder.Graph\Coder.Graph.csproj" />
+    <ProjectReference Include="..\Coder.Editor\Coder.Editor.csproj" />
   </ItemGroup>
 </Project>

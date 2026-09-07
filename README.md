@@ -82,6 +82,25 @@ generator.
 The package targets `net10.0` only, since the node editor does. `ktsu.Coder` itself has no UI
 dependency and continues to cross-target.
 
+### Editor application
+
+`Coder.Editor` is a desktop application built on `ktsu.ImGui.App`: the document as a node graph on
+the left, the code it generates on the right, and a File menu for New / Open / Save with a recent
+files list.
+
+```bash
+dotnet run --project Coder.Editor
+```
+
+Documents are `.coder.yaml` files — the same YAML the serializer already round-trips, so anything the
+library can write, the editor can open. The code pane follows the document live and lists what is
+outstanding instead of generating while an operand is unfilled.
+
+It uses the ktsu.Essentials providers where they fit rather than reaching for `System.IO` directly:
+`IFileSystemProvider` for reading and writing documents, and an `IPersistenceProvider` over the XDG
+config directory for the recent-files list and the preview language. Neither location is a decision
+the editor makes for itself.
+
 ### Supported Target Languages
 
 Resolve `IEnumerable<ILanguageGenerator>` and select on `LanguageId`, or construct a generator
