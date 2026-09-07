@@ -1,4 +1,4 @@
-// Copyright (c) 2023-2026 ktsu-dev contributors
+﻿// Copyright (c) 2023-2026 ktsu-dev contributors
 
 namespace ktsu.Coder.Languages;
 
@@ -190,7 +190,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 		builder.Append('(');
 		GenerateInternal(binaryExpr.Left, builder, 0);
 		builder.Append(' ');
-		builder.Append(GetCSharpOperator(binaryExpr.Operator));
+		builder.Append(GetBinaryOperator(binaryExpr.Operator));
 		builder.Append(' ');
 		GenerateInternal(binaryExpr.Right, builder, 0);
 		builder.Append(')');
@@ -227,58 +227,9 @@ public class CSharpGenerator : LanguageGeneratorBase
 		builder.Append(indent);
 		GenerateInternal(assignment.Target, builder, 0);
 		builder.Append(' ');
-		builder.Append(GetCSharpAssignmentOperator(assignment.Operator));
+		builder.Append(GetAssignmentOperator(assignment.Operator));
 		builder.Append(' ');
 		GenerateInternal(assignment.Value, builder, 0);
 		builder.AppendLine(";");
 	}
-
-	private static string EscapeString(string value)
-	{
-		return value
-			.Replace("\\", "\\\\")
-			.Replace("\"", "\\\"")
-			.Replace("\n", "\\n")
-			.Replace("\r", "\\r")
-			.Replace("\t", "\\t");
-	}
-
-	private static string GetCSharpOperator(BinaryOperator op) => op switch
-	{
-		BinaryOperator.Add => "+",
-		BinaryOperator.Subtract => "-",
-		BinaryOperator.Multiply => "*",
-		BinaryOperator.Divide => "/",
-		BinaryOperator.Modulo => "%",
-		BinaryOperator.Equal => "==",
-		BinaryOperator.NotEqual => "!=",
-		BinaryOperator.LessThan => "<",
-		BinaryOperator.LessThanOrEqual => "<=",
-		BinaryOperator.GreaterThan => ">",
-		BinaryOperator.GreaterThanOrEqual => ">=",
-		BinaryOperator.LogicalAnd => "&&",
-		BinaryOperator.LogicalOr => "||",
-		BinaryOperator.BitwiseAnd => "&",
-		BinaryOperator.BitwiseOr => "|",
-		BinaryOperator.BitwiseXor => "^",
-		BinaryOperator.LeftShift => "<<",
-		BinaryOperator.RightShift => ">>",
-		_ => throw new NotSupportedException($"Unsupported binary operator: {op}")
-	};
-
-	private static string GetCSharpAssignmentOperator(AssignmentOperator op) => op switch
-	{
-		AssignmentOperator.Assign => "=",
-		AssignmentOperator.AddAssign => "+=",
-		AssignmentOperator.SubtractAssign => "-=",
-		AssignmentOperator.MultiplyAssign => "*=",
-		AssignmentOperator.DivideAssign => "/=",
-		AssignmentOperator.ModuloAssign => "%=",
-		AssignmentOperator.BitwiseAndAssign => "&=",
-		AssignmentOperator.BitwiseOrAssign => "|=",
-		AssignmentOperator.BitwiseXorAssign => "^=",
-		AssignmentOperator.LeftShiftAssign => "<<=",
-		AssignmentOperator.RightShiftAssign => ">>=",
-		_ => throw new NotSupportedException($"Unsupported assignment operator: {op}")
-	};
 }

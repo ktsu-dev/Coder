@@ -3,7 +3,6 @@
 namespace ktsu.Coder.Languages;
 
 using System;
-using System.Globalization;
 using System.Text;
 using ktsu.Coder.Ast;
 
@@ -55,57 +54,29 @@ public class JavaScriptGenerator : LanguageGeneratorBase
 				GenerateParameter(parameter, builder);
 				break;
 
-			case ReturnStatement returnStmt:
-				GenerateReturnStatement(returnStmt, builder, indentLevel);
+			case VariableDeclaration varDecl:
+				GenerateVariableDeclaration(varDecl, builder, indentLevel);
 				break;
 
 			case BinaryExpression binaryExpr:
-				GenerateBinaryExpression(binaryExpr, builder);
+				GenerateBinaryExpression(binaryExpr, builder, GetJavaScriptOperator(binaryExpr.Operator));
 				break;
 
-			case VariableReference varRef:
-				builder.Append(varRef.Name);
-				break;
-
-			case LiteralExpression<string> stringLit:
-				builder.Append($"\"{EscapeString(stringLit.Value ?? string.Empty)}\"");
-				break;
-
-			case LiteralExpression<int> intLit:
-				builder.Append(intLit.Value);
-				break;
-
-			case LiteralExpression<bool> boolLit:
-				builder.Append(boolLit.Value ? "true" : "false");
-				break;
-
-			case LiteralExpression<double> doubleLit:
-				builder.Append(doubleLit.Value.ToString(CultureInfo.InvariantCulture));
-				break;
-
-			case VariableDeclaration varDecl:
-				GenerateVariableDeclaration(varDecl, builder, indentLevel);
+			case ReturnStatement returnStmt:
+				GenerateReturnStatement(returnStmt, builder, indentLevel);
 				break;
 
 			case AssignmentStatement assignment:
 				GenerateAssignmentStatement(assignment, builder, indentLevel);
 				break;
 
-			// Legacy support for AstLeafNode types
-			case AstLeafNode<string> strLeaf:
-				builder.Append($"\"{EscapeString(strLeaf.Value ?? string.Empty)}\"");
-				break;
-
-			case AstLeafNode<int> intLeaf:
-				builder.Append(intLeaf.Value);
-				break;
-
-			case AstLeafNode<bool> boolLeaf:
-				builder.Append(boolLeaf.Value ? "true" : "false");
-				break;
-
 			default:
-				throw new NotSupportedException($"Unsupported node type for JavaScript generation: {node.GetNodeTypeName()}");
+				if (!TryGenerateCommonNode(node, builder))
+				{
+					throw new NotSupportedException($"Unsupported node type for JavaScript generation: {node.GetNodeTypeName()}");
+				}
+
+				break;
 		}
 	}
 
@@ -114,23 +85,7 @@ public class JavaScriptGenerator : LanguageGeneratorBase
 	/// </summary>
 	/// <param name="astNode">The AST node to check.</param>
 	/// <returns>True if this generator can generate code for the node; otherwise, false.</returns>
-	public override bool CanGenerate(AstNode astNode)
-	{
-		return astNode is not null and (FunctionDeclaration
-			or Parameter
-			or ReturnStatement
-			or BinaryExpression
-			or VariableReference
-			or LiteralExpression<string>
-			or LiteralExpression<int>
-			or LiteralExpression<bool>
-			or LiteralExpression<double>
-			or VariableDeclaration
-			or AssignmentStatement
-			or AstLeafNode<string>
-			or AstLeafNode<int>
-			or AstLeafNode<bool>);
-	}
+	public override bool CanGenerate(AstNode astNode) => CanGenerateStandardNodes(astNode);
 
 	private void GenerateFunctionDeclaration(FunctionDeclaration funcDecl, StringBuilder builder, int indentLevel)
 	{
@@ -172,20 +127,6 @@ public class JavaScriptGenerator : LanguageGeneratorBase
 		}
 	}
 
-	private void GenerateReturnStatement(ReturnStatement returnStmt, StringBuilder builder, int indentLevel)
-	{
-		Indent(builder, indentLevel);
-		builder.Append("return");
-
-		if (returnStmt.Expression is not null)
-		{
-			builder.Append(' ');
-			GenerateInternal(returnStmt.Expression, builder, 0);
-		}
-
-		builder.AppendLine(";");
-	}
-
 	private void GenerateVariableDeclaration(VariableDeclaration varDecl, StringBuilder builder, int indentLevel)
 	{
 		Indent(builder, indentLevel);
@@ -200,78 +141,22 @@ public class JavaScriptGenerator : LanguageGeneratorBase
 			GenerateInternal(varDecl.InitialValue, builder, 0);
 		}
 
-		builder.AppendLine(";");
+		EndStatement(builder);
 	}
 
-	private void GenerateAssignmentStatement(AssignmentStatement assignment, StringBuilder builder, int indentLevel)
-	{
-		Indent(builder, indentLevel);
-		GenerateInternal(assignment.Target, builder, 0);
-		builder.Append(' ');
-		builder.Append(GetJavaScriptAssignmentOperator(assignment.Operator));
-		builder.Append(' ');
-		GenerateInternal(assignment.Value, builder, 0);
-		builder.AppendLine(";");
-	}
-
-	private void GenerateBinaryExpression(BinaryExpression binaryExpr, StringBuilder builder)
-	{
-		// Parenthesised for clarity, as in every other generator: the AST carries no precedence.
-		builder.Append('(');
-		GenerateInternal(binaryExpr.Left, builder, 0);
-		builder.Append(' ');
-		builder.Append(GetJavaScriptOperator(binaryExpr.Operator));
-		builder.Append(' ');
-		GenerateInternal(binaryExpr.Right, builder, 0);
-		builder.Append(')');
-	}
-
-	private static string EscapeString(string value)
-	{
-		return value
-			.Replace("\\", "\\\\")
-			.Replace("\"", "\\\"")
-			.Replace("\n", "\\n")
-			.Replace("\r", "\\r")
-			.Replace("\t", "\\t");
-	}
-
+	/// <summary>
+	/// Maps a binary operator to its JavaScript spelling.
+	/// </summary>
+	/// <param name="op">The operator to map.</param>
+	/// <returns>The operator's source spelling.</returns>
+	/// <remarks>
+	/// Only equality differs from the C-family set: the AST's <see cref="BinaryOperator.Equal"/>
+	/// means value equality, which is <c>===</c> in JavaScript. <c>==</c> coerces and would not.
+	/// </remarks>
 	private static string GetJavaScriptOperator(BinaryOperator op) => op switch
 	{
-		BinaryOperator.Add => "+",
-		BinaryOperator.Subtract => "-",
-		BinaryOperator.Multiply => "*",
-		BinaryOperator.Divide => "/",
-		BinaryOperator.Modulo => "%",
 		BinaryOperator.Equal => "===",
 		BinaryOperator.NotEqual => "!==",
-		BinaryOperator.LessThan => "<",
-		BinaryOperator.LessThanOrEqual => "<=",
-		BinaryOperator.GreaterThan => ">",
-		BinaryOperator.GreaterThanOrEqual => ">=",
-		BinaryOperator.LogicalAnd => "&&",
-		BinaryOperator.LogicalOr => "||",
-		BinaryOperator.BitwiseAnd => "&",
-		BinaryOperator.BitwiseOr => "|",
-		BinaryOperator.BitwiseXor => "^",
-		BinaryOperator.LeftShift => "<<",
-		BinaryOperator.RightShift => ">>",
-		_ => throw new NotSupportedException($"Unsupported binary operator: {op}")
-	};
-
-	private static string GetJavaScriptAssignmentOperator(AssignmentOperator op) => op switch
-	{
-		AssignmentOperator.Assign => "=",
-		AssignmentOperator.AddAssign => "+=",
-		AssignmentOperator.SubtractAssign => "-=",
-		AssignmentOperator.MultiplyAssign => "*=",
-		AssignmentOperator.DivideAssign => "/=",
-		AssignmentOperator.ModuloAssign => "%=",
-		AssignmentOperator.BitwiseAndAssign => "&=",
-		AssignmentOperator.BitwiseOrAssign => "|=",
-		AssignmentOperator.BitwiseXorAssign => "^=",
-		AssignmentOperator.LeftShiftAssign => "<<=",
-		AssignmentOperator.RightShiftAssign => ">>=",
-		_ => throw new NotSupportedException($"Unsupported assignment operator: {op}")
+		_ => GetBinaryOperator(op)
 	};
 }
