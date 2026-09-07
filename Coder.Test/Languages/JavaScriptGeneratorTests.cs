@@ -1,4 +1,4 @@
-// Copyright (c) 2023-2026 ktsu-dev contributors
+﻿// Copyright (c) 2023-2026 ktsu-dev contributors
 
 namespace ktsu.Coder.Test.Languages;
 
@@ -51,8 +51,8 @@ public class JavaScriptGeneratorTests
 
 		string code = Generator.Generate(function);
 
-		StringAssert.Contains(code, "function greet(name, loud = false) {");
-		Assert.IsFalse(code.Contains("str"), "JavaScript output should carry no type annotations");
+		StringAssert.Contains(code, "function greet(name, loud = false) {", StringComparison.Ordinal);
+		Assert.IsFalse(code.Contains("str", StringComparison.Ordinal), "JavaScript output should carry no type annotations");
 	}
 
 	/// <summary>
@@ -70,7 +70,7 @@ public class JavaScriptGeneratorTests
 
 		string code = Generator.Generate(function);
 
-		StringAssert.Contains(code, "    return (a + b);");
+		StringAssert.Contains(code, "    return (a + b);", StringComparison.Ordinal);
 	}
 
 	/// <summary>

@@ -256,12 +256,13 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	{
 		Ensure.NotNull(value);
 
+		// Ordinal explicitly: these are source-syntax escapes, never subject to a culture.
 		return value
-			.Replace("\\", "\\\\")
-			.Replace("\"", "\\\"")
-			.Replace("\n", "\\n")
-			.Replace("\r", "\\r")
-			.Replace("\t", "\\t");
+			.Replace("\\", "\\\\", StringComparison.Ordinal)
+			.Replace("\"", "\\\"", StringComparison.Ordinal)
+			.Replace("\n", "\\n", StringComparison.Ordinal)
+			.Replace("\r", "\\r", StringComparison.Ordinal)
+			.Replace("\t", "\\t", StringComparison.Ordinal);
 	}
 
 	/// <summary>

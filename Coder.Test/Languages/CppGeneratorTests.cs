@@ -1,4 +1,4 @@
-// Copyright (c) 2023-2026 ktsu-dev contributors
+﻿// Copyright (c) 2023-2026 ktsu-dev contributors
 
 namespace ktsu.Coder.Test.Languages;
 
@@ -52,7 +52,7 @@ public class CppGeneratorTests
 
 		string code = Generator.Generate(function);
 
-		StringAssert.Contains(code, "std::string greet(std::string name, int times)");
+		StringAssert.Contains(code, "std::string greet(std::string name, int times)", StringComparison.Ordinal);
 	}
 
 	/// <summary>
@@ -63,7 +63,7 @@ public class CppGeneratorTests
 	{
 		FunctionDeclaration function = new("make") { ReturnType = "MyWidget" };
 
-		StringAssert.Contains(Generator.Generate(function), "MyWidget make()");
+		StringAssert.Contains(Generator.Generate(function), "MyWidget make()", StringComparison.Ordinal);
 	}
 
 	/// <summary>
@@ -81,7 +81,7 @@ public class CppGeneratorTests
 
 		string code = Generator.Generate(function);
 
-		StringAssert.Contains(code, "    return (a + b);");
+		StringAssert.Contains(code, "    return (a + b);", StringComparison.Ordinal);
 	}
 
 	/// <summary>
