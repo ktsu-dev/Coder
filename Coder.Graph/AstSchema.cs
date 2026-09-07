@@ -115,8 +115,9 @@ public static class AstSchema
 
 		if (slot.Cardinality == AstSlotCardinality.Many && index < ChildrenOf(parent, slot).Count)
 		{
-			// Replacing rather than appending: drop the occupant first so the append lands in its place.
-			return TryDetachAt(parent, slot, index) && TryAttachAt(parent, slot, int.MaxValue, child);
+			// Swapping an occupant out, which has to happen in place: removing and appending would
+			// silently move the new child to the end of the sequence and reorder a function body.
+			return TryReplaceAt(parent, slot, index, child);
 		}
 
 		switch (parent, slot.Name)
@@ -155,6 +156,31 @@ public static class AstSchema
 
 			case (FunctionDeclaration function, "Body"):
 				function.Body.Add(child);
+				return true;
+
+			default:
+				return false;
+		}
+	}
+
+	/// <summary>
+	/// Swaps the child at one position of a sequence for another, keeping the order around it.
+	/// </summary>
+	/// <param name="parent">The parent node.</param>
+	/// <param name="slot">The slot to write into.</param>
+	/// <param name="index">The position to overwrite.</param>
+	/// <param name="child">The node to put there.</param>
+	/// <returns>True if the child was written.</returns>
+	private static bool TryReplaceAt(AstNode parent, AstSlot slot, int index, AstNode child)
+	{
+		switch (parent, slot.Name)
+		{
+			case (FunctionDeclaration function, "Parameters") when child is Parameter parameter:
+				function.Parameters[index] = parameter;
+				return true;
+
+			case (FunctionDeclaration function, "Body"):
+				function.Body[index] = child;
 				return true;
 
 			default:
