@@ -2,6 +2,7 @@
 
 namespace ktsu.Coder.Test.Editor;
 
+using System.Numerics;
 using ktsu.Coder.Ast;
 using ktsu.Coder.Editor;
 using ktsu.Coder.Graph;
@@ -294,6 +295,164 @@ public sealed class CoderEditorAppTests
 
 		Assert.IsNull(app.DocumentPath);
 		StringAssert.Contains(app.Status, "New document", StringComparison.Ordinal);
+	}
+
+	/// <summary>
+	/// Tests that a class document opens with a method in it, so the Members slot is not an empty
+	/// pin the user has to guess the meaning of.
+	/// </summary>
+	[TestMethod]
+	public void NewClassDocument_IsAClassWithAMethod()
+	{
+		ClassDeclaration document = CoderEditorApp.NewClassDocument();
+
+		Assert.AreEqual("NewClass", document.Name);
+		Assert.IsInstanceOfType<FunctionDeclaration>(document.Members.Single());
+	}
+
+	/// <summary>
+	/// Tests that starting a class document replaces what was open and generates a class, which is
+	/// the whole path from the File menu to the preview pane.
+	/// </summary>
+	[TestMethod]
+	public void NewClassFile_OpensAClassAndGeneratesIt()
+	{
+		DocumentStore store = NewStore();
+		CoderEditorApp app = NewApp(store);
+		app.Save(PathIn("old"));
+
+		app.NewClassFile();
+
+		Assert.IsNull(app.DocumentPath);
+		Assert.IsInstanceOfType<ClassDeclaration>(app.Editor.Graph.Root);
+		Assert.AreEqual(0, app.Editor.Graph.Validate().Count, "a new class should have nothing outstanding");
+
+		app.Regenerate();
+		StringAssert.Contains(app.GeneratedCode, "public class NewClass", StringComparison.Ordinal);
+	}
+
+	/// <summary>
+	/// Tests that a class document is written and read back as a class, so the editor can save the
+	/// documents it can now create.
+	/// </summary>
+	[TestMethod]
+	public void ClassDocument_SurvivesSavingAndOpening()
+	{
+		DocumentStore store = NewStore();
+		CoderEditorApp app = NewApp(store);
+		app.NewClassFile();
+
+		string path = PathIn("shape");
+		Assert.IsTrue(app.Save(path), app.Status);
+
+		CoderEditorApp reopened = NewApp(store);
+		Assert.IsTrue(reopened.Open(path), reopened.Status);
+		Assert.IsInstanceOfType<ClassDeclaration>(reopened.Editor.Graph.Root);
+		StringAssert.Contains(reopened.GeneratedCode, "class NewClass", StringComparison.Ordinal);
+	}
+
+	/// <summary>
+	/// Tests that the generated code can be written out beside the document, in the extension its
+	/// language uses — which is what the application exists to produce.
+	/// </summary>
+	[TestMethod]
+	public void Export_WritesTheGeneratedCodeBesideTheDocument()
+	{
+		DocumentStore store = NewStore();
+		CoderEditorApp app = NewApp(store);
+		string document = PathIn("greeting");
+		Assert.IsTrue(app.Save(document), app.Status);
+
+		string? written = app.Export(document);
+
+		Assert.IsNotNull(written);
+		Assert.AreEqual(Path.Combine(root, "greeting.cs"), written);
+		StringAssert.Contains(File.ReadAllText(written), "public void newFunction(int value)", StringComparison.Ordinal);
+		StringAssert.Contains(app.Status, "Wrote", StringComparison.Ordinal);
+	}
+
+	/// <summary>
+	/// Tests that the file extension follows the language the pane is showing, so switching language
+	/// and exporting twice leaves two files rather than one overwritten one.
+	/// </summary>
+	[TestMethod]
+	public void Export_UsesTheExtensionOfThePreviewedLanguage()
+	{
+		DocumentStore store = NewStore();
+		EditorSettings settings = new() { PreviewLanguageId = "python" };
+		CoderEditorApp app = NewApp(store, settings);
+		string document = PathIn("greeting");
+
+		Assert.AreEqual(Path.Combine(root, "greeting.py"), app.Export(document));
+
+		settings.PreviewLanguageId = "cpp";
+		Assert.AreEqual(Path.Combine(root, "greeting.cpp"), app.Export(document));
+	}
+
+	/// <summary>
+	/// Tests that an incomplete document is not written out, since what it would generate is not
+	/// source anybody wants on disk.
+	/// </summary>
+	[TestMethod]
+	public void Export_RefusesADocumentWithOutstandingWork()
+	{
+		DocumentStore store = NewStore();
+		CoderEditorApp app = NewApp(store);
+		app.Editor.Graph.AddDetached(new VariableReference("orphan"), Vector2.Zero);
+		app.Editor.Graph.Validate();
+
+		using ImGuiAppHarness harness = ImGuiAppHarness.Start(app.BuildConfig(), Options);
+		harness.Step(2);
+
+		Assert.IsNull(app.Export(PathIn("greeting")));
+		StringAssert.Contains(app.Status, "to finish", StringComparison.Ordinal);
+		Assert.IsFalse(File.Exists(Path.Combine(root, "greeting.cs")));
+	}
+
+	/// <summary>
+	/// Tests that the generated code can be put on the clipboard, and that there is nothing to copy
+	/// before anything has been generated.
+	/// </summary>
+	/// <remarks>
+	/// The clipboard belongs to ImGui, so this runs inside a frame; what is asserted is the decision
+	/// about whether there was anything to copy, which is this application's.
+	/// </remarks>
+	[TestMethod]
+	public void CopyGeneratedCode_CopiesOnlyWhenThereIsSomething()
+	{
+		DocumentStore store = NewStore();
+		CoderEditorApp app = NewApp(store);
+
+		using ImGuiAppHarness harness = ImGuiAppHarness.Start(app.BuildConfig(), Options);
+
+		Assert.IsFalse(app.CopyGeneratedCode(), "nothing has been generated yet");
+
+		harness.Step(2);
+
+		Assert.IsTrue(app.CopyGeneratedCode());
+		StringAssert.Contains(app.Status, "Copied", StringComparison.Ordinal);
+	}
+
+	/// <summary>
+	/// Tests that a problem in the pane can be turned into a selection, which is how a user gets from
+	/// "something is missing" to the node that is missing it.
+	/// </summary>
+	[TestMethod]
+	public void Problems_CanSelectTheNodeTheyAreAbout()
+	{
+		DocumentStore store = NewStore();
+		CoderEditorApp app = NewApp(store);
+
+		using ImGuiAppHarness harness = ImGuiAppHarness.Start(app.BuildConfig(), Options);
+		harness.Step(2);
+
+		VariableReference orphan = new("orphan");
+		app.Editor.Graph.AddDetached(orphan, Vector2.Zero);
+		harness.Step(2);
+
+		AstGraphProblem problem = app.Editor.Problems.First(p => ReferenceEquals(p.Node, orphan));
+		Assert.IsTrue(app.Editor.Select(problem.Node));
+		Assert.AreSame(orphan, app.Editor.SelectedNode);
 	}
 
 	/// <summary>

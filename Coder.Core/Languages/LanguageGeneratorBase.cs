@@ -263,6 +263,7 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	{
 		// No null check: a type pattern never matches null.
 		return astNode is FunctionDeclaration
+			or ClassDeclaration
 			or Parameter
 			or ReturnStatement
 			or BinaryExpression

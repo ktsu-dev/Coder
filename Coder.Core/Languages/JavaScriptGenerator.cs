@@ -52,6 +52,85 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	}
 
 	/// <inheritdoc/>
+	/// <remarks>
+	/// A function inside a class body is written as a method — <c>name(args) { }</c> — because
+	/// JavaScript's <c>function</c> keyword is a syntax error there. That is why the members are
+	/// emitted here rather than through <see cref="StandardLanguageGenerator.GenerateClassMembers"/>.
+	/// </remarks>
+	protected override void GenerateClassDeclaration(ClassDeclaration classDecl, CodeBlocker code)
+	{
+		Ensure.NotNull(classDecl);
+		Ensure.NotNull(code);
+
+		code.Write($"class {classDecl.Name ?? "UnnamedClass"}");
+
+		if (!string.IsNullOrEmpty(classDecl.BaseType))
+		{
+			code.Write($" extends {classDecl.BaseType}");
+		}
+
+		// The line is left open, so the scope's brace lands on it: JavaScript braces hang.
+		code.Write(" ");
+
+		using Scope body = new(code);
+		foreach (AstNode member in classDecl.Members)
+		{
+			switch (member)
+			{
+				case FunctionDeclaration method:
+					GenerateMethod(method, code);
+					break;
+
+				// A field is not a variable: `let` is a statement keyword and a syntax error in a
+				// class body, so the declaration is emitted as the name and its initializer alone.
+				case VariableDeclaration field:
+					GenerateField(field, code);
+					break;
+
+				default:
+					GenerateInternal(member, code);
+					break;
+			}
+		}
+	}
+
+	/// <summary>
+	/// Emits a variable declaration as a class field.
+	/// </summary>
+	/// <param name="field">The declaration to emit as a field.</param>
+	/// <param name="code">The writer to emit into.</param>
+	private void GenerateField(VariableDeclaration field, CodeBlocker code)
+	{
+		code.Write(field.Name);
+
+		if (field.InitialValue is not null)
+		{
+			code.Write(" = ");
+			GenerateInternal(field.InitialValue, code);
+		}
+
+		EndStatement(code);
+	}
+
+	/// <summary>
+	/// Emits a function as a class method, which drops the <c>function</c> keyword.
+	/// </summary>
+	/// <param name="method">The function to emit as a method.</param>
+	/// <param name="code">The writer to emit into.</param>
+	private void GenerateMethod(FunctionDeclaration method, CodeBlocker code)
+	{
+		code.Write($"{method.Name ?? "unnamedMethod"}(");
+		GenerateParameterList(method.Parameters, code);
+		code.Write(") ");
+
+		using Scope body = new(code);
+		foreach (AstNode statement in method.Body)
+		{
+			GenerateInternal(statement, code);
+		}
+	}
+
+	/// <inheritdoc/>
 	protected override void GenerateParameter(Parameter parameter, CodeBlocker code, int position)
 	{
 		Ensure.NotNull(parameter);

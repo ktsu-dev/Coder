@@ -4,6 +4,7 @@ namespace ktsu.Coder.Test.Graph;
 
 using System.Numerics;
 using Hexa.NET.ImGui;
+using Hexa.NET.ImNodes;
 using ktsu.Coder.Ast;
 using ktsu.Coder.Graph;
 using ktsu.ImGui.App;
@@ -162,10 +163,119 @@ public sealed class AstGraphEditorTests
 
 		harness.Mouse.Click(400, 400);
 		harness.Step();
+
+		// Cleared rather than assumed: where a click lands depends on where the layout has put the
+		// nodes, and what is under test is what Delete does with an empty selection.
+		ImNodes.ClearNodeSelection();
 		harness.Keyboard.Press(ImGuiKey.Delete);
 		harness.Step(2);
 
 		Assert.AreEqual(6, editor.Graph.Nodes.Count, "nothing was selected, so nothing should go");
+	}
+
+	/// <summary>
+	/// Tests that a graph left to lay itself out stays inside the view, rather than being pulled off
+	/// the top-left corner of it.
+	/// </summary>
+	/// <remarks>
+	/// The layout's gravity pulls towards the world origin and node positions are canvas-relative, so
+	/// an origin left at zero drags the whole document off the edge — with nothing on screen to say
+	/// which way it went. The editor aims it at the middle of the canvas instead, and this is what
+	/// says so.
+	/// </remarks>
+	[TestMethod]
+	public void Editor_KeepsTheLayoutInsideTheView()
+	{
+		AstGraphEditor editor = new(SampleFunction());
+
+		using ImGuiAppHarness harness = ImGuiAppHarness.Start(ConfigFor(editor), Options);
+		harness.Step(300);
+
+		foreach (ktsu.ImGuiNodeEditor.Node node in editor.Graph.Engine.Nodes)
+		{
+			// One assertion per bound rather than a range: it says which edge the node went over.
+			Assert.IsGreaterThan(-200f, node.Position.X, $"{node.Name} drifted off the left to x {node.Position.X}");
+			Assert.IsLessThan(1200f, node.Position.X, $"{node.Name} drifted off the right to x {node.Position.X}");
+			Assert.IsGreaterThan(-200f, node.Position.Y, $"{node.Name} drifted off the top to y {node.Position.Y}");
+			Assert.IsLessThan(800f, node.Position.Y, $"{node.Name} drifted off the bottom to y {node.Position.Y}");
+		}
+	}
+
+	/// <summary>
+	/// Tests that the inspector renders for every kind of node the document holds, which is the whole
+	/// of its draw path: text boxes, tick boxes, operator combos and the slot buttons.
+	/// </summary>
+	/// <remarks>
+	/// Selection is normally made with the mouse, and ImNodes' hit testing depends on where the view
+	/// happens to be panned to; what matters here is that the panel draws for each shape of node, so
+	/// the selection is made through the editor and the frame is rendered.
+	/// </remarks>
+	[TestMethod]
+	public void Editor_RendersTheInspectorForEveryNode()
+	{
+		FunctionDeclaration function = SampleFunction();
+		AstGraphEditor editor = new(function);
+
+		using ImGuiAppHarness harness = ImGuiAppHarness.Start(ConfigFor(editor), Options);
+		harness.Step(2);
+
+		foreach (int nodeId in editor.Graph.Nodes.Keys)
+		{
+			ImNodes.ClearNodeSelection();
+			ImNodes.SelectNode(nodeId);
+			harness.Step(2);
+
+			Assert.AreSame(editor.Graph.AstNodeFor(nodeId), editor.SelectedNode);
+		}
+	}
+
+	/// <summary>
+	/// Tests that the inspector renders with nothing selected, since that is what the user sees when
+	/// the editor first opens.
+	/// </summary>
+	[TestMethod]
+	public void Editor_RendersTheInspectorWithNothingSelected()
+	{
+		AstGraphEditor editor = new(SampleFunction());
+
+		using ImGuiAppHarness harness = ImGuiAppHarness.Start(ConfigFor(editor), Options);
+		harness.Step(2);
+
+		Assert.IsNull(editor.SelectedNode);
+	}
+
+	/// <summary>
+	/// Tests that an edit made through the inspector while the editor is drawing takes effect, which
+	/// is the path every widget in the panel goes through.
+	/// </summary>
+	[TestMethod]
+	public void Editor_AppliesAnInspectorEditWhileDrawing()
+	{
+		FunctionDeclaration function = SampleFunction();
+		AstGraphEditor editor = new(function);
+
+		using ImGuiAppHarness harness = ImGuiAppHarness.Start(ConfigFor(editor), Options);
+		harness.Step(2);
+
+		Assert.IsTrue(editor.SetField(function, "Name", "renamed"));
+		harness.Step(2);
+
+		Assert.AreEqual("renamed", function.Name);
+		Assert.AreEqual(6, editor.Graph.Nodes.Count, "renaming should not change the graph's shape");
+	}
+
+	/// <summary>
+	/// Tests that the panel can be hidden, since a user working on a large graph wants the room.
+	/// </summary>
+	[TestMethod]
+	public void Editor_RendersWithTheInspectorHidden()
+	{
+		AstGraphEditor editor = new(SampleFunction()) { ShowInspector = false };
+
+		using ImGuiAppHarness harness = ImGuiAppHarness.Start(ConfigFor(editor), Options);
+		harness.Step(2);
+
+		Assert.IsFalse(editor.ShowInspector);
 	}
 
 	/// <summary>

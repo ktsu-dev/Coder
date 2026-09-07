@@ -84,6 +84,54 @@ public sealed class DocumentStore(
 	}
 
 	/// <summary>
+	/// Writes generated source alongside the document it came from.
+	/// </summary>
+	/// <param name="code">The source to write.</param>
+	/// <param name="path">The file to write it to.</param>
+	/// <returns>What happened, or why it could not.</returns>
+	/// <remarks>
+	/// Generated source is not a document — it cannot be read back into the editor — so this writes
+	/// text rather than going through the serializer. It is here rather than in the application
+	/// because this is the type that owns the filesystem and the reporting of what went wrong with it.
+	/// </remarks>
+	public DocumentResult Export(string code, string path)
+	{
+		Ensure.NotNull(code);
+		Ensure.NotNull(path);
+
+		try
+		{
+			EnsureDirectoryOf(path);
+			fileSystem.File.WriteAllText(path, code);
+		}
+		catch (IOException ex)
+		{
+			return DocumentResult.Failed($"Could not write {path}: {ex.Message}");
+		}
+		catch (UnauthorizedAccessException ex)
+		{
+			return DocumentResult.Failed($"Could not write {path}: {ex.Message}");
+		}
+
+		// Nothing was loaded, so the result carries the path alone: what the caller wants to know is
+		// where the source went.
+		return new DocumentResult(null, path, null);
+	}
+
+	/// <summary>
+	/// Creates the directory a file is about to be written into, if it is not there yet.
+	/// </summary>
+	/// <param name="path">The file about to be written.</param>
+	private void EnsureDirectoryOf(string path)
+	{
+		string? directory = fileSystem.Path.GetDirectoryName(path);
+		if (!string.IsNullOrEmpty(directory) && !fileSystem.Directory.Exists(directory))
+		{
+			fileSystem.Directory.CreateDirectory(directory);
+		}
+	}
+
+	/// <summary>
 	/// Writes a document.
 	/// </summary>
 	/// <param name="root">The AST to write.</param>
@@ -96,12 +144,7 @@ public sealed class DocumentStore(
 
 		try
 		{
-			string? directory = fileSystem.Path.GetDirectoryName(path);
-			if (!string.IsNullOrEmpty(directory) && !fileSystem.Directory.Exists(directory))
-			{
-				fileSystem.Directory.CreateDirectory(directory);
-			}
-
+			EnsureDirectoryOf(path);
 			fileSystem.File.WriteAllText(path, serializer.Serialize(root));
 		}
 		catch (IOException ex)

@@ -83,6 +83,94 @@ public class PythonGenerator : StandardLanguageGenerator
 	}
 
 	/// <inheritdoc/>
+	/// <remarks>
+	/// Python's suite may not be empty, so a class with no members gets a <c>pass</c>, the same way an
+	/// empty function body does.
+	/// </remarks>
+	protected override void GenerateClassDeclaration(ClassDeclaration classDecl, CodeBlocker code)
+	{
+		Ensure.NotNull(classDecl);
+		Ensure.NotNull(code);
+
+		code.Write($"class {classDecl.Name ?? "UnnamedClass"}");
+
+		if (!string.IsNullOrEmpty(classDecl.BaseType))
+		{
+			code.Write($"({classDecl.BaseType})");
+		}
+
+		code.WriteLine(":");
+
+		// Python's body is delimited by indentation alone, so there is no brace scope to open.
+		using IndentScope members = new(code);
+
+		if (classDecl.Members.Count == 0)
+		{
+			code.WriteLine("pass");
+			return;
+		}
+
+		// EndStatement writes nothing for Python, so the line break is this loop's to write.
+		foreach (AstNode member in classDecl.Members)
+		{
+			if (member is FunctionDeclaration method)
+			{
+				GenerateMethod(method, code);
+			}
+			else
+			{
+				GenerateInternal(member, code);
+			}
+
+			code.WriteLine();
+		}
+	}
+
+	/// <summary>
+	/// Emits a function as a method, which in Python means giving it the receiver as its first
+	/// parameter.
+	/// </summary>
+	/// <param name="method">The function to emit as a method.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// <c>self</c> is Python's spelling of the receiver a method is called on. It is not carried in
+	/// the AST — no other target language has it — so it is supplied here rather than being something
+	/// the user has to remember to add as a parameter and then remove for every other language.
+	/// </remarks>
+	private void GenerateMethod(FunctionDeclaration method, CodeBlocker code)
+	{
+		code.Write($"def {method.Name ?? "unnamed_method"}(self");
+
+		foreach (Parameter parameter in method.Parameters)
+		{
+			code.Write(", ");
+			GenerateParameter(parameter, code, method.Parameters.IndexOf(parameter));
+		}
+
+		code.Write(")");
+
+		if (method.ReturnType is not null)
+		{
+			code.Write($" -> {PythonTypeFromGenericType(method.ReturnType)}");
+		}
+
+		code.WriteLine(":");
+
+		using IndentScope body = new(code);
+		if (method.Body.Count == 0)
+		{
+			code.WriteLine("pass");
+			return;
+		}
+
+		foreach (AstNode statement in method.Body)
+		{
+			GenerateInternal(statement, code);
+			code.WriteLine();
+		}
+	}
+
+	/// <inheritdoc/>
 	protected override void GenerateParameter(Parameter parameter, CodeBlocker code, int position)
 	{
 		Ensure.NotNull(parameter);

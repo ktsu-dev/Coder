@@ -58,6 +58,12 @@ public sealed class AstGraph
 	public AstGraph(AstNode root)
 	{
 		Ensure.NotNull(root);
+
+		// The engine's physics settings default to disabled, so a caller that never says otherwise
+		// gets a layout that steps and moves nothing. The whole point of the graph view is that the
+		// user does not arrange it by hand, so it is enabled here rather than left to each caller.
+		Engine.UpdatePhysicsSettings(Engine.PhysicsSettings with { Enabled = true });
+
 		Root = root;
 		Rebuild();
 	}
@@ -117,6 +123,11 @@ public sealed class AstGraph
 		{
 			CreateLinks(subtree);
 		}
+
+		// Clearing the engine resets its world origin, which is what gravity pulls everything
+		// towards. Left at zero it would drag the whole graph off to wherever the origin happens to
+		// be on screen; re-centring it on the nodes keeps the layout where the user is looking.
+		Engine.InitializeWorldOriginToCentroid();
 	}
 
 	/// <summary>
@@ -174,10 +185,34 @@ public sealed class AstGraph
 	{
 		Ensure.NotNull(node);
 
-		positions[node] = position;
+		positions[node] = Separated(position);
 		detached.Add(node);
 		Rebuild();
 		return idsByNode[node];
+	}
+
+	/// <summary>
+	/// Nudges a position that lands on top of an existing node.
+	/// </summary>
+	/// <param name="position">Where the node was asked to go.</param>
+	/// <returns>That position, or the nearest free one along a diagonal from it.</returns>
+	/// <remarks>
+	/// Two nodes at exactly the same point stay there for ever: the layout's repulsion is computed
+	/// from the direction between them, and coincident points have no direction. Creating two nodes
+	/// from the palette without moving the mouse is enough to hit that, so the offset is applied when
+	/// the node is placed rather than left for the simulation to sort out.
+	/// </remarks>
+	private Vector2 Separated(Vector2 position)
+	{
+		const float step = 24f;
+
+		Vector2 candidate = position;
+		for (int attempt = 1; attempt <= 32 && positions.Values.Any(taken => Vector2.Distance(taken, candidate) < step); attempt++)
+		{
+			candidate = position + new Vector2(step * attempt, step * attempt);
+		}
+
+		return candidate;
 	}
 
 	/// <summary>
@@ -243,6 +278,141 @@ public sealed class AstGraph
 
 		Rebuild();
 		return true;
+	}
+
+	/// <summary>
+	/// Puts one node in another's place, moving over as many of its children as the newcomer will
+	/// take.
+	/// </summary>
+	/// <param name="existing">The node being replaced.</param>
+	/// <param name="replacement">The node taking its place.</param>
+	/// <returns>Where each child that moved came from, so the caller can put it back; empty when nothing was replaced.</returns>
+	/// <remarks>
+	/// This is what turning a number literal into a text one, or an addition into a comparison, is
+	/// made of: the node's place in the tree is what the user wants kept, and its kind is what they
+	/// want changed.
+	/// <para>
+	/// A child the newcomer has no room for is not discarded. The replaced node keeps it and is left
+	/// as a loose node in the graph, which <see cref="Validate"/> then reports — losing part of the
+	/// document because a smaller node was picked would be far worse than an extra thing to tidy up.
+	/// A replaced node with nothing left under it is dropped, since it holds nothing to lose.
+	/// </para>
+	/// </remarks>
+	public IReadOnlyList<(AstNode Child, AstLocation From)> Replace(AstNode existing, AstNode replacement)
+	{
+		Ensure.NotNull(existing);
+		Ensure.NotNull(replacement);
+
+		if (ReferenceEquals(existing, Root) || ReferenceEquals(existing, replacement))
+		{
+			return [];
+		}
+
+		AstLocation where = LocationOf(existing);
+		List<(AstNode Child, AstLocation From)> moved = [];
+
+		foreach ((AstNode child, AstLocation from, AstLocation to) in PlanAdoption(existing, replacement))
+		{
+			MoveTo(child, to);
+			moved.Add((child, from));
+		}
+
+		// Attaching in the replaced node's place is what takes it out of the tree: a slot that holds
+		// one is overwritten, and a position inside a sequence is written in place. A loose node has
+		// no place to attach to, so the newcomer simply joins the loose ones.
+		if (where.Parent is null)
+		{
+			positions[replacement] = positions.TryGetValue(existing, out Vector2 vacated) ? vacated : Vector2.Zero;
+			detached.Add(replacement);
+		}
+		else
+		{
+			MoveTo(replacement, where);
+		}
+
+		// Whatever would not move is still under the replaced node, so that node stays in the graph
+		// rather than taking the children with it. One with nothing left under it is dropped.
+		// Placeholders do not count as something left: an expression holding only those is an empty
+		// shell of the kind the user has just replaced.
+		detached.Remove(existing);
+		if (ChildrenInOrder(existing).Any(child => !AstSchema.IsUnfilled(child)))
+		{
+			detached.Add(existing);
+		}
+		else
+		{
+			positions.Remove(existing);
+		}
+
+		Rebuild();
+		return moved;
+	}
+
+	/// <summary>
+	/// Works out which of a node's children the node replacing it could take, and where each would go.
+	/// </summary>
+	/// <param name="existing">The node being replaced.</param>
+	/// <param name="replacement">The node taking its place.</param>
+	/// <returns>One entry per child that can move, in the order they should be moved.</returns>
+	/// <remarks>
+	/// Children are offered to the replacement's slots in order, and each goes to the first slot that
+	/// will take it and has somewhere to put it. That maps <c>Left</c> and <c>Right</c> onto a single
+	/// <c>Operand</c> the way a user converting a binary expression into a unary one expects: the
+	/// first operand is kept.
+	/// </remarks>
+	private static IEnumerable<(AstNode Child, AstLocation From, AstLocation To)> PlanAdoption(AstNode existing, AstNode replacement)
+	{
+		Dictionary<AstSlot, int> filled = [];
+
+		foreach (AstSlot slot in AstSchema.SlotsOf(existing))
+		{
+			IReadOnlyList<AstNode> children = AstSchema.ChildrenOf(existing, slot);
+			for (int index = 0; index < children.Count; index++)
+			{
+				AstNode child = children[index];
+				if (AstSchema.IsUnfilled(child))
+				{
+					// A placeholder operand is not worth carrying over: the replacement brings its own.
+					continue;
+				}
+
+				AstSlot? target = AstSchema.SlotsOf(replacement).FirstOrDefault(candidate =>
+					AstSchema.Accepts(candidate, child) && HasRoom(replacement, candidate, filled));
+
+				if (target is null)
+				{
+					continue;
+				}
+
+				int position = filled.TryGetValue(target, out int taken) ? taken : 0;
+				filled[target] = position + 1;
+				yield return (child, new AstLocation(existing, slot, index), new AstLocation(replacement, target, position));
+			}
+		}
+	}
+
+	/// <summary>
+	/// Reports whether a slot has room for another child during an adoption.
+	/// </summary>
+	/// <param name="replacement">The node being filled.</param>
+	/// <param name="slot">The slot being considered.</param>
+	/// <param name="filled">How many children this adoption has already put in each slot.</param>
+	/// <returns>True if the slot can take one more.</returns>
+	private static bool HasRoom(AstNode replacement, AstSlot slot, Dictionary<AstSlot, int> filled)
+	{
+		if (slot.Cardinality == AstSlotCardinality.Many)
+		{
+			return true;
+		}
+
+		if (filled.ContainsKey(slot))
+		{
+			return false;
+		}
+
+		// A slot holding only a placeholder counts as empty: overwriting one loses nothing.
+		IReadOnlyList<AstNode> occupants = AstSchema.ChildrenOf(replacement, slot);
+		return occupants.Count == 0 || AstSchema.IsUnfilled(occupants[0]);
 	}
 
 	/// <summary>

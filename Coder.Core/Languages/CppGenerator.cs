@@ -71,6 +71,32 @@ public class CppGenerator : StandardLanguageGenerator
 	}
 
 	/// <inheritdoc/>
+	/// <remarks>
+	/// Every member is public. The AST carries no per-member visibility, and a C++ class defaults to
+	/// private, so a generated class with no access specifier would compile to something nothing
+	/// outside it could use.
+	/// </remarks>
+	protected override void GenerateClassDeclaration(ClassDeclaration classDecl, CodeBlocker code)
+	{
+		Ensure.NotNull(classDecl);
+		Ensure.NotNull(code);
+
+		code.Write($"class {classDecl.Name ?? "UnnamedClass"}");
+
+		if (!string.IsNullOrEmpty(classDecl.BaseType))
+		{
+			code.Write($" : public {MapToCppType(classDecl.BaseType!)}");
+		}
+
+		code.WriteLine();
+
+		// A C++ class declaration is a statement, so its closing brace takes a semicolon.
+		using ScopeWithTrailingSemicolon body = new(code);
+		code.WriteLine("public:");
+		GenerateClassMembers(classDecl, code);
+	}
+
+	/// <inheritdoc/>
 	protected override void GenerateParameter(Parameter parameter, CodeBlocker code, int position)
 	{
 		Ensure.NotNull(parameter);

@@ -14,6 +14,7 @@
     <PackageVersion Include="ktsu.UndoRedo.Core" Version="1.0.19" />
     <PackageVersion Include="ktsu.ImGui.App.Testing" Version="3.16.10" />
     <PackageVersion Include="ktsu.ImGuiNodeEditor" Version="3.16.10" />
+    <PackageVersion Include="ktsu.ForceDirectedLayout" Version="3.16.10" />
     <PackageVersion Include="ktsu.CodeBlocker" Version="2.0.4" />
     <PackageVersion Include="ktsu.DeepClone" Version="2.0.2" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.11" />

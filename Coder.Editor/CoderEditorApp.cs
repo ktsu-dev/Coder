@@ -101,11 +101,29 @@ public sealed class CoderEditorApp(
 	}
 
 	/// <summary>
+	/// Builds a document that is a class rather than a loose function.
+	/// </summary>
+	/// <returns>A class with one method in it.</returns>
+	/// <remarks>
+	/// The method is there for the same reason <see cref="NewDocument"/>'s function has a parameter:
+	/// an empty class generates an empty class, and the user would have to guess that a method is
+	/// what the Members slot is waiting for.
+	/// </remarks>
+	public static ClassDeclaration NewClassDocument()
+	{
+		ClassDeclaration declaration = new("NewClass");
+		declaration.Members.Add(new FunctionDeclaration("newMethod") { ReturnType = "void" });
+		return declaration;
+	}
+
+	/// <summary>
 	/// Draws one frame.
 	/// </summary>
 	/// <param name="deltaTime">Seconds since the last frame.</param>
 	public void Draw(float deltaTime)
 	{
+		HandleShortcuts();
+
 		Vector2 available = ImGui.GetContentRegionAvail();
 		float graphWidth = available.X * 0.62f;
 
@@ -120,6 +138,45 @@ public sealed class CoderEditorApp(
 		ImGui.EndChild();
 
 		DrawStatusBar();
+	}
+
+	/// <summary>
+	/// Applies the keyboard shortcuts the menu also offers.
+	/// </summary>
+	/// <remarks>
+	/// Undo and redo are the editor's, not the graph's, so they work wherever the keyboard focus is:
+	/// a user who has just typed a name into the inspector and wants it back should not have to click
+	/// on the canvas first. Saving without a path is left to the menu, which is where a path can be
+	/// typed.
+	/// </remarks>
+	private void HandleShortcuts()
+	{
+		if (!ImGui.GetIO().KeyCtrl)
+		{
+			return;
+		}
+
+		if (ImGui.IsKeyPressed(ImGuiKey.Z))
+		{
+			if (ImGui.GetIO().KeyShift)
+			{
+				Editor.Redo();
+			}
+			else
+			{
+				Editor.Undo();
+			}
+		}
+
+		if (ImGui.IsKeyPressed(ImGuiKey.Y))
+		{
+			Editor.Redo();
+		}
+
+		if (ImGui.IsKeyPressed(ImGuiKey.S) && DocumentPath is not null)
+		{
+			Save(DocumentPath);
+		}
 	}
 
 	/// <summary>
@@ -140,9 +197,16 @@ public sealed class CoderEditorApp(
 	{
 		if (ImGui.BeginMenu("File"))
 		{
-			if (ImGui.MenuItem("New"))
+			// Two items rather than a New submenu: which of the two a document starts as is the first
+			// decision a user makes, and burying it a level deep makes the common case a hover.
+			if (ImGui.MenuItem("New function"))
 			{
 				NewFile();
+			}
+
+			if (ImGui.MenuItem("New class"))
+			{
+				NewClassFile();
 			}
 
 			ImGui.Separator();
@@ -157,6 +221,11 @@ public sealed class CoderEditorApp(
 			if (ImGui.MenuItem("Save") && (DocumentPath ?? pathBuffer).Length > 0)
 			{
 				Save(DocumentPath ?? pathBuffer);
+			}
+
+			if (ImGui.MenuItem("Export generated code") && (DocumentPath ?? pathBuffer).Length > 0)
+			{
+				Export(DocumentPath ?? pathBuffer);
 			}
 
 			if (Settings.RecentFiles.Count > 0 && ImGui.BeginMenu("Recent"))
@@ -193,18 +262,114 @@ public sealed class CoderEditorApp(
 		IReadOnlyList<AstGraphProblem> problems = Editor.Problems;
 		if (problems.Count > 0)
 		{
-			ImGui.TextUnformatted($"{problems.Count} thing(s) to finish before this generates:");
-			foreach (AstGraphProblem problem in problems)
-			{
-				ImGui.BulletText(problem.Message);
-			}
-
+			DrawProblems(problems);
 			return;
 		}
 
 		Regenerate();
+
+		ImGui.SameLine();
+		if (ImGui.Button("Copy"))
+		{
+			CopyGeneratedCode();
+		}
+
 		ImGui.TextUnformatted(GeneratedCode);
 	}
+
+	/// <summary>
+	/// Draws what is still outstanding, in place of the code that cannot be generated yet.
+	/// </summary>
+	/// <param name="problems">What the document is missing.</param>
+	/// <remarks>
+	/// Each is a button rather than a bullet: a problem names the node it is about, and the fastest
+	/// way to fix one is to be looking at that node with the inspector open.
+	/// </remarks>
+	private void DrawProblems(IReadOnlyList<AstGraphProblem> problems)
+	{
+		ImGui.TextUnformatted($"{problems.Count} thing(s) to finish before this generates:");
+
+		for (int i = 0; i < problems.Count; i++)
+		{
+			if (ImGui.Selectable($"{problems[i].Message}##problem-{i}"))
+			{
+				Editor.Select(problems[i].Node);
+				Status = $"Selected {AstSchema.Describe(problems[i].Node)}.";
+			}
+		}
+	}
+
+	/// <summary>
+	/// Puts the generated code on the clipboard.
+	/// </summary>
+	/// <returns>True if there was code to copy.</returns>
+	/// <remarks>
+	/// The pane exists to produce source somebody is going to paste somewhere, and selecting text
+	/// out of an ImGui label is not something a user can do.
+	/// </remarks>
+	public bool CopyGeneratedCode()
+	{
+		if (GeneratedCode.Length == 0)
+		{
+			return false;
+		}
+
+		ImGui.SetClipboardText(GeneratedCode);
+		Status = "Copied the generated code.";
+		return true;
+	}
+
+	/// <summary>
+	/// Writes the generated code beside the document, in the file extension its language uses.
+	/// </summary>
+	/// <param name="documentPath">The document the source belongs to.</param>
+	/// <returns>The file written, or null if nothing was written.</returns>
+	/// <remarks>
+	/// The point of the application is the source it produces, and a preview pane nobody can get the
+	/// text out of stops one step short of that. The name comes from the document rather than being
+	/// asked for: the two belong together, and a user who wants it elsewhere can move it.
+	/// </remarks>
+	public string? Export(string documentPath)
+	{
+		Ensure.NotNull(documentPath);
+
+		ILanguageGenerator? generator = PreviewGenerator;
+		if (generator is null)
+		{
+			Status = $"No generator for '{Settings.PreviewLanguageId}'.";
+			return null;
+		}
+
+		if (Editor.Problems.Count > 0)
+		{
+			Status = $"{Editor.Problems.Count} thing(s) to finish before this generates.";
+			return null;
+		}
+
+		Regenerate();
+
+		// The document's own extension is two parts, so it is trimmed rather than replaced.
+		string stem = documentPath.EndsWith(DocumentStore.Extension, StringComparison.OrdinalIgnoreCase)
+			? documentPath[..^DocumentStore.Extension.Length]
+			: documentPath;
+
+		DocumentResult result = documents.Export(GeneratedCode, $"{stem}.{generator.FileExtension}");
+		if (!result.Success)
+		{
+			Status = result.Error ?? "Could not write the generated code.";
+			return null;
+		}
+
+		Status = $"Wrote {result.Path}.";
+		return result.Path;
+	}
+
+	/// <summary>
+	/// Gets the generator whose output the pane is showing, or null when the remembered language is
+	/// one this build does not have.
+	/// </summary>
+	private ILanguageGenerator? PreviewGenerator => generators.FirstOrDefault(
+		g => string.Equals(g.LanguageId, Settings.PreviewLanguageId, StringComparison.Ordinal));
 
 	private void DrawStatusBar()
 	{
@@ -214,13 +379,30 @@ public sealed class CoderEditorApp(
 	}
 
 	/// <summary>
-	/// Replaces the document with a fresh one.
+	/// Replaces the document with a fresh function.
 	/// </summary>
-	public void NewFile()
+	public void NewFile() => Replace(NewDocument(), "New document.");
+
+	/// <summary>
+	/// Replaces the document with a fresh class.
+	/// </summary>
+	public void NewClassFile() => Replace(NewClassDocument(), "New class.");
+
+	/// <summary>
+	/// Replaces the document, discarding whatever was open.
+	/// </summary>
+	/// <param name="document">The document to open.</param>
+	/// <param name="status">What the status bar should say about it.</param>
+	/// <remarks>
+	/// A new editor rather than a new graph inside the existing one: the undo history belongs to the
+	/// document that was edited, and carrying it across would let a user undo their way back into a
+	/// document they had closed.
+	/// </remarks>
+	private void Replace(AstNode document, string status)
 	{
-		Editor = new AstGraphEditor(NewDocument()) { LayoutRunning = Settings.LayoutRunning };
+		Editor = new AstGraphEditor(document) { LayoutRunning = Settings.LayoutRunning };
 		DocumentPath = null;
-		Status = "New document.";
+		Status = status;
 		GeneratedCode = string.Empty;
 	}
 
@@ -280,8 +462,7 @@ public sealed class CoderEditorApp(
 	/// </remarks>
 	public void Regenerate()
 	{
-		ILanguageGenerator? generator = generators.FirstOrDefault(
-			g => string.Equals(g.LanguageId, Settings.PreviewLanguageId, StringComparison.Ordinal));
+		ILanguageGenerator? generator = PreviewGenerator;
 
 		if (generator is null)
 		{
