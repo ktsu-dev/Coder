@@ -269,12 +269,9 @@ public sealed class AstGraphEditor(AstNode root)
 			DrawField(node, field);
 		}
 
-		foreach (AstSlot slot in AstSchema.SlotsOf(node))
+		foreach (AstSlot slot in AstSchema.SlotsOf(node).Where(slot => slot.Cardinality == AstSlotCardinality.Many))
 		{
-			if (slot.Cardinality == AstSlotCardinality.Many)
-			{
-				DrawSlotCount(node, slot);
-			}
+			DrawSlotCount(node, slot);
 		}
 
 		DrawConversions(node);
@@ -311,10 +308,12 @@ public sealed class AstGraphEditor(AstNode root)
 
 			foreach (AstNodeTemplate template in conversions.Where(entry => string.Equals(entry.Category, category, StringComparison.Ordinal)))
 			{
-				if (ImGui.MenuItem(template.Group is null ? template.Label : $"{template.Group}: {template.Label}"))
+				if (!ImGui.MenuItem(template.Group is null ? template.Label : $"{template.Group}: {template.Label}"))
 				{
-					Convert(node, template.Create());
+					continue;
 				}
+
+				Convert(node, template.Create());
 			}
 
 			ImGui.EndMenu();
@@ -921,10 +920,12 @@ public sealed class AstGraphEditor(AstNode root)
 	{
 		foreach (AstNodeTemplate template in templates)
 		{
-			if (ImGui.MenuItem(template.Label))
+			if (!ImGui.MenuItem(template.Label))
 			{
-				Add(template.Create(), dropPosition);
+				continue;
 			}
+
+			Add(template.Create(), dropPosition);
 		}
 	}
 

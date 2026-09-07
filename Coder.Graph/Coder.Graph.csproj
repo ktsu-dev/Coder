@@ -11,6 +11,9 @@
 
   <ItemGroup>
     <PackageReference Include="ktsu.ImGuiNodeEditor" />
+    <!-- The physics settings the graph enables are this package's type, named directly rather than
+         inherited through the node editor. -->
+    <PackageReference Include="ktsu.ForceDirectedLayout" />
     <PackageReference Include="ktsu.UndoRedo.Core" />
     <PackageReference Include="Hexa.NET.ImGui" />
     <PackageReference Include="Hexa.NET.ImNodes" />
