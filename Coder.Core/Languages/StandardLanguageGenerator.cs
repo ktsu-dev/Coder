@@ -64,6 +64,10 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 				GenerateBinaryExpression(binaryExpr, builder, GetOperatorSpelling(binaryExpr.Operator));
 				break;
 
+			case UnaryExpression unaryExpr:
+				GenerateUnaryExpression(unaryExpr, builder, GetUnaryOperatorSpelling(unaryExpr.Operator));
+				break;
+
 			case ReturnStatement returnStmt:
 				GenerateReturnStatement(returnStmt, builder, indentLevel);
 				break;
@@ -158,4 +162,16 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	/// and defers the rest to <see cref="LanguageGeneratorBase.GetBinaryOperator"/>.
 	/// </remarks>
 	protected virtual string GetOperatorSpelling(BinaryOperator op) => GetBinaryOperator(op);
+
+	/// <summary>
+	/// Spells a unary operator in the target language.
+	/// </summary>
+	/// <param name="op">The operator to spell.</param>
+	/// <returns>The operator's source spelling.</returns>
+	/// <remarks>
+	/// Defaults to the C-family set. A language that spells one operator differently overrides this
+	/// and defers the rest to <see cref="LanguageGeneratorBase.GetUnaryOperator"/>. A word operator is
+	/// separated from its operand by the emitter, so an override returns the bare word.
+	/// </remarks>
+	protected virtual string GetUnaryOperatorSpelling(UnaryOperator op) => GetUnaryOperator(op);
 }

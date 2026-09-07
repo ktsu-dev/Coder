@@ -223,6 +223,39 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	}
 
 	/// <summary>
+	/// Emits a parenthesised unary expression, recursing into its operand.
+	/// </summary>
+	/// <param name="unaryExpr">The expression to emit.</param>
+	/// <param name="builder">The string builder to append code to.</param>
+	/// <param name="operatorSpelling">The operator's spelling in the target language.</param>
+	/// <remarks>
+	/// Parenthesised for the same reason as a binary expression: the AST carries no precedence, so
+	/// <c>-(a + b)</c> and <c>(-a) + b</c> would be indistinguishable otherwise.
+	/// <para>
+	/// A word operator is separated from its operand and a symbolic one is not, so Python's
+	/// <c>not ready</c> and C#'s <c>!ready</c> both come out right without either language special-casing
+	/// the emitter.
+	/// </para>
+	/// </remarks>
+	protected void GenerateUnaryExpression(UnaryExpression unaryExpr, StringBuilder builder, string operatorSpelling)
+	{
+		Ensure.NotNull(unaryExpr);
+		Ensure.NotNull(builder);
+		Ensure.NotNull(operatorSpelling);
+
+		builder.Append('(');
+		builder.Append(operatorSpelling);
+
+		if (operatorSpelling.Length > 0 && char.IsLetter(operatorSpelling[^1]))
+		{
+			builder.Append(' ');
+		}
+
+		GenerateInternal(unaryExpr.Operand, builder, 0);
+		builder.Append(')');
+	}
+
+	/// <summary>
 	/// Reports whether a node is one of the standard shapes a generator built on these helpers accepts.
 	/// </summary>
 	/// <param name="astNode">The node to check.</param>
@@ -234,6 +267,7 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 			or Parameter
 			or ReturnStatement
 			or BinaryExpression
+			or UnaryExpression
 			or VariableReference
 			or LiteralExpression<string>
 			or LiteralExpression<int>
@@ -277,6 +311,18 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// handles just that operator and defers the rest here.
 	/// </remarks>
 	protected static string GetBinaryOperator(BinaryOperator op) => OperatorSymbols.GetSymbol(op);
+
+	/// <summary>
+	/// Maps a unary operator to its C-family spelling.
+	/// </summary>
+	/// <param name="op">The operator to map.</param>
+	/// <returns>The operator's source spelling.</returns>
+	/// <exception cref="NotSupportedException">The operator has no mapping.</exception>
+	/// <remarks>
+	/// C#, C++ and JavaScript use this set unchanged. Only Python differs, spelling
+	/// <see cref="UnaryOperator.LogicalNot"/> as a word.
+	/// </remarks>
+	protected static string GetUnaryOperator(UnaryOperator op) => OperatorSymbols.GetSymbol(op);
 
 	/// <summary>
 	/// Maps an assignment operator to its source spelling.

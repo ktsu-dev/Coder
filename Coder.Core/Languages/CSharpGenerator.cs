@@ -53,6 +53,9 @@ public class CSharpGenerator : LanguageGeneratorBase
 			case BinaryExpression binaryExpr:
 				GenerateBinaryExpression(binaryExpr, builder);
 				break;
+			case UnaryExpression unaryExpr:
+				GenerateUnaryExpression(unaryExpr, builder, GetUnaryOperator(unaryExpr.Operator));
+				break;
 			case VariableReference varRef:
 				builder.Append(varRef.Name);
 				break;

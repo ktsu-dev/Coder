@@ -1,4 +1,4 @@
-// Copyright (c) 2023-2026 ktsu-dev contributors
+﻿// Copyright (c) 2023-2026 ktsu-dev contributors
 
 namespace ktsu.Coder.Serialization;
 
@@ -92,6 +92,9 @@ public class YamlSerializer
 				break;
 			case BinaryExpression binaryExpr:
 				SerializeBinaryExpression(binaryExpr, nodeData);
+				break;
+			case UnaryExpression unaryExpr:
+				SerializeUnaryExpression(unaryExpr, nodeData);
 				break;
 			case LiteralExpression<string> stringLit:
 				SerializeLiteralExpression(stringLit, nodeData);
@@ -242,6 +245,20 @@ public class YamlSerializer
 		if (binaryExpr.ExpectedType != null)
 		{
 			nodeData["expectedType"] = binaryExpr.ExpectedType;
+		}
+	}
+
+	private static void SerializeUnaryExpression(UnaryExpression unaryExpr, Dictionary<string, object> nodeData)
+	{
+		nodeData["operator"] = unaryExpr.Operator.ToString();
+
+		Dictionary<string, object> operandData = [];
+		SerializeNode(unaryExpr.Operand, operandData);
+		nodeData["operand"] = operandData;
+
+		if (unaryExpr.ExpectedType != null)
+		{
+			nodeData["expectedType"] = unaryExpr.ExpectedType;
 		}
 	}
 

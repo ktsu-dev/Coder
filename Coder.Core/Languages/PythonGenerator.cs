@@ -148,4 +148,19 @@ public class PythonGenerator : StandardLanguageGenerator
 		BinaryOperator.LogicalOr => "or",
 		_ => GetBinaryOperator(op)
 	};
+
+	/// <summary>
+	/// Maps a unary operator to its Python spelling.
+	/// </summary>
+	/// <param name="op">The operator to map.</param>
+	/// <returns>The operator's source spelling.</returns>
+	/// <remarks>
+	/// Only logical negation differs from the C-family set: Python spells it as a word. The emitter
+	/// supplies the separating space, so this returns the bare keyword.
+	/// </remarks>
+	protected override string GetUnaryOperatorSpelling(UnaryOperator op) => op switch
+	{
+		UnaryOperator.LogicalNot => "not",
+		_ => GetUnaryOperator(op)
+	};
 }
