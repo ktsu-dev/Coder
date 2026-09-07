@@ -76,8 +76,8 @@ the palette, drag between pins to connect, Delete to remove, and Undo/Redo on th
 palette lists every binary, unary and assignment operator, so which expression to create is a choice
 made when creating it.
 
-Selecting a node opens it in the inspector, which edits everything about it that a link cannot
-express — a literal's value, a declaration's name and type, an expression's operator — and each edit
+Selecting a node opens it in the inspector — the panel under the canvas — which edits everything
+about it that a link cannot express — a literal's value, a declaration's name and type, an expression's operator — and each edit
 is one step on the undo stack. `AstFields` is the model behind it: a node's editable properties as
 named fields of a kind, so a caller building its own UI does not need a panel per node type.
 
@@ -94,6 +94,10 @@ A slot that holds a sequence — a function's parameters, its body, a class's me
 `-` buttons in the inspector, so the number of them is changed without dragging nodes in from the
 palette. "Convert to" replaces a node with a different kind in place, moving the operands the new
 one can take across and keeping the rest rather than discarding them.
+
+The layout keeps itself inside the view: its gravity is aimed at the middle of the canvas rather
+than at the origin, and "Fit" brings an arrangement that has been dragged away back to the top-left
+corner without disturbing its shape.
 
 The AST is the document and the graph is a view of it: every edit is applied to the AST and the
 graph rebuilt from it, preserving on-screen positions by node identity. A graph is allowed to be

@@ -163,10 +163,39 @@ public sealed class AstGraphEditorTests
 
 		harness.Mouse.Click(400, 400);
 		harness.Step();
+
+		// Cleared rather than assumed: where a click lands depends on where the layout has put the
+		// nodes, and what is under test is what Delete does with an empty selection.
+		ImNodes.ClearNodeSelection();
 		harness.Keyboard.Press(ImGuiKey.Delete);
 		harness.Step(2);
 
 		Assert.AreEqual(6, editor.Graph.Nodes.Count, "nothing was selected, so nothing should go");
+	}
+
+	/// <summary>
+	/// Tests that a graph left to lay itself out stays inside the view, rather than being pulled off
+	/// the top-left corner of it.
+	/// </summary>
+	/// <remarks>
+	/// The layout's gravity pulls towards the world origin and node positions are canvas-relative, so
+	/// an origin left at zero drags the whole document off the edge — with nothing on screen to say
+	/// which way it went. The editor aims it at the middle of the canvas instead, and this is what
+	/// says so.
+	/// </remarks>
+	[TestMethod]
+	public void Editor_KeepsTheLayoutInsideTheView()
+	{
+		AstGraphEditor editor = new(SampleFunction());
+
+		using ImGuiAppHarness harness = ImGuiAppHarness.Start(ConfigFor(editor), Options);
+		harness.Step(300);
+
+		foreach (ktsu.ImGuiNodeEditor.Node node in editor.Graph.Engine.Nodes)
+		{
+			Assert.IsTrue(node.Position.X is > (-200f) and < 1200f, $"{node.Name} drifted to x {node.Position.X}");
+			Assert.IsTrue(node.Position.Y is > (-200f) and < 800f, $"{node.Name} drifted to y {node.Position.Y}");
+		}
 	}
 
 	/// <summary>

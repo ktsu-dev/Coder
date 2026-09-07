@@ -5,6 +5,7 @@ namespace ktsu.Coder.Test.Graph;
 using System.Numerics;
 using ktsu.Coder.Ast;
 using ktsu.Coder.Graph;
+using ktsu.ImGuiNodeEditor;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 /// <summary>
@@ -124,6 +125,43 @@ public class AstGraphLayoutTests
 	private static float Furthest(Vector2[] from, AstGraph graph) =>
 		from.Zip(graph.Engine.Nodes.Select(node => node.Position))
 			.Max(pair => Vector2.Distance(pair.First, pair.Second));
+
+	/// <summary>
+	/// Tests that fitting brings a graph that has wandered off back to the top-left of the view, and
+	/// that it moves the arrangement rather than disturbing it.
+	/// </summary>
+	/// <remarks>
+	/// Fitting has to move the nodes rather than pan the node editor: the renderer writes each node's
+	/// position into the editor every frame, so panning is undone as soon as it is read back.
+	/// </remarks>
+	[TestMethod]
+	public void FitView_BringsTheGraphBackIntoView()
+	{
+		AstGraphEditor editor = new(SampleFunction()) { LayoutRunning = false };
+		Node[] before = [.. editor.Graph.Engine.Nodes];
+
+		// Push the whole graph a long way off the top-left of the canvas.
+		foreach (Node node in before)
+		{
+			editor.Graph.Engine.UpdateNodePosition(node.Id, node.Position - new Vector2(4000, 3000));
+		}
+
+		Assert.IsTrue(editor.FitView());
+
+		Node[] after = [.. editor.Graph.Engine.Nodes];
+		Assert.IsTrue(after.All(node => node.Position.X >= 0 && node.Position.Y >= 0), "everything should be inside the view");
+		Assert.AreEqual(0f, after.Min(node => node.Position.X) - 40f, 0.01f, "the leftmost node should sit at the margin");
+		Assert.AreEqual(0f, after.Min(node => node.Position.Y) - 40f, 0.01f, "the topmost node should sit at the margin");
+
+		// The arrangement is translated, not rearranged: every node keeps its offset from the first.
+		for (int i = 1; i < before.Length; i++)
+		{
+			Assert.AreEqual(
+				before[i].Position - before[0].Position,
+				after[i].Position - after[0].Position,
+				$"node {i} should have kept its place in the arrangement");
+		}
+	}
 
 	/// <summary>
 	/// Runs the simulation for a number of frames at sixty a second.
