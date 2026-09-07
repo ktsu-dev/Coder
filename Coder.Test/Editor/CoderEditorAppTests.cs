@@ -97,6 +97,53 @@ public sealed class CoderEditorAppTests
 	}
 
 	/// <summary>
+	/// Tests that the editor knows whether the open document has been edited since it was written,
+	/// and stops claiming so once it has been saved.
+	/// </summary>
+	/// <remarks>
+	/// The answer comes from the undo stack's save boundary rather than a flag, which is what makes
+	/// the last assertion here true: undoing back to where the document was saved leaves nothing to
+	/// write, and a flag set on every edit would still be claiming otherwise.
+	/// </remarks>
+	[TestMethod]
+	public void Save_ClearsTheUnsavedMarkerUntilTheNextEdit()
+	{
+		DocumentStore store = NewStore();
+		CoderEditorApp app = NewApp(store);
+		string path = PathIn("dirty");
+
+		Assert.IsFalse(app.HasUnsavedChanges, "a document nobody has edited has nothing to write");
+
+		app.Editor.Add(new VariableReference("added"), System.Numerics.Vector2.Zero);
+		Assert.IsTrue(app.HasUnsavedChanges);
+
+		Assert.IsTrue(app.Save(path), app.Status);
+		Assert.IsFalse(app.HasUnsavedChanges);
+
+		app.Editor.Add(new VariableReference("another"), System.Numerics.Vector2.Zero);
+		Assert.IsTrue(app.HasUnsavedChanges);
+
+		app.Editor.Undo();
+		Assert.IsFalse(app.HasUnsavedChanges, "undoing back to the save point leaves nothing to write");
+	}
+
+	/// <summary>
+	/// Tests that a save that failed does not claim the document is written.
+	/// </summary>
+	[TestMethod]
+	public void Save_LeavesTheUnsavedMarkerWhenItFails()
+	{
+		DocumentStore store = NewStore();
+		CoderEditorApp app = NewApp(store);
+		app.Editor.Add(new VariableReference("added"), System.Numerics.Vector2.Zero);
+
+		// A directory is not a file, so writing over it fails.
+		Assert.IsFalse(app.Save(root));
+
+		Assert.IsTrue(app.HasUnsavedChanges);
+	}
+
+	/// <summary>
 	/// Tests that saving creates the directory rather than failing because it does not exist, which
 	/// is what happens the first time a user saves into a new folder.
 	/// </summary>

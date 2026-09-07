@@ -58,6 +58,16 @@ public sealed class CoderEditorApp(
 	public string GeneratedCode { get; private set; } = string.Empty;
 
 	/// <summary>
+	/// Gets a value indicating whether the document has been edited since it was last written.
+	/// </summary>
+	/// <remarks>
+	/// Read from the undo stack rather than tracked separately: the stack already knows where the
+	/// last save was, so undoing back past the edits made since one correctly reports the document as
+	/// clean again. A private flag set on every edit would not.
+	/// </remarks>
+	public bool HasUnsavedChanges => Editor.History.HasUnsavedChanges;
+
+	/// <summary>
 	/// Builds the configuration the application runs under.
 	/// </summary>
 	/// <returns>The configuration to hand <see cref="ImGuiApp.Start(ImGuiAppConfig)"/>.</returns>
@@ -199,7 +209,8 @@ public sealed class CoderEditorApp(
 	private void DrawStatusBar()
 	{
 		ImGui.Separator();
-		ImGui.TextUnformatted($"{DocumentPath ?? "(unsaved)"} — {Status}");
+		string marker = HasUnsavedChanges ? "*" : string.Empty;
+		ImGui.TextUnformatted($"{DocumentPath ?? "(unsaved)"}{marker} — {Status}");
 	}
 
 	/// <summary>
@@ -251,6 +262,10 @@ public sealed class CoderEditorApp(
 
 		DocumentPath = result.Path;
 		Settings.Remember(result.Path!);
+
+		// Tells the undo stack that everything up to here is on disk, so the dirty marker clears and
+		// comes back the moment the next edit is made — or if the user undoes back across the save.
+		Editor.History.MarkAsSaved($"Saved {result.Path}");
 		Status = $"Saved {result.Path}.";
 		return true;
 	}

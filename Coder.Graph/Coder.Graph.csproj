@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <PackageReference Include="ktsu.ImGuiNodeEditor" />
+    <PackageReference Include="ktsu.UndoRedo.Core" />
     <PackageReference Include="Hexa.NET.ImGui" />
     <PackageReference Include="Hexa.NET.ImNodes" />
     <PackageReference Include="Polyfill" PrivateAssets="all" />

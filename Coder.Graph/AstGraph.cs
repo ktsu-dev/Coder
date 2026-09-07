@@ -150,9 +150,9 @@ public sealed class AstGraph
 	/// </summary>
 	/// <param name="root">The document to show.</param>
 	/// <remarks>
-	/// This is how undo puts a restored snapshot back. Positions are keyed to node identity and a
-	/// snapshot is a deep clone, so the restored document is laid out afresh rather than inheriting
-	/// the arrangement of the nodes it replaces.
+	/// Replaces the document wholesale, which is what opening a file does. Positions are keyed to
+	/// node identity, so the new document is laid out afresh rather than inheriting the arrangement
+	/// of the nodes it replaces.
 	/// </remarks>
 	public void Load(AstNode root)
 	{
@@ -181,6 +181,144 @@ public sealed class AstGraph
 	}
 
 	/// <summary>
+	/// Reports where a node currently sits.
+	/// </summary>
+	/// <param name="node">The node to locate.</param>
+	/// <returns>Its parent, slot and position, or <see cref="AstLocation.Detached"/> if it has no parent.</returns>
+	public AstLocation LocationOf(AstNode node)
+	{
+		Ensure.NotNull(node);
+
+		foreach (AstNode subtree in Subtrees)
+		{
+			if (TryFindParent(subtree, node, out AstNode? parent, out AstSlot? slot, out int index))
+			{
+				return new AstLocation(parent, slot, index);
+			}
+		}
+
+		return AstLocation.Detached;
+	}
+
+	/// <summary>
+	/// Puts a node where a location says it belongs, taking it out of wherever it is now.
+	/// </summary>
+	/// <param name="node">The node to move.</param>
+	/// <param name="location">Where to put it. <see cref="AstLocation.Detached"/> leaves it parentless.</param>
+	/// <returns>True if the node was moved.</returns>
+	/// <remarks>
+	/// This is the single operation every edit is expressed in terms of, and therefore the single
+	/// operation every undo is expressed in terms of too — connecting, disconnecting and reparenting
+	/// are all "put this node there", and each one's inverse is "put it back where it was". Undo
+	/// having one implementation rather than one per edit is what keeps it correct as edits are added.
+	/// <para>
+	/// It refers to nodes rather than pins deliberately: pin identifiers are reassigned by every
+	/// <see cref="Rebuild"/>, so a command holding one would be reapplying an edit to whatever
+	/// happened to inherit that number.
+	/// </para>
+	/// </remarks>
+	public bool MoveTo(AstNode node, AstLocation location)
+	{
+		Ensure.NotNull(node);
+
+		if (ReferenceEquals(node, Root))
+		{
+			return false;
+		}
+
+		DetachFromParent(node);
+		detached.Remove(node);
+
+		if (location.Parent is null)
+		{
+			detached.Add(node);
+		}
+		else if (!AstSchema.TryAttachAt(location.Parent, location.Slot!, location.Index, node))
+		{
+			// The slot will not take it any more, so the node stays in the graph rather than vanishing.
+			detached.Add(node);
+			Rebuild();
+			return false;
+		}
+
+		Rebuild();
+		return true;
+	}
+
+	/// <summary>
+	/// Takes a node out of the graph entirely, along with everything under it.
+	/// </summary>
+	/// <param name="node">The node to remove.</param>
+	/// <returns>True if the node was removed.</returns>
+	/// <remarks>
+	/// Addresses the node itself rather than its editor identifier, so an undo recorded against it
+	/// still means the same node after the rebuild that reassigned the identifiers.
+	/// </remarks>
+	public bool RemoveNode(AstNode node)
+	{
+		Ensure.NotNull(node);
+
+		if (ReferenceEquals(node, Root) || !idsByNode.ContainsKey(node))
+		{
+			return false;
+		}
+
+		DetachFromParent(node);
+		detached.Remove(node);
+		ForgetPositions(node);
+		Rebuild();
+		return true;
+	}
+
+	/// <summary>
+	/// Works out what connecting two pins would mean, and whether it is allowed, without doing it.
+	/// </summary>
+	/// <param name="outputPinId">The pin of the node being attached.</param>
+	/// <param name="inputPinId">The slot pin it should fill.</param>
+	/// <param name="child">The node being attached, when the connection is legal.</param>
+	/// <param name="target">Where it would end up, when the connection is legal.</param>
+	/// <returns>Whether the connection is allowed, and why not when it is not.</returns>
+	/// <remarks>
+	/// Separate from <see cref="Connect"/> so a caller can record an undo step only for an edit that
+	/// is going to happen. Recording first and discovering the refusal afterwards would leave a
+	/// no-op on the undo stack.
+	/// </remarks>
+	public AstConnectResult ValidateConnection(int outputPinId, int inputPinId, out AstNode? child, out AstLocation target)
+	{
+		child = null;
+		target = AstLocation.Detached;
+
+		if (!ownerByOutputPin.TryGetValue(outputPinId, out AstNode? candidate))
+		{
+			return new AstConnectResult(false, "That output pin is not in this graph.");
+		}
+
+		if (!slotByInputPin.TryGetValue(inputPinId, out SlotPin? slotPin))
+		{
+			return new AstConnectResult(false, "That input pin is not in this graph.");
+		}
+
+		if (ReferenceEquals(candidate, slotPin.Parent))
+		{
+			return new AstConnectResult(false, "A node cannot be its own child.");
+		}
+
+		if (Contains(candidate, slotPin.Parent))
+		{
+			return new AstConnectResult(false, "That would put the node inside itself.");
+		}
+
+		if (!AstSchema.Accepts(slotPin.Slot, candidate))
+		{
+			return new AstConnectResult(false, $"{AstSchema.Describe(candidate)} cannot fill {slotPin.Slot.Name}.");
+		}
+
+		child = candidate;
+		target = new AstLocation(slotPin.Parent, slotPin.Slot, slotPin.Index);
+		return new AstConnectResult(true, $"Connect {AstSchema.Describe(candidate)} to {slotPin.Slot.Name} of {AstSchema.Describe(slotPin.Parent)}");
+	}
+
+	/// <summary>
 	/// Connects a node's output pin to a slot pin on another node.
 	/// </summary>
 	/// <param name="outputPinId">The pin of the node being attached.</param>
@@ -193,41 +331,33 @@ public sealed class AstGraph
 	/// </remarks>
 	public AstConnectResult Connect(int outputPinId, int inputPinId)
 	{
-		if (!ownerByOutputPin.TryGetValue(outputPinId, out AstNode? child))
+		AstConnectResult check = ValidateConnection(outputPinId, inputPinId, out AstNode? child, out AstLocation target);
+		if (!check.Success || child is null)
 		{
-			return new AstConnectResult(false, "That output pin is not in this graph.");
+			return check;
 		}
 
-		if (!slotByInputPin.TryGetValue(inputPinId, out SlotPin? target))
-		{
-			return new AstConnectResult(false, "That input pin is not in this graph.");
-		}
+		return MoveTo(child, target)
+			? new AstConnectResult(true, "Connected.")
+			: new AstConnectResult(false, $"{target.Slot!.Name} would not take {AstSchema.Describe(child)}.");
+	}
 
-		if (ReferenceEquals(child, target.Parent))
-		{
-			return new AstConnectResult(false, "A node cannot be its own child.");
-		}
-
-		if (Contains(child, target.Parent))
-		{
-			return new AstConnectResult(false, "That would put the node inside itself.");
-		}
-
-		if (!AstSchema.Accepts(target.Slot, child))
-		{
-			return new AstConnectResult(false, $"{AstSchema.Describe(child)} cannot fill {target.Slot.Name}.");
-		}
-
-		DetachFromParent(child);
-
-		if (!AstSchema.TryAttachAt(target.Parent, target.Slot, target.Index, child))
-		{
-			return new AstConnectResult(false, $"{target.Slot.Name} would not take {AstSchema.Describe(child)}.");
-		}
-
-		detached.Remove(child);
-		Rebuild();
-		return new AstConnectResult(true, "Connected.");
+	/// <summary>
+	/// Reports which node a link attaches, without cutting it.
+	/// </summary>
+	/// <param name="linkId">The link to look at.</param>
+	/// <returns>The child the link attaches, or null if there is no such link.</returns>
+	/// <remarks>
+	/// Separate from <see cref="Disconnect"/> so a caller can record an undo step against the node
+	/// itself. A command holding the link identifier would be meaningless after the next
+	/// <see cref="Rebuild"/>, which reassigns them.
+	/// </remarks>
+	public AstNode? ChildOfLink(int linkId)
+	{
+		Link? link = Engine.Links.FirstOrDefault(l => l.Id == linkId);
+		return link is not null && ownerByOutputPin.TryGetValue(link.OutputPinId, out AstNode? child)
+			? child
+			: null;
 	}
 
 	/// <summary>
@@ -237,22 +367,8 @@ public sealed class AstGraph
 	/// <returns>True if the link was found and cut.</returns>
 	public bool Disconnect(int linkId)
 	{
-		Link? link = Engine.Links.FirstOrDefault(l => l.Id == linkId);
-		if (link is null
-			|| !ownerByOutputPin.TryGetValue(link.OutputPinId, out AstNode? child)
-			|| !slotByInputPin.TryGetValue(link.InputPinId, out SlotPin? target))
-		{
-			return false;
-		}
-
-		if (!AstSchema.TryDetachAt(target.Parent, target.Slot, target.Index))
-		{
-			return false;
-		}
-
-		detached.Add(child);
-		Rebuild();
-		return true;
+		AstNode? child = ChildOfLink(linkId);
+		return child is not null && MoveTo(child, AstLocation.Detached);
 	}
 
 	/// <summary>
@@ -261,19 +377,8 @@ public sealed class AstGraph
 	/// <param name="nodeId">The editor node to remove.</param>
 	/// <returns>True if the node was removed.</returns>
 	/// <remarks>The document's root is never removed: a graph with no root has nothing to generate from.</remarks>
-	public bool Remove(int nodeId)
-	{
-		if (!nodesById.TryGetValue(nodeId, out AstNode? node) || ReferenceEquals(node, Root))
-		{
-			return false;
-		}
-
-		DetachFromParent(node);
-		detached.Remove(node);
-		ForgetPositions(node);
-		Rebuild();
-		return true;
-	}
+	public bool Remove(int nodeId) =>
+		nodesById.TryGetValue(nodeId, out AstNode? node) && RemoveNode(node);
 
 	/// <summary>
 	/// Lists the places the document is not yet complete.
