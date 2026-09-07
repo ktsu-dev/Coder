@@ -2,14 +2,13 @@
 
 namespace ktsu.Coder.Languages;
 
-using System;
 using System.Text;
 using ktsu.Coder.Ast;
 
 /// <summary>
 /// Generates Python code from AST nodes.
 /// </summary>
-public class PythonGenerator : LanguageGeneratorBase
+public class PythonGenerator : StandardLanguageGenerator
 {
 	/// <summary>
 	/// Gets the unique identifier for this language generator.
@@ -25,60 +24,6 @@ public class PythonGenerator : LanguageGeneratorBase
 	/// Gets the file extension (without the dot) used for this language.
 	/// </summary>
 	public override string FileExtension => "py";
-
-	/// <summary>
-	/// Generates Python code with proper indentation.
-	/// </summary>
-	/// <param name="node">The AST node to generate code from.</param>
-	/// <param name="builder">The string builder to append code to.</param>
-	/// <param name="indentLevel">The current indentation level.</param>
-	protected override void GenerateInternal(AstNode node, StringBuilder builder, int indentLevel)
-	{
-		Ensure.NotNull(node);
-		Ensure.NotNull(builder);
-
-		switch (node)
-		{
-			case FunctionDeclaration funcDecl:
-				GenerateFunctionDeclaration(funcDecl, builder, indentLevel);
-				break;
-
-			case Parameter parameter:
-				GenerateParameter(parameter, builder);
-				break;
-
-			case VariableDeclaration varDecl:
-				GenerateVariableDeclaration(varDecl, builder, indentLevel);
-				break;
-
-			case BinaryExpression binaryExpr:
-				GenerateBinaryExpression(binaryExpr, builder, GetPythonOperator(binaryExpr.Operator));
-				break;
-
-			case ReturnStatement returnStmt:
-				GenerateReturnStatement(returnStmt, builder, indentLevel);
-				break;
-
-			case AssignmentStatement assignment:
-				GenerateAssignmentStatement(assignment, builder, indentLevel);
-				break;
-
-			default:
-				if (!TryGenerateCommonNode(node, builder))
-				{
-					throw new NotSupportedException($"Unsupported node type for Python generation: {node.GetNodeTypeName()}");
-				}
-
-				break;
-		}
-	}
-
-	/// <summary>
-	/// Determines whether this generator can generate code for the specified AST node.
-	/// </summary>
-	/// <param name="astNode">The AST node to check.</param>
-	/// <returns>True if this generator can generate code for the node; otherwise, false.</returns>
-	public override bool CanGenerate(AstNode astNode) => CanGenerateStandardNodes(astNode);
 
 	/// <summary>
 	/// Spells a boolean literal. Python capitalizes them.
@@ -97,25 +42,18 @@ public class PythonGenerator : LanguageGeneratorBase
 		// Python statements end at the newline the caller writes.
 	}
 
-	private void GenerateFunctionDeclaration(FunctionDeclaration funcDecl, StringBuilder builder, int indentLevel)
+	/// <inheritdoc/>
+	protected override void GenerateFunctionDeclaration(FunctionDeclaration funcDecl, StringBuilder builder, int indentLevel)
 	{
+		Ensure.NotNull(funcDecl);
+		Ensure.NotNull(builder);
+
 		// Function signature
 		Indent(builder, indentLevel);
 		builder.Append("def ");
 		builder.Append(funcDecl.Name ?? "unnamed_function");
 		builder.Append('(');
-
-		// Parameters
-		for (int i = 0; i < funcDecl.Parameters.Count; i++)
-		{
-			if (i > 0)
-			{
-				builder.Append(", ");
-			}
-
-			GenerateParameter(funcDecl.Parameters[i], builder, i);
-		}
-
+		GenerateParameterList(funcDecl.Parameters, builder);
 		builder.Append(')');
 
 		// Add return type hint if available
@@ -145,8 +83,12 @@ public class PythonGenerator : LanguageGeneratorBase
 		}
 	}
 
-	private static void GenerateParameter(Parameter parameter, StringBuilder builder, int position = 0)
+	/// <inheritdoc/>
+	protected override void GenerateParameter(Parameter parameter, StringBuilder builder, int position)
 	{
+		Ensure.NotNull(parameter);
+		Ensure.NotNull(builder);
+
 		builder.Append(parameter.Name ?? $"param{position}");
 
 		// Type hints are optional in Python, so they are emitted only when the AST carries one.
@@ -156,11 +98,7 @@ public class PythonGenerator : LanguageGeneratorBase
 			builder.Append(PythonTypeFromGenericType(parameter.Type));
 		}
 
-		if (parameter.IsOptional && parameter.DefaultValue is not null)
-		{
-			builder.Append(" = ");
-			builder.Append(parameter.DefaultValue);
-		}
+		AppendDefaultValue(parameter, builder);
 	}
 
 	private static string PythonTypeFromGenericType(string genericType)
@@ -177,8 +115,12 @@ public class PythonGenerator : LanguageGeneratorBase
 		};
 	}
 
-	private void GenerateVariableDeclaration(VariableDeclaration varDecl, StringBuilder builder, int indentLevel)
+	/// <inheritdoc/>
+	protected override void GenerateVariableDeclaration(VariableDeclaration varDecl, StringBuilder builder, int indentLevel)
 	{
+		Ensure.NotNull(varDecl);
+		Ensure.NotNull(builder);
+
 		Indent(builder, indentLevel);
 		builder.Append(varDecl.Name);
 
@@ -200,7 +142,7 @@ public class PythonGenerator : LanguageGeneratorBase
 	/// <param name="op">The operator to map.</param>
 	/// <returns>The operator's source spelling.</returns>
 	/// <remarks>Only the logical operators differ from the C-family set: Python spells them as words.</remarks>
-	private static string GetPythonOperator(BinaryOperator op) => op switch
+	protected override string GetOperatorSpelling(BinaryOperator op) => op switch
 	{
 		BinaryOperator.LogicalAnd => "and",
 		BinaryOperator.LogicalOr => "or",

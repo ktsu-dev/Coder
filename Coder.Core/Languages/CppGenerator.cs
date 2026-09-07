@@ -1,4 +1,4 @@
-// Copyright (c) 2023-2026 ktsu-dev contributors
+﻿// Copyright (c) 2023-2026 ktsu-dev contributors
 
 namespace ktsu.Coder.Languages;
 
@@ -16,7 +16,7 @@ using ktsu.Coder.Ast;
 /// verbatim on the assumption the caller meant a C++ type. A declaration with no type, or one marked
 /// type-inferred, becomes <c>auto</c>.
 /// </remarks>
-public class CppGenerator : LanguageGeneratorBase
+public class CppGenerator : StandardLanguageGenerator
 {
 	/// <summary>
 	/// Maps the AST's language-neutral type names onto C++ spellings.
@@ -51,78 +51,18 @@ public class CppGenerator : LanguageGeneratorBase
 	/// </summary>
 	public override string FileExtension => "cpp";
 
-	/// <summary>
-	/// Generates C++ code with proper indentation.
-	/// </summary>
-	/// <param name="node">The AST node to generate code from.</param>
-	/// <param name="builder">The string builder to append code to.</param>
-	/// <param name="indentLevel">The current indentation level.</param>
-	protected override void GenerateInternal(AstNode node, StringBuilder builder, int indentLevel)
+	/// <inheritdoc/>
+	protected override void GenerateFunctionDeclaration(FunctionDeclaration funcDecl, StringBuilder builder, int indentLevel)
 	{
-		Ensure.NotNull(node);
+		Ensure.NotNull(funcDecl);
 		Ensure.NotNull(builder);
 
-		switch (node)
-		{
-			case FunctionDeclaration funcDecl:
-				GenerateFunctionDeclaration(funcDecl, builder, indentLevel);
-				break;
-
-			case Parameter parameter:
-				GenerateParameter(parameter, builder);
-				break;
-
-			case VariableDeclaration varDecl:
-				GenerateVariableDeclaration(varDecl, builder, indentLevel);
-				break;
-
-			case BinaryExpression binaryExpr:
-				GenerateBinaryExpression(binaryExpr, builder, GetBinaryOperator(binaryExpr.Operator));
-				break;
-
-			case ReturnStatement returnStmt:
-				GenerateReturnStatement(returnStmt, builder, indentLevel);
-				break;
-
-			case AssignmentStatement assignment:
-				GenerateAssignmentStatement(assignment, builder, indentLevel);
-				break;
-
-			default:
-				if (!TryGenerateCommonNode(node, builder))
-				{
-					throw new NotSupportedException($"Unsupported node type for C++ generation: {node.GetNodeTypeName()}");
-				}
-
-				break;
-		}
-	}
-
-	/// <summary>
-	/// Determines whether this generator can generate code for the specified AST node.
-	/// </summary>
-	/// <param name="astNode">The AST node to check.</param>
-	/// <returns>True if this generator can generate code for the node; otherwise, false.</returns>
-	public override bool CanGenerate(AstNode astNode) => CanGenerateStandardNodes(astNode);
-
-	private void GenerateFunctionDeclaration(FunctionDeclaration funcDecl, StringBuilder builder, int indentLevel)
-	{
 		Indent(builder, indentLevel);
 		builder.Append(MapToCppType(funcDecl.ReturnType ?? "void"));
 		builder.Append(' ');
 		builder.Append(funcDecl.Name ?? "unnamedFunction");
 		builder.Append('(');
-
-		for (int i = 0; i < funcDecl.Parameters.Count; i++)
-		{
-			if (i > 0)
-			{
-				builder.Append(", ");
-			}
-
-			GenerateParameter(funcDecl.Parameters[i], builder, i);
-		}
-
+		GenerateParameterList(funcDecl.Parameters, builder);
 		builder.AppendLine(")");
 		Indent(builder, indentLevel);
 		builder.AppendLine("{");
@@ -136,22 +76,24 @@ public class CppGenerator : LanguageGeneratorBase
 		builder.AppendLine("}");
 	}
 
-	private static void GenerateParameter(Parameter parameter, StringBuilder builder, int position = 0)
+	/// <inheritdoc/>
+	protected override void GenerateParameter(Parameter parameter, StringBuilder builder, int position)
 	{
+		Ensure.NotNull(parameter);
+		Ensure.NotNull(builder);
+
 		builder.Append(MapToCppType(parameter.Type ?? "object"));
 		builder.Append(' ');
 		builder.Append(parameter.Name ?? $"param{position}");
-
-		// A C++ default argument is the only way the AST's IsOptional can be expressed.
-		if (parameter.IsOptional && !string.IsNullOrEmpty(parameter.DefaultValue))
-		{
-			builder.Append(" = ");
-			builder.Append(parameter.DefaultValue);
-		}
+		AppendDefaultValue(parameter, builder);
 	}
 
-	private void GenerateVariableDeclaration(VariableDeclaration varDecl, StringBuilder builder, int indentLevel)
+	/// <inheritdoc/>
+	protected override void GenerateVariableDeclaration(VariableDeclaration varDecl, StringBuilder builder, int indentLevel)
 	{
+		Ensure.NotNull(varDecl);
+		Ensure.NotNull(builder);
+
 		Indent(builder, indentLevel);
 
 		if (varDecl.IsConstant)

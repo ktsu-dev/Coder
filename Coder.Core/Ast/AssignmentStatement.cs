@@ -1,4 +1,4 @@
-// Copyright (c) 2023-2026 ktsu-dev contributors
+﻿// Copyright (c) 2023-2026 ktsu-dev contributors
 
 namespace ktsu.Coder.Ast;
 
@@ -83,21 +83,8 @@ public class AssignmentStatement : AstNode
 	/// <returns>String representation.</returns>
 	public override string ToString()
 	{
-		string operatorSymbol = Operator switch
-		{
-			AssignmentOperator.Assign => "=",
-			AssignmentOperator.AddAssign => "+=",
-			AssignmentOperator.SubtractAssign => "-=",
-			AssignmentOperator.MultiplyAssign => "*=",
-			AssignmentOperator.DivideAssign => "/=",
-			AssignmentOperator.ModuloAssign => "%=",
-			AssignmentOperator.BitwiseAndAssign => "&=",
-			AssignmentOperator.BitwiseOrAssign => "|=",
-			AssignmentOperator.BitwiseXorAssign => "^=",
-			AssignmentOperator.LeftShiftAssign => "<<=",
-			AssignmentOperator.RightShiftAssign => ">>=",
-			_ => "="
-		};
+		// ToString must not throw on an out-of-range value, so it falls back to plain assignment.
+		string operatorSymbol = OperatorSymbols.TryGetSymbol(Operator, out string? symbol) ? symbol! : "=";
 
 		return $"{Target} {operatorSymbol} {Value}";
 	}

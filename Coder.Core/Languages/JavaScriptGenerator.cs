@@ -1,8 +1,7 @@
-// Copyright (c) 2023-2026 ktsu-dev contributors
+﻿// Copyright (c) 2023-2026 ktsu-dev contributors
 
 namespace ktsu.Coder.Languages;
 
-using System;
 using System.Text;
 using ktsu.Coder.Ast;
 
@@ -16,7 +15,7 @@ using ktsu.Coder.Ast;
 /// than the coercing ones, because the AST's <see cref="BinaryOperator.Equal"/> means value equality
 /// in every other generator and <c>==</c> would not.
 /// </remarks>
-public class JavaScriptGenerator : LanguageGeneratorBase
+public class JavaScriptGenerator : StandardLanguageGenerator
 {
 	/// <summary>
 	/// Gets the unique identifier for this language generator.
@@ -33,77 +32,17 @@ public class JavaScriptGenerator : LanguageGeneratorBase
 	/// </summary>
 	public override string FileExtension => "js";
 
-	/// <summary>
-	/// Generates JavaScript code with proper indentation.
-	/// </summary>
-	/// <param name="node">The AST node to generate code from.</param>
-	/// <param name="builder">The string builder to append code to.</param>
-	/// <param name="indentLevel">The current indentation level.</param>
-	protected override void GenerateInternal(AstNode node, StringBuilder builder, int indentLevel)
+	/// <inheritdoc/>
+	protected override void GenerateFunctionDeclaration(FunctionDeclaration funcDecl, StringBuilder builder, int indentLevel)
 	{
-		Ensure.NotNull(node);
+		Ensure.NotNull(funcDecl);
 		Ensure.NotNull(builder);
 
-		switch (node)
-		{
-			case FunctionDeclaration funcDecl:
-				GenerateFunctionDeclaration(funcDecl, builder, indentLevel);
-				break;
-
-			case Parameter parameter:
-				GenerateParameter(parameter, builder);
-				break;
-
-			case VariableDeclaration varDecl:
-				GenerateVariableDeclaration(varDecl, builder, indentLevel);
-				break;
-
-			case BinaryExpression binaryExpr:
-				GenerateBinaryExpression(binaryExpr, builder, GetJavaScriptOperator(binaryExpr.Operator));
-				break;
-
-			case ReturnStatement returnStmt:
-				GenerateReturnStatement(returnStmt, builder, indentLevel);
-				break;
-
-			case AssignmentStatement assignment:
-				GenerateAssignmentStatement(assignment, builder, indentLevel);
-				break;
-
-			default:
-				if (!TryGenerateCommonNode(node, builder))
-				{
-					throw new NotSupportedException($"Unsupported node type for JavaScript generation: {node.GetNodeTypeName()}");
-				}
-
-				break;
-		}
-	}
-
-	/// <summary>
-	/// Determines whether this generator can generate code for the specified AST node.
-	/// </summary>
-	/// <param name="astNode">The AST node to check.</param>
-	/// <returns>True if this generator can generate code for the node; otherwise, false.</returns>
-	public override bool CanGenerate(AstNode astNode) => CanGenerateStandardNodes(astNode);
-
-	private void GenerateFunctionDeclaration(FunctionDeclaration funcDecl, StringBuilder builder, int indentLevel)
-	{
 		Indent(builder, indentLevel);
 		builder.Append("function ");
 		builder.Append(funcDecl.Name ?? "unnamedFunction");
 		builder.Append('(');
-
-		for (int i = 0; i < funcDecl.Parameters.Count; i++)
-		{
-			if (i > 0)
-			{
-				builder.Append(", ");
-			}
-
-			GenerateParameter(funcDecl.Parameters[i], builder, i);
-		}
-
+		GenerateParameterList(funcDecl.Parameters, builder);
 		builder.AppendLine(") {");
 
 		foreach (AstNode statement in funcDecl.Body)
@@ -115,20 +54,22 @@ public class JavaScriptGenerator : LanguageGeneratorBase
 		builder.AppendLine("}");
 	}
 
-	private static void GenerateParameter(Parameter parameter, StringBuilder builder, int position = 0)
+	/// <inheritdoc/>
+	protected override void GenerateParameter(Parameter parameter, StringBuilder builder, int position)
 	{
-		builder.Append(parameter.Name ?? $"param{position}");
+		Ensure.NotNull(parameter);
+		Ensure.NotNull(builder);
 
-		// A JavaScript default value makes the parameter optional; there is no other way to say so.
-		if (parameter.IsOptional && !string.IsNullOrEmpty(parameter.DefaultValue))
-		{
-			builder.Append(" = ");
-			builder.Append(parameter.DefaultValue);
-		}
+		builder.Append(parameter.Name ?? $"param{position}");
+		AppendDefaultValue(parameter, builder);
 	}
 
-	private void GenerateVariableDeclaration(VariableDeclaration varDecl, StringBuilder builder, int indentLevel)
+	/// <inheritdoc/>
+	protected override void GenerateVariableDeclaration(VariableDeclaration varDecl, StringBuilder builder, int indentLevel)
 	{
+		Ensure.NotNull(varDecl);
+		Ensure.NotNull(builder);
+
 		Indent(builder, indentLevel);
 
 		// `const` needs an initializer, so an uninitialized constant has to be declared with `let`.
@@ -153,7 +94,7 @@ public class JavaScriptGenerator : LanguageGeneratorBase
 	/// Only equality differs from the C-family set: the AST's <see cref="BinaryOperator.Equal"/>
 	/// means value equality, which is <c>===</c> in JavaScript. <c>==</c> coerces and would not.
 	/// </remarks>
-	private static string GetJavaScriptOperator(BinaryOperator op) => op switch
+	protected override string GetOperatorSpelling(BinaryOperator op) => op switch
 	{
 		BinaryOperator.Equal => "===",
 		BinaryOperator.NotEqual => "!==",

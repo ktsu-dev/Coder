@@ -273,28 +273,7 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// differently — Python's <c>and</c>/<c>or</c>, JavaScript's strict <c>===</c>/<c>!==</c> —
 	/// handles just that operator and defers the rest here.
 	/// </remarks>
-	protected static string GetBinaryOperator(BinaryOperator op) => op switch
-	{
-		BinaryOperator.Add => "+",
-		BinaryOperator.Subtract => "-",
-		BinaryOperator.Multiply => "*",
-		BinaryOperator.Divide => "/",
-		BinaryOperator.Modulo => "%",
-		BinaryOperator.Equal => "==",
-		BinaryOperator.NotEqual => "!=",
-		BinaryOperator.LessThan => "<",
-		BinaryOperator.LessThanOrEqual => "<=",
-		BinaryOperator.GreaterThan => ">",
-		BinaryOperator.GreaterThanOrEqual => ">=",
-		BinaryOperator.LogicalAnd => "&&",
-		BinaryOperator.LogicalOr => "||",
-		BinaryOperator.BitwiseAnd => "&",
-		BinaryOperator.BitwiseOr => "|",
-		BinaryOperator.BitwiseXor => "^",
-		BinaryOperator.LeftShift => "<<",
-		BinaryOperator.RightShift => ">>",
-		_ => throw new NotSupportedException($"Unsupported binary operator: {op}")
-	};
+	protected static string GetBinaryOperator(BinaryOperator op) => OperatorSymbols.GetSymbol(op);
 
 	/// <summary>
 	/// Maps an assignment operator to its source spelling.
@@ -303,19 +282,5 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// <returns>The operator's source spelling.</returns>
 	/// <exception cref="NotSupportedException">The operator has no mapping.</exception>
 	/// <remarks>Every language the generators target spells these identically.</remarks>
-	protected static string GetAssignmentOperator(AssignmentOperator op) => op switch
-	{
-		AssignmentOperator.Assign => "=",
-		AssignmentOperator.AddAssign => "+=",
-		AssignmentOperator.SubtractAssign => "-=",
-		AssignmentOperator.MultiplyAssign => "*=",
-		AssignmentOperator.DivideAssign => "/=",
-		AssignmentOperator.ModuloAssign => "%=",
-		AssignmentOperator.BitwiseAndAssign => "&=",
-		AssignmentOperator.BitwiseOrAssign => "|=",
-		AssignmentOperator.BitwiseXorAssign => "^=",
-		AssignmentOperator.LeftShiftAssign => "<<=",
-		AssignmentOperator.RightShiftAssign => ">>=",
-		_ => throw new NotSupportedException($"Unsupported assignment operator: {op}")
-	};
+	protected static string GetAssignmentOperator(AssignmentOperator op) => OperatorSymbols.GetSymbol(op);
 }

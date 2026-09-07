@@ -75,7 +75,13 @@ public class CSharpGenerator : LanguageGeneratorBase
 				GenerateAssignmentStatement(assignment, builder, indent);
 				break;
 			default:
-				builder.AppendLine($"{indent}// Unsupported node type: {node.GetType().Name}");
+				// The legacy AstLeafNode shapes are spelled the same in every language, so they come
+				// from the shared path; anything else is genuinely unrecognised.
+				if (!TryGenerateCommonNode(node, builder))
+				{
+					builder.AppendLine($"{indent}// Unsupported node type: {node.GetType().Name}");
+				}
+
 				break;
 		}
 	}
@@ -85,20 +91,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// </summary>
 	/// <param name="astNode">The AST node to check.</param>
 	/// <returns>True if this generator can generate code for the node; otherwise, false.</returns>
-	public override bool CanGenerate(AstNode astNode)
-	{
-		return astNode is not null and (FunctionDeclaration
-			or Parameter
-			or ReturnStatement
-			or BinaryExpression
-			or VariableReference
-			or LiteralExpression<string>
-			or LiteralExpression<int>
-			or LiteralExpression<bool>
-			or LiteralExpression<double>
-			or VariableDeclaration
-			or AssignmentStatement);
-	}
+	public override bool CanGenerate(AstNode astNode) => CanGenerateStandardNodes(astNode);
 
 	private void GenerateFunction(FunctionDeclaration function, StringBuilder builder, string indent)
 	{

@@ -1,4 +1,4 @@
-// Copyright (c) 2023-2026 ktsu-dev contributors
+﻿// Copyright (c) 2023-2026 ktsu-dev contributors
 
 namespace ktsu.Coder.Test.Ast;
 
@@ -174,5 +174,22 @@ public class ExpressionTests
 		Assert.AreEqual("test", stringLit.ToString());
 		Assert.AreEqual("42", intLit.ToString());
 		Assert.AreEqual("myVar", varRef.ToString());
+	}
+
+	/// <summary>
+	/// Tests that an assignment statement's string form uses the shared operator spellings, and that
+	/// an out-of-range operator falls back to plain assignment rather than throwing — ToString has to
+	/// stay safe to call from a debugger or a log statement.
+	/// </summary>
+	[TestMethod]
+	public void AssignmentStatement_ToString_UsesTheSharedOperatorSymbols()
+	{
+		VariableReference target = new("total");
+		LiteralExpression<int> value = Literal.Number(5);
+
+		Assert.AreEqual("total = 5", new AssignmentStatement(target, value).ToString());
+		Assert.AreEqual("total += 5", new AssignmentStatement(target, value, AssignmentOperator.AddAssign).ToString());
+		Assert.AreEqual("total <<= 5", new AssignmentStatement(target, value, AssignmentOperator.LeftShiftAssign).ToString());
+		Assert.AreEqual("total = 5", new AssignmentStatement(target, value, (AssignmentOperator)9999).ToString());
 	}
 }
