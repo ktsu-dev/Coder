@@ -1,4 +1,4 @@
-// Copyright (c) 2023-2026 ktsu-dev contributors
+﻿// Copyright (c) 2023-2026 ktsu-dev contributors
 
 namespace ktsu.Coder.Test;
 
@@ -35,6 +35,51 @@ public class ServiceCollectionExtensionsTests
 		ILanguageGenerator? pythonGenerator = generators.FirstOrDefault(g => g.LanguageId == "python");
 		Assert.IsNotNull(pythonGenerator, "PythonGenerator should be registered");
 		Assert.IsInstanceOfType<PythonGenerator>(pythonGenerator);
+	}
+
+	/// <summary>
+	/// Tests that every implemented generator is registered. The registration list used to carry
+	/// commented-out entries for languages that did not exist yet; this pins the set that does.
+	/// </summary>
+	[TestMethod]
+	public void AddLanguageGenerators_ShouldRegisterEveryImplementedLanguage()
+	{
+		// Arrange
+		ServiceCollection services = new();
+
+		// Act
+		services.AddLanguageGenerators();
+		ServiceProvider serviceProvider = services.BuildServiceProvider();
+
+		// Assert
+		List<ILanguageGenerator> generators = [.. serviceProvider.GetServices<ILanguageGenerator>()];
+
+		Assert.IsInstanceOfType<PythonGenerator>(generators.FirstOrDefault(g => g.LanguageId == "python"));
+		Assert.IsInstanceOfType<CSharpGenerator>(generators.FirstOrDefault(g => g.LanguageId == "csharp"));
+		Assert.IsInstanceOfType<JavaScriptGenerator>(generators.FirstOrDefault(g => g.LanguageId == "javascript"));
+		Assert.IsInstanceOfType<CppGenerator>(generators.FirstOrDefault(g => g.LanguageId == "cpp"));
+
+		Assert.AreEqual(4, generators.Count, "A new generator needs a registration and an entry here");
+	}
+
+	/// <summary>
+	/// Tests that no two generators claim the same language id or file extension, since callers
+	/// select a generator by one and name the output file with the other.
+	/// </summary>
+	[TestMethod]
+	public void RegisteredGenerators_ShouldHaveDistinctIdsAndExtensions()
+	{
+		// Arrange
+		ServiceCollection services = new();
+		services.AddLanguageGenerators();
+		ServiceProvider serviceProvider = services.BuildServiceProvider();
+
+		// Act
+		List<ILanguageGenerator> generators = [.. serviceProvider.GetServices<ILanguageGenerator>()];
+
+		// Assert
+		Assert.AreEqual(generators.Count, generators.Select(g => g.LanguageId).Distinct().Count(), "Language ids should be unique");
+		Assert.AreEqual(generators.Count, generators.Select(g => g.FileExtension).Distinct().Count(), "File extensions should be unique");
 	}
 
 	/// <summary>

@@ -1,4 +1,4 @@
-// Copyright (c) 2023-2026 ktsu-dev contributors
+﻿// Copyright (c) 2023-2026 ktsu-dev contributors
 
 namespace ktsu.Coder;
 
@@ -22,10 +22,8 @@ public static class ServiceCollectionExtensions
 		// Register all available language generators
 		services.AddSingleton<ILanguageGenerator, PythonGenerator>();
 		services.AddSingleton<ILanguageGenerator, CSharpGenerator>();
-
-		// TODO: Add more language generators as they are implemented
-		// services.AddSingleton<ILanguageGenerator, JavaScriptGenerator>();
-		// services.AddSingleton<ILanguageGenerator, CppGenerator>();
+		services.AddSingleton<ILanguageGenerator, JavaScriptGenerator>();
+		services.AddSingleton<ILanguageGenerator, CppGenerator>();
 
 		return services;
 	}

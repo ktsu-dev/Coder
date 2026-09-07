@@ -1,15 +1,14 @@
-// Copyright (c) 2023-2026 ktsu-dev contributors
+﻿// Copyright (c) 2023-2026 ktsu-dev contributors
 
 namespace ktsu.Coder.Languages;
 
-using System;
 using System.Text;
 using ktsu.Coder.Ast;
 
 /// <summary>
 /// Generates Python code from AST nodes.
 /// </summary>
-public class PythonGenerator : LanguageGeneratorBase
+public class PythonGenerator : StandardLanguageGenerator
 {
 	/// <summary>
 	/// Gets the unique identifier for this language generator.
@@ -27,133 +26,34 @@ public class PythonGenerator : LanguageGeneratorBase
 	public override string FileExtension => "py";
 
 	/// <summary>
-	/// Generates Python code with proper indentation.
+	/// Spells a boolean literal. Python capitalizes them.
 	/// </summary>
-	/// <param name="node">The AST node to generate code from.</param>
-	/// <param name="builder">The string builder to append code to.</param>
-	/// <param name="indentLevel">The current indentation level.</param>
-	protected override void GenerateInternal(AstNode node, StringBuilder builder, int indentLevel)
-	{
-		Ensure.NotNull(node);
-		Ensure.NotNull(builder);
-
-		switch (node)
-		{
-			case FunctionDeclaration funcDecl:
-				GenerateFunctionDeclaration(funcDecl, builder, indentLevel);
-				break;
-
-			case ReturnStatement returnStmt:
-				GenerateReturnStatement(returnStmt, builder, indentLevel);
-				break;
-
-			case BinaryExpression binaryExpr:
-				GenerateBinaryExpression(binaryExpr, builder);
-				break;
-
-			case VariableReference varRef:
-				builder.Append(varRef.Name);
-				break;
-
-			case LiteralExpression<string> stringLit:
-				builder.Append($"\"{EscapeString(stringLit.Value ?? string.Empty)}\"");
-				break;
-
-			case LiteralExpression<int> intLit:
-				builder.Append(intLit.Value);
-				break;
-
-			case LiteralExpression<bool> boolLit:
-				builder.Append(boolLit.Value ? "True" : "False");
-				break;
-
-			case LiteralExpression<double> doubleLit:
-				builder.Append(doubleLit.Value);
-				break;
-
-			case VariableDeclaration varDecl:
-				GenerateVariableDeclaration(varDecl, builder, indentLevel);
-				break;
-
-			case AssignmentStatement assignment:
-				GenerateAssignmentStatement(assignment, builder, indentLevel);
-				break;
-
-			// Legacy support for AstLeafNode types
-			case AstLeafNode<string> strLeaf:
-				builder.Append($"\"{EscapeString(strLeaf.Value ?? string.Empty)}\"");
-				break;
-
-			case AstLeafNode<int> intLeaf:
-				builder.Append(intLeaf.Value);
-				break;
-
-			case AstLeafNode<bool> boolLeaf:
-				builder.Append(boolLeaf.Value ? "True" : "False");
-				break;
-
-			default:
-				throw new NotSupportedException($"Unsupported node type for Python generation: {node.GetNodeTypeName()}");
-		}
-	}
+	/// <param name="value">The literal's value.</param>
+	/// <returns>The keyword Python uses.</returns>
+	protected override string FormatBoolean(bool value) => value ? "True" : "False";
 
 	/// <summary>
-	/// Determines whether this generator can generate code for the specified AST node.
+	/// Ends a statement. Python has no terminator, and the function body emits the line breaks, so
+	/// this deliberately writes nothing.
 	/// </summary>
-	/// <param name="astNode">The AST node to check.</param>
-	/// <returns>True if this generator can generate code for the node; otherwise, false.</returns>
-	public override bool CanGenerate(AstNode astNode)
+	/// <param name="builder">The string builder, left untouched.</param>
+	protected override void EndStatement(StringBuilder builder)
 	{
-		return astNode is not null and (FunctionDeclaration
-			or ReturnStatement
-			or BinaryExpression
-			or VariableReference
-			or LiteralExpression<string>
-			or LiteralExpression<int>
-			or LiteralExpression<bool>
-			or LiteralExpression<double>
-			or VariableDeclaration
-			or AssignmentStatement
-			or AstLeafNode<string>
-			or AstLeafNode<int>
-			or AstLeafNode<bool>);
+		// Python statements end at the newline the caller writes.
 	}
 
-	private void GenerateFunctionDeclaration(FunctionDeclaration funcDecl, StringBuilder builder, int indentLevel)
+	/// <inheritdoc/>
+	protected override void GenerateFunctionDeclaration(FunctionDeclaration funcDecl, StringBuilder builder, int indentLevel)
 	{
+		Ensure.NotNull(funcDecl);
+		Ensure.NotNull(builder);
+
 		// Function signature
 		Indent(builder, indentLevel);
 		builder.Append("def ");
 		builder.Append(funcDecl.Name ?? "unnamed_function");
 		builder.Append('(');
-
-		// Parameters
-		for (int i = 0; i < funcDecl.Parameters.Count; i++)
-		{
-			Parameter param = funcDecl.Parameters[i];
-
-			if (i > 0)
-			{
-				builder.Append(", ");
-			}
-
-			builder.Append(param.Name ?? $"param{i}");
-
-			// Add type hints if available
-			if (param.Type != null)
-			{
-				builder.Append(": ");
-				builder.Append(PythonTypeFromGenericType(param.Type));
-			}
-
-			// Add default value if optional
-			if (param.IsOptional && param.DefaultValue != null)
-			{
-				builder.Append(" = ");
-				builder.Append(param.DefaultValue);
-			}
-		}
-
+		GenerateParameterList(funcDecl.Parameters, builder);
 		builder.Append(')');
 
 		// Add return type hint if available
@@ -183,16 +83,22 @@ public class PythonGenerator : LanguageGeneratorBase
 		}
 	}
 
-	private void GenerateReturnStatement(ReturnStatement returnStmt, StringBuilder builder, int indentLevel)
+	/// <inheritdoc/>
+	protected override void GenerateParameter(Parameter parameter, StringBuilder builder, int position)
 	{
-		Indent(builder, indentLevel);
-		builder.Append("return");
+		Ensure.NotNull(parameter);
+		Ensure.NotNull(builder);
 
-		if (returnStmt.Expression != null)
+		builder.Append(parameter.Name ?? $"param{position}");
+
+		// Type hints are optional in Python, so they are emitted only when the AST carries one.
+		if (parameter.Type is not null)
 		{
-			builder.Append(' ');
-			GenerateInternal(returnStmt.Expression, builder, 0); // No indentation for the expression
+			builder.Append(": ");
+			builder.Append(PythonTypeFromGenericType(parameter.Type));
 		}
+
+		AppendDefaultValue(parameter, builder);
 	}
 
 	private static string PythonTypeFromGenericType(string genericType)
@@ -209,32 +115,12 @@ public class PythonGenerator : LanguageGeneratorBase
 		};
 	}
 
-	private static string EscapeString(string value)
+	/// <inheritdoc/>
+	protected override void GenerateVariableDeclaration(VariableDeclaration varDecl, StringBuilder builder, int indentLevel)
 	{
-		return value
-			.Replace("\\", "\\\\")
-			.Replace("\"", "\\\"")
-			.Replace("\n", "\\n")
-			.Replace("\r", "\\r")
-			.Replace("\t", "\\t");
-	}
+		Ensure.NotNull(varDecl);
+		Ensure.NotNull(builder);
 
-	private static void Indent(StringBuilder builder, int level) => builder.Append(new string(' ', level * 4));
-
-	private void GenerateBinaryExpression(BinaryExpression binaryExpr, StringBuilder builder)
-	{
-		// Add parentheses for clarity
-		builder.Append('(');
-		GenerateInternal(binaryExpr.Left, builder, 0);
-		builder.Append(' ');
-		builder.Append(GetPythonOperator(binaryExpr.Operator));
-		builder.Append(' ');
-		GenerateInternal(binaryExpr.Right, builder, 0);
-		builder.Append(')');
-	}
-
-	private void GenerateVariableDeclaration(VariableDeclaration varDecl, StringBuilder builder, int indentLevel)
-	{
 		Indent(builder, indentLevel);
 		builder.Append(varDecl.Name);
 
@@ -250,52 +136,16 @@ public class PythonGenerator : LanguageGeneratorBase
 		}
 	}
 
-	private void GenerateAssignmentStatement(AssignmentStatement assignment, StringBuilder builder, int indentLevel)
+	/// <summary>
+	/// Maps a binary operator to its Python spelling.
+	/// </summary>
+	/// <param name="op">The operator to map.</param>
+	/// <returns>The operator's source spelling.</returns>
+	/// <remarks>Only the logical operators differ from the C-family set: Python spells them as words.</remarks>
+	protected override string GetOperatorSpelling(BinaryOperator op) => op switch
 	{
-		Indent(builder, indentLevel);
-		GenerateInternal(assignment.Target, builder, 0);
-		builder.Append(' ');
-		builder.Append(GetPythonAssignmentOperator(assignment.Operator));
-		builder.Append(' ');
-		GenerateInternal(assignment.Value, builder, 0);
-	}
-
-	private static string GetPythonOperator(BinaryOperator op) => op switch
-	{
-		BinaryOperator.Add => "+",
-		BinaryOperator.Subtract => "-",
-		BinaryOperator.Multiply => "*",
-		BinaryOperator.Divide => "/",
-		BinaryOperator.Modulo => "%",
-		BinaryOperator.Equal => "==",
-		BinaryOperator.NotEqual => "!=",
-		BinaryOperator.LessThan => "<",
-		BinaryOperator.LessThanOrEqual => "<=",
-		BinaryOperator.GreaterThan => ">",
-		BinaryOperator.GreaterThanOrEqual => ">=",
 		BinaryOperator.LogicalAnd => "and",
 		BinaryOperator.LogicalOr => "or",
-		BinaryOperator.BitwiseAnd => "&",
-		BinaryOperator.BitwiseOr => "|",
-		BinaryOperator.BitwiseXor => "^",
-		BinaryOperator.LeftShift => "<<",
-		BinaryOperator.RightShift => ">>",
-		_ => throw new NotSupportedException($"Unsupported binary operator: {op}")
-	};
-
-	private static string GetPythonAssignmentOperator(AssignmentOperator op) => op switch
-	{
-		AssignmentOperator.Assign => "=",
-		AssignmentOperator.AddAssign => "+=",
-		AssignmentOperator.SubtractAssign => "-=",
-		AssignmentOperator.MultiplyAssign => "*=",
-		AssignmentOperator.DivideAssign => "/=",
-		AssignmentOperator.ModuloAssign => "%=",
-		AssignmentOperator.BitwiseAndAssign => "&=",
-		AssignmentOperator.BitwiseOrAssign => "|=",
-		AssignmentOperator.BitwiseXorAssign => "^=",
-		AssignmentOperator.LeftShiftAssign => "<<=",
-		AssignmentOperator.RightShiftAssign => ">>=",
-		_ => throw new NotSupportedException($"Unsupported assignment operator: {op}")
+		_ => GetBinaryOperator(op)
 	};
 }

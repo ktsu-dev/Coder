@@ -39,7 +39,15 @@ This makes it ideal for code generation tools, transpilers, and any application 
 
 ### Supported Target Languages
 
--   **Python**: Full support for function generation with type hints and proper indentation
+Resolve `IEnumerable<ILanguageGenerator>` and select on `LanguageId`, or construct a generator
+directly.
+
+| `LanguageId` | Generator | Extension | Notes |
+|---|---|---|---|
+| `python` | `PythonGenerator` | `py` | Type hints, `None` for void, `pass` for an empty body |
+| `csharp` | `CSharpGenerator` | `cs` | Mapped type names, `var` for inferred declarations |
+| `javascript` | `JavaScriptGenerator` | `js` | Untyped; `const`/`let`; strict `===` and `!==` |
+| `cpp` | `CppGenerator` | `cpp` | Mapped type spellings (`str` → `std::string`); `auto` for inferred declarations |
 
 ## Installation
 

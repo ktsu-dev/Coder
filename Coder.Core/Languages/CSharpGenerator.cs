@@ -1,4 +1,4 @@
-// Copyright (c) 2023-2026 ktsu-dev contributors
+﻿// Copyright (c) 2023-2026 ktsu-dev contributors
 
 namespace ktsu.Coder.Languages;
 
@@ -75,7 +75,13 @@ public class CSharpGenerator : LanguageGeneratorBase
 				GenerateAssignmentStatement(assignment, builder, indent);
 				break;
 			default:
-				builder.AppendLine($"{indent}// Unsupported node type: {node.GetType().Name}");
+				// The legacy AstLeafNode shapes are spelled the same in every language, so they come
+				// from the shared path; anything else is genuinely unrecognised.
+				if (!TryGenerateCommonNode(node, builder))
+				{
+					builder.AppendLine($"{indent}// Unsupported node type: {node.GetType().Name}");
+				}
+
 				break;
 		}
 	}
@@ -85,20 +91,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// </summary>
 	/// <param name="astNode">The AST node to check.</param>
 	/// <returns>True if this generator can generate code for the node; otherwise, false.</returns>
-	public override bool CanGenerate(AstNode astNode)
-	{
-		return astNode is not null and (FunctionDeclaration
-			or Parameter
-			or ReturnStatement
-			or BinaryExpression
-			or VariableReference
-			or LiteralExpression<string>
-			or LiteralExpression<int>
-			or LiteralExpression<bool>
-			or LiteralExpression<double>
-			or VariableDeclaration
-			or AssignmentStatement);
-	}
+	public override bool CanGenerate(AstNode astNode) => CanGenerateStandardNodes(astNode);
 
 	private void GenerateFunction(FunctionDeclaration function, StringBuilder builder, string indent)
 	{
@@ -190,7 +183,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 		builder.Append('(');
 		GenerateInternal(binaryExpr.Left, builder, 0);
 		builder.Append(' ');
-		builder.Append(GetCSharpOperator(binaryExpr.Operator));
+		builder.Append(GetBinaryOperator(binaryExpr.Operator));
 		builder.Append(' ');
 		GenerateInternal(binaryExpr.Right, builder, 0);
 		builder.Append(')');
@@ -227,58 +220,9 @@ public class CSharpGenerator : LanguageGeneratorBase
 		builder.Append(indent);
 		GenerateInternal(assignment.Target, builder, 0);
 		builder.Append(' ');
-		builder.Append(GetCSharpAssignmentOperator(assignment.Operator));
+		builder.Append(GetAssignmentOperator(assignment.Operator));
 		builder.Append(' ');
 		GenerateInternal(assignment.Value, builder, 0);
 		builder.AppendLine(";");
 	}
-
-	private static string EscapeString(string value)
-	{
-		return value
-			.Replace("\\", "\\\\")
-			.Replace("\"", "\\\"")
-			.Replace("\n", "\\n")
-			.Replace("\r", "\\r")
-			.Replace("\t", "\\t");
-	}
-
-	private static string GetCSharpOperator(BinaryOperator op) => op switch
-	{
-		BinaryOperator.Add => "+",
-		BinaryOperator.Subtract => "-",
-		BinaryOperator.Multiply => "*",
-		BinaryOperator.Divide => "/",
-		BinaryOperator.Modulo => "%",
-		BinaryOperator.Equal => "==",
-		BinaryOperator.NotEqual => "!=",
-		BinaryOperator.LessThan => "<",
-		BinaryOperator.LessThanOrEqual => "<=",
-		BinaryOperator.GreaterThan => ">",
-		BinaryOperator.GreaterThanOrEqual => ">=",
-		BinaryOperator.LogicalAnd => "&&",
-		BinaryOperator.LogicalOr => "||",
-		BinaryOperator.BitwiseAnd => "&",
-		BinaryOperator.BitwiseOr => "|",
-		BinaryOperator.BitwiseXor => "^",
-		BinaryOperator.LeftShift => "<<",
-		BinaryOperator.RightShift => ">>",
-		_ => throw new NotSupportedException($"Unsupported binary operator: {op}")
-	};
-
-	private static string GetCSharpAssignmentOperator(AssignmentOperator op) => op switch
-	{
-		AssignmentOperator.Assign => "=",
-		AssignmentOperator.AddAssign => "+=",
-		AssignmentOperator.SubtractAssign => "-=",
-		AssignmentOperator.MultiplyAssign => "*=",
-		AssignmentOperator.DivideAssign => "/=",
-		AssignmentOperator.ModuloAssign => "%=",
-		AssignmentOperator.BitwiseAndAssign => "&=",
-		AssignmentOperator.BitwiseOrAssign => "|=",
-		AssignmentOperator.BitwiseXorAssign => "^=",
-		AssignmentOperator.LeftShiftAssign => "<<=",
-		AssignmentOperator.RightShiftAssign => ">>=",
-		_ => throw new NotSupportedException($"Unsupported assignment operator: {op}")
-	};
 }
