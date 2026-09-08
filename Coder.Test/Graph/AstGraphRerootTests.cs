@@ -6,7 +6,7 @@ using System.Numerics;
 using ktsu.Coder.Ast;
 using ktsu.Coder.Graph;
 using ktsu.Coder.Languages;
-using ktsu.ImGuiNodeEditor;
+using ktsu.ImGui.NodeEditor;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 /// <summary>

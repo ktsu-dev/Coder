@@ -5,7 +5,7 @@ namespace ktsu.Coder.Test.Graph;
 using System.Numerics;
 using ktsu.Coder.Ast;
 using ktsu.Coder.Graph;
-using ktsu.ImGuiNodeEditor;
+using ktsu.ImGui.NodeEditor;
 using ktsu.UndoRedo;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 

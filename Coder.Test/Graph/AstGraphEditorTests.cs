@@ -256,7 +256,7 @@ public sealed class AstGraphEditorTests
 		using ImGuiAppHarness harness = ImGuiAppHarness.Start(ConfigFor(editor), Options);
 		harness.Step(300);
 
-		foreach (ktsu.ImGuiNodeEditor.Node node in editor.Graph.Engine.Nodes)
+		foreach (ktsu.ImGui.NodeEditor.Node node in editor.Graph.Engine.Nodes)
 		{
 			// One assertion per bound rather than a range: it says which edge the node went over.
 			Assert.IsGreaterThan(-200f, node.Position.X, $"{node.Name} drifted off the left to x {node.Position.X}");

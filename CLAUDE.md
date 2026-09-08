@@ -28,7 +28,7 @@ source in four target languages. The solution uses:
 - **ktsu.Sdk** — custom SDK providing shared build configuration
 - **MSTest.Sdk** — test project SDK with Microsoft Testing Platform
 - `Coder.Core` cross-targets `net10.0` and `net9.0`; `Coder.Graph` and `Coder.Editor` are `net10.0`
-  only, because `ktsu.ImGuiNodeEditor` and `ktsu.ImGui.App` are
+  only, because `ktsu.ImGui.NodeEditor` and `ktsu.ImGui.App` are
 
 ### Projects
 
@@ -60,7 +60,7 @@ source in four target languages. The solution uses:
 - `ktsu.CodeBlocker` — writes generated source, owning indentation and the line terminator
 - `ktsu.DeepClone` — cloning support for AST nodes
 - `YamlDotNet` — YAML serialization
-- `ktsu.ImGuiNodeEditor`, `Hexa.NET.ImGui`, `Hexa.NET.ImNodes` — the node-graph editor
+- `ktsu.ImGui.NodeEditor`, `Hexa.NET.ImGui`, `Hexa.NET.ImNodes` — the node-graph editor
 - `ktsu.ImGui.App` — the desktop application shell
 - `ktsu.UndoRedo.Core` — the graph editor's undo stack
 - `ktsu.Essentials` — filesystem and persistence providers the editor reads and writes through

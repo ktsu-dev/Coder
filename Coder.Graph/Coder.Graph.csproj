@@ -3,14 +3,14 @@
   <Sdk Name="ktsu.Sdk" />
 
   <PropertyGroup>
-    <!-- ktsu.ImGuiNodeEditor ships net10.0 only, so this library cannot cross-target the way
+    <!-- ktsu.ImGui.NodeEditor ships net10.0 only, so this library cannot cross-target the way
          Coder.Core does. Coder.Core stays free of any UI dependency. -->
     <TargetFramework>net10.0</TargetFramework>
     <TargetFrameworks></TargetFrameworks>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="ktsu.ImGuiNodeEditor" />
+    <PackageReference Include="ktsu.ImGui.NodeEditor" />
     <!-- The physics settings the graph enables are this package's type, named directly rather than
          inherited through the node editor. -->
     <PackageReference Include="ktsu.ForceDirectedLayout" />
