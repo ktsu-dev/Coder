@@ -65,15 +65,56 @@ public sealed class CoderEditorAppTests
 			settings ?? new EditorSettings());
 
 	/// <summary>
-	/// Tests that a fresh editor opens with something to attach to rather than a blank canvas.
+	/// Tests that a document containing an assignment survives being written and read back.
+	/// </summary>
+	/// <remarks>
+	/// AssignmentStatement's deserialization constructor built its placeholder target through the
+	/// VariableReference overload that rejects an empty name, so every load of a document holding one
+	/// threw before it could be overwritten. The default document has an assignment in it, so this is
+	/// the path a user takes by saving and reopening what the editor gave them.
+	/// </remarks>
+	[TestMethod]
+	public void Document_WithAnAssignment_RoundTripsThroughTheFileSystem()
+	{
+		DocumentStore store = NewStore();
+		CoderEditorApp app = NewApp(store);
+
+		string path = PathIn("assigning");
+		Assert.IsTrue(app.Save(path), app.Status);
+
+		CoderEditorApp reopened = NewApp(store);
+		Assert.IsTrue(reopened.Open(path), reopened.Status);
+
+		ClassDeclaration root = (ClassDeclaration)reopened.Editor.Graph.Root;
+		Assert.IsTrue(
+			root.Members.OfType<FunctionDeclaration>().SelectMany(m => m.Body).OfType<AssignmentStatement>().Any(),
+			"the reopened document should still hold its assignment");
+	}
+
+	/// <summary>
+	/// Tests that a fresh editor opens with something to read rather than a blank canvas.
 	/// </summary>
 	[TestMethod]
-	public void NewDocument_IsAFunctionWithSomethingToAttachTo()
+	public void NewDocument_IsAClassWithFieldsAndMethodsThatDoSomething()
 	{
-		FunctionDeclaration document = CoderEditorApp.NewDocument();
+		ClassDeclaration document = CoderEditorApp.NewDocument();
 
-		Assert.AreEqual("newFunction", document.Name);
-		Assert.AreEqual(1, document.Parameters.Count);
+		Assert.AreEqual("Counter", document.Name);
+
+		List<VariableDeclaration> fields = [.. document.Members.OfType<VariableDeclaration>()];
+		Assert.AreEqual(2, fields.Count, "the class should carry a couple of fields");
+		Assert.IsTrue(fields.TrueForAll(f => f.InitialValue is not null), "each field should be initialised");
+
+		List<FunctionDeclaration> methods = [.. document.Members.OfType<FunctionDeclaration>()];
+		Assert.AreEqual(2, methods.Count, "the class should carry a couple of methods");
+		Assert.IsTrue(methods.TrueForAll(m => m.Body.Count > 0), "each method should have a body");
+
+		Assert.IsTrue(
+			methods.SelectMany(m => m.Body).OfType<AssignmentStatement>().Any(a => a.Value is BinaryExpression),
+			"a method should assign the result of an expression");
+		Assert.IsTrue(
+			methods.SelectMany(m => m.Body).OfType<VariableDeclaration>().Any(v => v.InitialValue is BinaryExpression),
+			"a method should declare a local from an expression");
 	}
 
 	/// <summary>
@@ -92,8 +133,8 @@ public sealed class CoderEditorAppTests
 		CoderEditorApp reopened = NewApp(store);
 		Assert.IsTrue(reopened.Open(path), reopened.Status);
 
-		Assert.IsInstanceOfType<FunctionDeclaration>(reopened.Editor.Graph.Root);
-		Assert.AreEqual("newFunction", ((FunctionDeclaration)reopened.Editor.Graph.Root).Name);
+		Assert.IsInstanceOfType<ClassDeclaration>(reopened.Editor.Graph.Root);
+		Assert.AreEqual("Counter", ((ClassDeclaration)reopened.Editor.Graph.Root).Name);
 		Assert.AreEqual(path, reopened.DocumentPath);
 	}
 
@@ -259,11 +300,11 @@ public sealed class CoderEditorAppTests
 		CoderEditorApp app = NewApp(store, settings);
 
 		app.Regenerate();
-		StringAssert.Contains(app.GeneratedCode, "public void newFunction", StringComparison.Ordinal);
+		StringAssert.Contains(app.GeneratedCode, "public class Counter", StringComparison.Ordinal);
 
 		settings.PreviewLanguageId = "python";
 		app.Regenerate();
-		StringAssert.Contains(app.GeneratedCode, "def newFunction", StringComparison.Ordinal);
+		StringAssert.Contains(app.GeneratedCode, "def Add(self, amount: int)", StringComparison.Ordinal);
 	}
 
 	/// <summary>
@@ -367,7 +408,7 @@ public sealed class CoderEditorAppTests
 
 		Assert.IsNotNull(written);
 		Assert.AreEqual(Path.Combine(root, "greeting.cs"), written);
-		StringAssert.Contains(File.ReadAllText(written), "public void newFunction(int value)", StringComparison.Ordinal);
+		StringAssert.Contains(File.ReadAllText(written), "public int Add(int amount)", StringComparison.Ordinal);
 		StringAssert.Contains(app.Status, "Wrote", StringComparison.Ordinal);
 	}
 
@@ -521,7 +562,7 @@ public sealed class CoderEditorAppTests
 		CoderEditorApp app = NewApp(store);
 
 		// An operand nobody has filled in yet, which is what Validate reports.
-		FunctionDeclaration document = CoderEditorApp.NewDocument();
+		FunctionDeclaration document = new("incomplete") { ReturnType = "int" };
 		document.Body.Add(new ReturnStatement(
 			new BinaryExpression(AstSchema.Unfilled(), BinaryOperator.Add, AstSchema.Unfilled())));
 		Assert.IsTrue(app.Open(WriteDocument(store, document, PathIn("incomplete"))), app.Status);
