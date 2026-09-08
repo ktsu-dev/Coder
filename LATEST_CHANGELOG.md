@@ -1,6 +1,7 @@
-## v1.8.2 (patch)
+## v1.8.3 (patch)
 
-Changes since v1.8.1:
+Changes since v1.8.2:
 
-- Update ktsu.ImGui.App and related packages to version 3.20.0 ([@matt-edmondson](https://github.com/matt-edmondson))
+- Take the ImGui suite at 3.21.0 ([@Claude](https://github.com/Claude))
+- refactor: take the zoom from the node editor rather than doing it here [patch] ([@Claude](https://github.com/Claude))
 
