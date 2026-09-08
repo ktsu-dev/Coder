@@ -1,6 +1,6 @@
 // Copyright (c) 2023-2026 ktsu-dev contributors
 
-namespace ktsu.Coder.ConsoleApp;
+namespace ktsu.Coder.Cli;
 
 using ktsu.Coder.Ast;
 using ktsu.Coder.Languages;
@@ -135,7 +135,7 @@ public static class CoderCLI
 	private static void ShowHelp()
 	{
 		Console.WriteLine("Coder CLI - Code Generation Tool");
-		Console.WriteLine("Usage: Coder.CLI [options]");
+		Console.WriteLine("Usage: Coder.Cli [options]");
 		Console.WriteLine();
 		Console.WriteLine("Options:");
 		Console.WriteLine("  --help       Show this help message");

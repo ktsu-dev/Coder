@@ -27,25 +27,25 @@ source in four target languages. The solution uses:
 
 - **ktsu.Sdk** — custom SDK providing shared build configuration
 - **MSTest.Sdk** — test project SDK with Microsoft Testing Platform
-- `Coder.Core` cross-targets `net10.0` and `net9.0`; `Coder.Graph` and `Coder.Editor` are `net10.0`
+- `Coder` cross-targets `net10.0` and `net9.0`; `Coder.Graph` and `Coder.Editor` are `net10.0`
   only, because `ktsu.ImGui.NodeEditor` and `ktsu.ImGui.App` are
 
 ### Projects
 
-- `Coder.Core` — the AST, the YAML serializer and deserializer, and the language generators. No UI
+- `Coder` — the AST, the YAML serializer and deserializer, and the language generators. No UI
   dependency, which is why it can cross-target.
 - `Coder.Graph` — the node-graph view of an AST: `AstSchema`, `AstGraph`, `AstFields` and
   `AstGraphEditor`.
 - `Coder.Editor` — the desktop application: panes, menu, document store, settings.
-- `Coder.App`, `Coder.ConsoleApp` — sample applications.
+- `Coder.Cli` — the sample console application.
 - `Coder.Test` — MSTest suite covering all of the above.
 
 ### Key Files
 
-- `Coder.Core/Ast/*.cs` — one file per node type. `AstNode` is the base; `AstCompositeNode` adds a
+- `Coder/Ast/*.cs` — one file per node type. `AstNode` is the base; `AstCompositeNode` adds a
   keyed child dictionary; `Expression` marks the nodes that evaluate to a value.
-- `Coder.Core/Languages/LanguageGeneratorBase.cs` — the emitters every generator shares.
-- `Coder.Core/Languages/StandardLanguageGenerator.cs` — owns the node dispatch, so a derived
+- `Coder/Languages/LanguageGeneratorBase.cs` — the emitters every generator shares.
+- `Coder/Languages/StandardLanguageGenerator.cs` — owns the node dispatch, so a derived
   generator supplies only the syntax its language does not share. `CSharpGenerator` deliberately
   does not derive from it.
 - `Coder.Graph/AstSchema.cs` — the uniform view of the AST's parent/child structure, hand-written
@@ -64,7 +64,6 @@ source in four target languages. The solution uses:
 - `ktsu.ImGui.App` — the desktop application shell
 - `ktsu.UndoRedo.Core` — the graph editor's undo stack
 - `ktsu.Essentials` — filesystem and persistence providers the editor reads and writes through
-- `Spectre.Console` — the `Coder.App` sample's command-line interface
 
 ## Architecture
 
