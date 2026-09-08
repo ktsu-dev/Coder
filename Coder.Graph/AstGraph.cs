@@ -43,6 +43,25 @@ public sealed class AstGraph
 	/// </summary>
 	private const float SiblingSpacing = 110f;
 
+	/// <summary>
+	/// The clear space left between the boxes of two nodes.
+	/// </summary>
+	private const float NodeMargin = 24f;
+
+	/// <summary>
+	/// The furthest a pair of overlapping nodes is moved apart in one step, in pixels.
+	/// </summary>
+	/// <remarks>
+	/// The overlap is otherwise resolved in full each step, because a partial correction loses:
+	/// between two linked nodes the spring pulls them back together by more, every frame, than a
+	/// fraction of the overlap pushes them apart, and they come to rest still overlapping. Resolving
+	/// it in full and capping the step keeps the correction decisive and still lets a deep overlap —
+	/// two nodes dropped on the same spot — slide apart over several frames rather than jumping.
+	/// </remarks>
+	private const float MaxSeparationStep = 40f;
+
+	private const float SeparationTolerance = 0.5f;
+
 	private readonly Dictionary<AstNode, Vector2> positions = new(ReferenceEqualityComparer.Instance);
 	private readonly Dictionary<int, AstNode> nodesById = [];
 	private readonly Dictionary<AstNode, int> idsByNode = new(ReferenceEqualityComparer.Instance);
@@ -215,13 +234,87 @@ public sealed class AstGraph
 	}
 
 	/// <summary>
+	/// Eases apart any nodes whose boxes are on top of one another, by one step's worth.
+	/// </summary>
+	/// <returns>The deepest overlap found, in pixels, or zero when nothing overlapped.</returns>
+	/// <remarks>
+	/// The force-directed layout treats every node as a point: repulsion is computed between centres
+	/// and the link spring pulls to a fixed length, neither of which knows how wide a node is. Two
+	/// nodes can therefore sit at a perfectly comfortable distance by that measure and still have
+	/// their boxes squarely on top of each other, which is what a user sees. This resolves the
+	/// overlap the layout cannot see, working on the drawn rectangles rather than on centres.
+	/// <para>
+	/// Each overlap is resolved along the axis it is shallowest on, which is both the shorter push
+	/// and the one that leaves the arrangement the layout worked out most nearly as it was, and by no
+	/// more than <see cref="MaxSeparationStep"/> at a time, so a deep overlap slides apart over a few
+	/// frames rather than jumping.
+	/// </para>
+	/// </remarks>
+	public float SeparateOverlaps()
+	{
+		Node[] nodes = [.. Engine.Nodes];
+		Vector2[] moved = [.. nodes.Select(node => node.Position)];
+		float deepest = 0f;
+
+		for (int i = 0; i < nodes.Length; i++)
+		{
+			for (int j = i + 1; j < nodes.Length; j++)
+			{
+				Vector2 clearance = ((nodes[i].Dimensions + nodes[j].Dimensions) * 0.5f) + new Vector2(NodeMargin);
+				Vector2 first = moved[i] + (nodes[i].Dimensions * 0.5f);
+				Vector2 second = moved[j] + (nodes[j].Dimensions * 0.5f);
+				Vector2 between = second - first;
+				Vector2 overlap = clearance - Vector2.Abs(between);
+
+				if (overlap.X <= SeparationTolerance || overlap.Y <= SeparationTolerance)
+				{
+					continue;
+				}
+
+				// Never further than the overlap itself, so the pair cannot be driven past each other and
+				// back again, and shared equally between them so the arrangement's centre stays put.
+				float depth = Math.Min(overlap.X, overlap.Y);
+				float amount = Math.Min(depth, MaxSeparationStep) * 0.5f;
+
+				// A zero component has no side to be on, so the later node is pushed the positive way:
+				// an arbitrary choice, but a consistent one, which is what stops the pair jittering.
+				Vector2 push = overlap.X < overlap.Y
+					? new Vector2(amount * (between.X < 0f ? -1f : 1f), 0f)
+					: new Vector2(0f, amount * (between.Y < 0f ? -1f : 1f));
+
+				moved[j] += push;
+				moved[i] -= push;
+				deepest = Math.Max(deepest, depth);
+			}
+		}
+
+		for (int i = 0; i < nodes.Length; i++)
+		{
+			if (moved[i] != nodes[i].Position)
+			{
+				Engine.UpdateNodePosition(nodes[i].Id, moved[i]);
+			}
+		}
+
+		return deepest;
+	}
+
+	/// <summary>
 	/// Reports where a node currently sits.
 	/// </summary>
 	/// <param name="node">The node to locate.</param>
-	/// <returns>Its parent, slot and position, or <see cref="AstLocation.Detached"/> if it has no parent.</returns>
+	/// <returns>
+	/// Its parent, slot and position; <see cref="AstLocation.Root"/> if it is the document itself, or
+	/// <see cref="AstLocation.Detached"/> if it has no parent.
+	/// </returns>
 	public AstLocation LocationOf(AstNode node)
 	{
 		Ensure.NotNull(node);
+
+		if (ReferenceEquals(node, Root))
+		{
+			return AstLocation.Root;
+		}
 
 		foreach (AstNode subtree in Subtrees)
 		{
@@ -238,7 +331,10 @@ public sealed class AstGraph
 	/// Puts a node where a location says it belongs, taking it out of wherever it is now.
 	/// </summary>
 	/// <param name="node">The node to move.</param>
-	/// <param name="location">Where to put it. <see cref="AstLocation.Detached"/> leaves it parentless.</param>
+	/// <param name="location">
+	/// Where to put it. <see cref="AstLocation.Detached"/> leaves it parentless, and
+	/// <see cref="AstLocation.Root"/> makes it the document.
+	/// </param>
 	/// <returns>True if the node was moved.</returns>
 	/// <remarks>
 	/// This is the single operation every edit is expressed in terms of, and therefore the single
@@ -250,12 +346,23 @@ public sealed class AstGraph
 	/// <see cref="Rebuild"/>, so a command holding one would be reapplying an edit to whatever
 	/// happened to inherit that number.
 	/// </para>
+	/// <para>
+	/// The document's own node is moved like any other, by re-rooting: dropping a function into a
+	/// class the user has just created makes the class the document and the function its member,
+	/// which is what the gesture plainly means. The old root's location was
+	/// <see cref="AstLocation.Root"/>, so undoing it is the same move in reverse.
+	/// </para>
 	/// </remarks>
 	public bool MoveTo(AstNode node, AstLocation location)
 	{
 		Ensure.NotNull(node);
 
-		if (ReferenceEquals(node, Root))
+		if (location.IsRoot)
+		{
+			return MakeRoot(node);
+		}
+
+		if (ReferenceEquals(node, Root) && !TryRerootFor(location))
 		{
 			return false;
 		}
@@ -276,6 +383,66 @@ public sealed class AstGraph
 		}
 
 		Rebuild();
+		return true;
+	}
+
+	/// <summary>
+	/// Makes a node the document, and whatever was the document a loose node.
+	/// </summary>
+	/// <param name="node">The node to root the document at.</param>
+	/// <returns>True if the document was re-rooted.</returns>
+	/// <remarks>
+	/// The node that was the root is kept rather than dropped, since it is usually the thing the user
+	/// was working on. It only becomes loose when it is not already somewhere under the new root,
+	/// which is the case when the new root was pulled out of it.
+	/// </remarks>
+	private bool MakeRoot(AstNode node)
+	{
+		if (ReferenceEquals(node, Root) || !idsByNode.ContainsKey(node))
+		{
+			return false;
+		}
+
+		AstNode previous = Root;
+
+		DetachFromParent(node);
+		detached.Remove(node);
+		Root = node;
+
+		if (!Contains(node, previous))
+		{
+			detached.Add(previous);
+		}
+
+		Rebuild();
+		return true;
+	}
+
+	/// <summary>
+	/// Makes room for the document's own node to be attached somewhere, by making whatever adopts it
+	/// the document instead.
+	/// </summary>
+	/// <param name="location">Where the root is being attached.</param>
+	/// <returns>True once the graph has a root the location belongs to.</returns>
+	/// <remarks>
+	/// Only a loose subtree can adopt the root. Anywhere within the document is part of the root's
+	/// own subtree, and attaching it there would make the tree a cycle.
+	/// </remarks>
+	private bool TryRerootFor(AstLocation location)
+	{
+		if (location.Parent is null || location.Slot is null || !AstSchema.Accepts(location.Slot, Root))
+		{
+			return false;
+		}
+
+		AstNode? adopting = detached.FirstOrDefault(subtree => Contains(subtree, location.Parent));
+		if (adopting is null)
+		{
+			return false;
+		}
+
+		detached.Remove(adopting);
+		Root = adopting;
 		return true;
 	}
 

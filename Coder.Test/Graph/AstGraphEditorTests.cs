@@ -185,11 +185,12 @@ public sealed class AstGraphEditorTests
 		using ImGuiAppHarness harness = ImGuiAppHarness.Start(ConfigFor(editor), Options);
 		harness.Step(2);
 
-		// The canvas is the area the editor was given, less the room the inspector takes.
-		Assert.AreEqual(500f, editor.Graph.Engine.WorldOrigin.X, 0.5f);
+		// The canvas is the area the editor was given, less the column the inspector takes down the
+		// right of it. Its height is the whole of what was given, since nothing is reserved below.
 		Assert.IsTrue(
-			editor.Graph.Engine.WorldOrigin.Y is > 0f and < 300f,
-			$"the origin sat at y {editor.Graph.Engine.WorldOrigin.Y}, which is not inside a 600-tall area");
+			editor.Graph.Engine.WorldOrigin.X is > 0f and < 500f,
+			$"the origin sat at x {editor.Graph.Engine.WorldOrigin.X}, which is not inside a 1000-wide area with a panel on its right");
+		Assert.AreEqual(300f, editor.Graph.Engine.WorldOrigin.Y, 0.5f);
 	}
 
 	/// <summary>
@@ -210,6 +211,31 @@ public sealed class AstGraphEditorTests
 
 		Assert.AreEqual(editor.Graph.Engine.WorldOrigin.X, centre.X, 60f, "the document should arrive centred");
 		Assert.AreEqual(editor.Graph.Engine.WorldOrigin.Y, centre.Y, 60f, "the document should arrive centred");
+	}
+
+	/// <summary>
+	/// Tests that a running editor pulls apart nodes whose boxes are drawn over one another, so a
+	/// caption is never hidden behind the node in front of it.
+	/// </summary>
+	/// <remarks>
+	/// Drawn for real rather than asserted headlessly, because how big a node is drawn is only known
+	/// once it has been: the layout is told a node's size by the renderer that measured it, and this
+	/// covers that whole path rather than the arithmetic alone.
+	/// </remarks>
+	[TestMethod]
+	public void Editor_PullsOverlappingNodesApartAsItRuns()
+	{
+		AstGraphEditor editor = new(SampleFunction());
+
+		// Two nodes dropped all but on top of each other, which is what creating them from the palette
+		// without moving the mouse does.
+		editor.Add(new ClassDeclaration("Shape"), new Vector2(400, 300));
+		editor.Add(new VariableDeclaration("field", "int"), new Vector2(404, 304));
+
+		using ImGuiAppHarness harness = ImGuiAppHarness.Start(ConfigFor(editor), Options);
+		harness.Step(180);
+
+		Assert.AreEqual(0f, editor.Graph.SeparateOverlaps(), "three seconds of layout left nodes drawn over one another");
 	}
 
 	/// <summary>

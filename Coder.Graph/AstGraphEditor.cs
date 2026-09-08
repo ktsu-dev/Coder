@@ -103,14 +103,19 @@ public sealed class AstGraphEditor(AstNode root)
 	{
 		DrawToolbar();
 
-		// The inspector's room is taken out of the graph's rather than added below it: the caller gave
-		// this editor a fixed area, and a panel drawn past the bottom of it is one the user has to
+		// The inspector's room is taken out of the graph's rather than added beside it: the caller gave
+		// this editor a fixed area, and a panel drawn past the edge of it is one the user has to
 		// scroll a node editor to reach.
+		//
+		// It goes down the right-hand side rather than along the bottom because a node's properties
+		// are a column of labelled rows, which wants height and very little width — the shape a strip
+		// across the bottom has exactly backwards. It also leaves the graph its full height, which is
+		// the direction a tree of nodes grows in.
 		//
 		// The canvas gets a child window of its own because that is the only thing the node editor
 		// will size itself to: it fills whatever window it is drawn in, whatever size it is passed.
-		float reserved = ShowInspector ? InspectorHeight : 0f;
-		Vector2 graphSize = new(size.X, Math.Max(size.Y - reserved, MinimumGraphHeight));
+		float reserved = ShowInspector ? InspectorWidth : 0f;
+		Vector2 graphSize = new(Math.Max(size.X - reserved, MinimumGraphWidth), size.Y);
 
 		// The origin of the graph's own space is the middle of the canvas, and it is set every frame
 		// so it follows the window as that is resized. Node positions are canvas-relative, so an
@@ -147,27 +152,36 @@ public sealed class AstGraphEditor(AstNode root)
 
 		ImGui.EndChild();
 
-		DrawInspector();
+		if (ShowInspector)
+		{
+			ImGui.SameLine();
+			DrawInspector(new Vector2(Math.Max(reserved - ImGui.GetStyle().ItemSpacing.X, 1f), graphSize.Y));
+		}
 
 		if (LayoutRunning)
 		{
 			// Gravity pulls towards the world origin, which is what keeps an arrangement the user has
 			// not touched in the middle of the view rather than drifting out of it.
 			Graph.Engine.UpdatePhysics(deltaTime);
+
+			// The simulation has no idea how big a node is drawn, so it is content to leave two of
+			// them sitting on top of one another. Undoing that afterwards is what keeps every node's
+			// caption readable, which is the whole reason the layout runs.
+			Graph.SeparateOverlaps();
 		}
 
 		Problems = Graph.Validate();
 	}
 
 	/// <summary>
-	/// The height the inspector panel is given at the bottom of the editor's area.
+	/// The width the inspector panel is given down the right of the editor's area.
 	/// </summary>
-	private const float InspectorHeight = 210f;
+	private const float InspectorWidth = 280f;
 
 	/// <summary>
 	/// The least room the graph keeps, however little the editor was given.
 	/// </summary>
-	private const float MinimumGraphHeight = 120f;
+	private const float MinimumGraphWidth = 160f;
 
 	/// <summary>
 	/// Draws the row of controls above the graph.
@@ -259,15 +273,12 @@ public sealed class AstGraphEditor(AstNode root)
 	/// are edited by dragging; everything else about it is a value, and a value needs somewhere to be
 	/// typed.
 	/// </remarks>
-	private void DrawInspector()
+	/// <param name="size">The column to draw it in.</param>
+	private void DrawInspector(Vector2 size)
 	{
-		if (!ShowInspector)
-		{
-			return;
-		}
-
-		ImGui.Separator();
-		ImGui.BeginChild("ast-inspector", new Vector2(0, 0), ImGuiChildFlags.None, ImGuiWindowFlags.HorizontalScrollbar);
+		// Bordered rather than separated: down the side of the graph a rule is what tells the panel
+		// apart from the canvas it sits beside, where along the bottom a single line would do.
+		ImGui.BeginChild("ast-inspector", size, ImGuiChildFlags.Borders, ImGuiWindowFlags.HorizontalScrollbar);
 
 		AstNode? node = SelectedNode;
 		if (node is null)

@@ -28,15 +28,27 @@ public sealed record AstConnectResult(bool Success, string Message);
 /// <param name="Parent">The node holding it, or null when it has no parent.</param>
 /// <param name="Slot">The slot it fills, or null when it has no parent.</param>
 /// <param name="Index">Its position within a variadic slot; zero for a single-valued one.</param>
+/// <param name="IsRoot">Whether this is the document's own place rather than a slot of something else.</param>
 /// <remarks>
 /// A location names AST nodes rather than editor pins, because pin identifiers are reassigned by
 /// every rebuild while the nodes outlive them. That is what lets an undo step recorded before an
 /// edit still mean the same thing afterwards.
 /// </remarks>
-public readonly record struct AstLocation(AstNode? Parent, AstSlot? Slot, int Index)
+public readonly record struct AstLocation(AstNode? Parent, AstSlot? Slot, int Index, bool IsRoot = false)
 {
 	/// <summary>
 	/// Gets the location of a node that is in the graph but has no parent.
 	/// </summary>
 	public static AstLocation Detached => new(null, null, 0);
+
+	/// <summary>
+	/// Gets the place the document itself is rooted at.
+	/// </summary>
+	/// <remarks>
+	/// Told apart from <see cref="Detached"/>, which is parentless too: the root is the node every
+	/// walk of the document starts from, while a detached node is one the user has not wired up yet.
+	/// Naming it is what makes re-rooting an ordinary move — a function adopted into a class is
+	/// undone by moving it back to the root, rather than by an operation of its own.
+	/// </remarks>
+	public static AstLocation Root => new(null, null, 0, IsRoot: true);
 }

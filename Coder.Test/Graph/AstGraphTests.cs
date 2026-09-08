@@ -342,9 +342,13 @@ public class AstGraphTests
 	}
 
 	/// <summary>
-	/// Tests that the document's root cannot be moved anywhere, since a graph with no root has
+	/// Tests that the document's root is not simply cast loose, since a graph with no root has
 	/// nothing to generate from.
 	/// </summary>
+	/// <remarks>
+	/// It can still be adopted into a loose subtree, which re-roots the document rather than leaving
+	/// it without one; that is covered by <see cref="AstGraphRerootTests"/>.
+	/// </remarks>
 	[TestMethod]
 	public void MoveTo_RefusesTheRoot()
 	{

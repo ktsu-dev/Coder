@@ -117,6 +117,79 @@ public class AstGraphLayoutTests
 	}
 
 	/// <summary>
+	/// Tests that two nodes drawn on top of one another are pushed apart until their boxes no longer
+	/// overlap, which the simulation on its own will not do.
+	/// </summary>
+	/// <remarks>
+	/// The layout treats a node as a point: repulsion is measured between centres and the link spring
+	/// pulls to a fixed length, so two wide nodes can sit at a distance it is perfectly happy with and
+	/// still be squarely on top of each other. Node dimensions are measured while rendering, so they
+	/// are set here the way a frame would set them.
+	/// </remarks>
+	[TestMethod]
+	public void SeparateOverlaps_PushesOverlappingBoxesApart()
+	{
+		AstGraph graph = new(new FunctionDeclaration("total") { ReturnType = "int" });
+		graph.AddDetached(new VariableReference("a"), new Vector2(500, 300));
+		graph.AddDetached(new VariableReference("b"), new Vector2(520, 310));
+
+		Vector2 dimensions = new(180, 90);
+		foreach (Node node in graph.Engine.Nodes.ToArray())
+		{
+			graph.Engine.UpdateNodeDimensions(node.Id, dimensions);
+		}
+
+		Assert.IsTrue(graph.SeparateOverlaps() > 0f, "the nodes start on top of each other");
+
+		// Enough steps for a correction that is capped per step to finish.
+		for (int step = 0; step < 200 && graph.SeparateOverlaps() > 0f; step++)
+		{
+			// The separation is the work; the loop only has to run it until it reports nothing left.
+		}
+
+		Assert.AreEqual(0f, graph.SeparateOverlaps(), "the boxes should no longer overlap");
+
+		Node[] separated = [.. graph.Engine.Nodes];
+		for (int i = 0; i < separated.Length; i++)
+		{
+			for (int j = i + 1; j < separated.Length; j++)
+			{
+				bool apart = separated[i].Position.X + dimensions.X <= separated[j].Position.X
+					|| separated[j].Position.X + dimensions.X <= separated[i].Position.X
+					|| separated[i].Position.Y + dimensions.Y <= separated[j].Position.Y
+					|| separated[j].Position.Y + dimensions.Y <= separated[i].Position.Y;
+
+				Assert.IsTrue(apart, $"nodes {i} and {j} are still drawn over one another");
+			}
+		}
+	}
+
+	/// <summary>
+	/// Tests that a graph nothing overlaps in is left exactly as it is, so the separation cannot
+	/// unsettle an arrangement the layout has already finished.
+	/// </summary>
+	[TestMethod]
+	public void SeparateOverlaps_LeavesAClearArrangementAlone()
+	{
+		AstGraph graph = new(new FunctionDeclaration("total") { ReturnType = "int" });
+		graph.AddDetached(new VariableReference("a"), new Vector2(0, 0));
+		graph.AddDetached(new VariableReference("b"), new Vector2(600, 400));
+
+		foreach (Node node in graph.Engine.Nodes.ToArray())
+		{
+			graph.Engine.UpdateNodeDimensions(node.Id, new Vector2(120, 60));
+		}
+
+		// The document's own node was seeded near the origin, so it is moved well clear of both.
+		graph.Engine.UpdateNodePosition(graph.Engine.Nodes[0].Id, new Vector2(-600, -400));
+
+		Vector2[] before = [.. graph.Engine.Nodes.Select(node => node.Position)];
+
+		Assert.AreEqual(0f, graph.SeparateOverlaps());
+		CollectionAssert.AreEqual(before, graph.Engine.Nodes.Select(node => node.Position).ToArray());
+	}
+
+	/// <summary>
 	/// Measures how far the furthest node has moved from a remembered arrangement.
 	/// </summary>
 	/// <param name="from">The positions to compare against.</param>
