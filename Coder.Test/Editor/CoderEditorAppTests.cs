@@ -85,9 +85,9 @@ public sealed class CoderEditorAppTests
 		CoderEditorApp reopened = NewApp(store);
 		Assert.IsTrue(reopened.Open(path), reopened.Status);
 
-		ClassDeclaration root = (ClassDeclaration)reopened.Editor.Graph.Root;
+		ClassDeclaration reopenedRoot = (ClassDeclaration)reopened.Editor.Graph.Root;
 		Assert.IsTrue(
-			root.Members.OfType<FunctionDeclaration>().SelectMany(m => m.Body).OfType<AssignmentStatement>().Any(),
+			reopenedRoot.Members.OfType<FunctionDeclaration>().SelectMany(m => m.Body).OfType<AssignmentStatement>().Any(),
 			"the reopened document should still hold its assignment");
 	}
 
