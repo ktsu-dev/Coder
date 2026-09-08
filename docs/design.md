@@ -67,7 +67,7 @@ functionDeclaration:
 4. **Applications** ✅ **IMPLEMENTED**:
 
    * **CLI Application**: Command-line interface with demo functionality and code generation.
-   * **TUI Application**: Interactive terminal user interface using Spectre.Console for creating and managing functions.
+   * **Desktop Editor**: `Coder.Editor`, which edits the AST as a node graph on top of `ktsu.ImGui.App`.
 
 ### Architectural Design (SOLID Principles)
 
@@ -104,7 +104,7 @@ functionDeclaration:
 
 ```plaintext
 Coder/
-├── Coder.Core/
+├── Coder/
 │   ├── Ast/
 │   │   ├── AstNode.cs ✅
 │   │   ├── AstLeafNode.cs ✅
@@ -132,10 +132,8 @@ Coder/
 │   ├── Serialization/
 │   │   └── YamlSerializationTests.cs ✅
 │   └── ServiceCollectionExtensionsTests.cs ✅
-├── Coder.CLI/
-│   └── SampleCLI.cs ✅
-└── Coder.App/
-    └── Program.cs ✅ (TUI with Spectre.Console)
+└── Coder.Cli/
+    └── SampleCLI.cs ✅
 ```
 
 ### Core Interfaces and Classes

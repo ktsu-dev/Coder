@@ -24,7 +24,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Coder.Core\Coder.Core.csproj" />
+    <ProjectReference Include="..\Coder\Coder.csproj" />
     <ProjectReference Include="..\Coder.Graph\Coder.Graph.csproj" />
     <ProjectReference Include="..\Coder.Editor\Coder.Editor.csproj" />
   </ItemGroup>

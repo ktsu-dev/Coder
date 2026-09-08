@@ -1,6 +1,6 @@
 // Copyright (c) 2023-2026 ktsu-dev contributors
 
-namespace ktsu.Coder.ConsoleApp;
+namespace ktsu.Coder.Cli;
 
 using ktsu.Coder.Ast;
 using ktsu.Coder.Languages;
