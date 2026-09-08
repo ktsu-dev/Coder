@@ -82,14 +82,18 @@ public sealed record AstField(string Name, AstFieldKind Kind, string Value, IRea
 public static class AstFields
 {
 	/// <summary>
-	/// The access modifiers a class declaration offers.
+	/// The visibilities a declaration offers.
 	/// </summary>
-	private static readonly IReadOnlyList<AstFieldChoice> AccessModifiers =
+	/// <remarks>
+	/// Built from the enumeration so a visibility the AST gains appears in the inspector without
+	/// anyone remembering to list it here. <see cref="Visibility.Unspecified"/> is labelled for what
+	/// it means rather than by its name: it is not a fifth modifier, it is the absence of one.
+	/// </remarks>
+	private static readonly IReadOnlyList<AstFieldChoice> Visibilities =
 	[
-		new("public", "public"),
-		new("internal", "internal"),
-		new("protected", "protected"),
-		new("private", "private"),
+		.. Enum.GetValues<Visibility>().Select(visibility => new AstFieldChoice(
+			visibility.ToString(),
+			visibility == Visibility.Unspecified ? "(language default)" : visibility.ToString().ToLowerInvariant())),
 	];
 
 	/// <summary>
@@ -107,13 +111,20 @@ public static class AstFields
 			[
 				new("Name", AstFieldKind.Text, classDecl.Name ?? string.Empty),
 				new("BaseType", AstFieldKind.Text, classDecl.BaseType ?? string.Empty),
-				new("Access", AstFieldKind.Choice, classDecl.AccessModifier ?? "public", AccessModifiers),
+				new("Visibility", AstFieldKind.Choice, classDecl.Visibility.ToString(), Visibilities),
 			],
 
 			FunctionDeclaration function =>
 			[
 				new("Name", AstFieldKind.Text, function.Name ?? string.Empty),
 				new("ReturnType", AstFieldKind.Text, function.ReturnType ?? string.Empty),
+				new("Visibility", AstFieldKind.Choice, function.Visibility.ToString(), Visibilities),
+			],
+
+			EntryPoint entryPoint =>
+			[
+				new("Arguments", AstFieldKind.Flag, Spell(entryPoint.AcceptsArguments)),
+				new("ExitCode", AstFieldKind.Flag, Spell(entryPoint.ReturnsExitCode)),
 			],
 
 			Parameter parameter =>
@@ -130,7 +141,7 @@ public static class AstFields
 				new("Type", AstFieldKind.Text, varDecl.Type ?? string.Empty),
 				new("Constant", AstFieldKind.Flag, Spell(varDecl.IsConstant)),
 				new("Inferred", AstFieldKind.Flag, Spell(varDecl.IsTypeInferred)),
-				new("Access", AstFieldKind.Text, varDecl.AccessModifier ?? string.Empty),
+				new("Visibility", AstFieldKind.Choice, varDecl.Visibility.ToString(), Visibilities),
 			],
 
 			VariableReference varRef =>
@@ -207,10 +218,18 @@ public static class AstFields
 		{
 			(ClassDeclaration classDecl, "Name") => Assign(() => classDecl.Name = OrNull(value)),
 			(ClassDeclaration classDecl, "BaseType") => Assign(() => classDecl.BaseType = OrNull(value)),
-			(ClassDeclaration classDecl, "Access") => Assign(() => classDecl.AccessModifier = OrNull(value)),
+			(ClassDeclaration classDecl, "Visibility") =>
+				TryParseVisibility(value, out Visibility classVisibility) && Assign(() => classDecl.Visibility = classVisibility),
 
 			(FunctionDeclaration function, "Name") => Assign(() => function.Name = OrNull(value)),
 			(FunctionDeclaration function, "ReturnType") => Assign(() => function.ReturnType = OrNull(value)),
+			(FunctionDeclaration function, "Visibility") =>
+				TryParseVisibility(value, out Visibility functionVisibility) && Assign(() => function.Visibility = functionVisibility),
+
+			(EntryPoint entryPoint, "Arguments") =>
+				TryParseBool(value, out bool acceptsArguments) && Assign(() => entryPoint.AcceptsArguments = acceptsArguments),
+			(EntryPoint entryPoint, "ExitCode") =>
+				TryParseBool(value, out bool returnsExitCode) && Assign(() => entryPoint.ReturnsExitCode = returnsExitCode),
 
 			(Parameter parameter, "Name") => Assign(() => parameter.Name = OrNull(value)),
 			(Parameter parameter, "Type") => Assign(() => parameter.Type = OrNull(value)),
@@ -221,7 +240,8 @@ public static class AstFields
 			(VariableDeclaration varDecl, "Type") => Assign(() => varDecl.Type = OrNull(value)),
 			(VariableDeclaration varDecl, "Constant") => TryParseBool(value, out bool constant) && Assign(() => varDecl.IsConstant = constant),
 			(VariableDeclaration varDecl, "Inferred") => TryParseBool(value, out bool inferred) && Assign(() => varDecl.IsTypeInferred = inferred),
-			(VariableDeclaration varDecl, "Access") => Assign(() => varDecl.AccessModifier = OrNull(value)),
+			(VariableDeclaration varDecl, "Visibility") =>
+				TryParseVisibility(value, out Visibility varVisibility) && Assign(() => varDecl.Visibility = varVisibility),
 
 			(VariableReference varRef, "Name") => value.Length > 0 && Assign(() => varRef.Name = value),
 
@@ -315,6 +335,11 @@ public static class AstFields
 		double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out result);
 
 	private static bool TryParseBool(string value, out bool result) => bool.TryParse(value, out result);
+
+	// Case-insensitively, so a document hand-edited with "public" reads back the same as the
+	// inspector's own "Public".
+	private static bool TryParseVisibility(string value, out Visibility result) =>
+		Enum.TryParse(value, ignoreCase: true, out result);
 
 	private static string Spell(bool value) => value ? "true" : "false";
 

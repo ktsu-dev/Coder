@@ -45,6 +45,9 @@ public class CSharpGenerator : LanguageGeneratorBase
 			case FunctionDeclaration function:
 				GenerateFunction(function, code);
 				break;
+			case EntryPoint entryPoint:
+				GenerateEntryPoint(entryPoint, code);
+				break;
 			case Parameter parameter:
 				GenerateParameter(parameter, code);
 				break;
@@ -108,7 +111,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// </remarks>
 	private void GenerateClass(ClassDeclaration classDecl, CodeBlocker code)
 	{
-		code.Write($"{classDecl.AccessModifier ?? "public"} class {classDecl.Name ?? "UnnamedClass"}");
+		code.Write($"{SpellVisibility(classDecl.Visibility) ?? "public"} class {classDecl.Name ?? "UnnamedClass"}");
 
 		if (!string.IsNullOrEmpty(classDecl.BaseType))
 		{
@@ -127,8 +130,9 @@ public class CSharpGenerator : LanguageGeneratorBase
 
 	private void GenerateFunction(FunctionDeclaration function, CodeBlocker code)
 	{
-		// Build method signature
-		code.Write($"public {MapToCSType(function.ReturnType ?? "void")} {function.Name}(");
+		// Build method signature. A function nobody has given a visibility to is public: an
+		// inaccessible method is not what someone who wrote no modifier meant.
+		code.Write($"{SpellVisibility(function.Visibility) ?? "public"} {MapToCSType(function.ReturnType ?? "void")} {function.Name}(");
 
 		// Add parameters
 		for (int i = 0; i < function.Parameters.Count; i++)
@@ -188,9 +192,9 @@ public class CSharpGenerator : LanguageGeneratorBase
 
 		// A local has no access modifier and a field usually does, and the AST distinguishes the two
 		// by whether one was set: emitting it only when present keeps both correct.
-		if (!string.IsNullOrEmpty(varDecl.AccessModifier))
+		if (SpellVisibility(varDecl.Visibility) is string modifier)
 		{
-			code.Write($"{varDecl.AccessModifier} ");
+			code.Write($"{modifier} ");
 		}
 
 		// A C# constant must name its type, so an inferred one stays a plain declaration rather than
@@ -209,5 +213,34 @@ public class CSharpGenerator : LanguageGeneratorBase
 		}
 
 		code.WriteLine(";");
+	}
+
+	/// <summary>
+	/// Emits the program's entry point as C#'s <c>Main</c> method.
+	/// </summary>
+	/// <param name="entryPoint">The entry point to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// Always <c>static</c>, and named with the capital C# gives it. The method is emitted on its own
+	/// rather than wrapped in a class, because a C# entry point is an ordinary member of whatever
+	/// class the document puts it in — including one this generator emits around it.
+	/// </remarks>
+	private void GenerateEntryPoint(EntryPoint entryPoint, CodeBlocker code)
+	{
+		code.Write($"public static {(entryPoint.ReturnsExitCode ? "int" : "void")} Main(");
+
+		if (entryPoint.AcceptsArguments)
+		{
+			code.Write("string[] args");
+		}
+
+		// The line is ended before the scope opens, so C#'s brace lands on its own line.
+		code.WriteLine(")");
+
+		using Scope body = new(code);
+		foreach (AstNode statement in entryPoint.Body)
+		{
+			GenerateInternal(statement, code);
+		}
 	}
 }

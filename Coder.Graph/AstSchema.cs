@@ -45,6 +45,7 @@ public static class AstSchema
 	{
 		ClassDeclaration => [MembersSlot],
 		FunctionDeclaration => [ParametersSlot, BodySlot],
+		EntryPoint => [BodySlot],
 		ReturnStatement => [ExpressionSlot],
 		BinaryExpression => [LeftSlot, RightSlot],
 		UnaryExpression => [OperandSlot],
@@ -87,6 +88,7 @@ public static class AstSchema
 			(ClassDeclaration classDecl, "Members") => [.. classDecl.Members],
 			(FunctionDeclaration function, "Parameters") => [.. function.Parameters],
 			(FunctionDeclaration function, "Body") => [.. function.Body],
+			(EntryPoint entryPoint, "Body") => [.. entryPoint.Body],
 			_ when SlotsOf(node).Contains(slot) => [],
 			_ => throw new ArgumentException($"{node.GetNodeTypeName()} has no slot named '{slot.Name}'.", nameof(slot)),
 		};
@@ -161,6 +163,10 @@ public static class AstSchema
 				function.Body.Add(child);
 				return true;
 
+			case (EntryPoint entryPoint, "Body"):
+				entryPoint.Body.Add(child);
+				return true;
+
 			case (ClassDeclaration classDecl, "Members"):
 				classDecl.Members.Add(child);
 				return true;
@@ -188,6 +194,10 @@ public static class AstSchema
 
 			case (FunctionDeclaration function, "Body"):
 				function.Body[index] = child;
+				return true;
+
+			case (EntryPoint entryPoint, "Body"):
+				entryPoint.Body[index] = child;
 				return true;
 
 			case (ClassDeclaration classDecl, "Members"):
@@ -266,6 +276,10 @@ public static class AstSchema
 				function.Body.RemoveAt(index);
 				return true;
 
+			case (EntryPoint entryPoint, "Body") when index < entryPoint.Body.Count:
+				entryPoint.Body.RemoveAt(index);
+				return true;
+
 			case (ClassDeclaration classDecl, "Members") when index < classDecl.Members.Count:
 				classDecl.Members.RemoveAt(index);
 				return true;
@@ -332,8 +346,10 @@ public static class AstSchema
 		{
 			AstSlotKind.Parameter => candidate is Parameter,
 			AstSlotKind.Expression => IsExpression(candidate),
-			AstSlotKind.Statement => candidate is not Parameter,
-			AstSlotKind.Member => candidate is FunctionDeclaration or VariableDeclaration or ClassDeclaration,
+			// A parameter is not a statement, and neither is an entry point: a program starts
+			// running at one, so it belongs to a class or to the document rather than inside a body.
+			AstSlotKind.Statement => candidate is not (Parameter or EntryPoint),
+			AstSlotKind.Member => candidate is FunctionDeclaration or VariableDeclaration or ClassDeclaration or EntryPoint,
 			_ => false,
 		};
 	}
@@ -367,6 +383,7 @@ public static class AstSchema
 		{
 			ClassDeclaration classDecl => $"class {classDecl.Name ?? "<unnamed>"}",
 			FunctionDeclaration function => $"function {function.Name ?? "<unnamed>"}",
+			EntryPoint => "entry point",
 			Parameter parameter => $"param {parameter.Name ?? "<unnamed>"}",
 			ReturnStatement => "return",
 			BinaryExpression binary => $"binary {SpellOrName(binary.Operator)}",

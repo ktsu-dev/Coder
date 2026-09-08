@@ -16,7 +16,7 @@ using System.Collections.ObjectModel;
 /// its declaration syntax, and interfaces are a language feature the AST does not model yet.
 /// </para>
 /// </remarks>
-public class ClassDeclaration : AstCompositeNode
+public class ClassDeclaration : AstCompositeNode, IHasVisibility
 {
 	/// <summary>
 	/// Initializes a new instance of the <see cref="ClassDeclaration"/> class.
@@ -42,9 +42,9 @@ public class ClassDeclaration : AstCompositeNode
 	public string? BaseType { get; set; }
 
 	/// <summary>
-	/// Gets or sets the visibility/access modifier (public, internal, …), or null for the language's default.
+	/// Gets or sets how widely the class is visible.
 	/// </summary>
-	public string? AccessModifier { get; set; }
+	public Visibility Visibility { get; set; }
 
 	/// <summary>
 	/// Gets the members the class declares, in the order they should be emitted.
@@ -67,7 +67,7 @@ public class ClassDeclaration : AstCompositeNode
 		{
 			Name = Name,
 			BaseType = BaseType,
-			AccessModifier = AccessModifier
+			Visibility = Visibility
 		};
 
 		foreach ((string key, object? value) in Metadata)

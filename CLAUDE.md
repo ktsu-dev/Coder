@@ -43,7 +43,10 @@ source in four target languages. The solution uses:
 ### Key Files
 
 - `Coder/Ast/*.cs` — one file per node type. `AstNode` is the base; `AstCompositeNode` adds a
-  keyed child dictionary; `Expression` marks the nodes that evaluate to a value.
+  keyed child dictionary; `Expression` marks the nodes that evaluate to a value. `Visibility` is an
+  enumeration rather than the modifier's text, because each generator spells it differently — or,
+  in Python's case, not at all — and `IHasVisibility` is how a generator reads it off a member
+  without switching on which kind of member it is.
 - `Coder/Languages/LanguageGeneratorBase.cs` — the emitters every generator shares.
 - `Coder/Languages/StandardLanguageGenerator.cs` — owns the node dispatch, so a derived
   generator supplies only the syntax its language does not share. `CSharpGenerator` deliberately

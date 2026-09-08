@@ -137,13 +137,13 @@ public class ClassDeclarationTests
 	}
 
 	/// <summary>
-	/// Tests that the access modifier a class carries is the one emitted, and that a class without one
+	/// Tests that the visibility a class carries is the one emitted, and that a class without one
 	/// is public rather than nothing at all.
 	/// </summary>
 	[TestMethod]
-	public void CSharp_UsesTheDeclaredAccessModifier()
+	public void CSharp_UsesTheDeclaredVisibility()
 	{
-		ClassDeclaration declaration = new("Point") { AccessModifier = "internal" };
+		ClassDeclaration declaration = new("Point") { Visibility = Visibility.Internal };
 
 		StringAssert.StartsWith(new CSharpGenerator().Generate(declaration), "internal class Point", StringComparison.Ordinal);
 		StringAssert.StartsWith(new CSharpGenerator().Generate(new ClassDeclaration("Point")), "public class Point", StringComparison.Ordinal);
@@ -252,13 +252,13 @@ public class ClassDeclarationTests
 	public void Yaml_RoundTripsANestedClass()
 	{
 		ClassDeclaration outer = new("Outer");
-		outer.Members.Add(new ClassDeclaration("Inner") { AccessModifier = "private" });
+		outer.Members.Add(new ClassDeclaration("Inner") { Visibility = Visibility.Private });
 
 		string yaml = new YamlSerializer().Serialize(outer);
 		ClassDeclaration restored = (ClassDeclaration)new YamlDeserializer().Deserialize(yaml)!;
 
 		Assert.IsInstanceOfType<ClassDeclaration>(restored.Members.Single());
 		Assert.AreEqual("Inner", ((ClassDeclaration)restored.Members[0]).Name);
-		Assert.AreEqual("private", ((ClassDeclaration)restored.Members[0]).AccessModifier);
+		Assert.AreEqual(Visibility.Private, ((ClassDeclaration)restored.Members[0]).Visibility);
 	}
 }

@@ -55,6 +55,8 @@ public partial class YamlDeserializer
 			"ClassDeclaration" => DeserializeClassDeclaration(nodeData),
 			"functionDeclaration" => DeserializeFunctionDeclaration(nodeData),
 			"FunctionDeclaration" => DeserializeFunctionDeclaration(nodeData),
+			"entryPoint" => DeserializeEntryPoint(nodeData),
+			"EntryPoint" => DeserializeEntryPoint(nodeData),
 			"parameter" => DeserializeParameter(nodeData),
 			"Parameter" => DeserializeParameter(nodeData),
 			"returnStatement" => DeserializeReturnStatement(nodeData ?? new object()),
@@ -122,6 +124,73 @@ public partial class YamlDeserializer
 		{
 			funcDecl.ReturnType = returnTypeObj?.ToString();
 		}
+
+		DeserializeVisibility(funcDecl, dict);
+	}
+
+	/// <summary>
+	/// Reads a declaration's visibility, leaving it <see cref="Visibility.Unspecified"/> when the
+	/// document does not say.
+	/// </summary>
+	/// <param name="declaration">The declaration being read into.</param>
+	/// <param name="dict">The mapping the node was written as.</param>
+	/// <remarks>
+	/// <c>accessModifier</c> is read as well as <c>visibility</c>: documents written before visibility
+	/// became an enumeration spell it that way, and a saved document should not stop opening because
+	/// the library changed how it models the same idea.
+	/// </remarks>
+	private static void DeserializeVisibility(IHasVisibility declaration, Dictionary<object, object> dict)
+	{
+		if ((dict.TryGetValue("visibility", out object? visibilityObj) || dict.TryGetValue("accessModifier", out visibilityObj))
+			&& Enum.TryParse(visibilityObj?.ToString(), ignoreCase: true, out Visibility visibility))
+		{
+			declaration.Visibility = visibility;
+		}
+	}
+
+	private EntryPoint DeserializeEntryPoint(object? nodeData)
+	{
+		EntryPoint entryPoint = new();
+		if (nodeData is not Dictionary<object, object> dict)
+		{
+			return entryPoint;
+		}
+
+		if (dict.TryGetValue("acceptsArguments", out object? argumentsObj)
+			&& bool.TryParse(argumentsObj?.ToString(), out bool acceptsArguments))
+		{
+			entryPoint.AcceptsArguments = acceptsArguments;
+		}
+
+		if (dict.TryGetValue("returnsExitCode", out object? exitCodeObj)
+			&& bool.TryParse(exitCodeObj?.ToString(), out bool returnsExitCode))
+		{
+			entryPoint.ReturnsExitCode = returnsExitCode;
+		}
+
+		if (dict.TryGetValue("body", out object? bodyObj) && bodyObj is List<object> bodyList)
+		{
+			foreach (object statementObj in bodyList)
+			{
+				if (statementObj is not Dictionary<object, object> statementDict)
+				{
+					continue;
+				}
+
+				foreach ((object statementType, object statementData) in statementDict)
+				{
+					AstNode? statement = DeserializeNode(statementType.ToString() ?? string.Empty, statementData);
+					if (statement != null)
+					{
+						entryPoint.Body.Add(statement);
+					}
+				}
+			}
+		}
+
+		DeserializeMetadata(entryPoint, dict);
+
+		return entryPoint;
 	}
 
 	private static void DeserializeFunctionParameters(FunctionDeclaration funcDecl, Dictionary<object, object> dict)
@@ -185,10 +254,7 @@ public partial class YamlDeserializer
 			classDecl.BaseType = baseTypeObj?.ToString();
 		}
 
-		if (dict.TryGetValue("accessModifier", out object? accessObj))
-		{
-			classDecl.AccessModifier = accessObj?.ToString();
-		}
+		DeserializeVisibility(classDecl, dict);
 
 		DeserializeClassMembers(classDecl, dict);
 		DeserializeMetadata(classDecl, dict);
@@ -237,7 +303,7 @@ public partial class YamlDeserializer
 
 	private void DeserializeFunctionChildren(FunctionDeclaration funcDecl, Dictionary<object, object> dict)
 	{
-		HashSet<string> knownKeys = ["name", "returnType", "parameters", "body", "metadata"];
+		HashSet<string> knownKeys = ["name", "returnType", "visibility", "accessModifier", "parameters", "body", "metadata"];
 
 		foreach ((object key, object value) in dict)
 		{
@@ -498,10 +564,7 @@ public partial class YamlDeserializer
 				varDecl.IsTypeInferred = isInferred;
 			}
 
-			if (dict.TryGetValue("accessModifier", out object? modifierObj))
-			{
-				varDecl.AccessModifier = modifierObj.ToString();
-			}
+			DeserializeVisibility(varDecl, dict);
 
 			DeserializeMetadata(varDecl, dict);
 		}

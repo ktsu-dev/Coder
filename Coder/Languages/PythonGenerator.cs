@@ -8,6 +8,14 @@ using ktsu.CodeBlocker;
 /// <summary>
 /// Generates Python code from AST nodes.
 /// </summary>
+/// <remarks>
+/// Python has neither access modifiers nor constants, so <see cref="Visibility"/> and
+/// <see cref="VariableDeclaration.IsConstant"/> are deliberately dropped, the same way JavaScript
+/// drops the types the AST carries. The conventions Python does have for both — a leading underscore
+/// for a non-public member, an upper-case name for a constant — are spellings of the identifier
+/// rather than modifiers on the declaration, and renaming a declaration here would leave every
+/// <see cref="VariableReference"/> to it naming something that no longer exists.
+/// </remarks>
 public class PythonGenerator : StandardLanguageGenerator
 {
 	/// <summary>
@@ -171,6 +179,64 @@ public class PythonGenerator : StandardLanguageGenerator
 	}
 
 	/// <inheritdoc/>
+	/// <remarks>
+	/// The function is emitted with the <c>__main__</c> guard that runs it, which is how a Python
+	/// file is both a script and an importable module. Arguments and the exit code go through
+	/// <c>sys</c>, so the import it needs is emitted with it — the entry point is the top of a file,
+	/// which is the one place a generator can put an import without knowing what else the document
+	/// holds.
+	/// </remarks>
+	protected override void GenerateEntryPoint(EntryPoint entryPoint, CodeBlocker code)
+	{
+		Ensure.NotNull(entryPoint);
+		Ensure.NotNull(code);
+
+		bool needsSys = entryPoint.AcceptsArguments || entryPoint.ReturnsExitCode;
+		if (needsSys)
+		{
+			code.WriteLine("import sys");
+			code.WriteLine();
+			code.WriteLine();
+		}
+
+		code.Write("def main(");
+
+		if (entryPoint.AcceptsArguments)
+		{
+			code.Write("args");
+		}
+
+		code.WriteLine("):");
+
+		// Python's body is delimited by indentation alone, so there is no brace scope to open.
+		using (IndentScope body = new(code))
+		{
+			if (entryPoint.Body.Count == 0)
+			{
+				code.WriteLine("pass");
+			}
+			else
+			{
+				// EndStatement writes nothing for Python, so the line break is this loop's to write.
+				foreach (AstNode statement in entryPoint.Body)
+				{
+					GenerateInternal(statement, code);
+					code.WriteLine();
+				}
+			}
+		}
+
+		// PEP 8 puts two blank lines between a top-level definition and what follows it.
+		code.WriteLine();
+		code.WriteLine();
+		code.WriteLine("if __name__ == \"__main__\":");
+
+		using IndentScope guard = new(code);
+		string call = entryPoint.AcceptsArguments ? "main(sys.argv[1:])" : "main()";
+		code.WriteLine(entryPoint.ReturnsExitCode ? $"sys.exit({call})" : call);
+	}
+
+	/// <inheritdoc/>
 	protected override void GenerateParameter(Parameter parameter, CodeBlocker code, int position)
 	{
 		Ensure.NotNull(parameter);
@@ -202,6 +268,11 @@ public class PythonGenerator : StandardLanguageGenerator
 	}
 
 	/// <inheritdoc/>
+	/// <remarks>
+	/// A constant is emitted as an ordinary assignment: Python has no constant declaration, and the
+	/// upper-case naming that stands in for one is a convention about the identifier rather than
+	/// something the declaration can say.
+	/// </remarks>
 	protected override void GenerateVariableDeclaration(VariableDeclaration varDecl, CodeBlocker code)
 	{
 		Ensure.NotNull(varDecl);

@@ -7,7 +7,7 @@ using System.Collections.ObjectModel;
 /// <summary>
 /// Represents a function declaration in the abstract syntax tree.
 /// </summary>
-public class FunctionDeclaration : AstCompositeNode
+public class FunctionDeclaration : AstCompositeNode, IHasVisibility
 {
 	/// <summary>
 	/// Initializes a new instance of the <see cref="FunctionDeclaration"/> class.
@@ -31,6 +31,11 @@ public class FunctionDeclaration : AstCompositeNode
 	/// Gets or sets the return type of the function.
 	/// </summary>
 	public string? ReturnType { get; set; }
+
+	/// <summary>
+	/// Gets or sets how widely the function is visible.
+	/// </summary>
+	public Visibility Visibility { get; set; }
 
 	/// <summary>
 	/// Gets or sets a list of parameters for the function.
@@ -57,7 +62,8 @@ public class FunctionDeclaration : AstCompositeNode
 		FunctionDeclaration clone = new()
 		{
 			Name = Name,
-			ReturnType = ReturnType
+			ReturnType = ReturnType,
+			Visibility = Visibility
 		};
 
 		// Copy metadata

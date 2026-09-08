@@ -6,7 +6,7 @@ namespace ktsu.Coder.Ast;
 /// Represents a variable declaration statement.
 /// Examples: int x; string name = "hello"; var result = 42;
 /// </summary>
-public class VariableDeclaration : AstNode
+public class VariableDeclaration : AstNode, IHasVisibility
 {
 	/// <summary>
 	/// Gets or sets the name of the variable.
@@ -36,9 +36,14 @@ public class VariableDeclaration : AstNode
 	public bool IsTypeInferred { get; set; }
 
 	/// <summary>
-	/// Gets or sets the visibility/access modifier (public, private, etc.).
+	/// Gets or sets how widely the declaration is visible.
 	/// </summary>
-	public string? AccessModifier { get; set; }
+	/// <remarks>
+	/// A local variable has no visibility of its own, so one left <see cref="Ast.Visibility.Unspecified"/>
+	/// is emitted without a modifier — which is what a local needs and what a field in a language
+	/// with a sensible default wants too.
+	/// </remarks>
+	public Visibility Visibility { get; set; }
 
 	/// <summary>
 	/// Initializes a new instance of the <see cref="VariableDeclaration"/> class.
@@ -81,7 +86,7 @@ public class VariableDeclaration : AstNode
 			InitialValue = (Expression?)InitialValue?.DeepClone(),
 			IsConstant = IsConstant,
 			IsTypeInferred = IsTypeInferred,
-			AccessModifier = AccessModifier
+			Visibility = Visibility
 		};
 
 		// Copy metadata
@@ -101,7 +106,7 @@ public class VariableDeclaration : AstNode
 	{
 		string typeInfo = IsTypeInferred ? "var" : Type ?? "?";
 		string valueInfo = InitialValue != null ? $" = {InitialValue}" : "";
-		string modifiers = AccessModifier != null ? $"{AccessModifier} " : "";
+		string modifiers = Visibility != Visibility.Unspecified ? $"{Visibility.ToString().ToLowerInvariant()} " : "";
 		modifiers += IsConstant ? "const " : "";
 
 		return $"{modifiers}{typeInfo} {Name}{valueInfo}";

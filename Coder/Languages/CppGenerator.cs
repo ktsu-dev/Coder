@@ -72,9 +72,14 @@ public class CppGenerator : StandardLanguageGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
-	/// Every member is public. The AST carries no per-member visibility, and a C++ class defaults to
-	/// private, so a generated class with no access specifier would compile to something nothing
-	/// outside it could use.
+	/// Members are grouped under the access label each one asks for, and a member with no visibility
+	/// of its own lands under <c>public:</c>. A C++ class defaults to private, so a generated class
+	/// with no access specifier at all would compile to something nothing outside it could use.
+	/// <para>
+	/// <see cref="Visibility.Internal"/> becomes <c>public:</c>: C++ has no assembly to be internal
+	/// to, and the nearest thing — a friend declaration — names the code it trusts rather than
+	/// describing a scope.
+	/// </para>
 	/// </remarks>
 	protected override void GenerateClassDeclaration(ClassDeclaration classDecl, CodeBlocker code)
 	{
@@ -92,8 +97,101 @@ public class CppGenerator : StandardLanguageGenerator
 
 		// A C++ class declaration is a statement, so its closing brace takes a semicolon.
 		using ScopeWithTrailingSemicolon body = new(code);
-		code.WriteLine("public:");
-		GenerateClassMembers(classDecl, code);
+
+		// Unspecified rather than Public, so the first member always writes its label: an unlabelled
+		// C++ class body is private, which is the one thing the label has to rule out.
+		Visibility current = Visibility.Unspecified;
+		foreach (AstNode member in classDecl.Members)
+		{
+			Visibility access = AccessOf(member);
+			if (access != current)
+			{
+				code.WriteLine($"{SpellVisibility(access)}:");
+				current = access;
+			}
+
+			if (member is VariableDeclaration field)
+			{
+				GenerateField(field, code);
+			}
+			else
+			{
+				GenerateInternal(member, code);
+			}
+		}
+	}
+
+	/// <summary>
+	/// Maps a member's visibility onto the access label C++ would put it under.
+	/// </summary>
+	/// <param name="member">The member to place.</param>
+	/// <returns>The visibility whose label the member belongs beneath.</returns>
+	private static Visibility AccessOf(AstNode member) => VisibilityOf(member) switch
+	{
+		Visibility.Protected => Visibility.Protected,
+		Visibility.Private => Visibility.Private,
+		_ => Visibility.Public,
+	};
+
+	/// <summary>
+	/// Emits a variable declaration as a class member.
+	/// </summary>
+	/// <param name="field">The declaration to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// A constant member is emitted as <c>static constexpr</c>. A plain <c>const</c> member is a
+	/// per-instance value initialised once per object, which is not what a constant means; the
+	/// <c>static constexpr</c> spelling is the one that gives the class a single compile-time value,
+	/// and it is available because a constant declared here is initialised from a literal.
+	/// </remarks>
+	private void GenerateField(VariableDeclaration field, CodeBlocker code)
+	{
+		if (field.IsConstant && field.InitialValue is not null)
+		{
+			code.Write("static constexpr ");
+		}
+		else if (field.IsConstant)
+		{
+			code.Write("const ");
+		}
+
+		code.Write($"{GetDeclaredType(field)} {field.Name}");
+
+		if (field.InitialValue is not null)
+		{
+			code.Write(" = ");
+			GenerateInternal(field.InitialValue, code);
+		}
+
+		EndStatement(code);
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// C++'s <c>main</c> returns <c>int</c> whether or not the program means to hand back an exit
+	/// code, so <see cref="EntryPoint.ReturnsExitCode"/> changes nothing in the signature — a program
+	/// that returns nothing exits with zero, which the standard supplies by falling off the end.
+	/// </remarks>
+	protected override void GenerateEntryPoint(EntryPoint entryPoint, CodeBlocker code)
+	{
+		Ensure.NotNull(entryPoint);
+		Ensure.NotNull(code);
+
+		code.Write("int main(");
+
+		if (entryPoint.AcceptsArguments)
+		{
+			code.Write("int argc, char* argv[]");
+		}
+
+		// The line is ended before the scope opens, so C++'s brace lands on its own line.
+		code.WriteLine(")");
+
+		using Scope body = new(code);
+		foreach (AstNode statement in entryPoint.Body)
+		{
+			GenerateInternal(statement, code);
+		}
 	}
 
 	/// <inheritdoc/>
