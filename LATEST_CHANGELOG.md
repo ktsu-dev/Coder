@@ -1,7 +1,7 @@
-## v1.8.0 (minor)
+## v1.8.1 (patch)
 
-Changes since v1.7.0:
+Changes since v1.8.0:
 
-- fix: reference the package WindowState actually lives in [patch] ([@Claude](https://github.com/Claude))
-- feat: resizable panes, zoom, and a window that opens where it was left [minor] ([@Claude](https://github.com/Claude))
+- Merge main into the ktsu.ImGui.NodeEditor rename ([@Claude](https://github.com/Claude))
+- Move to the renamed ktsu.ImGui.NodeEditor package ([@Claude](https://github.com/Claude))
 
