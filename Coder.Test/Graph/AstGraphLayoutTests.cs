@@ -117,6 +117,79 @@ public class AstGraphLayoutTests
 	}
 
 	/// <summary>
+	/// Tests that two nodes drawn on top of one another are pushed apart until their boxes no longer
+	/// overlap, which the simulation on its own will not do.
+	/// </summary>
+	/// <remarks>
+	/// The layout treats a node as a point: repulsion is measured between centres and the link spring
+	/// pulls to a fixed length, so two wide nodes can sit at a distance it is perfectly happy with and
+	/// still be squarely on top of each other. Node dimensions are measured while rendering, so they
+	/// are set here the way a frame would set them.
+	/// </remarks>
+	[TestMethod]
+	public void SeparateOverlaps_PushesOverlappingBoxesApart()
+	{
+		AstGraph graph = new(new FunctionDeclaration("total") { ReturnType = "int" });
+		graph.AddDetached(new VariableReference("a"), new Vector2(500, 300));
+		graph.AddDetached(new VariableReference("b"), new Vector2(520, 310));
+
+		Vector2 dimensions = new(180, 90);
+		foreach (Node node in graph.Engine.Nodes.ToArray())
+		{
+			graph.Engine.UpdateNodeDimensions(node.Id, dimensions);
+		}
+
+		Assert.IsTrue(graph.SeparateOverlaps() > 0f, "the nodes start on top of each other");
+
+		// Enough steps for a correction that is capped per step to finish.
+		for (int step = 0; step < 200 && graph.SeparateOverlaps() > 0f; step++)
+		{
+			// The separation is the work; the loop only has to run it until it reports nothing left.
+		}
+
+		Assert.AreEqual(0f, graph.SeparateOverlaps(), "the boxes should no longer overlap");
+
+		Node[] separated = [.. graph.Engine.Nodes];
+		for (int i = 0; i < separated.Length; i++)
+		{
+			for (int j = i + 1; j < separated.Length; j++)
+			{
+				bool apart = separated[i].Position.X + dimensions.X <= separated[j].Position.X
+					|| separated[j].Position.X + dimensions.X <= separated[i].Position.X
+					|| separated[i].Position.Y + dimensions.Y <= separated[j].Position.Y
+					|| separated[j].Position.Y + dimensions.Y <= separated[i].Position.Y;
+
+				Assert.IsTrue(apart, $"nodes {i} and {j} are still drawn over one another");
+			}
+		}
+	}
+
+	/// <summary>
+	/// Tests that a graph nothing overlaps in is left exactly as it is, so the separation cannot
+	/// unsettle an arrangement the layout has already finished.
+	/// </summary>
+	[TestMethod]
+	public void SeparateOverlaps_LeavesAClearArrangementAlone()
+	{
+		AstGraph graph = new(new FunctionDeclaration("total") { ReturnType = "int" });
+		graph.AddDetached(new VariableReference("a"), new Vector2(0, 0));
+		graph.AddDetached(new VariableReference("b"), new Vector2(600, 400));
+
+		foreach (Node node in graph.Engine.Nodes.ToArray())
+		{
+			graph.Engine.UpdateNodeDimensions(node.Id, new Vector2(120, 60));
+		}
+
+		// The document's own node was seeded near the origin, so it is moved well clear of both.
+		graph.Engine.UpdateNodePosition(graph.Engine.Nodes[0].Id, new Vector2(-600, -400));
+
+		Vector2[] before = [.. graph.Engine.Nodes.Select(node => node.Position)];
+
+		Assert.AreEqual(0f, graph.SeparateOverlaps());
+		CollectionAssert.AreEqual(before, graph.Engine.Nodes.Select(node => node.Position).ToArray());
+	}
+
+	/// <summary>
 	/// Measures how far the furthest node has moved from a remembered arrangement.
 	/// </summary>
 	/// <param name="from">The positions to compare against.</param>
@@ -127,7 +200,7 @@ public class AstGraphLayoutTests
 			.Max(pair => Vector2.Distance(pair.First, pair.Second));
 
 	/// <summary>
-	/// Tests that fitting brings a graph that has wandered off back to the top-left of the view, and
+	/// Tests that fitting brings a graph that has wandered off back to the middle of the view, and
 	/// that it moves the arrangement rather than disturbing it.
 	/// </summary>
 	/// <remarks>
@@ -135,9 +208,10 @@ public class AstGraphLayoutTests
 	/// position into the editor every frame, so panning is undone as soon as it is read back.
 	/// </remarks>
 	[TestMethod]
-	public void FitView_BringsTheGraphBackIntoView()
+	public void FitView_CentresTheGraphOnTheOrigin()
 	{
 		AstGraphEditor editor = new(SampleFunction()) { LayoutRunning = false };
+		editor.Graph.Engine.WorldOrigin = new Vector2(500, 300);
 		Node[] before = [.. editor.Graph.Engine.Nodes];
 
 		// Push the whole graph a long way off the top-left of the canvas.
@@ -149,9 +223,11 @@ public class AstGraphLayoutTests
 		Assert.IsTrue(editor.FitView());
 
 		Node[] after = [.. editor.Graph.Engine.Nodes];
-		Assert.IsTrue(after.All(node => node.Position.X >= 0 && node.Position.Y >= 0), "everything should be inside the view");
-		Assert.AreEqual(0f, after.Min(node => node.Position.X) - 40f, 0.01f, "the leftmost node should sit at the margin");
-		Assert.AreEqual(0f, after.Min(node => node.Position.Y) - 40f, 0.01f, "the topmost node should sit at the margin");
+		Vector2 centre = (after.Aggregate(new Vector2(float.MaxValue), (lowest, node) => Vector2.Min(lowest, node.Position))
+			+ after.Aggregate(new Vector2(float.MinValue), (highest, node) => Vector2.Max(highest, node.Position + node.Dimensions))) * 0.5f;
+
+		Assert.AreEqual(500f, centre.X, 0.01f, "the arrangement should be centred on the origin");
+		Assert.AreEqual(300f, centre.Y, 0.01f, "the arrangement should be centred on the origin");
 
 		// The arrangement is translated, not rearranged: every node keeps its offset from the first.
 		for (int i = 1; i < before.Length; i++)
@@ -161,6 +237,67 @@ public class AstGraphLayoutTests
 				after[i].Position - after[0].Position,
 				$"node {i} should have kept its place in the arrangement");
 		}
+	}
+
+	/// <summary>
+	/// Tests that a rebuild leaves the world origin where the caller put it, since every structural
+	/// edit rebuilds and clearing the engine resets it.
+	/// </summary>
+	[TestMethod]
+	public void Rebuild_KeepsTheWorldOrigin()
+	{
+		AstGraph graph = new(SampleFunction());
+		graph.Engine.WorldOrigin = new Vector2(500, 300);
+
+		graph.AddDetached(new VariableReference("added"), new Vector2(120, 240));
+
+		Assert.AreEqual(new Vector2(500, 300), graph.Engine.WorldOrigin);
+	}
+
+	/// <summary>
+	/// Tests that a node arriving without a position of its own is seeded near the origin rather
+	/// than in the corner of the canvas, which is where an origin of zero would put it.
+	/// </summary>
+	[TestMethod]
+	public void Seeding_PlacesNewNodesAroundTheOrigin()
+	{
+		FunctionDeclaration function = new("total") { ReturnType = "int" };
+		AstGraph graph = new(function);
+		graph.Engine.WorldOrigin = new Vector2(500, 300);
+
+		// Attached rather than dropped from the palette: a palette node is placed where the pointer
+		// is, while this one has no position of its own and has to be seeded.
+		function.Body.Add(new ReturnStatement(Literal.Number(1)));
+		graph.Rebuild();
+
+		Vector2 seeded = graph.Engine.Nodes
+			.Single(node => ReferenceEquals(graph.AstNodeFor(node.Id), function.Body[0]))
+			.Position;
+
+		Assert.IsTrue(
+			Vector2.Distance(seeded, graph.Engine.WorldOrigin) < 400f,
+			$"a seeded node landed at {seeded}, nowhere near the origin");
+	}
+
+	/// <summary>
+	/// Tests that a whole document is seeded centred on the origin rather than hanging off one side
+	/// of it.
+	/// </summary>
+	[TestMethod]
+	public void Seeding_CentresADocumentOnTheOrigin()
+	{
+		AstGraph graph = new(SampleFunction());
+		graph.Engine.WorldOrigin = new Vector2(500, 300);
+
+		// Forget every position, so the whole document is seeded afresh against the new origin.
+		graph.Load(SampleFunction());
+
+		Vector2[] positions = [.. graph.Engine.Nodes.Select(node => node.Position)];
+		Vector2 centre = (positions.Aggregate(new Vector2(float.MaxValue), Vector2.Min)
+			+ positions.Aggregate(new Vector2(float.MinValue), Vector2.Max)) * 0.5f;
+
+		Assert.AreEqual(500f, centre.X, 40f, "the document should be seeded around the origin");
+		Assert.AreEqual(300f, centre.Y, 40f, "the document should be seeded around the origin");
 	}
 
 	/// <summary>
