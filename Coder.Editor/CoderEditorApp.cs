@@ -12,6 +12,8 @@ using ktsu.Coder.Graph;
 using ktsu.Coder.Languages;
 using ktsu.ImGui.App;
 using ktsu.ImGui.SyntaxHighlighting;
+using ktsu.ImGui.Widgets;
+using Silk.NET.Windowing;
 
 /// <summary>
 /// The editor: a graph of the document on the left, the code it generates on the right.
@@ -41,7 +43,7 @@ public sealed class CoderEditorApp(
 	/// <summary>
 	/// Gets the editor over the current document.
 	/// </summary>
-	public AstGraphEditor Editor { get; private set; } = new(NewDocument());
+	public AstGraphEditor Editor { get; private set; } = EditorFor(NewDocument());
 
 	/// <summary>
 	/// Gets the file the document was last read from or written to, or null for an unsaved one.
@@ -78,12 +80,52 @@ public sealed class CoderEditorApp(
 		OnStart = () => Editor.LayoutRunning = Settings.LayoutRunning,
 		OnRender = Draw,
 
+		// Opened where it was left. The window is part of what a user arranges, and an application
+		// that forgets it is one they rearrange on every run.
+		InitialWindowState = new ImGuiAppWindowState
+		{
+			Size = new Vector2(Settings.WindowWidth, Settings.WindowHeight),
+			Pos = new Vector2(Settings.WindowX, Settings.WindowY),
+			LayoutState = Settings.WindowMaximized ? WindowState.Maximized : WindowState.Normal,
+		},
+		OnMoveOrResize = RememberWindow,
+
 		// The menu goes here rather than inside OnRender: ImGuiApp's main window carries no
 		// ImGuiWindowFlags.MenuBar, so an ImGui.BeginMenuBar() call in the render delegate always
 		// returns false and the menu silently never appears. OnAppMenu runs inside the application's
 		// own BeginMainMenuBar.
 		OnAppMenu = DrawMenu,
 	};
+
+	/// <summary>
+	/// Notes where the window is, so the next run opens there.
+	/// </summary>
+	/// <remarks>
+	/// The size and position read back are the ones the window has when it is not maximized, which is
+	/// what should be restored when a maximized window is un-maximized. Settings are written to disk
+	/// when the application exits, so this only has to keep them current.
+	/// </remarks>
+	private void RememberWindow()
+	{
+		ImGuiAppWindowState state = ImGuiApp.WindowState;
+
+		Settings.WindowWidth = state.Size.X;
+		Settings.WindowHeight = state.Size.Y;
+		Settings.WindowX = state.Pos.X;
+		Settings.WindowY = state.Pos.Y;
+		Settings.WindowMaximized = state.LayoutState == WindowState.Maximized;
+	}
+
+	/// <summary>
+	/// Builds an editor over a document, set up the way this application hosts one.
+	/// </summary>
+	/// <param name="document">The document to edit.</param>
+	/// <returns>The editor.</returns>
+	/// <remarks>
+	/// The properties panel is one of this application's own panes, so the editor is told not to draw
+	/// a second one of its own beside the canvas.
+	/// </remarks>
+	private static AstGraphEditor EditorFor(AstNode document) => new(document) { ShowInspector = false };
 
 	/// <summary>
 	/// Builds the document a fresh editor opens with.
@@ -126,19 +168,72 @@ public sealed class CoderEditorApp(
 		HandleShortcuts();
 
 		Vector2 available = ImGui.GetContentRegionAvail();
-		float graphWidth = available.X * 0.62f;
 
-		ImGui.BeginChild("graph-pane", new Vector2(graphWidth, available.Y - StatusBarHeight));
-		Editor.Draw(new Vector2(graphWidth - PaneInset, available.Y - StatusBarHeight - PaneInset), deltaTime);
-		ImGui.EndChild();
-
-		ImGui.SameLine();
-
-		ImGui.BeginChild("code-pane", new Vector2(0, available.Y - StatusBarHeight));
-		DrawCodePane();
+		// The container measures itself from the remaining content region, so it is given a child of
+		// the height that is actually the panes' — otherwise it would take the status bar's row too
+		// and draw the bar over its own bottom edge.
+		ImGui.BeginChild("panes", new Vector2(0, available.Y - StatusBarHeight));
+		Panes.Tick(deltaTime);
 		ImGui.EndChild();
 
 		DrawStatusBar();
+	}
+
+	/// <summary>
+	/// Gets the pane layout, built on first use.
+	/// </summary>
+	/// <remarks>
+	/// A divider container holds the sizes the user has dragged the panes to, so it has to outlive
+	/// the frame. It is built lazily rather than in a field initializer because its zones call back
+	/// into this instance, which a field initializer cannot refer to.
+	/// </remarks>
+	private ImGuiWidgets.DividerContainer Panes => field ??= BuildPanes();
+
+	/// <summary>
+	/// Builds the resizable pane layout: the graph, and beside it the properties above the code.
+	/// </summary>
+	/// <returns>The container to tick each frame.</returns>
+	/// <remarks>
+	/// Properties and code are stacked rather than placed side by side because they are read at
+	/// different times and want different shapes: properties are a short column of labelled rows,
+	/// while generated source is lines that want to be read down. Sharing one column gives each of
+	/// them the full width and lets the user decide how the height is split between them — which is
+	/// the point of making these panes rather than fixed regions.
+	/// <para>
+	/// The sizes are remembered between runs, so an arrangement the user settled on is the one they
+	/// come back to.
+	/// </para>
+	/// </remarks>
+	private ImGuiWidgets.DividerContainer BuildPanes()
+	{
+		ImGuiWidgets.DividerContainer side = new(
+			"coder-side",
+			container => Settings.PropertiesSplit = container.GetSizes()[0],
+			ImGuiWidgets.DividerLayout.Rows,
+			[
+				new ImGuiWidgets.DividerZone("properties", Settings.PropertiesSplit, DrawPropertiesPane),
+				new ImGuiWidgets.DividerZone("code", 1f - Settings.PropertiesSplit, _ => DrawCodePane()),
+			]);
+
+		return new ImGuiWidgets.DividerContainer(
+			"coder-panes",
+			container => Settings.GraphSplit = container.GetSizes()[0],
+			ImGuiWidgets.DividerLayout.Columns,
+			[
+				new ImGuiWidgets.DividerZone("graph", Settings.GraphSplit, deltaTime =>
+					Editor.Draw(ImGui.GetContentRegionAvail(), deltaTime)),
+				new ImGuiWidgets.DividerZone("side", 1f - Settings.GraphSplit, side.Tick),
+			]);
+	}
+
+	/// <summary>
+	/// Draws the selected node's properties, which the editor supplies but does not place.
+	/// </summary>
+	/// <param name="deltaTime">Seconds since the last frame; the panel does not animate, so unused.</param>
+	private void DrawPropertiesPane(float deltaTime)
+	{
+		ImGui.TextUnformatted("Properties");
+		Editor.DrawInspector(ImGui.GetContentRegionAvail());
 	}
 
 	/// <summary>
@@ -184,11 +279,6 @@ public sealed class CoderEditorApp(
 	/// The height reserved for the status bar under both panes.
 	/// </summary>
 	private const float StatusBarHeight = 28f;
-
-	/// <summary>
-	/// The margin between a pane's edge and what it contains.
-	/// </summary>
-	private const float PaneInset = 12f;
 
 	/// <summary>
 	/// Draws the application's File menu.
@@ -433,7 +523,8 @@ public sealed class CoderEditorApp(
 	/// </remarks>
 	private void Replace(AstNode document, string status)
 	{
-		Editor = new AstGraphEditor(document) { LayoutRunning = Settings.LayoutRunning };
+		Editor = EditorFor(document);
+		Editor.LayoutRunning = Settings.LayoutRunning;
 		DocumentPath = null;
 		Status = status;
 		GeneratedCode = string.Empty;
@@ -453,7 +544,8 @@ public sealed class CoderEditorApp(
 			return false;
 		}
 
-		Editor = new AstGraphEditor(result.Root) { LayoutRunning = Settings.LayoutRunning };
+		Editor = EditorFor(result.Root);
+		Editor.LayoutRunning = Settings.LayoutRunning;
 		DocumentPath = result.Path;
 		Settings.Remember(result.Path!);
 		Status = $"Opened {result.Path}.";

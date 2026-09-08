@@ -43,25 +43,6 @@ public sealed class AstGraph
 	/// </summary>
 	private const float SiblingSpacing = 110f;
 
-	/// <summary>
-	/// The clear space left between the boxes of two nodes.
-	/// </summary>
-	private const float NodeMargin = 24f;
-
-	/// <summary>
-	/// The furthest a pair of overlapping nodes is moved apart in one step, in pixels.
-	/// </summary>
-	/// <remarks>
-	/// The overlap is otherwise resolved in full each step, because a partial correction loses:
-	/// between two linked nodes the spring pulls them back together by more, every frame, than a
-	/// fraction of the overlap pushes them apart, and they come to rest still overlapping. Resolving
-	/// it in full and capping the step keeps the correction decisive and still lets a deep overlap —
-	/// two nodes dropped on the same spot — slide apart over several frames rather than jumping.
-	/// </remarks>
-	private const float MaxSeparationStep = 40f;
-
-	private const float SeparationTolerance = 0.5f;
-
 	private readonly Dictionary<AstNode, Vector2> positions = new(ReferenceEqualityComparer.Instance);
 	private readonly Dictionary<int, AstNode> nodesById = [];
 	private readonly Dictionary<AstNode, int> idsByNode = new(ReferenceEqualityComparer.Instance);
@@ -215,10 +196,9 @@ public sealed class AstGraph
 	/// <param name="position">Where the node was asked to go.</param>
 	/// <returns>That position, or the nearest free one along a diagonal from it.</returns>
 	/// <remarks>
-	/// Two nodes at exactly the same point stay there for ever: the layout's repulsion is computed
-	/// from the direction between them, and coincident points have no direction. Creating two nodes
-	/// from the palette without moving the mouse is enough to hit that, so the offset is applied when
-	/// the node is placed rather than left for the simulation to sort out.
+	/// Creating two nodes from the palette without moving the mouse puts them at the same point. The
+	/// simulation does pull them apart from there, but a node that appears exactly on top of the last
+	/// one and then slides out is a worse answer than one that is placed clear to begin with.
 	/// </remarks>
 	private Vector2 Separated(Vector2 position)
 	{
@@ -231,72 +211,6 @@ public sealed class AstGraph
 		}
 
 		return candidate;
-	}
-
-	/// <summary>
-	/// Eases apart any nodes whose boxes are on top of one another, by one step's worth.
-	/// </summary>
-	/// <returns>The deepest overlap found, in pixels, or zero when nothing overlapped.</returns>
-	/// <remarks>
-	/// The force-directed layout treats every node as a point: repulsion is computed between centres
-	/// and the link spring pulls to a fixed length, neither of which knows how wide a node is. Two
-	/// nodes can therefore sit at a perfectly comfortable distance by that measure and still have
-	/// their boxes squarely on top of each other, which is what a user sees. This resolves the
-	/// overlap the layout cannot see, working on the drawn rectangles rather than on centres.
-	/// <para>
-	/// Each overlap is resolved along the axis it is shallowest on, which is both the shorter push
-	/// and the one that leaves the arrangement the layout worked out most nearly as it was, and by no
-	/// more than <see cref="MaxSeparationStep"/> at a time, so a deep overlap slides apart over a few
-	/// frames rather than jumping.
-	/// </para>
-	/// </remarks>
-	public float SeparateOverlaps()
-	{
-		Node[] nodes = [.. Engine.Nodes];
-		Vector2[] moved = [.. nodes.Select(node => node.Position)];
-		float deepest = 0f;
-
-		for (int i = 0; i < nodes.Length; i++)
-		{
-			for (int j = i + 1; j < nodes.Length; j++)
-			{
-				Vector2 clearance = ((nodes[i].Dimensions + nodes[j].Dimensions) * 0.5f) + new Vector2(NodeMargin);
-				Vector2 first = moved[i] + (nodes[i].Dimensions * 0.5f);
-				Vector2 second = moved[j] + (nodes[j].Dimensions * 0.5f);
-				Vector2 between = second - first;
-				Vector2 overlap = clearance - Vector2.Abs(between);
-
-				if (overlap.X <= SeparationTolerance || overlap.Y <= SeparationTolerance)
-				{
-					continue;
-				}
-
-				// Never further than the overlap itself, so the pair cannot be driven past each other and
-				// back again, and shared equally between them so the arrangement's centre stays put.
-				float depth = Math.Min(overlap.X, overlap.Y);
-				float amount = Math.Min(depth, MaxSeparationStep) * 0.5f;
-
-				// A zero component has no side to be on, so the later node is pushed the positive way:
-				// an arbitrary choice, but a consistent one, which is what stops the pair jittering.
-				Vector2 push = overlap.X < overlap.Y
-					? new Vector2(amount * (between.X < 0f ? -1f : 1f), 0f)
-					: new Vector2(0f, amount * (between.Y < 0f ? -1f : 1f));
-
-				moved[j] += push;
-				moved[i] -= push;
-				deepest = Math.Max(deepest, depth);
-			}
-		}
-
-		for (int i = 0; i < nodes.Length; i++)
-		{
-			if (moved[i] != nodes[i].Position)
-			{
-				Engine.UpdateNodePosition(nodes[i].Id, moved[i]);
-			}
-		}
-
-		return deepest;
 	}
 
 	/// <summary>
