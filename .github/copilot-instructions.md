@@ -19,7 +19,7 @@ Coder/
 │   ├── Ast/            # Abstract Syntax Tree node definitions
 │   ├── Serialization/  # YAML serialization/deserialization
 │   └── Languages/      # Language-specific code generators (ILanguageGenerator)
-├── Coder.Cli/          # Interactive TUI application (Spectre.Console)
+├── Coder.Cli/          # Sample console application demonstrating the library
 ├── Coder.Test/         # Unit tests (MSTest)
 └── scripts/            # Build and release automation scripts (PSBuild)
 ```

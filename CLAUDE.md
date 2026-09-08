@@ -37,7 +37,7 @@ source in four target languages. The solution uses:
 - `Coder.Graph` — the node-graph view of an AST: `AstSchema`, `AstGraph`, `AstFields` and
   `AstGraphEditor`.
 - `Coder.Editor` — the desktop application: panes, menu, document store, settings.
-- `Coder.App`, `Coder.Cli` — sample applications.
+- `Coder.Cli` — the sample console application.
 - `Coder.Test` — MSTest suite covering all of the above.
 
 ### Key Files
@@ -64,7 +64,6 @@ source in four target languages. The solution uses:
 - `ktsu.ImGui.App` — the desktop application shell
 - `ktsu.UndoRedo.Core` — the graph editor's undo stack
 - `ktsu.Essentials` — filesystem and persistence providers the editor reads and writes through
-- `Spectre.Console` — the `Coder.App` sample's command-line interface
 
 ## Architecture
 

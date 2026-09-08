@@ -267,16 +267,20 @@ public class JavaScriptGenerator : LanguageGeneratorBase
 
 ## Examples
 
-The repository includes two example applications:
+The repository includes a sample console application:
 
--   **Coder.Cli**: Command-line tool demonstrating basic functionality
--   **Coder.App**: Console application with more complex examples
+-   **Coder.Cli**: Command-line tool demonstrating the AST, YAML round-tripping and code generation
 
-Run them to see the library in action:
+Run it to see the library in action:
 
 ```bash
 dotnet run --project Coder.Cli
-dotnet run --project Coder.App
+```
+
+For the interactive experience, run the desktop editor instead:
+
+```bash
+dotnet run --project Coder.Editor
 ```
 
 ## Contributing

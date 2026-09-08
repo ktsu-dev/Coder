@@ -101,7 +101,7 @@
   - Write integration tests for CLI
 
 - [x] **Task 6.2: Application layer**
-  - Create TUI application using Spectre.Console
+  - Create a desktop editor over the AST
   - Add interactive function creation capabilities
   - Add language preview features
   - Add demo commands and examples
