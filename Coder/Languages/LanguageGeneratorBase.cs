@@ -264,6 +264,7 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 		// No null check: a type pattern never matches null.
 		return astNode is FunctionDeclaration
 			or ClassDeclaration
+			or EntryPoint
 			or Parameter
 			or ReturnStatement
 			or BinaryExpression
@@ -279,6 +280,38 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 			or AstLeafNode<int>
 			or AstLeafNode<bool>;
 	}
+
+	/// <summary>
+	/// Spells a visibility as the keyword a C-family language writes in front of a declaration.
+	/// </summary>
+	/// <param name="visibility">The visibility to spell.</param>
+	/// <returns>The keyword, or null when nothing should be written for it.</returns>
+	/// <remarks>
+	/// Null rather than an empty string, so a caller writes the modifier and the space after it
+	/// together or writes neither, instead of leaving a stray space in front of a declaration that
+	/// carries no visibility. A language that spells one of them differently — or does not spell them
+	/// at all — does not call this.
+	/// </remarks>
+	protected static string? SpellVisibility(Visibility visibility) => visibility switch
+	{
+		Visibility.Public => "public",
+		Visibility.Protected => "protected",
+		Visibility.Internal => "internal",
+		Visibility.Private => "private",
+		_ => null,
+	};
+
+	/// <summary>
+	/// Reads the visibility a declaration was given.
+	/// </summary>
+	/// <param name="node">The node to read.</param>
+	/// <returns>Its visibility, or <see cref="Visibility.Unspecified"/> for a node that cannot carry one.</returns>
+	/// <remarks>
+	/// Reached through <see cref="IHasVisibility"/> so a generator grouping a class's members by
+	/// visibility does not need a switch over which kind of member each one is.
+	/// </remarks>
+	protected static Visibility VisibilityOf(AstNode node) =>
+		node is IHasVisibility declaration ? declaration.Visibility : Visibility.Unspecified;
 
 	/// <summary>
 	/// Escapes a string literal's contents for a target language using C-style backslash escapes.

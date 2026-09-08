@@ -55,6 +55,10 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 				GenerateFunctionDeclaration(funcDecl, code);
 				break;
 
+			case EntryPoint entryPoint:
+				GenerateEntryPoint(entryPoint, code);
+				break;
+
 			case Parameter parameter:
 				GenerateParameter(parameter, code, 0);
 				break;
@@ -102,6 +106,13 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	/// <param name="classDecl">The declaration to emit.</param>
 	/// <param name="code">The writer to emit into.</param>
 	protected abstract void GenerateClassDeclaration(ClassDeclaration classDecl, CodeBlocker code);
+
+	/// <summary>
+	/// Emits the program's entry point, and whatever else the language needs in order to run it.
+	/// </summary>
+	/// <param name="entryPoint">The entry point to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	protected abstract void GenerateEntryPoint(EntryPoint entryPoint, CodeBlocker code);
 
 	/// <summary>
 	/// Emits the members of a class, one after another.

@@ -48,6 +48,8 @@ public static class AstNodeCatalog
 		new("Declarations", "Function", () => new FunctionDeclaration("newFunction") { ReturnType = "void" }),
 		new("Declarations", "Parameter", () => new Parameter("value", "int")),
 		new("Declarations", "Variable", () => new VariableDeclaration("value", "int")),
+		new("Declarations", "Constant", () => new VariableDeclaration("VALUE", "int", Literal.Number(0)) { IsConstant = true }),
+		new("Declarations", "Entry point", () => new EntryPoint()),
 
 		new("Statements", "Return", () => new ReturnStatement()),
 		.. Enum.GetValues<AssignmentOperator>().Select(op => new AstNodeTemplate(

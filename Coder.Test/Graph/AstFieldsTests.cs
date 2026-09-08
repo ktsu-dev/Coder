@@ -167,7 +167,7 @@ public class AstFieldsTests
 		Assert.IsTrue(AstFields.TryWrite(parameter, "Optional", "true"));
 		Assert.IsTrue(AstFields.TryWrite(variable, "Constant", "true"));
 		Assert.IsTrue(AstFields.TryWrite(classDecl, "BaseType", "Shape"));
-		Assert.IsTrue(AstFields.TryWrite(classDecl, "Access", "internal"));
+		Assert.IsTrue(AstFields.TryWrite(classDecl, "Visibility", "Internal"));
 
 		Assert.AreEqual("total", function.Name);
 		Assert.AreEqual("int", function.ReturnType);
@@ -176,7 +176,7 @@ public class AstFieldsTests
 		Assert.IsTrue(parameter.IsOptional);
 		Assert.IsTrue(variable.IsConstant);
 		Assert.AreEqual("Shape", classDecl.BaseType);
-		Assert.AreEqual("internal", classDecl.AccessModifier);
+		Assert.AreEqual(Visibility.Internal, classDecl.Visibility);
 	}
 
 	/// <summary>

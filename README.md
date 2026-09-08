@@ -33,6 +33,7 @@ This makes it ideal for code generation tools, transpilers, and any application 
 ### Supported AST Node Types
 
 -   **ClassDeclaration**: A named class with an optional base type, holding methods, fields and nested classes
+-   **EntryPoint**: Where the program starts running, optionally reading arguments and returning an exit code
 -   **FunctionDeclaration**: Represents function/method declarations with parameters and body
 -   **Parameter**: Function parameters with optional default values
 -   **ReturnStatement**: Return statements with optional expressions
@@ -52,6 +53,32 @@ differently.
 Increment and decrement are deliberately absent from `UnaryOperator`: Python has no spelling for
 them, and an `AssignmentStatement` with `AssignmentOperator.AddAssign` expresses the same effect in
 every target language.
+
+### Visibility
+
+A `ClassDeclaration`, a `FunctionDeclaration` and a `VariableDeclaration` each carry a `Visibility`:
+`Public`, `Protected`, `Internal`, `Private`, or `Unspecified` — the default, meaning the
+declaration is written the way the target language would write it anyway. It is an enumeration
+rather than the modifier's text because no two languages spell visibility the same way:
+
+| Language | How it is spelled |
+|---|---|
+| C# | The keyword, in front of the declaration; a class or function with none is `public` |
+| C++ | An access label (`public:`, `protected:`, `private:`) the members are grouped under; `Internal` becomes `public:` |
+| JavaScript | A private class member takes the `#` prefix, which is JavaScript's own private syntax; nothing for the rest |
+| Python | Nothing — Python has no access modifiers, and its leading-underscore convention renames the declaration rather than modifying it |
+
+### Constants and entry points
+
+A `VariableDeclaration` marked `IsConstant` with a literal `InitialValue` is a constant. C# writes
+`const`, C++ writes `const` for a local and `static constexpr` for a class member, JavaScript writes
+`const` for a local and `static` for a class member, and Python writes a plain assignment, having no
+constant declaration to spell.
+
+An `EntryPoint` holds the statements a program runs. Each generator writes the spelling its language
+looks for: C#'s `static Main`, C++'s free `int main`, Python's `main` with the `__main__` guard that
+calls it (and the `import sys` its arguments and exit code need), and JavaScript's `main` with the
+call that runs it.
 
 ### Visual graph editor
 
@@ -139,10 +166,10 @@ directly.
 
 | `LanguageId` | Generator | Extension | Notes |
 |---|---|---|---|
-| `python` | `PythonGenerator` | `py` | Type hints, `None` for void, `pass` for an empty body or class; `self` on methods |
-| `csharp` | `CSharpGenerator` | `cs` | Mapped type names, `var` for inferred declarations, declared access modifiers |
-| `javascript` | `JavaScriptGenerator` | `js` | Untyped; `const`/`let`; strict `===` and `!==`; method and field syntax inside a class |
-| `cpp` | `CppGenerator` | `cpp` | Mapped type spellings (`str` → `std::string`); `auto` for inferred declarations; `public:` and a terminating `;` on a class |
+| `python` | `PythonGenerator` | `py` | Type hints, `None` for void, `pass` for an empty body or class; `self` on methods; `main` with its `__main__` guard |
+| `csharp` | `CSharpGenerator` | `cs` | Mapped type names, `var` for inferred declarations, visibility keywords, `const`, `static Main` |
+| `javascript` | `JavaScriptGenerator` | `js` | Untyped; `const`/`let`; strict `===` and `!==`; method, `static` and `#private` syntax inside a class |
+| `cpp` | `CppGenerator` | `cpp` | Mapped type spellings (`str` → `std::string`); `auto` for inferred declarations; access labels, `static constexpr` members and a terminating `;` on a class |
 
 ## Installation
 

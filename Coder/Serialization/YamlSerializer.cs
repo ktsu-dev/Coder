@@ -87,6 +87,9 @@ public class YamlSerializer
 			case FunctionDeclaration funcDecl:
 				SerializeFunctionDeclaration(funcDecl, nodeData);
 				break;
+			case EntryPoint entryPoint:
+				SerializeEntryPoint(entryPoint, nodeData);
+				break;
 			case Parameter param:
 				SerializeParameter(param, nodeData);
 				break;
@@ -150,6 +153,8 @@ public class YamlSerializer
 			nodeData["returnType"] = funcDecl.ReturnType;
 		}
 
+		SerializeVisibility(funcDecl, nodeData);
+
 		if (funcDecl.Parameters.Count > 0)
 		{
 			nodeData["parameters"] = SerializeParameters(funcDecl.Parameters);
@@ -158,6 +163,43 @@ public class YamlSerializer
 		if (funcDecl.Body.Count > 0)
 		{
 			nodeData["body"] = SerializeBodyStatements(funcDecl.Body);
+		}
+	}
+
+	/// <summary>
+	/// Writes a declaration's visibility, when it has one.
+	/// </summary>
+	/// <param name="declaration">The declaration being serialized.</param>
+	/// <param name="nodeData">The mapping to write into.</param>
+	/// <remarks>
+	/// Written in lower case, which is how every target language spells the modifier and how someone
+	/// hand-editing the YAML would expect to type it. <see cref="Visibility.Unspecified"/> is written
+	/// as nothing at all: it means the declaration carries no visibility, and a key saying so would
+	/// only be noise in the diff.
+	/// </remarks>
+	private static void SerializeVisibility(IHasVisibility declaration, Dictionary<string, object> nodeData)
+	{
+		if (declaration.Visibility != Visibility.Unspecified)
+		{
+			nodeData["visibility"] = declaration.Visibility.ToString().ToLowerInvariant();
+		}
+	}
+
+	private static void SerializeEntryPoint(EntryPoint entryPoint, Dictionary<string, object> nodeData)
+	{
+		if (entryPoint.AcceptsArguments)
+		{
+			nodeData["acceptsArguments"] = entryPoint.AcceptsArguments;
+		}
+
+		if (entryPoint.ReturnsExitCode)
+		{
+			nodeData["returnsExitCode"] = entryPoint.ReturnsExitCode;
+		}
+
+		if (entryPoint.Body.Count > 0)
+		{
+			nodeData["body"] = SerializeBodyStatements(entryPoint.Body);
 		}
 	}
 
@@ -173,10 +215,7 @@ public class YamlSerializer
 			nodeData["baseType"] = classDecl.BaseType;
 		}
 
-		if (classDecl.AccessModifier != null)
-		{
-			nodeData["accessModifier"] = classDecl.AccessModifier;
-		}
+		SerializeVisibility(classDecl, nodeData);
 
 		if (classDecl.Members.Count > 0)
 		{
@@ -338,10 +377,7 @@ public class YamlSerializer
 			nodeData["isTypeInferred"] = varDecl.IsTypeInferred;
 		}
 
-		if (varDecl.AccessModifier != null)
-		{
-			nodeData["accessModifier"] = varDecl.AccessModifier;
-		}
+		SerializeVisibility(varDecl, nodeData);
 	}
 
 	private static void SerializeAssignmentStatement(AssignmentStatement assignment, Dictionary<string, object> nodeData)
