@@ -113,7 +113,17 @@ public sealed class EditorWiringTests
 	{
 		using ServiceProvider services = Program.BuildServices();
 		EditorSettingsStore store = services.GetRequiredService<EditorSettingsStore>();
-		EditorSettings stored = new() { PreviewLanguageId = "cpp" };
+		EditorSettings stored = new()
+		{
+			PreviewLanguageId = "cpp",
+			WindowWidth = 1600f,
+			WindowHeight = 900f,
+			WindowX = 120f,
+			WindowY = 80f,
+			WindowMaximized = true,
+			GraphSplit = 0.45f,
+			PropertiesSplit = 0.7f,
+		};
 		Assert.IsTrue(await store.SaveAsync(stored).ConfigureAwait(false));
 
 		ImGuiAppConfig? handed = null;
@@ -130,8 +140,40 @@ public sealed class EditorWiringTests
 		Assert.AreEqual("Coder", handed.Title);
 		Assert.AreEqual("cpp", after.PreviewLanguageId, "the stored settings should have been read before starting");
 
+		// The window and the panes are arrangements the user made, so they come back with everything
+		// else rather than being reset on every run.
+		Assert.AreEqual(1600f, handed.InitialWindowState.Size.X);
+		Assert.AreEqual(900f, handed.InitialWindowState.Size.Y);
+		Assert.AreEqual(120f, handed.InitialWindowState.Pos.X);
+		Assert.AreEqual(80f, handed.InitialWindowState.Pos.Y);
+		Assert.AreEqual(Silk.NET.Windowing.WindowState.Maximized, handed.InitialWindowState.LayoutState);
+
 		EditorSettings reread = await store.LoadAsync().ConfigureAwait(false);
 		Assert.AreEqual("cpp", reread.PreviewLanguageId, "the settings should have been written back on exit");
+		Assert.AreEqual(1600f, reread.WindowWidth, "the window size should have been written back on exit");
+		Assert.AreEqual(120f, reread.WindowX);
+		Assert.IsTrue(reread.WindowMaximized);
+		Assert.AreEqual(0.45f, reread.GraphSplit, "the pane split should have been written back on exit");
+		Assert.AreEqual(0.7f, reread.PropertiesSplit);
+	}
+
+	/// <summary>
+	/// Tests that a fresh run opens a window the platform places, rather than one this application
+	/// put in a corner.
+	/// </summary>
+	[TestMethod]
+	public void BuildConfig_LeavesAFirstRunsPositionToThePlatform()
+	{
+		using ServiceProvider services = Program.BuildServices();
+		CoderEditorApp app = new(
+			services.GetRequiredService<DocumentStore>(),
+			services.GetServices<ILanguageGenerator>(),
+			new EditorSettings());
+
+		ImGuiAppConfig config = app.BuildConfig();
+
+		Assert.AreEqual(new ImGuiAppWindowState().Pos, config.InitialWindowState.Pos);
+		Assert.AreEqual(Silk.NET.Windowing.WindowState.Normal, config.InitialWindowState.LayoutState);
 	}
 
 	/// <summary>

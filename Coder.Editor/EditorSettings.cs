@@ -35,6 +35,52 @@ public sealed class EditorSettings
 	public bool LayoutRunning { get; set; } = true;
 
 	/// <summary>
+	/// Gets or sets the window's width when it is not maximized.
+	/// </summary>
+	public float WindowWidth { get; set; } = 1280f;
+
+	/// <summary>
+	/// Gets or sets the window's height when it is not maximized.
+	/// </summary>
+	public float WindowHeight { get; set; } = 720f;
+
+	/// <summary>
+	/// Gets or sets the window's horizontal position when it is not maximized.
+	/// </summary>
+	/// <remarks>
+	/// Defaulted to the windowing layer's own "no position yet" value, which is deliberately far off
+	/// screen and means the platform should place the window. A first run therefore opens wherever
+	/// the system would have put it rather than in a corner this application chose.
+	/// </remarks>
+	public float WindowX { get; set; } = -short.MinValue;
+
+	/// <summary>
+	/// Gets or sets the window's vertical position when it is not maximized.
+	/// </summary>
+	public float WindowY { get; set; } = -short.MinValue;
+
+	/// <summary>
+	/// Gets or sets a value indicating whether the window was maximized.
+	/// </summary>
+	/// <remarks>
+	/// Kept alongside the size rather than instead of it: a maximized window still has a size to go
+	/// back to when it is restored, and that is the one worth remembering.
+	/// </remarks>
+	public bool WindowMaximized { get; set; }
+
+	/// <summary>
+	/// Gets or sets the share of the window's width the graph takes, the rest going to the panel
+	/// beside it.
+	/// </summary>
+	public float GraphSplit { get; set; } = 0.62f;
+
+	/// <summary>
+	/// Gets or sets the share of that panel's height the properties take, the rest going to the code
+	/// preview under them.
+	/// </summary>
+	public float PropertiesSplit { get; set; } = 0.4f;
+
+	/// <summary>
 	/// Records a file as the most recently opened, without letting the list grow or repeat.
 	/// </summary>
 	/// <param name="path">The file that was opened.</param>

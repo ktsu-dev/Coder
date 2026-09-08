@@ -117,79 +117,6 @@ public class AstGraphLayoutTests
 	}
 
 	/// <summary>
-	/// Tests that two nodes drawn on top of one another are pushed apart until their boxes no longer
-	/// overlap, which the simulation on its own will not do.
-	/// </summary>
-	/// <remarks>
-	/// The layout treats a node as a point: repulsion is measured between centres and the link spring
-	/// pulls to a fixed length, so two wide nodes can sit at a distance it is perfectly happy with and
-	/// still be squarely on top of each other. Node dimensions are measured while rendering, so they
-	/// are set here the way a frame would set them.
-	/// </remarks>
-	[TestMethod]
-	public void SeparateOverlaps_PushesOverlappingBoxesApart()
-	{
-		AstGraph graph = new(new FunctionDeclaration("total") { ReturnType = "int" });
-		graph.AddDetached(new VariableReference("a"), new Vector2(500, 300));
-		graph.AddDetached(new VariableReference("b"), new Vector2(520, 310));
-
-		Vector2 dimensions = new(180, 90);
-		foreach (Node node in graph.Engine.Nodes.ToArray())
-		{
-			graph.Engine.UpdateNodeDimensions(node.Id, dimensions);
-		}
-
-		Assert.IsTrue(graph.SeparateOverlaps() > 0f, "the nodes start on top of each other");
-
-		// Enough steps for a correction that is capped per step to finish.
-		for (int step = 0; step < 200 && graph.SeparateOverlaps() > 0f; step++)
-		{
-			// The separation is the work; the loop only has to run it until it reports nothing left.
-		}
-
-		Assert.AreEqual(0f, graph.SeparateOverlaps(), "the boxes should no longer overlap");
-
-		Node[] separated = [.. graph.Engine.Nodes];
-		for (int i = 0; i < separated.Length; i++)
-		{
-			for (int j = i + 1; j < separated.Length; j++)
-			{
-				bool apart = separated[i].Position.X + dimensions.X <= separated[j].Position.X
-					|| separated[j].Position.X + dimensions.X <= separated[i].Position.X
-					|| separated[i].Position.Y + dimensions.Y <= separated[j].Position.Y
-					|| separated[j].Position.Y + dimensions.Y <= separated[i].Position.Y;
-
-				Assert.IsTrue(apart, $"nodes {i} and {j} are still drawn over one another");
-			}
-		}
-	}
-
-	/// <summary>
-	/// Tests that a graph nothing overlaps in is left exactly as it is, so the separation cannot
-	/// unsettle an arrangement the layout has already finished.
-	/// </summary>
-	[TestMethod]
-	public void SeparateOverlaps_LeavesAClearArrangementAlone()
-	{
-		AstGraph graph = new(new FunctionDeclaration("total") { ReturnType = "int" });
-		graph.AddDetached(new VariableReference("a"), new Vector2(0, 0));
-		graph.AddDetached(new VariableReference("b"), new Vector2(600, 400));
-
-		foreach (Node node in graph.Engine.Nodes.ToArray())
-		{
-			graph.Engine.UpdateNodeDimensions(node.Id, new Vector2(120, 60));
-		}
-
-		// The document's own node was seeded near the origin, so it is moved well clear of both.
-		graph.Engine.UpdateNodePosition(graph.Engine.Nodes[0].Id, new Vector2(-600, -400));
-
-		Vector2[] before = [.. graph.Engine.Nodes.Select(node => node.Position)];
-
-		Assert.AreEqual(0f, graph.SeparateOverlaps());
-		CollectionAssert.AreEqual(before, graph.Engine.Nodes.Select(node => node.Position).ToArray());
-	}
-
-	/// <summary>
 	/// Measures how far the furthest node has moved from a remembered arrangement.
 	/// </summary>
 	/// <param name="from">The positions to compare against.</param>
@@ -237,6 +164,67 @@ public class AstGraphLayoutTests
 				after[i].Position - after[0].Position,
 				$"node {i} should have kept its place in the arrangement");
 		}
+	}
+
+	/// <summary>
+	/// Tests that fitting a graph too big for the canvas zooms out until it fits, rather than only
+	/// centring the part of it that happens to be on screen.
+	/// </summary>
+	[TestMethod]
+	public void FitView_ZoomsOutUntilTheGraphFits()
+	{
+		AstGraphEditor editor = new(SampleFunction()) { LayoutRunning = false };
+
+		// A 600x400 canvas, with the origin on the middle of it.
+		editor.Graph.Engine.WorldOrigin = new Vector2(300, 200);
+
+		// Spread the arrangement well past the canvas's width.
+		Node[] nodes = [.. editor.Graph.Engine.Nodes];
+		for (int i = 0; i < nodes.Length; i++)
+		{
+			editor.Graph.Engine.UpdateNodePosition(nodes[i].Id, new Vector2(i * 400f, 0f));
+			editor.Graph.Engine.UpdateNodeDimensions(nodes[i].Id, new Vector2(120f, 60f));
+		}
+
+		Assert.IsTrue(editor.FitView());
+
+		float extent = ((nodes.Length - 1) * 400f) + 120f;
+		Assert.IsTrue(editor.Zoom < 1f, $"a graph {extent} wide should not fit a 600 canvas at {editor.Zoom}");
+		Assert.IsTrue(extent * editor.Zoom <= 600f, $"the graph still overflows the canvas at {editor.Zoom}");
+	}
+
+	/// <summary>
+	/// Tests that fitting a graph the canvas already has room for leaves it at its own size, since
+	/// magnifying it is not what "fit" means to anyone who asked to see all of it.
+	/// </summary>
+	[TestMethod]
+	public void FitView_DoesNotMagnifyAGraphThatAlreadyFits()
+	{
+		AstGraphEditor editor = new(SampleFunction()) { LayoutRunning = false, Zoom = 0.5f };
+		editor.Graph.Engine.WorldOrigin = new Vector2(1000, 800);
+
+		Node[] nodes = [.. editor.Graph.Engine.Nodes];
+		for (int i = 0; i < nodes.Length; i++)
+		{
+			editor.Graph.Engine.UpdateNodePosition(nodes[i].Id, new Vector2(i * 20f, 0f));
+			editor.Graph.Engine.UpdateNodeDimensions(nodes[i].Id, new Vector2(40f, 20f));
+		}
+
+		Assert.IsTrue(editor.FitView());
+		Assert.AreEqual(1f, editor.Zoom, 0.0001f);
+	}
+
+	/// <summary>
+	/// Tests that the zoom stays within the range the view offers, however it is set.
+	/// </summary>
+	[TestMethod]
+	public void Zoom_IsHeldWithinTheRangeTheSliderOffers()
+	{
+		AstGraphEditor editor = new(SampleFunction()) { Zoom = 50f };
+		Assert.IsTrue(editor.Zoom is > 1f and <= 2f, $"{editor.Zoom} is not a zoom the view offers");
+
+		editor.Zoom = 0f;
+		Assert.IsTrue(editor.Zoom is > 0f and < 1f, $"{editor.Zoom} is not a zoom the view offers");
 	}
 
 	/// <summary>

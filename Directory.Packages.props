@@ -14,6 +14,8 @@
     <PackageVersion Include="ktsu.UndoRedo.Core" Version="1.0.19" />
     <PackageVersion Include="ktsu.ImGui.App.Testing" Version="3.19.0" />
     <PackageVersion Include="ktsu.ImGui.SyntaxHighlighting" Version="3.19.0" />
+    <PackageVersion Include="ktsu.ImGui.Widgets" Version="3.19.0" />
+    <PackageVersion Include="Silk.NET.Windowing.Common" Version="2.23.0" />
     <PackageVersion Include="ktsu.ImGui.NodeEditor" Version="3.19.0" />
     <PackageVersion Include="ktsu.ForceDirectedLayout" Version="3.19.0" />
     <PackageVersion Include="ktsu.CodeBlocker" Version="2.0.4" />
