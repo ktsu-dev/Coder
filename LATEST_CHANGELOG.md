@@ -1,7 +1,6 @@
-## v1.8.1 (patch)
+## v1.8.2 (patch)
 
-Changes since v1.8.0:
+Changes since v1.8.1:
 
-- Merge main into the ktsu.ImGui.NodeEditor rename ([@Claude](https://github.com/Claude))
-- Move to the renamed ktsu.ImGui.NodeEditor package ([@Claude](https://github.com/Claude))
+- Update ktsu.ImGui.App and related packages to version 3.20.0 ([@matt-edmondson](https://github.com/matt-edmondson))
 
