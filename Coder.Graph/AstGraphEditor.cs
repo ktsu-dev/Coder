@@ -9,7 +9,7 @@ using System.Numerics;
 using Hexa.NET.ImGui;
 using Hexa.NET.ImNodes;
 using ktsu.Coder.Ast;
-using ktsu.ImGuiNodeEditor;
+using ktsu.ImGui.NodeEditor;
 using ktsu.UndoRedo;
 using ktsu.UndoRedo.Contracts;
 using ktsu.UndoRedo.Core.Services;

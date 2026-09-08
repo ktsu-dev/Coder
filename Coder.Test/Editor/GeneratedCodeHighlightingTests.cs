@@ -5,6 +5,7 @@ namespace ktsu.Coder.Test.Editor;
 using ktsu.Coder.Ast;
 using ktsu.Coder.Languages;
 using ktsu.ImGui.SyntaxHighlighting;
+using ktsu.SyntaxHighlighting;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 /// <summary>

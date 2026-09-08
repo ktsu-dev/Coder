@@ -56,7 +56,7 @@ every target language.
 ### Visual graph editor
 
 `ktsu.Coder.Graph` renders an AST as an editable node graph, built on
-[`ktsu.ImGuiNodeEditor`](https://github.com/ktsu-dev/ImGuiApp) with its force-directed layout.
+[`ktsu.ImGui.NodeEditor`](https://github.com/ktsu-dev/ImGuiApp) with its force-directed layout.
 
 ```csharp
 AstGraphEditor editor = new(functionDeclaration);

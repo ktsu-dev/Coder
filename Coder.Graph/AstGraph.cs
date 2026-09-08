@@ -7,7 +7,7 @@ using System.Globalization;
 using System.Linq;
 using System.Numerics;
 using ktsu.Coder.Ast;
-using ktsu.ImGuiNodeEditor;
+using ktsu.ImGui.NodeEditor;
 
 /// <summary>
 /// A node-editor view of an AST, and the editing operations that keep the two in step.
