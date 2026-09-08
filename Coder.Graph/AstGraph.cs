@@ -101,6 +101,12 @@ public sealed class AstGraph
 	{
 		CapturePositions();
 
+		// Clearing the engine resets its world origin, and the origin is the caller's to decide —
+		// the editor keeps it on the middle of the canvas — so it is carried across rather than
+		// recomputed. A rebuild is meant to be invisible, and moving what gravity pulls towards is
+		// not.
+		Vector2 worldOrigin = Engine.WorldOrigin;
+
 		Engine.Clear();
 		nodesById.Clear();
 		idsByNode.Clear();
@@ -108,11 +114,9 @@ public sealed class AstGraph
 		slotByInputPin.Clear();
 		inputPinBySlot.Clear();
 
-		RowCounter rows = new();
-		foreach (AstNode subtree in Subtrees)
-		{
-			SeedMissingPositions(subtree, depth: 0, nextRow: rows);
-		}
+		Engine.WorldOrigin = worldOrigin;
+
+		SeedMissingPositions();
 
 		foreach (AstNode subtree in Subtrees)
 		{
@@ -123,11 +127,6 @@ public sealed class AstGraph
 		{
 			CreateLinks(subtree);
 		}
-
-		// Clearing the engine resets its world origin, which is what gravity pulls everything
-		// towards. Left at zero it would drag the whole graph off to wherever the origin happens to
-		// be on screen; re-centring it on the nodes keeps the layout where the user is looking.
-		Engine.InitializeWorldOriginToCentroid();
 	}
 
 	/// <summary>
@@ -672,27 +671,84 @@ public sealed class AstGraph
 	}
 
 	/// <summary>
-	/// Gives every node without a remembered position one, laid out by depth and sibling order.
+	/// Gives every node without a remembered position one, laid out by depth and sibling order and
+	/// centred on <see cref="NodeEditorEngine.WorldOrigin"/>.
 	/// </summary>
-	/// <param name="node">The subtree to seed.</param>
-	/// <param name="depth">The node's depth from the root.</param>
-	/// <param name="nextRow">The running row allocator, shared across the walk.</param>
 	/// <remarks>
 	/// Only a starting arrangement: the force-directed layout takes over from here. Seeding by depth
-	/// rather than at the origin matters because a force-directed layout started from coincident
+	/// rather than all at one point matters because a force-directed layout started from coincident
 	/// points has no gradient to work with.
+	/// <para>
+	/// The arrangement is centred on the world origin rather than laid out from it, so a document
+	/// arrives in the middle of the canvas instead of hanging off its bottom-right corner while the
+	/// simulation hauls it back. Only the nodes being seeded move: one arriving in a graph that is
+	/// already arranged is placed near the middle and nudged clear of whatever is already there.
+	/// </para>
 	/// </remarks>
-	private void SeedMissingPositions(AstNode node, int depth, RowCounter nextRow)
+	private void SeedMissingPositions()
+	{
+		Dictionary<AstNode, Vector2> seeded = new(ReferenceEqualityComparer.Instance);
+		RowCounter rows = new();
+
+		foreach (AstNode subtree in Subtrees)
+		{
+			CollectMissingPositions(subtree, depth: 0, nextRow: rows, seeded: seeded);
+		}
+
+		if (seeded.Count == 0)
+		{
+			return;
+		}
+
+		Vector2 offset = Engine.WorldOrigin - CentreOf(seeded.Values);
+		foreach ((AstNode node, Vector2 seat) in seeded)
+		{
+			positions[node] = Separated(seat + offset);
+		}
+	}
+
+	/// <summary>
+	/// Works out where each node without a remembered position would sit, before the block is
+	/// centred.
+	/// </summary>
+	/// <param name="node">The subtree to walk.</param>
+	/// <param name="depth">The node's depth from the root.</param>
+	/// <param name="nextRow">The running row allocator, shared across the walk.</param>
+	/// <param name="seeded">Collects the seats, keyed by the node each belongs to.</param>
+	private void CollectMissingPositions(AstNode node, int depth, RowCounter nextRow, Dictionary<AstNode, Vector2> seeded)
 	{
 		if (!positions.ContainsKey(node))
 		{
-			positions[node] = new Vector2(depth * DepthSpacing, nextRow.Take() * SiblingSpacing);
+			seeded[node] = new Vector2(depth * DepthSpacing, nextRow.Take() * SiblingSpacing);
 		}
 
 		foreach (AstNode child in ChildrenInOrder(node))
 		{
-			SeedMissingPositions(child, depth + 1, nextRow);
+			CollectMissingPositions(child, depth + 1, nextRow, seeded);
 		}
+	}
+
+	/// <summary>
+	/// Finds the middle of a set of positions.
+	/// </summary>
+	/// <param name="positions">The positions to measure.</param>
+	/// <returns>The centre of the box they occupy.</returns>
+	/// <remarks>
+	/// The middle of the box rather than the average of the points: an arrangement with most of its
+	/// nodes down one side should still be centred by its extent, which is what a user sees.
+	/// </remarks>
+	private static Vector2 CentreOf(IEnumerable<Vector2> positions)
+	{
+		Vector2 lowest = new(float.MaxValue, float.MaxValue);
+		Vector2 highest = new(float.MinValue, float.MinValue);
+
+		foreach (Vector2 position in positions)
+		{
+			lowest = Vector2.Min(lowest, position);
+			highest = Vector2.Max(highest, position);
+		}
+
+		return (lowest + highest) * 0.5f;
 	}
 
 	/// <summary>

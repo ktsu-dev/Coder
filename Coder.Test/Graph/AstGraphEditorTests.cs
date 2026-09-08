@@ -174,6 +174,45 @@ public sealed class AstGraphEditorTests
 	}
 
 	/// <summary>
+	/// Tests that the origin of the graph's space is the middle of the canvas the editor was given,
+	/// which is what everything that reads it — gravity, seeding, fitting — is measured against.
+	/// </summary>
+	[TestMethod]
+	public void Editor_PutsTheOriginInTheMiddleOfTheCanvas()
+	{
+		AstGraphEditor editor = new(SampleFunction());
+
+		using ImGuiAppHarness harness = ImGuiAppHarness.Start(ConfigFor(editor), Options);
+		harness.Step(2);
+
+		// The canvas is the area the editor was given, less the room the inspector takes.
+		Assert.AreEqual(500f, editor.Graph.Engine.WorldOrigin.X, 0.5f);
+		Assert.IsTrue(
+			editor.Graph.Engine.WorldOrigin.Y is > 0f and < 300f,
+			$"the origin sat at y {editor.Graph.Engine.WorldOrigin.Y}, which is not inside a 600-tall area");
+	}
+
+	/// <summary>
+	/// Tests that a document is in the middle of the canvas on the frame it first appears, rather
+	/// than sliding in from a corner while the simulation hauls it over.
+	/// </summary>
+	[TestMethod]
+	public void Editor_CentresTheDocumentOnTheFirstFrame()
+	{
+		AstGraphEditor editor = new(SampleFunction()) { LayoutRunning = false };
+
+		using ImGuiAppHarness harness = ImGuiAppHarness.Start(ConfigFor(editor), Options);
+		harness.Step();
+
+		Vector2[] positions = [.. editor.Graph.Engine.Nodes.Select(node => node.Position)];
+		Vector2 centre = (positions.Aggregate(new Vector2(float.MaxValue), Vector2.Min)
+			+ positions.Aggregate(new Vector2(float.MinValue), Vector2.Max)) * 0.5f;
+
+		Assert.AreEqual(editor.Graph.Engine.WorldOrigin.X, centre.X, 60f, "the document should arrive centred");
+		Assert.AreEqual(editor.Graph.Engine.WorldOrigin.Y, centre.Y, 60f, "the document should arrive centred");
+	}
+
+	/// <summary>
 	/// Tests that a graph left to lay itself out stays inside the view, rather than being pulled off
 	/// the top-left corner of it.
 	/// </summary>

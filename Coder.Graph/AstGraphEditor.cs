@@ -40,6 +40,8 @@ public sealed class AstGraphEditor(AstNode root)
 
 	private string fieldBuffer = string.Empty;
 
+	private bool fitted;
+
 	private string? editingField;
 
 	/// <summary>
@@ -110,6 +112,23 @@ public sealed class AstGraphEditor(AstNode root)
 		float reserved = ShowInspector ? InspectorHeight : 0f;
 		Vector2 graphSize = new(size.X, Math.Max(size.Y - reserved, MinimumGraphHeight));
 
+		// The origin of the graph's own space is the middle of the canvas, and it is set every frame
+		// so it follows the window as that is resized. Node positions are canvas-relative, so an
+		// origin left at zero would be the top-left corner: gravity would pull the document off the
+		// edge, a new node would be seeded into the corner, and fitting the view would push the
+		// arrangement up against it. One point decides all three, and it is the middle.
+		Graph.Engine.WorldOrigin = graphSize * 0.5f;
+
+		// A graph is built before anyone knows how big the canvas will be, so its nodes are seeded
+		// around an origin that is still zero. The first frame is where that becomes knowable, and
+		// fitting once there is what puts a freshly opened document in the middle of the view
+		// immediately rather than leaving the simulation to drag it in from the corner.
+		if (!fitted)
+		{
+			fitted = FitView();
+			statusMessage = string.Empty;
+		}
+
 		Vector2 origin = ImGui.GetCursorScreenPos();
 		ImGui.BeginChild("ast-graph-canvas", graphSize, ImGuiChildFlags.None, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
 
@@ -132,12 +151,8 @@ public sealed class AstGraphEditor(AstNode root)
 
 		if (LayoutRunning)
 		{
-			// The layout's gravity pulls everything towards the world origin, and node positions are
-			// canvas-relative, so an origin left at zero pulls the whole graph into the top-left
-			// corner and off the edge of it. Aiming it at the middle of the canvas is what keeps an
-			// arrangement the user has not touched inside the view, and it follows the window as it
-			// is resized.
-			Graph.Engine.WorldOrigin = graphSize * 0.5f;
+			// Gravity pulls towards the world origin, which is what keeps an arrangement the user has
+			// not touched in the middle of the view rather than drifting out of it.
 			Graph.Engine.UpdatePhysics(deltaTime);
 		}
 
@@ -584,40 +599,45 @@ public sealed class AstGraphEditor(AstNode root)
 	}
 
 	/// <summary>
-	/// Brings the whole graph back into view.
+	/// Brings the whole graph back into view, centred on the origin.
 	/// </summary>
 	/// <returns>True if there was anything to bring into view.</returns>
 	/// <remarks>
-	/// The layout arranges nodes wherever the forces take them, so a document can drift off the top
-	/// or the left of the view with no clue which way to scroll back. This moves the arrangement
-	/// rather than the view: the renderer writes each node's position into the node editor every
-	/// frame, so panning the editor is undone as soon as it is read back — the positions are the only
-	/// thing that decides where a node is drawn.
+	/// The layout arranges nodes wherever the forces take them, and a user can drag one anywhere, so
+	/// a document can end up off the edge of the view with no clue which way to scroll back. This
+	/// moves the arrangement rather than the view: the renderer writes each node's position into the
+	/// node editor every frame, so panning the editor is undone as soon as it is read back — the
+	/// positions are the only thing that decides where a node is drawn.
 	/// <para>
-	/// The whole arrangement is translated, so the shape the layout settled into is preserved rather
-	/// than being disturbed by the act of looking at it.
+	/// Centred on the world origin, which is the middle of the canvas, so fitting puts the graph
+	/// where gravity is going to hold it anyway. The whole arrangement is translated, so the shape
+	/// the layout settled into is preserved rather than being disturbed by the act of looking at it.
 	/// </para>
 	/// </remarks>
 	public bool FitView()
 	{
-		if (Graph.Engine.Nodes.Count == 0)
+		Node[] nodes = [.. Graph.Engine.Nodes];
+		if (nodes.Length == 0)
 		{
 			return false;
 		}
 
-		const float margin = 40f;
-		Vector2 offset = new(
-			margin - Graph.Engine.Nodes.Min(node => node.Position.X),
-			margin - Graph.Engine.Nodes.Min(node => node.Position.Y));
+		// Measured across each node's whole extent rather than its top-left corner, so a wide node on
+		// one edge does not pull the arrangement off centre by half its width.
+		Vector2 lowest = new(float.MaxValue, float.MaxValue);
+		Vector2 highest = new(float.MinValue, float.MinValue);
 
-		foreach (Node node in Graph.Engine.Nodes.ToArray())
+		foreach (Node node in nodes)
+		{
+			lowest = Vector2.Min(lowest, node.Position);
+			highest = Vector2.Max(highest, node.Position + node.Dimensions);
+		}
+
+		Vector2 offset = Graph.Engine.WorldOrigin - ((lowest + highest) * 0.5f);
+		foreach (Node node in nodes)
 		{
 			Graph.Engine.UpdateNodePosition(node.Id, node.Position + offset);
 		}
-
-		// Gravity pulls towards the world origin, which is still where the graph used to be: without
-		// this the layout would drag everything straight back out of view.
-		Graph.Engine.InitializeWorldOriginToCentroid();
 
 		statusMessage = "Brought the graph back into view.";
 		return true;

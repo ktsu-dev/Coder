@@ -95,9 +95,11 @@ A slot that holds a sequence — a function's parameters, its body, a class's me
 palette. "Convert to" replaces a node with a different kind in place, moving the operands the new
 one can take across and keeping the rest rather than discarding them.
 
-The layout keeps itself inside the view: its gravity is aimed at the middle of the canvas rather
-than at the origin, and "Fit" brings an arrangement that has been dragged away back to the top-left
-corner without disturbing its shape.
+The origin of the graph's space is the middle of the canvas, and it follows the window as that is
+resized. Everything measured against it agrees as a result: gravity holds an untouched arrangement
+in the middle of the view, a document arrives centred on the frame it first appears, a node with no
+position of its own is seeded near the middle rather than in a corner, and "Fit" re-centres an
+arrangement that has been dragged away without disturbing its shape.
 
 The AST is the document and the graph is a view of it: every edit is applied to the AST and the
 graph rebuilt from it, preserving on-screen positions by node identity. A graph is allowed to be
