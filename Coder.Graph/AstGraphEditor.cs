@@ -9,6 +9,7 @@ using System.Numerics;
 using Hexa.NET.ImGui;
 using Hexa.NET.ImNodes;
 using ktsu.Coder.Ast;
+using ktsu.ForceDirectedLayout;
 using ktsu.ImGui.NodeEditor;
 using ktsu.UndoRedo;
 using ktsu.UndoRedo.Contracts;
@@ -333,6 +334,41 @@ public sealed class AstGraphEditor(AstNode root)
 		}
 
 		DrawConversions(node);
+		ImGui.EndChild();
+	}
+
+	/// <summary>
+	/// Draws the panel that tunes the force-directed layout, so the graph can be arranged while it is
+	/// on screen rather than by rebuilding.
+	/// </summary>
+	/// <remarks>
+	/// The whole tuning surface comes from <see cref="PhysicsSettingsPanel"/>, which the node editor
+	/// library supplies: every setting the simulation has, grouped by the force it belongs to. It is
+	/// drawn beside the graph deliberately - the forces interact, so a change to any one of them is
+	/// only judgeable by watching what the graph does about it.
+	/// <para>
+	/// The panel's run toggle is shown and written as <see cref="LayoutRunning"/>, the same flag the
+	/// toolbar's checkbox holds, so the two agree whichever the user reaches for. This editor stops
+	/// the layout by not advancing it rather than by the engine's own <c>Enabled</c>, which stays on:
+	/// a step the engine is never given cannot run either way, and keeping one flag rather than two
+	/// means there is no arrangement where the graph is stopped for a reason the user cannot see.
+	/// </para>
+	/// </remarks>
+	/// <param name="size">The area to draw it in.</param>
+	public void DrawLayoutSettings(Vector2 size)
+	{
+		ImGui.BeginChild("ast-layout-settings", size, ImGuiChildFlags.Borders, ImGuiWindowFlags.HorizontalScrollbar);
+
+		PhysicsSettings settings = Graph.Engine.PhysicsSettings with { Enabled = LayoutRunning };
+		if (PhysicsSettingsPanel.Draw(ref settings))
+		{
+			LayoutRunning = settings.Enabled;
+			Graph.Engine.UpdatePhysicsSettings(settings with { Enabled = true });
+		}
+
+		ImGui.Separator();
+		PhysicsSettingsPanel.DrawDiagnostics(Graph.Engine);
+
 		ImGui.EndChild();
 	}
 

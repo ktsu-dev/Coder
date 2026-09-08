@@ -75,10 +75,15 @@ public sealed class EditorSettings
 	public float GraphSplit { get; set; } = 0.62f;
 
 	/// <summary>
-	/// Gets or sets the share of that panel's height the properties take, the rest going to the code
-	/// preview under them.
+	/// Gets or sets the share of that panel's height the properties take.
 	/// </summary>
-	public float PropertiesSplit { get; set; } = 0.4f;
+	public float PropertiesSplit { get; set; } = 0.3f;
+
+	/// <summary>
+	/// Gets or sets the share of that panel's height the generated code takes, the rest going to the
+	/// layout tuning under it.
+	/// </summary>
+	public float CodeSplit { get; set; } = 0.4f;
 
 	/// <summary>
 	/// Records a file as the most recently opened, without letting the list grow or repeat.

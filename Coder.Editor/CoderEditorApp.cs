@@ -212,11 +212,17 @@ public sealed class CoderEditorApp(
 	/// </summary>
 	/// <returns>The container to tick each frame.</returns>
 	/// <remarks>
-	/// Properties and code are stacked rather than placed side by side because they are read at
-	/// different times and want different shapes: properties are a short column of labelled rows,
-	/// while generated source is lines that want to be read down. Sharing one column gives each of
-	/// them the full width and lets the user decide how the height is split between them — which is
-	/// the point of making these panes rather than fixed regions.
+	/// Properties, code and layout tuning are stacked rather than placed side by side because they are
+	/// read at different times and want different shapes: properties are a short column of labelled
+	/// rows, generated source is lines that want to be read down, and the tuning is a long list of
+	/// sliders. Sharing one column gives each of them the full width and lets the user decide how the
+	/// height is split between them — which is the point of making these panes rather than fixed
+	/// regions.
+	/// <para>
+	/// The tuning gets a pane of its own rather than a section inside the properties, because it is
+	/// read while watching the graph move: it has to be able to be tall while the properties are
+	/// short, and it must not close itself every time a different node is selected.
+	/// </para>
 	/// <para>
 	/// The sizes are remembered between runs, so an arrangement the user settled on is the one they
 	/// come back to.
@@ -226,11 +232,16 @@ public sealed class CoderEditorApp(
 	{
 		ImGuiWidgets.DividerContainer side = new(
 			"coder-side",
-			container => Settings.PropertiesSplit = container.GetSizes()[0],
+			container =>
+			{
+				Settings.PropertiesSplit = container.GetSizes()[0];
+				Settings.CodeSplit = container.GetSizes()[1];
+			},
 			ImGuiWidgets.DividerLayout.Rows,
 			[
 				new ImGuiWidgets.DividerZone("properties", Settings.PropertiesSplit, DrawPropertiesPane),
-				new ImGuiWidgets.DividerZone("code", 1f - Settings.PropertiesSplit, _ => DrawCodePane()),
+				new ImGuiWidgets.DividerZone("code", Settings.CodeSplit, _ => DrawCodePane()),
+				new ImGuiWidgets.DividerZone("layout", 1f - Settings.PropertiesSplit - Settings.CodeSplit, DrawLayoutPane),
 			]);
 
 		return new ImGuiWidgets.DividerContainer(
@@ -252,6 +263,16 @@ public sealed class CoderEditorApp(
 	{
 		ImGui.TextUnformatted("Properties");
 		Editor.DrawInspector(ImGui.GetContentRegionAvail());
+	}
+
+	/// <summary>
+	/// Draws the layout tuning, which the editor supplies but does not place.
+	/// </summary>
+	/// <param name="deltaTime">Seconds since the last frame; the panel does not animate, so unused.</param>
+	private void DrawLayoutPane(float deltaTime)
+	{
+		ImGui.TextUnformatted("Layout");
+		Editor.DrawLayoutSettings(ImGui.GetContentRegionAvail());
 	}
 
 	/// <summary>

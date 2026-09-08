@@ -123,6 +123,7 @@ public sealed class EditorWiringTests
 			WindowMaximized = true,
 			GraphSplit = 0.45f,
 			PropertiesSplit = 0.7f,
+			CodeSplit = 0.2f,
 		};
 		Assert.IsTrue(await store.SaveAsync(stored).ConfigureAwait(false));
 
@@ -155,6 +156,7 @@ public sealed class EditorWiringTests
 		Assert.IsTrue(reread.WindowMaximized);
 		Assert.AreEqual(0.45f, reread.GraphSplit, "the pane split should have been written back on exit");
 		Assert.AreEqual(0.7f, reread.PropertiesSplit);
+		Assert.AreEqual(0.2f, reread.CodeSplit, "the layout pane's split should round-trip too");
 	}
 
 	/// <summary>
