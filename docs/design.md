@@ -104,7 +104,7 @@ functionDeclaration:
 
 ```plaintext
 Coder/
-├── Coder.Core/
+├── Coder/
 │   ├── Ast/
 │   │   ├── AstNode.cs ✅
 │   │   ├── AstLeafNode.cs ✅
@@ -132,7 +132,7 @@ Coder/
 │   ├── Serialization/
 │   │   └── YamlSerializationTests.cs ✅
 │   └── ServiceCollectionExtensionsTests.cs ✅
-├── Coder.CLI/
+├── Coder.Cli/
 │   └── SampleCLI.cs ✅
 └── Coder.App/
     └── Program.cs ✅ (TUI with Spectre.Console)

@@ -15,11 +15,11 @@ This repository contains a flexible and extensible .NET library for representing
 
 ```
 Coder/
-├── Coder.Core/          # Core library with AST, serialization, and language generators
+├── Coder/              # Core library with AST, serialization, and language generators
 │   ├── Ast/            # Abstract Syntax Tree node definitions
 │   ├── Serialization/  # YAML serialization/deserialization
 │   └── Languages/      # Language-specific code generators (ILanguageGenerator)
-├── Coder.ConsoleApp/   # Interactive TUI application (Spectre.Console)
+├── Coder.Cli/          # Interactive TUI application (Spectre.Console)
 ├── Coder.Test/         # Unit tests (MSTest)
 └── scripts/            # Build and release automation scripts (PSBuild)
 ```
@@ -38,7 +38,7 @@ dotnet test
 
 ### Running the Console Application
 ```bash
-dotnet run --project Coder.ConsoleApp
+dotnet run --project Coder.Cli
 ```
 
 ## Code Style Requirements
@@ -156,7 +156,7 @@ The repository uses a PowerShell-based build system (`PSBuild`):
 
 ### Adding a New Feature
 1. Create feature branch from `main` or `develop`
-2. Implement core functionality in `Coder.Core`
+2. Implement core functionality in `Coder`
 3. Add comprehensive unit tests in `Coder.Test`
 4. Update README.md if API changes
 5. Update CHANGELOG.md with feature description

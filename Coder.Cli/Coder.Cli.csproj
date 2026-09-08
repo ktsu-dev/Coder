@@ -10,6 +10,6 @@
     <PackageReference Include="Polyfill" PrivateAssets="all" /></ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Coder.Core\Coder.Core.csproj" />
+    <ProjectReference Include="..\Coder\Coder.csproj" />
   </ItemGroup>
 </Project>

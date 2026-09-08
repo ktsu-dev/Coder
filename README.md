@@ -3,9 +3,9 @@
 A flexible and extensible .NET library for representing code as Abstract Syntax Trees (AST), serializing to YAML, and generating code in multiple programming languages.
 
 [![License](https://img.shields.io/github/license/ktsu-dev/Coder.svg?label=License&logo=nuget)](LICENSE.md)
-[![NuGet Version](https://img.shields.io/nuget/v/ktsu.Coder.Core?label=Stable&logo=nuget)](https://nuget.org/packages/ktsu.Coder.Core)
-[![NuGet Version](https://img.shields.io/nuget/vpre/ktsu.Coder.Core?label=Latest&logo=nuget)](https://nuget.org/packages/ktsu.Coder.Core)
-[![NuGet Downloads](https://img.shields.io/nuget/dt/ktsu.Coder.Core?label=Downloads&logo=nuget)](https://nuget.org/packages/ktsu.Coder.Core)
+[![NuGet Version](https://img.shields.io/nuget/v/ktsu.Coder?label=Stable&logo=nuget)](https://nuget.org/packages/ktsu.Coder)
+[![NuGet Version](https://img.shields.io/nuget/vpre/ktsu.Coder?label=Latest&logo=nuget)](https://nuget.org/packages/ktsu.Coder)
+[![NuGet Downloads](https://img.shields.io/nuget/dt/ktsu.Coder?label=Downloads&logo=nuget)](https://nuget.org/packages/ktsu.Coder)
 [![GitHub commit activity](https://img.shields.io/github/commit-activity/m/ktsu-dev/Coder?label=Commits&logo=github)](https://github.com/ktsu-dev/Coder/commits/main)
 [![GitHub contributors](https://img.shields.io/github/contributors/ktsu-dev/Coder?label=Contributors&logo=github)](https://github.com/ktsu-dev/Coder/graphs/contributors)
 [![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/ktsu-dev/Coder/dotnet.yml?branch=main&label=Build&logo=github)](https://github.com/ktsu-dev/Coder/actions)
@@ -152,6 +152,10 @@ Add the NuGet package:
 dotnet add package ktsu.Coder
 ```
 
+Releases through 1.8.2 were published as `ktsu.Coder.Core`; from 2.0.0 the package ID is
+`ktsu.Coder`. The namespaces (`ktsu.Coder.Ast`, `ktsu.Coder.Languages`, `ktsu.Coder.Serialization`)
+are unchanged, so migrating is a package reference edit and nothing more.
+
 ## Quick Start
 
 ### Creating an AST
@@ -265,13 +269,13 @@ public class JavaScriptGenerator : LanguageGeneratorBase
 
 The repository includes two example applications:
 
--   **Coder.CLI**: Command-line tool demonstrating basic functionality
+-   **Coder.Cli**: Command-line tool demonstrating basic functionality
 -   **Coder.App**: Console application with more complex examples
 
 Run them to see the library in action:
 
 ```bash
-dotnet run --project Coder.CLI
+dotnet run --project Coder.Cli
 dotnet run --project Coder.App
 ```
 

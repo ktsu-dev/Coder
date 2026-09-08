@@ -3,7 +3,7 @@
 ## Phase 1: Core Infrastructure
 
 - [x] **Task 1.1: Set up project structure**
-  - Create Class Library projects for Coder.Core
+  - Create Class Library projects for Coder
   - Set up test project for Coder.Test
   - Configure CI/CD pipeline in GitHub Actions
 
