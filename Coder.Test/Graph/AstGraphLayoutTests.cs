@@ -170,6 +170,12 @@ public class AstGraphLayoutTests
 	/// Tests that fitting a graph too big for the canvas zooms out until it fits, rather than only
 	/// centring the part of it that happens to be on screen.
 	/// </summary>
+	/// <remarks>
+	/// The zooming is the node editor's, and covered by its own tests. What is this application's — and
+	/// what this covers — is the canvas it hands over: the world origin is kept on the middle of the
+	/// canvas, so the editor passes twice the origin. Getting that wrong would fit the graph to the
+	/// wrong rectangle, which no test in the library could catch.
+	/// </remarks>
 	[TestMethod]
 	public void FitView_ZoomsOutUntilTheGraphFits()
 	{
@@ -194,37 +200,20 @@ public class AstGraphLayoutTests
 	}
 
 	/// <summary>
-	/// Tests that fitting a graph the canvas already has room for leaves it at its own size, since
-	/// magnifying it is not what "fit" means to anyone who asked to see all of it.
+	/// Tests that the editor's zoom is the node editor's, rather than a second value beside it.
 	/// </summary>
+	/// <remarks>
+	/// Asserted through the clamping, which is the renderer's: a value it would refuse coming back
+	/// changed is what says the property forwarded rather than storing what it was given.
+	/// </remarks>
 	[TestMethod]
-	public void FitView_DoesNotMagnifyAGraphThatAlreadyFits()
-	{
-		AstGraphEditor editor = new(SampleFunction()) { LayoutRunning = false, Zoom = 0.5f };
-		editor.Graph.Engine.WorldOrigin = new Vector2(1000, 800);
-
-		Node[] nodes = [.. editor.Graph.Engine.Nodes];
-		for (int i = 0; i < nodes.Length; i++)
-		{
-			editor.Graph.Engine.UpdateNodePosition(nodes[i].Id, new Vector2(i * 20f, 0f));
-			editor.Graph.Engine.UpdateNodeDimensions(nodes[i].Id, new Vector2(40f, 20f));
-		}
-
-		Assert.IsTrue(editor.FitView());
-		Assert.AreEqual(1f, editor.Zoom, 0.0001f);
-	}
-
-	/// <summary>
-	/// Tests that the zoom stays within the range the view offers, however it is set.
-	/// </summary>
-	[TestMethod]
-	public void Zoom_IsHeldWithinTheRangeTheSliderOffers()
+	public void Zoom_IsTheRenderersOwn()
 	{
 		AstGraphEditor editor = new(SampleFunction()) { Zoom = 50f };
-		Assert.IsTrue(editor.Zoom is > 1f and <= 2f, $"{editor.Zoom} is not a zoom the view offers");
+		Assert.AreEqual(NodeEditorRenderer.MaxZoom, editor.Zoom);
 
 		editor.Zoom = 0f;
-		Assert.IsTrue(editor.Zoom is > 0f and < 1f, $"{editor.Zoom} is not a zoom the view offers");
+		Assert.AreEqual(NodeEditorRenderer.MinZoom, editor.Zoom);
 	}
 
 	/// <summary>

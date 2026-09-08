@@ -42,10 +42,6 @@ public sealed class AstGraphEditor(AstNode root)
 
 	private bool fitted;
 
-	private bool fontScaled;
-
-	private readonly Dictionary<int, ViewState> viewSpace = [];
-
 	private string? editingField;
 
 	/// <summary>
@@ -82,21 +78,16 @@ public sealed class AstGraphEditor(AstNode root)
 	/// Gets or sets how large the graph is drawn, as a multiplier: 1 draws it at its own size.
 	/// </summary>
 	/// <remarks>
-	/// A view setting, not a document one. The graph's positions and the layout that arranges them
-	/// are kept at their own scale whatever this is, and the zoom is applied and undone around the
-	/// one frame that draws them — so the simulation is never asked to work in a space that changes
-	/// under it, and a node dragged while zoomed out lands where the pointer was.
-	/// <para>
-	/// The node editor underneath has no zoom of its own, so this is what there is: it scales the
-	/// distances between nodes and the text inside them together, which is what makes a whole graph
-	/// fit on screen rather than merely spreading it out.
-	/// </para>
+	/// The node editor's own, forwarded rather than held here. It is the renderer that scales node
+	/// positions on their way into ImNodes and unscales them on the way back, which is the only seam
+	/// a zoom can sit at when ImNodes has none of its own; a second copy of the value here would only
+	/// be something to keep in step with it.
 	/// </remarks>
 	public float Zoom
 	{
-		get;
-		set => field = Math.Clamp(value, MinZoom, MaxZoom);
-	} = 1f;
+		get => renderer.Zoom;
+		set => renderer.Zoom = value;
+	}
 
 	/// <summary>
 	/// Gets or sets a value indicating whether <see cref="Draw"/> puts the inspector panel beside the
@@ -173,8 +164,6 @@ public sealed class AstGraphEditor(AstNode root)
 		Vector2 origin = ImGui.GetCursorScreenPos();
 		ImGui.BeginChild("ast-graph-canvas", graphSize, ImGuiChildFlags.None, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
 
-		EnterViewSpace();
-
 		renderer.Render(Graph.Engine, graphSize);
 
 		ApplyNodeMovement();
@@ -187,8 +176,6 @@ public sealed class AstGraphEditor(AstNode root)
 		{
 			renderer.RenderDebugOverlays(Graph.Engine, origin, graphSize, showDebug: true);
 		}
-
-		LeaveViewSpace();
 
 		ImGui.EndChild();
 
@@ -219,21 +206,6 @@ public sealed class AstGraphEditor(AstNode root)
 	/// The least room the graph keeps, however little the editor was given.
 	/// </summary>
 	private const float MinimumGraphWidth = 160f;
-
-	/// <summary>
-	/// The smallest the graph is drawn, as a multiplier of its own size.
-	/// </summary>
-	private const float MinZoom = 0.25f;
-
-	/// <summary>
-	/// The largest the graph is drawn, as a multiplier of its own size.
-	/// </summary>
-	private const float MaxZoom = 2f;
-
-	/// <summary>
-	/// How much of the canvas a fitted graph is asked to fill, leaving a margin around it.
-	/// </summary>
-	private const float FitMargin = 0.9f;
 
 	/// <summary>
 	/// The width of the toolbar's zoom slider.
@@ -287,7 +259,7 @@ public sealed class AstGraphEditor(AstNode root)
 		ImGui.SameLine();
 		ImGui.SetNextItemWidth(ZoomSliderWidth);
 		float percent = Zoom * 100f;
-		if (ImGui.SliderFloat("##zoom", ref percent, MinZoom * 100f, MaxZoom * 100f, "%.0f%%"))
+		if (ImGui.SliderFloat("##zoom", ref percent, NodeEditorRenderer.MinZoom * 100f, NodeEditorRenderer.MaxZoom * 100f, "%.0f%%"))
 		{
 			Zoom = percent / 100f;
 		}
@@ -562,113 +534,6 @@ public sealed class AstGraphEditor(AstNode root)
 	}
 
 	/// <summary>
-	/// Scales the graph into the space it is drawn in, for the duration of one frame's drawing.
-	/// </summary>
-	/// <remarks>
-	/// The node editor underneath has no zoom, and it takes each node's position straight out of the
-	/// engine, so the only place a zoom can be applied is the engine itself. Doing that permanently
-	/// would put the simulation in a space that changes whenever the user drags the slider — its rest
-	/// length, its repulsion distance and its overlap margin are all lengths, and none of them would
-	/// mean the same thing afterwards.
-	/// <para>
-	/// So the scaling is put on before the frame is drawn and taken off again after, by
-	/// <see cref="LeaveViewSpace"/>. Between those two calls the engine holds view positions, which is
-	/// what the renderer draws and what the user's drag is read back in; outside them it holds the
-	/// graph's own, which is what the layout runs on and what a fit is measured against.
-	/// </para>
-	/// <para>
-	/// Scaled about the world origin — the middle of the canvas — so zooming keeps whatever is in the
-	/// middle of the view in the middle of the view, rather than sending the graph towards a corner.
-	/// The text is scaled to match, because a node's box is sized from the text inside it: without
-	/// that, zooming out would only move the nodes closer together while they stayed the same size,
-	/// which packs them tighter instead of showing more.
-	/// </para>
-	/// </remarks>
-	private void EnterViewSpace()
-	{
-		fontScaled = false;
-		viewSpace.Clear();
-
-		if (IsUnzoomed)
-		{
-			return;
-		}
-
-		Vector2 centre = Graph.Engine.WorldOrigin;
-		foreach (Node node in Graph.Engine.Nodes.ToArray())
-		{
-			Vector2 view = ((node.Position - centre) * Zoom) + centre;
-			viewSpace[node.Id] = new ViewState(node.Position, node.Dimensions, view);
-			Graph.Engine.UpdateNodePosition(node.Id, view);
-		}
-
-		ImGui.PushFont(ImGui.GetFont(), ImGui.GetFontSize() * Zoom);
-		fontScaled = true;
-	}
-
-	/// <summary>
-	/// Takes the scaling back off, returning the engine to the graph's own space.
-	/// </summary>
-	/// <remarks>
-	/// A node the frame did not touch is put back to exactly the value it had rather than divided by
-	/// the zoom it was multiplied by, and its size is left alone rather than divided at all. That is
-	/// the difference between a transform and its inverse being applied once and being applied every
-	/// frame: a size only arrives from the renderer when it has measured a new one, so dividing them
-	/// unconditionally would divide the same value again on every frame it did not change, and a
-	/// graph left alone for a second would have nodes thousands of times their real size.
-	/// </remarks>
-	private void LeaveViewSpace()
-	{
-		if (fontScaled)
-		{
-			ImGui.PopFont();
-			fontScaled = false;
-		}
-
-		if (IsUnzoomed)
-		{
-			return;
-		}
-
-		Vector2 centre = Graph.Engine.WorldOrigin;
-		foreach (Node node in Graph.Engine.Nodes.ToArray())
-		{
-			// A node the frame replaced — a rebuild reassigns every identifier — is not one this frame
-			// put into view space, so it is converted rather than restored.
-			bool known = viewSpace.TryGetValue(node.Id, out ViewState state);
-
-			Graph.Engine.UpdateNodePosition(
-				node.Id,
-				known && state.View == node.Position
-					? state.Position
-					: ((node.Position - centre) / Zoom) + centre);
-
-			// Untouched means the renderer reported no new measurement, so what is there is still the
-			// size from before the frame and is already in the graph's own space.
-			if (!known || state.Dimensions != node.Dimensions)
-			{
-				Graph.Engine.UpdateNodeDimensions(node.Id, node.Dimensions / Zoom);
-			}
-		}
-
-		viewSpace.Clear();
-	}
-
-	/// <summary>
-	/// Gets a value indicating whether the view is at the graph's own scale, where the transform is
-	/// the identity and is skipped rather than applied as one.
-	/// </summary>
-	private bool IsUnzoomed => Math.Abs(Zoom - 1f) < 0.0001f;
-
-	/// <summary>
-	/// What a node looked like before the frame scaled it, and what it was scaled to.
-	/// </summary>
-	/// <param name="Position">Its position in the graph's own space.</param>
-	/// <param name="Dimensions">Its size in the graph's own space.</param>
-	/// <param name="View">The position it was drawn at, so a value still equal to it is one nothing moved.</param>
-	private readonly record struct ViewState(Vector2 Position, Vector2 Dimensions, Vector2 View);
-
-	/// <summary>
 	/// Writes back the positions the user dragged nodes to, and the sizes ImNodes measured.
 	/// </summary>
 	/// <remarks>
@@ -781,75 +646,24 @@ public sealed class AstGraphEditor(AstNode root)
 	/// </summary>
 	/// <returns>True if there was anything to bring into view.</returns>
 	/// <remarks>
-	/// The layout arranges nodes wherever the forces take them, and a user can drag one anywhere, so
-	/// a document can end up off the edge of the view with no clue which way to scroll back. Worse,
-	/// a graph can simply be bigger than the canvas, which no amount of centring fixes.
+	/// The layout arranges nodes wherever the forces take them, and a user can drag one anywhere, so a
+	/// document can end up off the edge of the view with no clue which way to scroll back. Worse, a
+	/// graph can simply be bigger than the canvas, which no amount of centring fixes.
 	/// <para>
-	/// Centring moves the arrangement rather than the view: the renderer writes each node's position
-	/// into the node editor every frame, so panning the editor is undone as soon as it is read back —
-	/// the positions are the only thing that decides where a node is drawn. The whole arrangement is
-	/// translated, so the shape the layout settled into is preserved rather than being disturbed by
-	/// the act of looking at it.
-	/// </para>
-	/// <para>
-	/// The zoom is then whatever makes the arrangement's own extent fit inside the canvas, with a
-	/// margin so nothing sits against an edge, and never more than <see cref="MaxZoom"/> — a graph
-	/// small enough to be magnified is shown at its own size rather than blown up to fill the room.
-	/// A graph too big even at <see cref="MinZoom"/> is shown as small as the view goes, which is the
-	/// most of it that can be had.
+	/// The node editor does both parts — it owns the zoom, and centring means moving the nodes, which
+	/// is its business rather than this application's. What is decided here is the canvas: the world
+	/// origin is kept on the middle of it, so twice the origin is the whole of it.
 	/// </para>
 	/// </remarks>
 	public bool FitView()
 	{
-		Node[] nodes = [.. Graph.Engine.Nodes];
-		if (nodes.Length == 0)
+		if (!renderer.FitToView(Graph.Engine, Graph.Engine.WorldOrigin * 2f))
 		{
 			return false;
 		}
 
-		// Measured across each node's whole extent rather than its top-left corner, so a wide node on
-		// one edge does not pull the arrangement off centre by half its width.
-		Vector2 lowest = new(float.MaxValue, float.MaxValue);
-		Vector2 highest = new(float.MinValue, float.MinValue);
-
-		foreach (Node node in nodes)
-		{
-			lowest = Vector2.Min(lowest, node.Position);
-			highest = Vector2.Max(highest, node.Position + node.Dimensions);
-		}
-
-		Vector2 offset = Graph.Engine.WorldOrigin - ((lowest + highest) * 0.5f);
-		foreach (Node node in nodes)
-		{
-			Graph.Engine.UpdateNodePosition(node.Id, node.Position + offset);
-		}
-
-		// The origin is kept on the middle of the canvas, so the canvas is twice it.
-		Zoom = FittingZoom(highest - lowest, Graph.Engine.WorldOrigin * 2f);
-
 		statusMessage = "Brought the graph into view.";
 		return true;
-	}
-
-	/// <summary>
-	/// Works out the largest zoom an arrangement still fits the canvas at.
-	/// </summary>
-	/// <param name="extent">How much room the arrangement takes at its own scale.</param>
-	/// <param name="canvas">The room there is to show it in.</param>
-	/// <returns>The zoom to use, within the range the view allows.</returns>
-	/// <remarks>
-	/// Never above one, so fitting only ever zooms out. Magnifying a small graph to fill the canvas
-	/// would be a surprising answer to "fit": the user asked to see all of it, and they already can.
-	/// </remarks>
-	private static float FittingZoom(Vector2 extent, Vector2 canvas)
-	{
-		if (extent.X <= 0f || extent.Y <= 0f || canvas.X <= 0f || canvas.Y <= 0f)
-		{
-			return 1f;
-		}
-
-		float fitting = Math.Min(canvas.X / extent.X, canvas.Y / extent.Y) * FitMargin;
-		return Math.Clamp(Math.Min(fitting, 1f), MinZoom, MaxZoom);
 	}
 
 	/// <summary>
