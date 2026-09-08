@@ -17,6 +17,8 @@
     <PackageReference Include="ktsu.Essentials.FileSystemProviders.Native" />
     <!-- The history tests assert against the undo stack's own command and metadata types. -->
     <PackageReference Include="ktsu.UndoRedo.Core" />
+    <!-- The preview tests classify generated source with the same highlighter the pane draws it with. -->
+    <PackageReference Include="ktsu.ImGui.SyntaxHighlighting" />
   </ItemGroup>
 
   <ItemGroup>

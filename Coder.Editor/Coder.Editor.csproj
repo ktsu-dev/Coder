@@ -12,6 +12,8 @@
   <ItemGroup>
     <PackageReference Include="Hexa.NET.ImGui" />
     <PackageReference Include="ktsu.ImGui.App" />
+    <!-- The preview pane draws the generated source highlighted rather than as flat text. -->
+    <PackageReference Include="ktsu.ImGui.SyntaxHighlighting" />
     <PackageReference Include="ktsu.UndoRedo.Core" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />

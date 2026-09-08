@@ -11,6 +11,7 @@ using ktsu.Coder.Ast;
 using ktsu.Coder.Graph;
 using ktsu.Coder.Languages;
 using ktsu.ImGui.App;
+using ktsu.ImGui.SyntaxHighlighting;
 
 /// <summary>
 /// The editor: a graph of the document on the left, the code it generates on the right.
@@ -274,7 +275,39 @@ public sealed class CoderEditorApp(
 			CopyGeneratedCode();
 		}
 
-		ImGui.TextUnformatted(GeneratedCode);
+		DrawGeneratedCode();
+	}
+
+	/// <summary>
+	/// The configuration the preview draws generated source with.
+	/// </summary>
+	/// <remarks>
+	/// Held once rather than built per frame because it never varies: it is a record, and a new one
+	/// every frame would be an allocation per frame for a value that is the same each time. The
+	/// palette is deliberately left unset, which makes the highlighter pick one per frame from the
+	/// window background, so the preview keeps matching whatever theme the application is in.
+	/// </remarks>
+	private static readonly SyntaxHighlightConfig CodeStyle = new() { ShowLineNumbers = true };
+
+	/// <summary>
+	/// Draws the generated source, highlighted for the language it was generated in.
+	/// </summary>
+	/// <remarks>
+	/// Every generator's <see cref="ILanguageGenerator.LanguageId"/> is already the name the
+	/// highlighter knows that language by, so the two need nothing between them. An id it did not
+	/// know would fall back to plain text rather than throwing, which is the right failure but a
+	/// silent one, so a test pins that each generator's language is one it recognises.
+	/// <para>
+	/// Drawn inside a scrolling child because the highlighter does not wrap: a long line is clipped
+	/// by whatever window it is in, and generated code is indented and can run wide. Scrolling
+	/// horizontally is how the rest of it is reached.
+	/// </para>
+	/// </remarks>
+	private void DrawGeneratedCode()
+	{
+		ImGui.BeginChild("generated-code", Vector2.Zero, ImGuiChildFlags.None, ImGuiWindowFlags.HorizontalScrollbar);
+		ImGuiSyntaxHighlighting.Render(GeneratedCode, Settings.PreviewLanguageId, CodeStyle);
+		ImGui.EndChild();
 	}
 
 	/// <summary>
