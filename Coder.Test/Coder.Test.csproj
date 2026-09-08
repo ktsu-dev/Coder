@@ -19,6 +19,8 @@
     <PackageReference Include="ktsu.UndoRedo.Core" />
     <!-- The preview tests classify generated source with the same highlighter the pane draws it with. -->
     <PackageReference Include="ktsu.ImGui.SyntaxHighlighting" />
+    <!-- The window-state tests name the windowing layer's own maximized state. -->
+    <PackageReference Include="Silk.NET.Windowing" />
   </ItemGroup>
 
   <ItemGroup>

@@ -9,6 +9,7 @@ using ktsu.Coder.Ast;
 using ktsu.Coder.Graph;
 using ktsu.ImGui.App;
 using ktsu.ImGui.App.Testing;
+using ktsu.ImGuiNodeEditor;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 /// <summary>
@@ -218,9 +219,11 @@ public sealed class AstGraphEditorTests
 	/// caption is never hidden behind the node in front of it.
 	/// </summary>
 	/// <remarks>
-	/// Drawn for real rather than asserted headlessly, because how big a node is drawn is only known
-	/// once it has been: the layout is told a node's size by the renderer that measured it, and this
-	/// covers that whole path rather than the arithmetic alone.
+	/// The separation is the layout library's, not this application's, and it is asserted here rather
+	/// than left to that library's own tests because it only works when a node's measured size reaches
+	/// the simulation. That happens by the renderer reading the size back out of the node editor and
+	/// writing it into the engine, which is this application's wiring and is only exercised by drawing
+	/// real frames.
 	/// </remarks>
 	[TestMethod]
 	public void Editor_PullsOverlappingNodesApartAsItRuns()
@@ -235,7 +238,22 @@ public sealed class AstGraphEditorTests
 		using ImGuiAppHarness harness = ImGuiAppHarness.Start(ConfigFor(editor), Options);
 		harness.Step(180);
 
-		Assert.AreEqual(0f, editor.Graph.SeparateOverlaps(), "three seconds of layout left nodes drawn over one another");
+		Node[] nodes = [.. editor.Graph.Engine.Nodes];
+		Assert.IsTrue(nodes.All(node => node.Dimensions.X > 0f), "the renderer should have measured every node");
+
+		for (int i = 0; i < nodes.Length; i++)
+		{
+			for (int j = i + 1; j < nodes.Length; j++)
+			{
+				bool apart =
+					nodes[i].Position.X + nodes[i].Dimensions.X <= nodes[j].Position.X ||
+					nodes[j].Position.X + nodes[j].Dimensions.X <= nodes[i].Position.X ||
+					nodes[i].Position.Y + nodes[i].Dimensions.Y <= nodes[j].Position.Y ||
+					nodes[j].Position.Y + nodes[j].Dimensions.Y <= nodes[i].Position.Y;
+
+				Assert.IsTrue(apart, $"three seconds of layout left {nodes[i].Name} drawn over {nodes[j].Name}");
+			}
+		}
 	}
 
 	/// <summary>

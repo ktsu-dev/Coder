@@ -14,6 +14,10 @@
     <PackageReference Include="ktsu.ImGui.App" />
     <!-- The preview pane draws the generated source highlighted rather than as flat text. -->
     <PackageReference Include="ktsu.ImGui.SyntaxHighlighting" />
+    <!-- The panes are divider containers, so the user sizes them rather than the application. -->
+    <PackageReference Include="ktsu.ImGui.Widgets" />
+    <!-- Remembering whether the window was maximized means naming the windowing layer's own state. -->
+    <PackageReference Include="Silk.NET.Windowing" />
     <PackageReference Include="ktsu.UndoRedo.Core" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
