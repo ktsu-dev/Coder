@@ -130,17 +130,35 @@ public sealed class CoderEditorApp(
 	/// <summary>
 	/// Builds the document a fresh editor opens with.
 	/// </summary>
-	/// <returns>A function with one parameter and an empty body.</returns>
+	/// <returns>A small class with two fields and two methods that do something with them.</returns>
 	/// <remarks>
-	/// An empty function rather than an empty graph: the AST has no node that means "nothing yet",
-	/// and a user who has just opened the editor is better served by something to attach to than by
-	/// a blank canvas and no way to start.
+	/// Something to read rather than something to start from: the AST has no node meaning "nothing
+	/// yet", and a canvas holding one empty function shows neither what the node kinds are nor how
+	/// they connect. This one puts a field, a parameter, an assignment, a binary expression, a local
+	/// and a return on screen at once, so the shape of the graph is legible before anything is added.
 	/// </remarks>
-	public static FunctionDeclaration NewDocument()
+	public static ClassDeclaration NewDocument()
 	{
-		FunctionDeclaration function = new("newFunction") { ReturnType = "void" };
-		function.Parameters.Add(new Parameter("value", "int"));
-		return function;
+		ClassDeclaration declaration = new("Counter");
+
+		declaration.Members.Add(new VariableDeclaration("count", "int", new LiteralExpression<int>(0)));
+		declaration.Members.Add(new VariableDeclaration("step", "int", new LiteralExpression<int>(1)));
+
+		FunctionDeclaration add = new("Add") { ReturnType = "int" };
+		add.Parameters.Add(new Parameter("amount", "int"));
+		add.Body.Add(new AssignmentStatement(
+			new VariableReference("count"),
+			new BinaryExpression(new VariableReference("count"), BinaryOperator.Add, new VariableReference("amount"))));
+		add.Body.Add(new ReturnStatement(new VariableReference("count")));
+		declaration.Members.Add(add);
+
+		FunctionDeclaration next = new("Next") { ReturnType = "int" };
+		next.Body.Add(new VariableDeclaration("result", "int",
+			new BinaryExpression(new VariableReference("count"), BinaryOperator.Add, new VariableReference("step"))));
+		next.Body.Add(new ReturnStatement(new VariableReference("result")));
+		declaration.Members.Add(next);
+
+		return declaration;
 	}
 
 	/// <summary>

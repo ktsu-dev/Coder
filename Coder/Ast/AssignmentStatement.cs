@@ -44,7 +44,9 @@ public class AssignmentStatement : AstNode
 	/// </summary>
 	public AssignmentStatement()
 	{
-		Target = new VariableReference("");
+		// VariableReference(string) rejects an empty name, so the placeholder a deserializer overwrites
+		// has to come from the parameterless constructor instead.
+		Target = new VariableReference();
 		Value = new LiteralExpression<string>("");
 		Operator = AssignmentOperator.Assign;
 	}
