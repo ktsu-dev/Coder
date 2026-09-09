@@ -64,6 +64,8 @@ source in four target languages. The solution uses:
 - `ktsu.DeepClone` — cloning support for AST nodes
 - `YamlDotNet` — YAML serialization
 - `ktsu.ImGui.NodeEditor`, `Hexa.NET.ImGui`, `Hexa.NET.ImNodes` — the node-graph editor
+- `ktsu.ImGui.Widgets` — the editor's divider panes, and the property grid the inspector's rows are
+- `ktsu.ImGui.Probes` — names the two inspector rows composed by hand, so a headless test finds them
 - `ktsu.ImGui.App` — the desktop application shell
 - `ktsu.UndoRedo.Core` — the graph editor's undo stack
 - `ktsu.Essentials` — filesystem and persistence providers the editor reads and writes through
