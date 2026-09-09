@@ -1,6 +1,6 @@
-## v3.1.0 (minor)
+## v3.1.1 (patch)
 
-Changes since v3.0.0:
+Changes since v3.1.0:
 
-- Tune the layout from a pane beside the graph ([@Claude](https://github.com/Claude))
+- Bump the ktsu ImGui suite to 3.27.0 ([@Claude](https://github.com/Claude))
 
