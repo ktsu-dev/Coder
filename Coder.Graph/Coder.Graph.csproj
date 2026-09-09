@@ -15,6 +15,11 @@
          inherited through the node editor. -->
     <PackageReference Include="ktsu.ForceDirectedLayout" />
     <PackageReference Include="ktsu.UndoRedo.Core" />
+    <!-- The inspector's properties are rows of this package's property grid. -->
+    <PackageReference Include="ktsu.ImGui.Widgets" />
+    <!-- The two rows the grid has no method for are marked for the probes the same way its own rows
+         are, which is what lets a headless test find them. -->
+    <PackageReference Include="ktsu.ImGui.Probes" />
     <PackageReference Include="Hexa.NET.ImGui" />
     <PackageReference Include="Hexa.NET.ImNodes" />
     <PackageReference Include="Polyfill" PrivateAssets="all" />

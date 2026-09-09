@@ -4,6 +4,7 @@ namespace ktsu.Coder.Graph;
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Numerics;
 using Hexa.NET.ImGui;
@@ -11,6 +12,8 @@ using Hexa.NET.ImNodes;
 using ktsu.Coder.Ast;
 using ktsu.ForceDirectedLayout;
 using ktsu.ImGui.NodeEditor;
+using ktsu.ImGui.Probes;
+using ktsu.ImGui.Widgets;
 using ktsu.UndoRedo;
 using ktsu.UndoRedo.Contracts;
 using ktsu.UndoRedo.Core.Services;
@@ -36,6 +39,28 @@ using ktsu.UndoRedo.Core.Services;
 public sealed class AstGraphEditor(AstNode root)
 {
 	private readonly NodeEditorRenderer renderer = new();
+
+	/// <summary>
+	/// How the inspector's property grid is laid out.
+	/// </summary>
+	/// <remarks>
+	/// A name column of very nearly half the panel, rather than the roughly a third the widget's
+	/// default leaves it. The weight is a share of the value column's own rather than of the whole,
+	/// so 0.95 against that column's 1 is the even split a panel this narrow needs: the inspector
+	/// sits beside the graph, and the names it draws — <c>Visibility</c>, <c>Parameters</c> — are
+	/// longer than most of the values beside them. It stays the user's to drag either way.
+	/// <para>
+	/// Fractions are spelled to fifteen significant digits rather than the widget's six decimal
+	/// places. A literal is a value the generated source will carry, so the row has to show what the
+	/// document holds: 3.14 has to read as 3.14 rather than as 3.140000, and a value with more digits
+	/// than that has to keep them when the user opens the box to change something else about it.
+	/// </para>
+	/// </remarks>
+	private static readonly ImGuiWidgets.PropertyGridOptions InspectorGridOptions = new()
+	{
+		LabelColumnWeight = 0.95f,
+		DoubleFormat = "%.15g",
+	};
 
 	private string statusMessage = string.Empty;
 
@@ -323,14 +348,28 @@ public sealed class AstGraphEditor(AstNode root)
 
 		ImGui.TextUnformatted(AstSchema.Describe(node));
 
-		foreach (AstField field in AstFields.Of(node))
+		// One property grid rather than a column of individually labelled controls: the names line up
+		// in a column of their own, every editor fills the width left over instead of whatever the
+		// widest label made room for, and the divider between the two is the user's to drag. Which
+		// rows a node has is still AstFields' answer, so what the panel offers has not changed — only
+		// how it is laid out, which is the widget's to decide.
+		using (ImGuiWidgets.PropertyGrid grid = new("ast-inspector-properties", InspectorGridOptions))
 		{
-			DrawField(node, field);
-		}
+			// A grid whose table never opened is one the panel is too small to show, and each of its
+			// rows is a no-op. Its own rows know that; the two composed below have to be told, and so
+			// does the commit that reads back the item a row left behind.
+			if (grid.IsDrawing)
+			{
+				foreach (AstField field in AstFields.Of(node))
+				{
+					DrawField(grid, node, field);
+				}
 
-		foreach (AstSlot slot in AstSchema.SlotsOf(node).Where(slot => slot.Cardinality == AstSlotCardinality.Many))
-		{
-			DrawSlotCount(node, slot);
+				foreach (AstSlot slot in AstSchema.SlotsOf(node).Where(slot => slot.Cardinality == AstSlotCardinality.Many))
+				{
+					DrawSlotCount(node, slot);
+				}
+			}
 		}
 
 		DrawConversions(node);
@@ -417,27 +456,36 @@ public sealed class AstGraphEditor(AstNode root)
 	}
 
 	/// <summary>
-	/// Draws one editable property, using the widget its kind calls for.
+	/// Draws one editable property as a row of the inspector's grid, using the editor its kind calls
+	/// for.
 	/// </summary>
+	/// <param name="grid">The grid the row is drawn in.</param>
 	/// <param name="node">The node being edited.</param>
 	/// <param name="field">The property to draw.</param>
 	/// <remarks>
-	/// Text is committed when the box is left or the user presses enter rather than on every
+	/// A flag is committed as it is clicked, since a checkbox has nowhere to be half-set. Everything
+	/// that is typed is committed when the box is left or the user presses enter rather than on every
 	/// keystroke, so typing a name puts one step on the undo stack instead of one per character.
 	/// </remarks>
-	private void DrawField(AstNode node, AstField field)
+	private void DrawField(ImGuiWidgets.PropertyGrid grid, AstNode node, AstField field)
 	{
-		ImGui.SetNextItemWidth(180f);
-
 		switch (field.Kind)
 		{
 			case AstFieldKind.Flag:
 				bool flag = string.Equals(field.Value, "true", StringComparison.Ordinal);
-				if (ImGui.Checkbox(field.Name, ref flag))
+				if (grid.Value(field.Name, ref flag))
 				{
 					SetField(node, field.Name, flag ? "true" : "false");
 				}
 
+				break;
+
+			case AstFieldKind.Number:
+				DrawNumberField(grid, node, field);
+				break;
+
+			case AstFieldKind.Fraction:
+				DrawFractionField(grid, node, field);
 				break;
 
 			case AstFieldKind.Choice:
@@ -445,7 +493,7 @@ public sealed class AstGraphEditor(AstNode root)
 				break;
 
 			default:
-				DrawTextField(node, field);
+				DrawTextField(grid, node, field);
 				break;
 		}
 	}
@@ -453,30 +501,128 @@ public sealed class AstGraphEditor(AstNode root)
 	/// <summary>
 	/// Draws a property the user types into.
 	/// </summary>
+	/// <param name="grid">The grid the row is drawn in.</param>
 	/// <param name="node">The node being edited.</param>
 	/// <param name="field">The property to draw.</param>
+	private void DrawTextField(ImGuiWidgets.PropertyGrid grid, AstNode node, AstField field)
+	{
+		string buffer = ShownValue(field);
+
+		if (grid.Value(field.Name, ref buffer))
+		{
+			HoldEdit(field, buffer);
+		}
+
+		CommitWhenLeft(node, field);
+	}
+
+	/// <summary>
+	/// Draws a property that holds a whole number.
+	/// </summary>
+	/// <param name="grid">The grid the row is drawn in.</param>
+	/// <param name="node">The node being edited.</param>
+	/// <param name="field">The property to draw.</param>
+	/// <remarks>
+	/// A number row rather than a text one, so the box steps with the arrow keys and refuses what is
+	/// not a number before <see cref="AstFields.TryWrite"/> has to. The value still travels as text
+	/// between the two, which is what lets one undoable command record any field whatever it holds.
+	/// </remarks>
+	private void DrawNumberField(ImGuiWidgets.PropertyGrid grid, AstNode node, AstField field)
+	{
+		int value = int.TryParse(ShownValue(field), NumberStyles.Integer, CultureInfo.InvariantCulture, out int number)
+			? number
+			: 0;
+
+		if (grid.Value(field.Name, ref value))
+		{
+			HoldEdit(field, value.ToString(CultureInfo.InvariantCulture));
+		}
+
+		CommitWhenLeft(node, field);
+	}
+
+	/// <summary>
+	/// Draws a property that holds a number with a fractional part.
+	/// </summary>
+	/// <param name="grid">The grid the row is drawn in.</param>
+	/// <param name="node">The node being edited.</param>
+	/// <param name="field">The property to draw.</param>
+	private void DrawFractionField(ImGuiWidgets.PropertyGrid grid, AstNode node, AstField field)
+	{
+		double value = double.TryParse(ShownValue(field), NumberStyles.Float, CultureInfo.InvariantCulture, out double fraction)
+			? fraction
+			: 0d;
+
+		if (grid.Value(field.Name, ref value))
+		{
+			HoldEdit(field, value.ToString(CultureInfo.InvariantCulture));
+		}
+
+		CommitWhenLeft(node, field);
+	}
+
+	/// <summary>
+	/// Gets the value a field's editor should show: what is being typed into it, or what the document
+	/// holds when it is not the field being typed into.
+	/// </summary>
+	/// <param name="field">The property being drawn.</param>
+	/// <returns>The value to show, as text.</returns>
 	/// <remarks>
 	/// One buffer is shared across every field, keyed by which one is being typed into: only one box
 	/// can have the keyboard at a time, so a buffer per field would be state to keep in step with the
 	/// document for no gain. A field that is not being typed into shows the document's value, so an
 	/// undo while the box is open is reflected rather than overwritten.
 	/// </remarks>
-	private void DrawTextField(AstNode node, AstField field)
+	private string ShownValue(AstField field) => IsBeingEdited(field) ? fieldBuffer : field.Value;
+
+	/// <summary>Gets whether a field is the one currently being typed into.</summary>
+	/// <param name="field">The property being drawn.</param>
+	/// <returns>True when the shared buffer holds this field's half-finished value.</returns>
+	private bool IsBeingEdited(AstField field) => string.Equals(editingField, field.Name, StringComparison.Ordinal);
+
+	/// <summary>Remembers what has been typed into a field, which is not the document's value yet.</summary>
+	/// <param name="field">The property being edited.</param>
+	/// <param name="value">What the editor now holds, as text.</param>
+	private void HoldEdit(AstField field, string value)
 	{
-		bool editing = string.Equals(editingField, field.Name, StringComparison.Ordinal);
-		string buffer = editing ? fieldBuffer : field.Value;
+		editingField = field.Name;
+		fieldBuffer = value;
+	}
 
-		if (ImGui.InputText(field.Name, ref buffer, 256))
+	/// <summary>
+	/// Writes a held edit to the document once the user has left the editor that made it.
+	/// </summary>
+	/// <param name="node">The node being edited.</param>
+	/// <param name="field">The property being drawn, whose editor is the most recent item.</param>
+	private void CommitWhenLeft(AstNode node, AstField field)
+	{
+		if (IsBeingEdited(field) && ImGui.IsItemDeactivatedAfterEdit())
 		{
-			editingField = field.Name;
-			fieldBuffer = buffer;
-		}
-
-		if (ImGui.IsItemDeactivatedAfterEdit())
-		{
-			SetField(node, field.Name, buffer);
+			SetField(node, field.Name, fieldBuffer);
 			editingField = null;
 		}
+	}
+
+	/// <summary>
+	/// Starts a row the property grid has no method for, in the table it is already drawing.
+	/// </summary>
+	/// <param name="label">The row's name, drawn in the first column.</param>
+	/// <remarks>
+	/// Two of the inspector's rows are ones the widget does not offer: a choice between arbitrary
+	/// labelled values, and a count with the buttons that change it. Its combo row spells an option
+	/// by its enumeration name, where an operator here reads as its symbol beside its name and a
+	/// visibility the language does not spell reads as "(language default)"; and it has no row that
+	/// ends in buttons at all. A row is two cells of the table the grid is already inside, though, so
+	/// composing one leaves these properties in the same two columns, either side of the same
+	/// divider, as every row the widget draws itself.
+	/// </remarks>
+	private static void BeginComposedRow(string label)
+	{
+		ImGui.TableNextRow();
+		ImGui.TableSetColumnIndex(0);
+		ImGui.AlignTextToFramePadding();
+		ImGui.TextUnformatted(label);
+		ImGui.TableSetColumnIndex(1);
 	}
 
 	/// <summary>
@@ -486,10 +632,19 @@ public sealed class AstGraphEditor(AstNode root)
 	/// <param name="field">The property to draw.</param>
 	private void DrawChoiceField(AstNode node, AstField field)
 	{
+		BeginComposedRow(field.Name);
+
 		AstFieldChoice? current = field.Choices.FirstOrDefault(
 			choice => string.Equals(choice.Value, field.Value, StringComparison.Ordinal));
 
-		if (!ImGui.BeginCombo(field.Name, current?.Label ?? field.Value))
+		ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X);
+		bool open = ImGui.BeginCombo($"##{field.Name}", current?.Label ?? field.Value);
+
+		// Named for the probes the same way the grid names its own rows, so a test finds this one
+		// beside them rather than having to know it was composed rather than drawn by the widget.
+		ImGuiProbes.MarkItem(field.Name);
+
+		if (!open)
 		{
 			return;
 		}
@@ -501,6 +656,10 @@ public sealed class AstGraphEditor(AstNode root)
 			{
 				SetField(node, field.Name, choice.Value);
 			}
+
+			// The options are named for the probes too, so a test picks an operator the way a user
+			// does — by the label it reads as — rather than by where the list happens to put it.
+			ImGuiProbes.MarkItem(choice.Label);
 		}
 
 		ImGui.EndCombo();
@@ -511,16 +670,26 @@ public sealed class AstGraphEditor(AstNode root)
 	/// </summary>
 	/// <param name="node">The node whose slot to draw.</param>
 	/// <param name="slot">The slot to draw.</param>
+	/// <remarks>
+	/// The count is read rather than typed: adding a parameter and removing the last one are the two
+	/// edits the document knows how to undo, and a box that accepts any number would be asking for a
+	/// third that neither button can make.
+	/// </remarks>
 	private void DrawSlotCount(AstNode node, AstSlot slot)
 	{
+		BeginComposedRow(slot.Name);
+
 		int count = AstSchema.ChildrenOf(node, slot).Count;
-		ImGui.TextUnformatted($"{slot.Name}: {count}");
+		ImGui.AlignTextToFramePadding();
+		ImGui.TextUnformatted(count.ToString(CultureInfo.InvariantCulture));
 
 		ImGui.SameLine();
 		if (ImGui.Button($"+##add-{slot.Name}"))
 		{
 			AddChild(node, slot);
 		}
+
+		ImGuiProbes.MarkItem($"Add {slot.Name}");
 
 		ImGui.SameLine();
 		ImGui.BeginDisabled(count == 0);
@@ -529,6 +698,7 @@ public sealed class AstGraphEditor(AstNode root)
 			RemoveLastChild(node, slot);
 		}
 
+		ImGuiProbes.MarkItem($"Remove {slot.Name}");
 		ImGui.EndDisabled();
 	}
 
