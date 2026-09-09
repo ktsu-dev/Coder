@@ -200,11 +200,11 @@ public sealed class AstGraphEditorInspectorPanelTests
 		harness.Click("Add Parameters");
 		harness.Step(2);
 
-		Assert.AreEqual(2, function.Parameters.Count);
+		Assert.HasCount(2, function.Parameters);
 
 		harness.Click("Remove Parameters");
 		harness.Step(2);
 
-		Assert.AreEqual(1, function.Parameters.Count);
+		Assert.HasCount(1, function.Parameters);
 	}
 }
