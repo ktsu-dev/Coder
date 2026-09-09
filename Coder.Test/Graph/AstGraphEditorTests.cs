@@ -265,6 +265,19 @@ public sealed class AstGraphEditorTests
 	/// an origin left at zero drags the whole document off the edge — with nothing on screen to say
 	/// which way it went. The editor aims it at the middle of the canvas instead, and this is what
 	/// says so.
+	/// <para>
+	/// The horizontal tolerance is wider than the vertical because a settled graph is wider than the
+	/// canvas and much shorter than it. This document lays out as a row about 1150 across and 220 tall
+	/// on a canvas of 1000 by 600, so its ends necessarily hang over the sides while its top and bottom
+	/// sit well inside. That is the layout doing its job — the same six nodes used to settle 880 across
+	/// and 440 tall, and trading that height for width is what makes a graph read left to right.
+	/// </para>
+	/// <para>
+	/// What the bounds are for is a document that has drifted rather than one that is merely wide, and
+	/// the two are far apart: a graph pulled off towards the origin ends up hundreds to thousands of
+	/// units away and takes its centre with it, which is why the centre is asserted too. Widening these
+	/// to fit a shape is fine; a centre that has wandered is not.
+	/// </para>
 	/// </remarks>
 	[TestMethod]
 	public void Editor_KeepsTheLayoutInsideTheView()
@@ -274,14 +287,31 @@ public sealed class AstGraphEditorTests
 		using ImGuiAppHarness harness = ImGuiAppHarness.Start(ConfigFor(editor), Options);
 		harness.Step(300);
 
+		float left = float.MaxValue;
+		float right = float.MinValue;
+		float top = float.MaxValue;
+		float bottom = float.MinValue;
+
 		foreach (ktsu.ImGui.NodeEditor.Node node in editor.Graph.Engine.Nodes)
 		{
 			// One assertion per bound rather than a range: it says which edge the node went over.
-			Assert.IsGreaterThan(-200f, node.Position.X, $"{node.Name} drifted off the left to x {node.Position.X}");
-			Assert.IsLessThan(1200f, node.Position.X, $"{node.Name} drifted off the right to x {node.Position.X}");
+			Assert.IsGreaterThan(-400f, node.Position.X, $"{node.Name} drifted off the left to x {node.Position.X}");
+			Assert.IsLessThan(1400f, node.Position.X, $"{node.Name} drifted off the right to x {node.Position.X}");
 			Assert.IsGreaterThan(-200f, node.Position.Y, $"{node.Name} drifted off the top to y {node.Position.Y}");
 			Assert.IsLessThan(800f, node.Position.Y, $"{node.Name} drifted off the bottom to y {node.Position.Y}");
+
+			left = Math.Min(left, node.Position.X);
+			right = Math.Max(right, node.Position.X + node.Dimensions.X);
+			top = Math.Min(top, node.Position.Y);
+			bottom = Math.Max(bottom, node.Position.Y + node.Dimensions.Y);
 		}
+
+		// The claim the bounds above are a proxy for, asserted directly: whatever shape the graph
+		// settles into, it is still aimed at the middle of the canvas rather than heading for the
+		// origin. This holds when a widened bound would not, because a drifting document takes its
+		// centre with it.
+		Assert.AreEqual(500f, (left + right) / 2f, 250f, "the settled graph should still be centred on the canvas horizontally");
+		Assert.AreEqual(300f, (top + bottom) / 2f, 200f, "and vertically");
 	}
 
 	/// <summary>
