@@ -1,6 +1,6 @@
-## v3.1.2 (patch)
+## v3.1.3 (patch)
 
-Changes since v3.1.1:
+Changes since v3.1.2:
 
-- [patch] Take the ktsu ImGui suite at 3.28.0 ([@Claude](https://github.com/Claude))
+- Bump the ktsu ImGui suite to 3.30.0 ([@Claude](https://github.com/Claude))
 
