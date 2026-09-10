@@ -84,6 +84,19 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
+	/// JavaScript has nothing that is checked before the program runs, so what was asserted is written as
+	/// a comment. Dropping it would leave a file that looks like one still making the guarantee.
+	/// </remarks>
+	protected override void GenerateCompileTimeAssertion(CompileTimeAssertion assertion, CodeBlocker code)
+	{
+		Ensure.NotNull(assertion);
+		Ensure.NotNull(code);
+
+		WriteInexpressible(code, $"asserted at build time: {assertion.Condition}");
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
 	/// JavaScript has no types to alias. The name is bound to whatever the alias named, which is a
 	/// constructor often enough to be worth writing rather than dropping.
 	/// </remarks>

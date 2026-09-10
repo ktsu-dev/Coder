@@ -127,6 +127,9 @@ public class YamlSerializer
 	{
 		switch (node)
 		{
+			case CompileTimeAssertion assertion:
+				SerializeCompileTimeAssertion(assertion, nodeData);
+				break;
 			case UsingAlias usingAlias:
 				SerializeUsingAlias(usingAlias, nodeData);
 				break;
@@ -309,6 +312,19 @@ public class YamlSerializer
 
 	/// <summary>The key a node's members are written under.</summary>
 	private const string MembersKey = "members";
+
+	private static void SerializeCompileTimeAssertion(CompileTimeAssertion assertion, Dictionary<string, object> nodeData)
+	{
+		if (assertion.Condition != null)
+		{
+			nodeData["condition"] = assertion.Condition;
+		}
+
+		if (assertion.Message != null)
+		{
+			nodeData["message"] = assertion.Message;
+		}
+	}
 
 	private static void SerializeUsingAlias(UsingAlias usingAlias, Dictionary<string, object> nodeData)
 	{

@@ -434,7 +434,8 @@ public static class AstSchema
 			// running at one, so it belongs to a class or to the document rather than inside a body.
 			AstSlotKind.Statement => candidate is not (Parameter or EntryPoint),
 			AstSlotKind.Member => candidate is FunctionDeclaration or VariableDeclaration or FieldDeclaration
-				or ClassDeclaration or EnumDeclaration or NamespaceDeclaration or UsingAlias or EntryPoint,
+				or ClassDeclaration or EnumDeclaration or NamespaceDeclaration or UsingAlias
+				or CompileTimeAssertion or EntryPoint,
 			AstSlotKind.EnumMember => candidate is EnumMember,
 			_ => false,
 		};

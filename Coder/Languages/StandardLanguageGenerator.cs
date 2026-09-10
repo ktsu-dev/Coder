@@ -63,6 +63,10 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 				GenerateNamespaceDeclaration(namespaceDecl, code);
 				break;
 
+			case CompileTimeAssertion assertion:
+				GenerateCompileTimeAssertion(assertion, code);
+				break;
+
 			case UsingAlias usingAlias:
 				GenerateUsingAlias(usingAlias, code);
 				break;
@@ -159,6 +163,13 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 			GenerateInternal(member, code);
 		}
 	}
+
+	/// <summary>
+	/// Emits something that must be true when the program is built.
+	/// </summary>
+	/// <param name="assertion">The assertion to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	protected abstract void GenerateCompileTimeAssertion(CompileTimeAssertion assertion, CodeBlocker code);
 
 	/// <summary>
 	/// Emits an alias giving a type a second name.

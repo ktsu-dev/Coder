@@ -299,15 +299,18 @@ public class CppGenerator : StandardLanguageGenerator
 		code.WriteLine("{");
 		code.NewLine();
 
-		bool first = true;
+		// The same rule the members of a type follow: two of a kind that say nothing about themselves
+		// stay together, so a run of assertions about one type reads as one block rather than as a
+		// paragraph each.
+		AstNode? previous = null;
 		foreach (AstNode member in namespaceDecl.Members)
 		{
-			if (!first)
+			if (previous is not null && NeedsSeparation(previous, member))
 			{
 				code.NewLine();
 			}
 
-			first = false;
+			previous = member;
 			GenerateInternal(member, code);
 		}
 
@@ -402,6 +405,31 @@ public class CppGenerator : StandardLanguageGenerator
 					break;
 			}
 		}
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// The message goes on its own line. These are long by nature — the predicate says what is false
+	/// and the message says why anyone cared — and a compiler quoting the whole declaration back is
+	/// easier to read when it is two lines rather than one very wide one.
+	/// </remarks>
+	protected override void GenerateCompileTimeAssertion(CompileTimeAssertion assertion, CodeBlocker code)
+	{
+		Ensure.NotNull(assertion);
+		Ensure.NotNull(code);
+
+		code.Write($"static_assert({assertion.Condition}");
+
+		if (assertion.Message is not null)
+		{
+			code.WriteLine(",");
+			code.Indent();
+			code.Write($"\"{EscapeString(assertion.Message)}\"");
+			code.Outdent();
+		}
+
+		code.Write(")");
+		EndStatement(code);
 	}
 
 	/// <inheritdoc/>
@@ -532,10 +560,19 @@ public class CppGenerator : StandardLanguageGenerator
 	/// <param name="previous">The member already written.</param>
 	/// <param name="member">The member about to be written.</param>
 	/// <returns>True when a blank line belongs between them.</returns>
-	private static bool NeedsSeparation(AstNode previous, AstNode member) =>
-		previous.GetType() != member.GetType()
-		|| IsDocumented(previous)
-		|| IsDocumented(member);
+	/// <remarks>
+	/// Two of a kind that say nothing about themselves stay together, which is what keeps a run of
+	/// aliases, of defaulted declarations, or of assertions about one type reading as one block.
+	/// </remarks>
+	protected override bool NeedsSeparation(AstNode previous, AstNode member)
+	{
+		Ensure.NotNull(previous);
+		Ensure.NotNull(member);
+
+		return previous.GetType() != member.GetType()
+			|| IsDocumented(previous)
+			|| IsDocumented(member);
+	}
 
 	/// <summary>
 	/// Reports whether a member carries documentation.

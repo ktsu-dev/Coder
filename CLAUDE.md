@@ -68,6 +68,11 @@ source in four target languages. The solution uses:
   one that cannot be assigned at all; a language without an initialiser list assigns at the top of
   the constructor instead. `ConstructionExpression` is the one expression that needs a type rather
   than a name, which is why it could not exist before `TypeReference` did.
+- `Coder/Ast/CompileTimeAssertion.cs` — what a generated type promises that the type itself cannot
+  say. Its `Condition` is text for the same reason `SourceFile.Imports` are: a compile-time predicate
+  is language-specific in a way most of the AST is not, and there is no shared idea underneath
+  `std::is_trivially_copyable_v<T>` to model. Only C++ has one; the others write a comment, because a
+  file that quietly loses a guarantee looks like one that still makes it.
 - `Coder/Languages/LanguageGeneratorBase.cs` — the emitters every generator shares.
 - `Coder/Languages/StandardLanguageGenerator.cs` — owns the node dispatch, so a derived
   generator supplies only the syntax its language does not share. `CSharpGenerator` deliberately

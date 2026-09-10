@@ -60,6 +60,11 @@ public class ExemplarSemanticTypeTests
 		private:
 		    underlying value_{};
 		};
+
+		static_assert(std::is_trivially_copyable_v<EntityId>,
+		    "EntityId must be trivially copyable: it appears in components");
+		static_assert(std::is_standard_layout_v<EntityId>,
+		    "EntityId must be standard layout for its field offsets to be stable");
 		""";
 
 	/// <summary>
@@ -115,6 +120,29 @@ public class ExemplarSemanticTypeTests
 	}
 
 	/// <summary>
+	/// The semantic type together with what is asserted about it.
+	/// </summary>
+	/// <returns>The file.</returns>
+	/// <remarks>
+	/// A file with no banner and no imports, because the document's section is the declaration and
+	/// the assertions beside it rather than a whole header. What the assertions say is the reason the
+	/// type can appear in a component at all.
+	/// </remarks>
+	private static SourceFile EntityIdWithAssertions()
+	{
+		SourceFile file = new("EntityId.gen.hpp");
+		file.Members.Add(EntityId());
+		file.Members.Add(new CompileTimeAssertion(
+			"std::is_trivially_copyable_v<EntityId>",
+			"EntityId must be trivially copyable: it appears in components"));
+		file.Members.Add(new CompileTimeAssertion(
+			"std::is_standard_layout_v<EntityId>",
+			"EntityId must be standard layout for its field offsets to be stable"));
+
+		return file;
+	}
+
+	/// <summary>
 	/// Builds one of the comparison operators, which are symmetric and so belong beside the type
 	/// rather than to either operand.
 	/// </summary>
@@ -146,7 +174,7 @@ public class ExemplarSemanticTypeTests
 	public void Cpp_GeneratesTheSemanticTypeTheDocumentSpecifies() =>
 		Assert.AreEqual(
 			Expected.ReplaceLineEndings("\n").TrimEnd(),
-			new CppGenerator().Generate(EntityId()).ReplaceLineEndings("\n").TrimEnd());
+			new CppGenerator().Generate(EntityIdWithAssertions()).ReplaceLineEndings("\n").TrimEnd());
 
 	/// <summary>
 	/// A member is initialised rather than assigned, which is the only way to start one that cannot be

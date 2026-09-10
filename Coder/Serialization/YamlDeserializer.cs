@@ -57,6 +57,8 @@ public partial class YamlDeserializer
 			"SourceFile" => DeserializeSourceFile(nodeData),
 			"namespaceDeclaration" => DeserializeNamespaceDeclaration(nodeData),
 			"NamespaceDeclaration" => DeserializeNamespaceDeclaration(nodeData),
+			"compileTimeAssertion" => DeserializeCompileTimeAssertion(nodeData),
+			"CompileTimeAssertion" => DeserializeCompileTimeAssertion(nodeData),
 			"usingAlias" => DeserializeUsingAlias(nodeData),
 			"UsingAlias" => DeserializeUsingAlias(nodeData),
 			"memberInitialiser" => DeserializeMemberInitialiser(nodeData),
@@ -372,6 +374,28 @@ public partial class YamlDeserializer
 		DeserializeMetadata(namespaceDecl, dict);
 
 		return namespaceDecl;
+	}
+
+	private static CompileTimeAssertion DeserializeCompileTimeAssertion(object? nodeData)
+	{
+		CompileTimeAssertion assertion = new();
+		if (nodeData is not Dictionary<object, object> dict)
+		{
+			return assertion;
+		}
+
+		if (dict.TryGetValue("condition", out object? conditionObj))
+		{
+			assertion.Condition = conditionObj?.ToString();
+		}
+
+		if (dict.TryGetValue("message", out object? messageObj))
+		{
+			assertion.Message = messageObj?.ToString();
+		}
+
+		DeserializeMetadata(assertion, dict);
+		return assertion;
 	}
 
 	private static UsingAlias DeserializeUsingAlias(object? nodeData)
