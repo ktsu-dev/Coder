@@ -61,6 +61,25 @@ public class CSharpGenerator : LanguageGeneratorBase
 			case UnaryExpression unaryExpr:
 				GenerateUnaryExpression(unaryExpr, code, GetUnaryOperator(unaryExpr.Operator));
 				break;
+			default:
+				GenerateExpressionOrLeaf(node, code);
+				break;
+		}
+	}
+
+	/// <summary>
+	/// Emits an expression or a leaf.
+	/// </summary>
+	/// <param name="node">The node to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// Split from the declarations only because one switch over every node the AST has is more
+	/// branches than the analyzer accepts. The line is the same one the AST already draws.
+	/// </remarks>
+	private void GenerateExpressionOrLeaf(AstNode node, CodeBlocker code)
+	{
+		switch (node)
+		{
 			case VariableReference varRef:
 				code.Write(varRef.Name);
 				break;
@@ -81,6 +100,9 @@ public class CSharpGenerator : LanguageGeneratorBase
 				break;
 			case NamespaceDeclaration namespaceDecl:
 				GenerateNamespace(namespaceDecl, code);
+				break;
+			case CompileTimeAssertion assertion:
+				WriteInexpressible(code, $"asserted at build time: {assertion.Condition}");
 				break;
 			case UsingAlias usingAlias:
 				GenerateUsingAlias(usingAlias, code);

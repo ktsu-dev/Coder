@@ -251,18 +251,30 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 			code.NewLine();
 		}
 
-		bool first = true;
+		AstNode? previous = null;
 		foreach (AstNode member in file.Members)
 		{
-			if (!first)
+			if (previous is not null && NeedsSeparation(previous, member))
 			{
 				code.NewLine();
 			}
 
-			first = false;
+			previous = member;
 			GenerateInternal(member, code);
 		}
 	}
+
+	/// <summary>
+	/// Reports whether two adjacent declarations want a blank line between them.
+	/// </summary>
+	/// <param name="previous">The declaration already written.</param>
+	/// <param name="member">The declaration about to be written.</param>
+	/// <returns>True when a blank line belongs between them.</returns>
+	/// <remarks>
+	/// Always, unless a language says otherwise. A language whose declarations are dense enough to
+	/// want grouping overrides this with the rule it wants.
+	/// </remarks>
+	protected virtual bool NeedsSeparation(AstNode previous, AstNode member) => true;
 
 	/// <summary>
 	/// Emits a declaration's documentation, one comment per line.
@@ -394,6 +406,7 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	{
 		// No null check: a type pattern never matches null.
 		return astNode is FunctionDeclaration
+			or CompileTimeAssertion
 			or UsingAlias
 			or MemberInitialiser
 			or ConstructionExpression

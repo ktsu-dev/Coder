@@ -69,6 +69,19 @@ public class PythonGenerator : StandardLanguageGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
+	/// Python has nothing that is checked before the program runs, so what was asserted is written as
+	/// a comment. Dropping it would leave a file that looks like one still making the guarantee.
+	/// </remarks>
+	protected override void GenerateCompileTimeAssertion(CompileTimeAssertion assertion, CodeBlocker code)
+	{
+		Ensure.NotNull(assertion);
+		Ensure.NotNull(code);
+
+		WriteInexpressible(code, $"asserted at build time: {assertion.Condition}");
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
 	/// An alias is an ordinary assignment in Python, which is what a type alias is there.
 	/// </remarks>
 	protected override void GenerateUsingAlias(UsingAlias usingAlias, CodeBlocker code)

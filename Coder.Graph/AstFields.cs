@@ -165,6 +165,12 @@ public static class AstFields
 				new(ValueField, AstFieldKind.Text, enumMember.Value ?? string.Empty),
 			],
 
+			CompileTimeAssertion assertion =>
+			[
+				new("Condition", AstFieldKind.Text, assertion.Condition ?? string.Empty),
+				new("Message", AstFieldKind.Text, assertion.Message ?? string.Empty),
+			],
+
 			UsingAlias usingAlias =>
 			[
 				new("Name", AstFieldKind.Text, usingAlias.Name ?? string.Empty),
@@ -360,6 +366,9 @@ public static class AstFields
 
 			(EnumMember enumMember, "Name") => Assign(() => enumMember.Name = OrNull(value)),
 			(EnumMember enumMember, ValueField) => Assign(() => enumMember.Value = OrNull(value)),
+
+			(CompileTimeAssertion assertion, "Condition") => Assign(() => assertion.Condition = OrNull(value)),
+			(CompileTimeAssertion assertion, "Message") => Assign(() => assertion.Message = OrNull(value)),
 
 			(UsingAlias usingAlias, "Name") => Assign(() => usingAlias.Name = OrNull(value)),
 			(UsingAlias usingAlias, "AliasedType") => Assign(() => usingAlias.AliasedType = OrNull(value)),
