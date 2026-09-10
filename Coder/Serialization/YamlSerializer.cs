@@ -211,60 +211,7 @@ public class YamlSerializer
 			nodeData["isPure"] = funcDecl.IsPure;
 		}
 
-		if (funcDecl.Kind != FunctionKind.Method)
-		{
-			nodeData["kind"] = funcDecl.Kind.ToString();
-		}
-
-		if (funcDecl.Definition != FunctionDefinition.Provided)
-		{
-			nodeData["definition"] = funcDecl.Definition.ToString();
-		}
-
-		if (funcDecl.IsVirtual)
-		{
-			nodeData["isVirtual"] = funcDecl.IsVirtual;
-		}
-
-		if (funcDecl.IsAbstract)
-		{
-			nodeData["isAbstract"] = funcDecl.IsAbstract;
-		}
-
-		if (funcDecl.IsReadOnly)
-		{
-			nodeData["isReadOnly"] = funcDecl.IsReadOnly;
-		}
-
-		if (funcDecl.MustUseResult)
-		{
-			nodeData["mustUseResult"] = funcDecl.MustUseResult;
-		}
-
-		if (funcDecl.IsExplicit)
-		{
-			nodeData["isExplicit"] = funcDecl.IsExplicit;
-		}
-
-		if (funcDecl.IsCompileTimeEvaluable)
-		{
-			nodeData["isCompileTimeEvaluable"] = funcDecl.IsCompileTimeEvaluable;
-		}
-
-		if (funcDecl.IsNoThrow)
-		{
-			nodeData["isNoThrow"] = funcDecl.IsNoThrow;
-		}
-
-		if (funcDecl.IsFriend)
-		{
-			nodeData["isFriend"] = funcDecl.IsFriend;
-		}
-
-		if (funcDecl.Initialisers.Count > 0)
-		{
-			nodeData["initialisers"] = SerializeBodyStatements(funcDecl.Initialisers);
-		}
+		SerializeFunctionShape(funcDecl, nodeData);
 
 		if (funcDecl.Parameters.Count > 0)
 		{
@@ -357,6 +304,9 @@ public class YamlSerializer
 		}
 	}
 
+	/// <summary>The key a node's single value is written under.</summary>
+	private const string ValueKey = "value";
+
 	/// <summary>The key a node's members are written under.</summary>
 	private const string MembersKey = "members";
 
@@ -387,7 +337,7 @@ public class YamlSerializer
 		{
 			Dictionary<string, object> valueData = [];
 			SerializeNode(initialiser.Value, valueData);
-			nodeData["value"] = valueData;
+			nodeData[ValueKey] = valueData;
 		}
 	}
 
@@ -434,7 +384,7 @@ public class YamlSerializer
 
 		if (member.Value != null)
 		{
-			nodeData["value"] = member.Value;
+			nodeData[ValueKey] = member.Value;
 		}
 	}
 
@@ -458,6 +408,74 @@ public class YamlSerializer
 			Dictionary<string, object> initialValueData = [];
 			SerializeNode(field.InitialValue, initialValueData);
 			nodeData["initialValue"] = initialValueData;
+		}
+	}
+
+	/// <summary>
+	/// Writes what a function declares and how, omitting whatever it did not ask for.
+	/// </summary>
+	/// <param name="funcDecl">The declaration being serialized.</param>
+	/// <param name="nodeData">The mapping to write into.</param>
+	/// <remarks>
+	/// Separate from the name and the return type only because one method writing every property a
+	/// declaration has is more branches than the analyzer accepts. Nothing is written for a property
+	/// left at its default, so a document says only what someone chose.
+	/// </remarks>
+	private static void SerializeFunctionShape(FunctionDeclaration funcDecl, Dictionary<string, object> nodeData)
+	{
+		if (funcDecl.Kind != FunctionKind.Method)
+		{
+			nodeData["kind"] = funcDecl.Kind.ToString();
+		}
+
+		if (funcDecl.Definition != FunctionDefinition.Provided)
+		{
+			nodeData["definition"] = funcDecl.Definition.ToString();
+		}
+
+		if (funcDecl.IsVirtual)
+		{
+			nodeData["isVirtual"] = funcDecl.IsVirtual;
+		}
+
+		if (funcDecl.IsAbstract)
+		{
+			nodeData["isAbstract"] = funcDecl.IsAbstract;
+		}
+
+		if (funcDecl.IsReadOnly)
+		{
+			nodeData["isReadOnly"] = funcDecl.IsReadOnly;
+		}
+
+		if (funcDecl.MustUseResult)
+		{
+			nodeData["mustUseResult"] = funcDecl.MustUseResult;
+		}
+
+		if (funcDecl.IsExplicit)
+		{
+			nodeData["isExplicit"] = funcDecl.IsExplicit;
+		}
+
+		if (funcDecl.IsCompileTimeEvaluable)
+		{
+			nodeData["isCompileTimeEvaluable"] = funcDecl.IsCompileTimeEvaluable;
+		}
+
+		if (funcDecl.IsNoThrow)
+		{
+			nodeData["isNoThrow"] = funcDecl.IsNoThrow;
+		}
+
+		if (funcDecl.IsFriend)
+		{
+			nodeData["isFriend"] = funcDecl.IsFriend;
+		}
+
+		if (funcDecl.Initialisers.Count > 0)
+		{
+			nodeData["initialisers"] = SerializeBodyStatements(funcDecl.Initialisers);
 		}
 	}
 
@@ -609,7 +627,7 @@ public class YamlSerializer
 	{
 		if (literal.Value != null)
 		{
-			nodeData["value"] = literal.Value;
+			nodeData[ValueKey] = literal.Value;
 		}
 
 		if (literal.ExpectedType != null)
@@ -665,7 +683,7 @@ public class YamlSerializer
 
 		Dictionary<string, object> valueData = [];
 		SerializeNode(assignment.Value, valueData);
-		nodeData["value"] = valueData;
+		nodeData[ValueKey] = valueData;
 
 		nodeData["operator"] = assignment.Operator.ToString();
 	}

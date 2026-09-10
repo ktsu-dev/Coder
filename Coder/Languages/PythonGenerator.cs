@@ -286,6 +286,44 @@ public class PythonGenerator : StandardLanguageGenerator
 			return;
 		}
 
+		WriteMethodSignature(method, code);
+
+		using IndentScope body = new(code);
+
+		// A method a derived class has to supply is a method whose body is a refusal. Python has no
+		// declaration without a definition, so the definition says what calling it means.
+		if (method.IsAbstract)
+		{
+			code.WriteLine("raise NotImplementedError");
+			return;
+		}
+
+		WriteInitialiserAssignments(method, code);
+
+		if (method.Body.Count == 0 && method.Initialisers.Count == 0)
+		{
+			code.WriteLine("pass");
+			return;
+		}
+
+		foreach (AstNode statement in method.Body)
+		{
+			GenerateInternal(statement, code);
+			code.WriteLine();
+		}
+	}
+
+	/// <summary>
+	/// Writes a method's signature, up to and including the colon that opens its suite.
+	/// </summary>
+	/// <param name="method">The declaration being emitted.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// The receiver is supplied here rather than carried in the AST, because no other target language
+	/// has one — and it is left out of a static method, which is what <c>@staticmethod</c> means.
+	/// </remarks>
+	private void WriteMethodSignature(FunctionDeclaration method, CodeBlocker code)
+	{
 		if (method.IsStatic)
 		{
 			code.WriteLine("@staticmethod");
@@ -318,19 +356,19 @@ public class PythonGenerator : StandardLanguageGenerator
 		}
 
 		code.WriteLine(":");
+	}
 
-		using IndentScope body = new(code);
-
-		// A method a derived class has to supply is a method whose body is a refusal. Python has no
-		// declaration without a definition, so the definition says what calling it means.
-		if (method.IsAbstract)
-		{
-			code.WriteLine("raise NotImplementedError");
-			return;
-		}
-
-		// Python assigns where C++ initialises, before the body's own statements and in the order
-		// declared, which is what the initialiser means where there is no initialiser list.
+	/// <summary>
+	/// Writes what the type's members start at, as assignments at the top of the body.
+	/// </summary>
+	/// <param name="method">The declaration being emitted.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// Python assigns where C++ initialises, in the order declared, which is what the initialiser
+	/// means where there is no initialiser list to put it in.
+	/// </remarks>
+	private void WriteInitialiserAssignments(FunctionDeclaration method, CodeBlocker code)
+	{
 		foreach (MemberInitialiser initialiser in method.Initialisers)
 		{
 			code.Write($"self.{initialiser.Name} = ");
@@ -340,18 +378,6 @@ public class PythonGenerator : StandardLanguageGenerator
 				GenerateInternal(initialiser.Value, code);
 			}
 
-			code.WriteLine();
-		}
-
-		if (method.Body.Count == 0 && method.Initialisers.Count == 0)
-		{
-			code.WriteLine("pass");
-			return;
-		}
-
-		foreach (AstNode statement in method.Body)
-		{
-			GenerateInternal(statement, code);
 			code.WriteLine();
 		}
 	}

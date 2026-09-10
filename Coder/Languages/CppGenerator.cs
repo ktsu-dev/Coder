@@ -22,6 +22,16 @@ public class CppGenerator : StandardLanguageGenerator
 	/// <summary>
 	/// Maps the AST's language-neutral type names onto C++ spellings.
 	/// </summary>
+	/// <summary>
+	/// What a declaration that never said what type it is gets.
+	/// </summary>
+	/// <remarks>
+	/// A type is optional on every node that carries one, because a half-built AST is a thing the
+	/// editor has to be able to hold. Emitting the most general type there keeps the output compiling
+	/// while making it obvious which declaration was never finished.
+	/// </remarks>
+	private const string UnknownTypeName = "object";
+
 	private static readonly Dictionary<string, string> TypeMappings = new(StringComparer.OrdinalIgnoreCase)
 	{
 		{ "str", "std::string" },
@@ -401,7 +411,7 @@ public class CppGenerator : StandardLanguageGenerator
 		Ensure.NotNull(code);
 
 		GenerateDocumentation(usingAlias, code);
-		code.Write($"using {usingAlias.Name} = {MapToCppType(usingAlias.AliasedType ?? new TypeReference("object"))}");
+		code.Write($"using {usingAlias.Name} = {MapToCppType(usingAlias.AliasedType ?? new TypeReference(UnknownTypeName))}");
 		EndStatement(code);
 	}
 
@@ -416,7 +426,7 @@ public class CppGenerator : StandardLanguageGenerator
 		Ensure.NotNull(construction);
 		Ensure.NotNull(code);
 
-		code.Write(MapToCppType(construction.Type ?? new TypeReference("object")));
+		code.Write(MapToCppType(construction.Type ?? new TypeReference(UnknownTypeName)));
 
 		if (construction.Arguments.Count == 0)
 		{
@@ -489,7 +499,7 @@ public class CppGenerator : StandardLanguageGenerator
 
 		GenerateDocumentation(field, code);
 
-		code.Write($"{MapToCppType(field.Type ?? new TypeReference("object"))} {field.Name}");
+		code.Write($"{MapToCppType(field.Type ?? new TypeReference(UnknownTypeName))} {field.Name}");
 
 		if (field.InitialValue is not null)
 		{
@@ -602,7 +612,7 @@ public class CppGenerator : StandardLanguageGenerator
 		Ensure.NotNull(parameter);
 		Ensure.NotNull(code);
 
-		code.Write(MapToCppType(parameter.Type ?? new TypeReference("object")));
+		code.Write(MapToCppType(parameter.Type ?? new TypeReference(UnknownTypeName)));
 
 		// An empty name means deliberately unnamed, which C++ allows and a deleted copy constructor
 		// wants: the parameter exists to make the signature, and naming it would only invite someone

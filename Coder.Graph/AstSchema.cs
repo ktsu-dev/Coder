@@ -35,7 +35,10 @@ public static class AstSchema
 	private static readonly AstSlot ParametersSlot = new("Parameters", AstSlotCardinality.Many, AstSlotKind.Parameter);
 	private static readonly AstSlot BodySlot = new("Body", AstSlotCardinality.Many, AstSlotKind.Statement);
 	private static readonly AstSlot MembersSlot = new("Members", AstSlotCardinality.Many, AstSlotKind.Member);
-	private static readonly AstSlot ArgumentsSlot = new("Arguments", AstSlotCardinality.Many, AstSlotKind.Expression);
+	/// <summary>The name of the slot an expression's arguments sit in.</summary>
+	private const string ArgumentsSlotName = "Arguments";
+
+	private static readonly AstSlot ArgumentsSlot = new(ArgumentsSlotName, AstSlotCardinality.Many, AstSlotKind.Expression);
 	private static readonly AstSlot EnumMembersSlot = new("Members", AstSlotCardinality.Many, AstSlotKind.EnumMember);
 
 	/// <summary>
@@ -99,7 +102,7 @@ public static class AstSchema
 			(NamespaceDeclaration namespaceDecl, "Members") => [.. namespaceDecl.Members],
 			(ClassDeclaration classDecl, "Members") => [.. classDecl.Members],
 			(EnumDeclaration enumDecl, "Members") => [.. enumDecl.Members],
-			(ConstructionExpression construction, "Arguments") => [.. construction.Arguments],
+			(ConstructionExpression construction, ArgumentsSlotName) => [.. construction.Arguments],
 			(FunctionDeclaration function, "Parameters") => [.. function.Parameters],
 			(FunctionDeclaration function, "Body") => [.. function.Body],
 			(EntryPoint entryPoint, "Body") => [.. entryPoint.Body],
@@ -169,7 +172,7 @@ public static class AstSchema
 				initialiser.Value = initialiserExpr;
 				return true;
 
-			case (ConstructionExpression construction, "Arguments"):
+			case (ConstructionExpression construction, ArgumentsSlotName):
 				construction.Arguments.Add(child);
 				return true;
 
@@ -254,7 +257,7 @@ public static class AstSchema
 				enumDecl.Members[index] = enumMember;
 				return true;
 
-			case (ConstructionExpression construction, "Arguments"):
+			case (ConstructionExpression construction, ArgumentsSlotName):
 				construction.Arguments[index] = child;
 				return true;
 
@@ -360,7 +363,7 @@ public static class AstSchema
 				enumDecl.Members.RemoveAt(index);
 				return true;
 
-			case (ConstructionExpression construction, "Arguments") when index < construction.Arguments.Count:
+			case (ConstructionExpression construction, ArgumentsSlotName) when index < construction.Arguments.Count:
 				construction.Arguments.RemoveAt(index);
 				return true;
 

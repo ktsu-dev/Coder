@@ -209,7 +209,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 	private void GenerateUsingAlias(UsingAlias usingAlias, CodeBlocker code)
 	{
 		GenerateDocumentation(usingAlias, code);
-		code.WriteLine($"using {usingAlias.Name} = {MapToCSType(usingAlias.AliasedType ?? new TypeReference("object"))};");
+		code.WriteLine($"using {usingAlias.Name} = {MapToCSType(usingAlias.AliasedType ?? new TypeReference(UnknownTypeName))};");
 	}
 
 	/// <summary>
@@ -219,7 +219,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// <param name="code">The writer to emit into.</param>
 	private void GenerateConstruction(ConstructionExpression construction, CodeBlocker code)
 	{
-		code.Write($"new {MapToCSType(construction.Type ?? new TypeReference("object"))}(");
+		code.Write($"new {MapToCSType(construction.Type ?? new TypeReference(UnknownTypeName))}(");
 
 		for (int index = 0; index < construction.Arguments.Count; index++)
 		{
@@ -286,7 +286,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 		GenerateDocumentation(field, code);
 
 		code.Write($"{SpellVisibility(field.Visibility) ?? DefaultVisibility} ");
-		code.Write($"{MapToCSType(field.Type ?? new TypeReference("object"))} {field.Name}");
+		code.Write($"{MapToCSType(field.Type ?? new TypeReference(UnknownTypeName))} {field.Name}");
 
 		if (field.InitialValue is not null)
 		{
@@ -465,14 +465,14 @@ public class CSharpGenerator : LanguageGeneratorBase
 			FunctionKind.Destructor => $"~{typeName}",
 			FunctionKind.Operator => $"operator {function.Name}",
 			FunctionKind.ConversionOperator =>
-				$"{(function.IsExplicit ? "explicit" : "implicit")} operator {MapToCSType(function.ReturnType ?? new TypeReference("object"))}",
+				$"{(function.IsExplicit ? "explicit" : "implicit")} operator {MapToCSType(function.ReturnType ?? new TypeReference(UnknownTypeName))}",
 			_ => function.Name ?? "UnnamedFunction",
 		};
 	}
 
 	private static void GenerateParameter(Parameter parameter, CodeBlocker code)
 	{
-		code.Write($"{MapToCSType(parameter.Type ?? new TypeReference("object"))} {parameter.Name}");
+		code.Write($"{MapToCSType(parameter.Type ?? new TypeReference(UnknownTypeName))} {parameter.Name}");
 
 		if (parameter.IsOptional && !string.IsNullOrEmpty(parameter.DefaultValue))
 		{
@@ -489,6 +489,16 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// anybody asked for.
 	/// </remarks>
 	private const string DefaultVisibility = "public";
+
+	/// <summary>
+	/// What a declaration that never said what type it is gets.
+	/// </summary>
+	/// <remarks>
+	/// A type is optional on every node that carries one, because a half-built AST is a thing the
+	/// editor has to be able to hold. Emitting the most general type there keeps the output compiling
+	/// while making it obvious which declaration was never finished.
+	/// </remarks>
+	private const string UnknownTypeName = "object";
 
 	private static readonly Dictionary<string, string> TypeMappings = new()
 	{

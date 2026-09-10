@@ -167,6 +167,24 @@ public partial class YamlDeserializer
 			funcDecl.Definition = definition;
 		}
 
+		ReadFunctionShape(funcDecl, dict);
+
+		DeserializeVisibility(funcDecl, dict);
+		ReadStrings(dict, DocumentationKey, funcDecl.Documentation);
+	}
+
+	/// <summary>
+	/// Reads what a function declares and how, leaving each as it was when the document is silent.
+	/// </summary>
+	/// <param name="funcDecl">The declaration being read into.</param>
+	/// <param name="dict">The mapping the node was written as.</param>
+	/// <remarks>
+	/// Separate from the name and the return type only because one method reading every property a
+	/// declaration has is more branches than the analyzer accepts. These are the ones that say what
+	/// kind of declaration it is rather than what it is called.
+	/// </remarks>
+	private void ReadFunctionShape(FunctionDeclaration funcDecl, Dictionary<object, object> dict)
+	{
 		funcDecl.IsVirtual = ReadFlag(dict, "isVirtual", funcDecl.IsVirtual);
 		funcDecl.IsAbstract = ReadFlag(dict, "isAbstract", funcDecl.IsAbstract);
 		funcDecl.IsReadOnly = ReadFlag(dict, "isReadOnly", funcDecl.IsReadOnly);
@@ -187,9 +205,6 @@ public partial class YamlDeserializer
 				}
 			}
 		}
-
-		DeserializeVisibility(funcDecl, dict);
-		ReadStrings(dict, DocumentationKey, funcDecl.Documentation);
 	}
 
 	/// <summary>
@@ -397,7 +412,7 @@ public partial class YamlDeserializer
 			initialiser.Name = nameObj?.ToString();
 		}
 
-		if (dict.TryGetValue("value", out object? valueObj) &&
+		if (dict.TryGetValue(ValueKey, out object? valueObj) &&
 			valueObj is Dictionary<object, object> valueDict && valueDict.Count > 0)
 		{
 			(object valueType, object valueData) = valueDict.First();
@@ -487,7 +502,7 @@ public partial class YamlDeserializer
 			member.Name = nameObj?.ToString();
 		}
 
-		if (dict.TryGetValue("value", out object? valueObj))
+		if (dict.TryGetValue(ValueKey, out object? valueObj))
 		{
 			member.Value = valueObj?.ToString();
 		}
@@ -530,6 +545,9 @@ public partial class YamlDeserializer
 
 	/// <summary>The key a node's members are written under.</summary>
 	private const string MembersKey = "members";
+
+	/// <summary>The key a node's single value is written under.</summary>
+	private const string ValueKey = "value";
 
 	/// <summary>The key a declaration's documentation is written under.</summary>
 	private const string DocumentationKey = "documentation";
@@ -841,7 +859,7 @@ public partial class YamlDeserializer
 			return null;
 		}
 
-		if (!dict.TryGetValue("value", out object? value))
+		if (!dict.TryGetValue(ValueKey, out object? value))
 		{
 			return null;
 		}
@@ -950,7 +968,7 @@ public partial class YamlDeserializer
 			}
 
 			// Deserialize value
-			if (dict.TryGetValue("value", out object? valueObj) && valueObj is Dictionary<object, object> valueDict)
+			if (dict.TryGetValue(ValueKey, out object? valueObj) && valueObj is Dictionary<object, object> valueDict)
 			{
 				foreach ((object valueType, object valueData) in valueDict)
 				{
