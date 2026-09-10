@@ -43,7 +43,7 @@ public class ExemplarHeaderTests
 		#include <type_traits>
 
 		#include "holotype/core/units.hpp"
-		#include "holotype/core/vec.hpp"
+		#include "holotype/core/vector.hpp"
 
 		namespace holo::components
 		{
@@ -62,7 +62,7 @@ public class ExemplarHeaderTests
 		    /// unit: m/s
 		    /// interpolated between states
 		    /// network: quantised to 0.01, delta encoded
-		    holo::Vec3<holo::MetresPerSecond> velocity{};
+		    holo::Vector3<holo::MetresPerSecond> velocity{};
 
 		    /// unit: kg
 		    /// range: [0.001, 1000000]
@@ -106,7 +106,7 @@ public class ExemplarHeaderTests
 
 		rigidBody.Members.Add(Field(
 			"velocity",
-			"holo::Vec3<holo::MetresPerSecond>",
+			"holo::Vector3<holo::MetresPerSecond>",
 			null,
 			"Linear velocity in world space.",
 			"unit: m/s",
@@ -160,7 +160,7 @@ public class ExemplarHeaderTests
 		file.Imports.Add("<type_traits>");
 		file.Imports.Add("");
 		file.Imports.Add("holotype/core/units.hpp");
-		file.Imports.Add("holotype/core/vec.hpp");
+		file.Imports.Add("holotype/core/vector.hpp");
 		file.Members.Add(components);
 
 		return file;
