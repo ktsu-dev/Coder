@@ -148,9 +148,38 @@ public partial class YamlDeserializer
 			funcDecl.IsPure = isPure;
 		}
 
+		if (dict.TryGetValue("kind", out object? kindObj) &&
+			Enum.TryParse(kindObj?.ToString(), out FunctionKind kind))
+		{
+			funcDecl.Kind = kind;
+		}
+
+		if (dict.TryGetValue("definition", out object? definitionObj) &&
+			Enum.TryParse(definitionObj?.ToString(), out FunctionDefinition definition))
+		{
+			funcDecl.Definition = definition;
+		}
+
+		funcDecl.IsVirtual = ReadFlag(dict, "isVirtual", funcDecl.IsVirtual);
+		funcDecl.IsAbstract = ReadFlag(dict, "isAbstract", funcDecl.IsAbstract);
+		funcDecl.IsReadOnly = ReadFlag(dict, "isReadOnly", funcDecl.IsReadOnly);
+		funcDecl.MustUseResult = ReadFlag(dict, "mustUseResult", funcDecl.MustUseResult);
+
 		DeserializeVisibility(funcDecl, dict);
 		ReadStrings(dict, "documentation", funcDecl.Documentation);
 	}
+
+	/// <summary>
+	/// Reads a boolean, leaving it as it was when the document does not say.
+	/// </summary>
+	/// <param name="dict">The mapping the node was written as.</param>
+	/// <param name="key">The key to read.</param>
+	/// <param name="fallback">What to return when the document is silent.</param>
+	/// <returns>The value read, or the fallback.</returns>
+	private static bool ReadFlag(Dictionary<object, object> dict, string key, bool fallback) =>
+		dict.TryGetValue(key, out object? value) && bool.TryParse(value?.ToString(), out bool flag)
+			? flag
+			: fallback;
 
 	/// <summary>
 	/// Reads a declaration's visibility, leaving it <see cref="Visibility.Unspecified"/> when the

@@ -57,6 +57,12 @@ source in four target languages. The solution uses:
   instance is the one the declaration described, and a local with none is ordinary. `SourceFile`'s
   `Imports` are the one part of the AST that does not translate — a C++ include path, a C# namespace
   and a Python module are different kinds of thing — so a file is built for a language.
+- `Coder/Ast/FunctionKind.cs`, `FunctionDefinition.cs` — what a function declares (method,
+  constructor, destructor, operator, conversion) and where its behaviour comes from (provided,
+  defaulted, deleted). A declaration with no statements is otherwise ambiguous between a function
+  that does nothing, one the language supplies, and one that exists to be refused. `IsAbstract` is
+  C++'s *pure virtual*, which is a different thing from `IsPure`: one says a declaration has no
+  definition, the other that a call has no effect.
 - `Coder/Languages/LanguageGeneratorBase.cs` — the emitters every generator shares.
 - `Coder/Languages/StandardLanguageGenerator.cs` — owns the node dispatch, so a derived
   generator supplies only the syntax its language does not share. `CSharpGenerator` deliberately

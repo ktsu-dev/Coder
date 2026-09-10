@@ -233,16 +233,44 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	/// <param name="code">The writer to emit into.</param>
 	private void GenerateMethod(FunctionDeclaration method, CodeBlocker code)
 	{
+		GenerateDocumentation(method, code);
+
+		if (method.Definition != FunctionDefinition.Provided)
+		{
+			string state = method.Definition == FunctionDefinition.Defaulted ? "supplied by the language" : "deleted";
+			WriteInexpressible(code, $"{method.Name} is {state}, which JavaScript has no way to say.");
+			return;
+		}
+
+		if (method.Kind is FunctionKind.Destructor or FunctionKind.Operator or FunctionKind.ConversionOperator)
+		{
+			WriteInexpressible(code, $"{method.Name} has no JavaScript spelling.");
+			return;
+		}
+
 		if (method.IsStatic)
 		{
 			code.Write("static ");
 		}
 
-		code.Write($"{MemberName(method.Name ?? "unnamedMethod", method.Visibility)}(");
+		code.Write(method.Kind == FunctionKind.Constructor
+			? "constructor"
+			: MemberName(method.Name ?? "unnamedMethod", method.Visibility));
+
+		code.Write("(");
 		GenerateParameterList(method.Parameters, code);
 		code.Write(") ");
 
 		using Scope body = new(code);
+
+		// A method a subclass has to supply is one whose body refuses. JavaScript has no declaration
+		// without a definition, so the definition is where that is said.
+		if (method.IsAbstract)
+		{
+			code.WriteLine($"throw new Error(\"{method.Name} must be implemented\");");
+			return;
+		}
+
 		foreach (AstNode statement in method.Body)
 		{
 			GenerateInternal(statement, code);

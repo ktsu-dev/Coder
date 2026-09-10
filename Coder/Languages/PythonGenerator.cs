@@ -229,12 +229,27 @@ public class PythonGenerator : StandardLanguageGenerator
 	/// </remarks>
 	private void GenerateMethod(FunctionDeclaration method, CodeBlocker code)
 	{
+		GenerateDocumentation(method, code);
+
+		if (method.Definition != FunctionDefinition.Provided)
+		{
+			string state = method.Definition == FunctionDefinition.Defaulted ? "supplied by the language" : "deleted";
+			WriteInexpressible(code, $"{method.Name} is {state}, which Python has no way to say.");
+			return;
+		}
+
+		if (method.Kind is FunctionKind.Operator or FunctionKind.ConversionOperator)
+		{
+			WriteInexpressible(code, $"operator {method.Name} has no Python spelling.");
+			return;
+		}
+
 		if (method.IsStatic)
 		{
 			code.WriteLine("@staticmethod");
 		}
 
-		code.Write($"def {method.Name ?? "unnamed_method"}(");
+		code.Write($"def {SpellMethodName(method)}(");
 
 		bool needsSeparator = !method.IsStatic;
 		if (needsSeparator)
@@ -255,7 +270,7 @@ public class PythonGenerator : StandardLanguageGenerator
 
 		code.Write(")");
 
-		if (method.ReturnType is not null)
+		if (method.ReturnType is not null && method.Kind == FunctionKind.Method)
 		{
 			code.Write($" -> {PythonTypeFromGenericType(method.ReturnType)}");
 		}
@@ -263,6 +278,15 @@ public class PythonGenerator : StandardLanguageGenerator
 		code.WriteLine(":");
 
 		using IndentScope body = new(code);
+
+		// A method a derived class has to supply is a method whose body is a refusal. Python has no
+		// declaration without a definition, so the definition says what calling it means.
+		if (method.IsAbstract)
+		{
+			code.WriteLine("raise NotImplementedError");
+			return;
+		}
+
 		if (method.Body.Count == 0)
 		{
 			code.WriteLine("pass");
@@ -275,6 +299,22 @@ public class PythonGenerator : StandardLanguageGenerator
 			code.WriteLine();
 		}
 	}
+
+	/// <summary>
+	/// Spells the name a method is written under.
+	/// </summary>
+	/// <param name="method">The declaration being emitted.</param>
+	/// <returns>The name as Python writes it.</returns>
+	/// <remarks>
+	/// A constructor and a destructor have fixed names in Python rather than the type's, so whatever
+	/// the declaration is called is ignored for those two.
+	/// </remarks>
+	private static string SpellMethodName(FunctionDeclaration method) => method.Kind switch
+	{
+		FunctionKind.Constructor => "__init__",
+		FunctionKind.Destructor => "__del__",
+		_ => method.Name ?? "unnamed_method",
+	};
 
 	/// <inheritdoc/>
 	/// <remarks>

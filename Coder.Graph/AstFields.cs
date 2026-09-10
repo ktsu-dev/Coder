@@ -99,6 +99,24 @@ public static class AstFields
 	/// <summary>
 	/// The kinds of type a declaration can be, offered as a menu rather than typed.
 	/// </summary>
+	private static readonly IReadOnlyList<AstFieldChoice> FunctionKinds =
+	[
+		.. Enum.GetValues<FunctionKind>().Select(kind => new AstFieldChoice(kind.ToString(), kind.ToString())),
+	];
+
+	/// <summary>
+	/// Where a function's behaviour comes from, offered as a menu rather than typed.
+	/// </summary>
+	private static readonly IReadOnlyList<AstFieldChoice> FunctionDefinitions =
+	[
+		.. Enum.GetValues<FunctionDefinition>().Select(definition => new AstFieldChoice(
+			definition.ToString(),
+			definition.ToString().ToLowerInvariant())),
+	];
+
+	/// <summary>
+	/// The kinds of type a declaration can be, offered as a menu rather than typed.
+	/// </summary>
 	private static readonly IReadOnlyList<AstFieldChoice> TypeKinds =
 	[
 		.. Enum.GetValues<TypeDeclarationKind>().Select(kind => new AstFieldChoice(
@@ -163,6 +181,12 @@ public static class AstFields
 				new("Visibility", AstFieldKind.Choice, function.Visibility.ToString(), Visibilities),
 				new("Static", AstFieldKind.Flag, Spell(function.IsStatic)),
 				new("Pure", AstFieldKind.Flag, Spell(function.IsPure)),
+				new("Kind", AstFieldKind.Choice, function.Kind.ToString(), FunctionKinds),
+				new("Definition", AstFieldKind.Choice, function.Definition.ToString(), FunctionDefinitions),
+				new("Virtual", AstFieldKind.Flag, Spell(function.IsVirtual)),
+				new("Abstract", AstFieldKind.Flag, Spell(function.IsAbstract)),
+				new("ReadOnly", AstFieldKind.Flag, Spell(function.IsReadOnly)),
+				new("MustUseResult", AstFieldKind.Flag, Spell(function.MustUseResult)),
 			],
 
 			EntryPoint entryPoint =>
@@ -310,6 +334,33 @@ public static class AstFields
 				TryParseBool(value, out bool isStatic) && Assign(() => function.IsStatic = isStatic),
 			(FunctionDeclaration function, "Pure") =>
 				TryParseBool(value, out bool isPure) && Assign(() => function.IsPure = isPure),
+			_ => TryWriteFunctionShape(node, fieldName, value),
+		};
+	}
+
+	/// <summary>
+	/// Writes a field describing what a function declares and how.
+	/// </summary>
+	/// <param name="node">The node to write to.</param>
+	/// <param name="fieldName">The field to write.</param>
+	/// <param name="value">The value, as text.</param>
+	/// <returns>True if the node was changed.</returns>
+	private static bool TryWriteFunctionShape(AstNode node, string fieldName, string value)
+	{
+		return (node, fieldName) switch
+		{
+			(FunctionDeclaration function, "Kind") =>
+				Enum.TryParse(value, out FunctionKind kind) && Assign(() => function.Kind = kind),
+			(FunctionDeclaration function, "Definition") =>
+				Enum.TryParse(value, out FunctionDefinition definition) && Assign(() => function.Definition = definition),
+			(FunctionDeclaration function, "Virtual") =>
+				TryParseBool(value, out bool isVirtual) && Assign(() => function.IsVirtual = isVirtual),
+			(FunctionDeclaration function, "Abstract") =>
+				TryParseBool(value, out bool isAbstract) && Assign(() => function.IsAbstract = isAbstract),
+			(FunctionDeclaration function, "ReadOnly") =>
+				TryParseBool(value, out bool isReadOnly) && Assign(() => function.IsReadOnly = isReadOnly),
+			(FunctionDeclaration function, "MustUseResult") =>
+				TryParseBool(value, out bool mustUse) && Assign(() => function.MustUseResult = mustUse),
 
 			(EntryPoint entryPoint, "Arguments") =>
 				TryParseBool(value, out bool acceptsArguments) && Assign(() => entryPoint.AcceptsArguments = acceptsArguments),

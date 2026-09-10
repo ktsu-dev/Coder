@@ -163,6 +163,21 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	protected virtual string DocumentationPrefix => "///";
 
 	/// <summary>
+	/// Writes a note where the language has no way to say what a declaration asked for.
+	/// </summary>
+	/// <param name="code">The writer to emit into.</param>
+	/// <param name="what">What was asked for, in the reader's terms.</param>
+	/// <remarks>
+	/// A generated file that silently drops a member is worse than one that says which member and
+	/// why: the first looks complete and is not, and there is nothing in it to search for.
+	/// </remarks>
+	protected void WriteInexpressible(CodeBlocker code, string what)
+	{
+		Ensure.NotNull(code);
+		code.WriteLine($"{CommentPrefix} {what}");
+	}
+
+	/// <summary>
 	/// Gets what an ordinary comment starts with in this language.
 	/// </summary>
 	protected virtual string CommentPrefix => "//";

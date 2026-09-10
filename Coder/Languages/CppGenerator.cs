@@ -59,14 +59,31 @@ public class CppGenerator : StandardLanguageGenerator
 	/// compiler-specific <c>__attribute__((pure))</c> asserts to the optimiser that the call may be
 	/// elided or duplicated, which is a stronger promise than the AST is in a position to make.
 	/// </remarks>
-	protected override void GenerateFunctionDeclaration(FunctionDeclaration funcDecl, CodeBlocker code)
+	protected override void GenerateFunctionDeclaration(FunctionDeclaration funcDecl, CodeBlocker code) =>
+		GenerateFunction(funcDecl, code, null);
+
+	/// <summary>
+	/// Emits a function, which may be a member of a type.
+	/// </summary>
+	/// <param name="funcDecl">The declaration to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <param name="enclosingType">The name of the type it belongs to, when it belongs to one.</param>
+	/// <remarks>
+	/// A constructor and a destructor are named after the type rather than after themselves, so the
+	/// name comes from the class emitter rather than from the declaration. That is what stops the two
+	/// desynchronising when the type is renamed — the alternative is holding the type's name twice
+	/// and hoping.
+	/// </remarks>
+	private void GenerateFunction(FunctionDeclaration funcDecl, CodeBlocker code, string? enclosingType)
 	{
 		Ensure.NotNull(funcDecl);
 		Ensure.NotNull(code);
 
 		GenerateDocumentation(funcDecl, code);
 
-		if (funcDecl.IsPure)
+		// Purity earns [[nodiscard]] on its own: a call that does nothing else and whose result is
+		// thrown away did nothing at all.
+		if (funcDecl.IsPure || funcDecl.MustUseResult)
 		{
 			code.Write("[[nodiscard]] ");
 		}
@@ -76,17 +93,79 @@ public class CppGenerator : StandardLanguageGenerator
 			code.Write("static ");
 		}
 
-		code.Write($"{MapToCppType(funcDecl.ReturnType ?? new TypeReference("void"))} {funcDecl.Name ?? "unnamedFunction"}(");
+		// An abstract declaration is virtual whether or not it was asked to be: there is nothing else
+		// `= 0` could mean.
+		if (funcDecl.IsVirtual || funcDecl.IsAbstract)
+		{
+			code.Write("virtual ");
+		}
+
+		// A constructor, a destructor and a conversion operator have no return type to write. The
+		// first two have none at all, and the third's is part of its name.
+		if (funcDecl.Kind is FunctionKind.Method or FunctionKind.Operator)
+		{
+			code.Write($"{MapToCppType(funcDecl.ReturnType ?? new TypeReference("void"))} ");
+		}
+
+		code.Write(SpellFunctionName(funcDecl, enclosingType));
+		code.Write("(");
 		GenerateParameterList(funcDecl.Parameters, code);
+		code.Write(")");
+
+		if (funcDecl.IsReadOnly)
+		{
+			code.Write(" const");
+		}
+
+		if (funcDecl.IsAbstract)
+		{
+			code.WriteLine(" = 0;");
+			return;
+		}
+
+		switch (funcDecl.Definition)
+		{
+			case FunctionDefinition.Defaulted:
+				code.WriteLine(" = default;");
+				return;
+
+			case FunctionDefinition.Deleted:
+				code.WriteLine(" = delete;");
+				return;
+
+			default:
+				break;
+		}
 
 		// The line is ended before the scope opens, so C++'s brace lands on its own line.
-		code.WriteLine(")");
+		code.WriteLine();
 
 		using Scope body = new(code);
 		foreach (AstNode statement in funcDecl.Body)
 		{
 			GenerateInternal(statement, code);
 		}
+	}
+
+	/// <summary>
+	/// Spells the name a declaration is written under.
+	/// </summary>
+	/// <param name="funcDecl">The declaration being emitted.</param>
+	/// <param name="enclosingType">The name of the type it belongs to, when it belongs to one.</param>
+	/// <returns>The name as C++ writes it.</returns>
+	private static string SpellFunctionName(FunctionDeclaration funcDecl, string? enclosingType)
+	{
+		string typeName = enclosingType ?? funcDecl.Name ?? "UnnamedType";
+
+		return funcDecl.Kind switch
+		{
+			FunctionKind.Constructor => typeName,
+			FunctionKind.Destructor => $"~{typeName}",
+			FunctionKind.Operator => $"operator{funcDecl.Name}",
+			FunctionKind.ConversionOperator =>
+				$"operator {MapToCppType(funcDecl.ReturnType ?? new TypeReference("void"))}",
+			_ => funcDecl.Name ?? "unnamedFunction",
+		};
 	}
 
 	/// <inheritdoc/>
@@ -198,13 +277,16 @@ public class CppGenerator : StandardLanguageGenerator
 		// unlabelled C++ class body is private, which is the one thing the label has to rule out.
 		Visibility current = isStruct ? Visibility.Public : Visibility.Unspecified;
 		bool first = true;
+		AstNode? previous = null;
 		foreach (AstNode member in classDecl.Members)
 		{
-			// Members are separated by a blank line. A documented one needs it or its first comment
-			// line butts against the member above and reads as belonging to that one; an undocumented
-			// one needs it to stay in the same column of whitespace as its neighbours, rather than
-			// packing tight wherever a comment happens to be missing.
-			if (!first)
+			// A blank line goes between two members when either says something about itself. A
+			// documented member needs air above it or its first comment line butts against the member
+			// before it and reads as belonging to that one; the member after a documented one needs
+			// the same, or it is swallowed into that block. Two members that say nothing stay
+			// together, which is what keeps a run of defaulted and deleted declarations reading as
+			// one group rather than as five paragraphs.
+			if (!first && (NeedsSeparation(previous!) || NeedsSeparation(member)))
 			{
 				// NewLine rather than WriteLine: a separator carrying the current indent is a line of
 				// trailing whitespace, which every formatter strips and every diff then shows.
@@ -212,6 +294,7 @@ public class CppGenerator : StandardLanguageGenerator
 			}
 
 			first = false;
+			previous = member;
 
 			Visibility access = classDecl.Kind == TypeDeclarationKind.Interface
 				? Visibility.Public
@@ -219,17 +302,27 @@ public class CppGenerator : StandardLanguageGenerator
 
 			if (access != current)
 			{
+				// An access label sits at the class's own indentation rather than the members', which
+				// is what makes it read as dividing them rather than as one of them.
+				code.Outdent();
 				code.WriteLine($"{SpellVisibility(access)}:");
+				code.Indent();
 				current = access;
 			}
 
-			if (member is VariableDeclaration field)
+			switch (member)
 			{
-				GenerateField(field, code);
-			}
-			else
-			{
-				GenerateInternal(member, code);
+				case VariableDeclaration field:
+					GenerateField(field, code);
+					break;
+
+				case FunctionDeclaration method:
+					GenerateFunction(method, code, classDecl.Name);
+					break;
+
+				default:
+					GenerateInternal(member, code);
+					break;
 			}
 		}
 	}
@@ -313,6 +406,15 @@ public class CppGenerator : StandardLanguageGenerator
 	};
 
 	/// <summary>
+	/// Reports whether a member says enough about itself to want a blank line beside it.
+	/// </summary>
+	/// <param name="member">The member to test.</param>
+	/// <returns>True when it is documented or is a type in its own right.</returns>
+	private static bool NeedsSeparation(AstNode member) =>
+		member is ClassDeclaration or EnumDeclaration
+		|| (member is IHasDocumentation documented && documented.Documentation.Count > 0);
+
+	/// <summary>
 	/// Emits a variable declaration as a class member.
 	/// </summary>
 	/// <param name="field">The declaration to emit.</param>
@@ -379,7 +481,16 @@ public class CppGenerator : StandardLanguageGenerator
 		Ensure.NotNull(parameter);
 		Ensure.NotNull(code);
 
-		code.Write($"{MapToCppType(parameter.Type ?? new TypeReference("object"))} {parameter.Name ?? $"param{position}"}");
+		code.Write(MapToCppType(parameter.Type ?? new TypeReference("object")));
+
+		// An empty name means deliberately unnamed, which C++ allows and a deleted copy constructor
+		// wants: the parameter exists to make the signature, and naming it would only invite someone
+		// to look for where it is used. A null name means nobody said, so one is invented.
+		if (parameter.Name is not "")
+		{
+			code.Write($" {parameter.Name ?? $"param{position}"}");
+		}
+
 		AppendDefaultValue(parameter, code);
 	}
 

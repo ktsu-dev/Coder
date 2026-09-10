@@ -64,6 +64,58 @@ public class FunctionDeclaration : AstCompositeNode, IHasVisibility, IHasDocumen
 	/// </remarks>
 	public bool IsPure { get; set; }
 
+	/// <summary>
+	/// Gets or sets what this declares.
+	/// </summary>
+	public FunctionKind Kind { get; set; }
+
+	/// <summary>
+	/// Gets or sets where the behaviour comes from.
+	/// </summary>
+	/// <remarks>
+	/// Named apart from <see cref="Body"/>, which holds the statements: this says whether those
+	/// statements are the behaviour at all.
+	/// </remarks>
+	public FunctionDefinition Definition { get; set; }
+
+	/// <summary>
+	/// Gets or sets a value indicating whether a derived type may replace this.
+	/// </summary>
+	public bool IsVirtual { get; set; }
+
+	/// <summary>
+	/// Gets or sets a value indicating whether this has no implementation of its own and a derived
+	/// type must supply one.
+	/// </summary>
+	/// <remarks>
+	/// C++ spells this <c>= 0</c> and calls it pure virtual, which is a different thing from
+	/// <see cref="IsPure"/> — one says a declaration has no definition, the other says a call has no
+	/// effect. An abstract declaration is virtual whether or not <see cref="IsVirtual"/> says so,
+	/// since there is nothing else it could be.
+	/// </remarks>
+	public bool IsAbstract { get; set; }
+
+	/// <summary>
+	/// Gets or sets a value indicating whether calling this leaves the receiver unchanged.
+	/// </summary>
+	/// <remarks>
+	/// C++ spells this as a trailing <c>const</c> and C# as <c>readonly</c> on a member of a struct.
+	/// Weaker than <see cref="IsPure"/>, which says a call has no effect at all rather than no effect
+	/// on the one object.
+	/// </remarks>
+	public bool IsReadOnly { get; set; }
+
+	/// <summary>
+	/// Gets or sets a value indicating whether ignoring the result is a mistake.
+	/// </summary>
+	/// <remarks>
+	/// C++ spells this <c>[[nodiscard]]</c>, which is also what <see cref="IsPure"/> earns — purity
+	/// implies it, since a call that does nothing else and whose result is thrown away did nothing at
+	/// all. This says it for a call that does something too: one returning a result that may be a
+	/// failure has to be looked at.
+	/// </remarks>
+	public bool MustUseResult { get; set; }
+
 	/// <inheritdoc/>
 	public Collection<string> Documentation { get; init; } = [];
 
@@ -94,8 +146,14 @@ public class FunctionDeclaration : AstCompositeNode, IHasVisibility, IHasDocumen
 			Name = Name,
 			ReturnType = ReturnType?.Clone(),
 			Visibility = Visibility,
+			Kind = Kind,
+			Definition = Definition,
 			IsStatic = IsStatic,
-			IsPure = IsPure
+			IsPure = IsPure,
+			IsVirtual = IsVirtual,
+			IsAbstract = IsAbstract,
+			IsReadOnly = IsReadOnly,
+			MustUseResult = MustUseResult
 		};
 
 		// Copy metadata

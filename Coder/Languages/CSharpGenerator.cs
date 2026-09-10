@@ -146,7 +146,14 @@ public class CSharpGenerator : LanguageGeneratorBase
 		using Scope members = new(code);
 		foreach (AstNode member in classDecl.Members)
 		{
-			GenerateInternal(member, code);
+			if (member is FunctionDeclaration method)
+			{
+				GenerateFunction(method, code, classDecl.Name);
+			}
+			else
+			{
+				GenerateInternal(member, code);
+			}
 		}
 	}
 
@@ -256,27 +263,80 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// hang a <c>using</c> on: a generated file is a fragment, and a short name in it would be one
 	/// the reader has to arrange for.
 	/// </remarks>
-	private void GenerateFunction(FunctionDeclaration function, CodeBlocker code)
+	private void GenerateFunction(FunctionDeclaration function, CodeBlocker code) =>
+		GenerateFunction(function, code, null);
+
+	/// <summary>
+	/// Emits a function, which may be a member of a type.
+	/// </summary>
+	/// <param name="function">The declaration to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <param name="enclosingType">The name of the type it belongs to, when it belongs to one.</param>
+	/// <remarks>
+	/// C# expresses a defaulted or deleted member by not declaring it: the compiler supplies the one
+	/// and the absence of the other is what makes a call fail to compile. So neither is emitted, and
+	/// a note says which member went and why — a generated file that silently drops one looks
+	/// complete and is not.
+	/// <para>
+	/// A defaulted constructor is the exception, because a type that declares any other constructor
+	/// stops getting one for free. It is written with an empty body, which is exactly what
+	/// <c>= default</c> means there.
+	/// </para>
+	/// </remarks>
+	private void GenerateFunction(FunctionDeclaration function, CodeBlocker code, string? enclosingType)
 	{
 		GenerateDocumentation(function, code);
+
+		if (function.Definition != FunctionDefinition.Provided
+			&& !(function.Kind == FunctionKind.Constructor && function.Definition == FunctionDefinition.Defaulted))
+		{
+			string state = function.Definition == FunctionDefinition.Defaulted ? "supplied by the language" : "deleted";
+			WriteInexpressible(code, $"{SpellFunctionName(function, enclosingType)} is {state}, which C# expresses by not declaring it.");
+			return;
+		}
 
 		if (function.IsPure)
 		{
 			code.WriteLine("[System.Diagnostics.Contracts.Pure]");
 		}
 
-		// Build method signature. A function nobody has given a visibility to is public: an
-		// inaccessible method is not what someone who wrote no modifier meant.
+		if (function.MustUseResult && !function.IsPure)
+		{
+			code.WriteLine("[System.Diagnostics.CodeAnalysis.SuppressMessage(\"Usage\", \"CA1806\", Justification = \"The result must be used.\")]");
+		}
+
+		// A function nobody has given a visibility to is public: an inaccessible method is not what
+		// someone who wrote no modifier meant.
 		code.Write($"{SpellVisibility(function.Visibility) ?? "public"} ");
 
-		if (function.IsStatic)
+		if (function.IsStatic || function.Kind is FunctionKind.Operator or FunctionKind.ConversionOperator)
 		{
+			// A C# operator is always static, whether or not the declaration thought to say so.
 			code.Write("static ");
 		}
 
-		code.Write($"{MapToCSType(function.ReturnType ?? new TypeReference("void"))} {function.Name}(");
+		if (function.IsAbstract)
+		{
+			code.Write("abstract ");
+		}
+		else if (function.IsVirtual)
+		{
+			code.Write("virtual ");
+		}
 
-		// Add parameters
+		if (function.IsReadOnly)
+		{
+			code.Write("readonly ");
+		}
+
+		if (function.Kind is FunctionKind.Method or FunctionKind.Operator)
+		{
+			code.Write($"{MapToCSType(function.ReturnType ?? new TypeReference("void"))} ");
+		}
+
+		code.Write(SpellFunctionName(function, enclosingType));
+		code.Write("(");
+
 		for (int i = 0; i < function.Parameters.Count; i++)
 		{
 			if (i > 0)
@@ -287,15 +347,43 @@ public class CSharpGenerator : LanguageGeneratorBase
 			GenerateParameter(function.Parameters[i], code);
 		}
 
-		// The line is ended before the scope opens, so C#'s brace lands on its own line.
-		code.WriteLine(")");
+		code.Write(")");
 
-		// Add body
+		if (function.IsAbstract)
+		{
+			code.WriteLine(";");
+			return;
+		}
+
+		// The line is ended before the scope opens, so C#'s brace lands on its own line.
+		code.WriteLine();
+
 		using Scope body = new(code);
 		foreach (AstNode statement in function.Body)
 		{
 			GenerateInternal(statement, code);
 		}
+	}
+
+	/// <summary>
+	/// Spells the name a declaration is written under.
+	/// </summary>
+	/// <param name="function">The declaration being emitted.</param>
+	/// <param name="enclosingType">The name of the type it belongs to, when it belongs to one.</param>
+	/// <returns>The name as C# writes it.</returns>
+	private static string SpellFunctionName(FunctionDeclaration function, string? enclosingType)
+	{
+		string typeName = enclosingType ?? function.Name ?? "UnnamedType";
+
+		return function.Kind switch
+		{
+			FunctionKind.Constructor => typeName,
+			FunctionKind.Destructor => $"~{typeName}",
+			FunctionKind.Operator => $"operator {function.Name}",
+			FunctionKind.ConversionOperator =>
+				$"implicit operator {MapToCSType(function.ReturnType ?? new TypeReference("object"))}",
+			_ => function.Name ?? "UnnamedFunction",
+		};
 	}
 
 	private static void GenerateParameter(Parameter parameter, CodeBlocker code)

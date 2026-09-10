@@ -183,6 +183,36 @@ public class YamlSerializer
 			nodeData["isPure"] = funcDecl.IsPure;
 		}
 
+		if (funcDecl.Kind != FunctionKind.Method)
+		{
+			nodeData["kind"] = funcDecl.Kind.ToString();
+		}
+
+		if (funcDecl.Definition != FunctionDefinition.Provided)
+		{
+			nodeData["definition"] = funcDecl.Definition.ToString();
+		}
+
+		if (funcDecl.IsVirtual)
+		{
+			nodeData["isVirtual"] = funcDecl.IsVirtual;
+		}
+
+		if (funcDecl.IsAbstract)
+		{
+			nodeData["isAbstract"] = funcDecl.IsAbstract;
+		}
+
+		if (funcDecl.IsReadOnly)
+		{
+			nodeData["isReadOnly"] = funcDecl.IsReadOnly;
+		}
+
+		if (funcDecl.MustUseResult)
+		{
+			nodeData["mustUseResult"] = funcDecl.MustUseResult;
+		}
+
 		if (funcDecl.Parameters.Count > 0)
 		{
 			nodeData["parameters"] = SerializeParameters(funcDecl.Parameters);
