@@ -139,7 +139,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 			_ => "class",
 		};
 
-		code.Write($"{SpellVisibility(classDecl.Visibility) ?? "public"} {keyword} {classDecl.Name ?? "UnnamedClass"}");
+		code.Write($"{SpellVisibility(classDecl.Visibility) ?? DefaultVisibility} {keyword} {classDecl.Name ?? "UnnamedClass"}");
 
 		if (classDecl.BaseType is TypeReference baseType)
 		{
@@ -248,7 +248,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 	{
 		GenerateDocumentation(enumDecl, code);
 
-		code.Write($"{SpellVisibility(enumDecl.Visibility) ?? "public"} enum {enumDecl.Name ?? "UnnamedEnum"}");
+		code.Write($"{SpellVisibility(enumDecl.Visibility) ?? DefaultVisibility} enum {enumDecl.Name ?? "UnnamedEnum"}");
 
 		if (enumDecl.UnderlyingType is TypeReference underlying)
 		{
@@ -285,7 +285,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 	{
 		GenerateDocumentation(field, code);
 
-		code.Write($"{SpellVisibility(field.Visibility) ?? "public"} ");
+		code.Write($"{SpellVisibility(field.Visibility) ?? DefaultVisibility} ");
 		code.Write($"{MapToCSType(field.Type ?? new TypeReference("object"))} {field.Name}");
 
 		if (field.InitialValue is not null)
@@ -339,44 +339,8 @@ public class CSharpGenerator : LanguageGeneratorBase
 			return;
 		}
 
-		if (function.IsPure)
-		{
-			code.WriteLine("[System.Diagnostics.Contracts.Pure]");
-		}
-
-		if (function.MustUseResult && !function.IsPure)
-		{
-			code.WriteLine("[System.Diagnostics.CodeAnalysis.SuppressMessage(\"Usage\", \"CA1806\", Justification = \"The result must be used.\")]");
-		}
-
-		// A function nobody has given a visibility to is public: an inaccessible method is not what
-		// someone who wrote no modifier meant.
-		code.Write($"{SpellVisibility(function.Visibility) ?? "public"} ");
-
-		if (function.IsStatic || function.Kind is FunctionKind.Operator or FunctionKind.ConversionOperator)
-		{
-			// A C# operator is always static, whether or not the declaration thought to say so.
-			code.Write("static ");
-		}
-
-		if (function.IsAbstract)
-		{
-			code.Write("abstract ");
-		}
-		else if (function.IsVirtual)
-		{
-			code.Write("virtual ");
-		}
-
-		if (function.IsReadOnly)
-		{
-			code.Write("readonly ");
-		}
-
-		if (function.Kind is FunctionKind.Method or FunctionKind.Operator)
-		{
-			code.Write($"{MapToCSType(function.ReturnType ?? new TypeReference("void"))} ");
-		}
+		WriteFunctionAttributes(function, code);
+		WriteFunctionModifiers(function, code);
 
 		code.Write(SpellFunctionName(function, enclosingType));
 		code.Write("(");
@@ -425,6 +389,67 @@ public class CSharpGenerator : LanguageGeneratorBase
 	}
 
 	/// <summary>
+	/// Writes the attributes a declaration earns.
+	/// </summary>
+	/// <param name="function">The declaration being emitted.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// Purity already says the result must be used, so a declaration carrying both gets the one
+	/// attribute that says the stronger thing rather than two saying overlapping ones.
+	/// </remarks>
+	private static void WriteFunctionAttributes(FunctionDeclaration function, CodeBlocker code)
+	{
+		if (function.IsPure)
+		{
+			code.WriteLine("[System.Diagnostics.Contracts.Pure]");
+			return;
+		}
+
+		if (function.MustUseResult)
+		{
+			code.WriteLine("[System.Diagnostics.CodeAnalysis.SuppressMessage(\"Usage\", \"CA1806\", Justification = \"The result must be used.\")]");
+		}
+	}
+
+	/// <summary>
+	/// Writes the modifiers in front of a declaration, up to and including its return type.
+	/// </summary>
+	/// <param name="function">The declaration being emitted.</param>
+	/// <param name="code">The writer to emit into.</param>
+	private static void WriteFunctionModifiers(FunctionDeclaration function, CodeBlocker code)
+	{
+		// A function nobody has given a visibility to is public: an inaccessible method is not what
+		// someone who wrote no modifier meant.
+		code.Write($"{SpellVisibility(function.Visibility) ?? DefaultVisibility} ");
+
+		if (function.IsStatic || function.Kind is FunctionKind.Operator or FunctionKind.ConversionOperator)
+		{
+			// A C# operator is always static, whether or not the declaration thought to say so.
+			code.Write("static ");
+		}
+
+		if (function.IsAbstract)
+		{
+			code.Write("abstract ");
+		}
+		else if (function.IsVirtual)
+		{
+			code.Write("virtual ");
+		}
+
+		if (function.IsReadOnly)
+		{
+			code.Write("readonly ");
+		}
+
+		// A constructor, a destructor and a conversion operator have no return type to write.
+		if (function.Kind is FunctionKind.Method or FunctionKind.Operator)
+		{
+			code.Write($"{MapToCSType(function.ReturnType ?? new TypeReference("void"))} ");
+		}
+	}
+
+	/// <summary>
 	/// Spells the name a declaration is written under.
 	/// </summary>
 	/// <param name="function">The declaration being emitted.</param>
@@ -454,6 +479,16 @@ public class CSharpGenerator : LanguageGeneratorBase
 			code.Write($" = {parameter.DefaultValue}");
 		}
 	}
+
+	/// <summary>
+	/// What a declaration nobody gave a visibility to gets.
+	/// </summary>
+	/// <remarks>
+	/// C#'s own default is private for a member and internal for a type. Neither is what someone who
+	/// wrote no modifier on a generated declaration meant: an inaccessible one is not a declaration
+	/// anybody asked for.
+	/// </remarks>
+	private const string DefaultVisibility = "public";
 
 	private static readonly Dictionary<string, string> TypeMappings = new()
 	{

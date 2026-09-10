@@ -307,6 +307,46 @@ public class TypeDeclarationTests
 	}
 
 	/// <summary>
+	/// The inspector offers a row for every property of the new declarations, so each is editable
+	/// rather than only settable in code.
+	/// </summary>
+	[TestMethod]
+	public void Fields_CoverTheNewDeclarations()
+	{
+		SourceFile file = new("RigidBody.gen.hpp");
+		NamespaceDeclaration components = new("holo::components");
+		EnumDeclaration kind = new("BodyKind");
+		EnumMember member = new("Static");
+		FieldDeclaration mass = new("mass", "double");
+		UsingAlias alias = new("underlying", "long");
+
+		Assert.IsNotEmpty(AstFields.Of(file));
+		Assert.IsNotEmpty(AstFields.Of(components));
+		Assert.IsNotEmpty(AstFields.Of(kind));
+		Assert.IsNotEmpty(AstFields.Of(member));
+		Assert.IsNotEmpty(AstFields.Of(mass));
+
+		Assert.IsTrue(AstFields.TryWrite(file, "Name", "Other.hpp"));
+		Assert.IsTrue(AstFields.TryWrite(file, "Header", "true"));
+		Assert.IsTrue(AstFields.TryWrite(components, "Name", "holo"));
+		Assert.IsTrue(AstFields.TryWrite(kind, "UnderlyingType", "std::uint8_t"));
+		Assert.IsTrue(AstFields.TryWrite(kind, "Visibility", "Private"));
+		Assert.IsTrue(AstFields.TryWrite(member, "Value", "7"));
+		Assert.IsTrue(AstFields.TryWrite(mass, "Visibility", "Private"));
+
+		Assert.AreEqual("Other.hpp", file.Name);
+		Assert.IsTrue(file.IsHeader);
+		Assert.AreEqual("holo", components.Name);
+		Assert.AreEqual("std::uint8_t", kind.UnderlyingType?.ToString());
+		Assert.AreEqual(Visibility.Private, kind.Visibility);
+		Assert.AreEqual("7", member.Value);
+		Assert.AreEqual(Visibility.Private, mass.Visibility);
+
+		Assert.IsTrue(AstFields.TryWrite(alias, "AliasedType", "std::int64_t"));
+		Assert.AreEqual("std::int64_t", alias.AliasedType?.ToString());
+	}
+
+	/// <summary>
 	/// The editor can walk and edit the new declarations, which is what stops a node type existing
 	/// only for whoever builds one in code.
 	/// </summary>

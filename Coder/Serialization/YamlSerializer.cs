@@ -338,7 +338,7 @@ public class YamlSerializer
 
 		if (file.Members.Count > 0)
 		{
-			nodeData["members"] = SerializeBodyStatements(file.Members);
+			nodeData[MembersKey] = SerializeBodyStatements(file.Members);
 		}
 	}
 
@@ -353,9 +353,12 @@ public class YamlSerializer
 
 		if (namespaceDecl.Members.Count > 0)
 		{
-			nodeData["members"] = SerializeBodyStatements(namespaceDecl.Members);
+			nodeData[MembersKey] = SerializeBodyStatements(namespaceDecl.Members);
 		}
 	}
+
+	/// <summary>The key a node's members are written under.</summary>
+	private const string MembersKey = "members";
 
 	private static void SerializeUsingAlias(UsingAlias usingAlias, Dictionary<string, object> nodeData)
 	{
@@ -418,7 +421,7 @@ public class YamlSerializer
 
 		if (enumDecl.Members.Count > 0)
 		{
-			nodeData["members"] = SerializeBodyStatements(enumDecl.Members);
+			nodeData[MembersKey] = SerializeBodyStatements(enumDecl.Members);
 		}
 	}
 
@@ -494,7 +497,7 @@ public class YamlSerializer
 		if (classDecl.Members.Count > 0)
 		{
 			// Members are serialized the same way a function body is: each is a node in its own right.
-			nodeData["members"] = SerializeBodyStatements(classDecl.Members);
+			nodeData[MembersKey] = SerializeBodyStatements(classDecl.Members);
 		}
 	}
 

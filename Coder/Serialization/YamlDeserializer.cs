@@ -5,6 +5,7 @@ namespace ktsu.Coder.Serialization;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Linq;
 using System.Text.RegularExpressions;
 using ktsu.Coder.Ast;
 using YamlDotNet.Serialization;
@@ -177,21 +178,18 @@ public partial class YamlDeserializer
 
 		if (dict.TryGetValue("initialisers", out object? initialisersObj) && initialisersObj is List<object> initialisers)
 		{
-			foreach (object initialiser in initialisers)
+			foreach (Dictionary<object, object> initialiserDict in Mappings(initialisers))
 			{
-				if (initialiser is Dictionary<object, object> initialiserDict && initialiserDict.Count > 0)
+				(object initialiserType, object initialiserData) = initialiserDict.First();
+				if (DeserializeNode(initialiserType.ToString() ?? string.Empty, initialiserData) is MemberInitialiser member)
 				{
-					(object initialiserType, object initialiserData) = initialiserDict.First();
-					if (DeserializeNode(initialiserType.ToString() ?? string.Empty, initialiserData) is MemberInitialiser member)
-					{
-						funcDecl.Initialisers.Add(member);
-					}
+					funcDecl.Initialisers.Add(member);
 				}
 			}
 		}
 
 		DeserializeVisibility(funcDecl, dict);
-		ReadStrings(dict, "documentation", funcDecl.Documentation);
+		ReadStrings(dict, DocumentationKey, funcDecl.Documentation);
 	}
 
 	/// <summary>
@@ -354,7 +352,7 @@ public partial class YamlDeserializer
 			namespaceDecl.Name = nameObj?.ToString();
 		}
 
-		ReadStrings(dict, "documentation", namespaceDecl.Documentation);
+		ReadStrings(dict, DocumentationKey, namespaceDecl.Documentation);
 		DeserializeMembersInto(dict, namespaceDecl.Members);
 		DeserializeMetadata(namespaceDecl, dict);
 
@@ -380,7 +378,7 @@ public partial class YamlDeserializer
 		}
 
 		DeserializeVisibility(usingAlias, dict);
-		ReadStrings(dict, "documentation", usingAlias.Documentation);
+		ReadStrings(dict, DocumentationKey, usingAlias.Documentation);
 		DeserializeMetadata(usingAlias, dict);
 
 		return usingAlias;
@@ -425,15 +423,12 @@ public partial class YamlDeserializer
 
 		if (dict.TryGetValue("arguments", out object? argumentsObj) && argumentsObj is List<object> arguments)
 		{
-			foreach (object argument in arguments)
+			foreach (Dictionary<object, object> argumentDict in Mappings(arguments))
 			{
-				if (argument is Dictionary<object, object> argumentDict && argumentDict.Count > 0)
+				(object argumentType, object argumentData) = argumentDict.First();
+				if (DeserializeNode(argumentType.ToString() ?? string.Empty, argumentData) is AstNode node)
 				{
-					(object argumentType, object argumentData) = argumentDict.First();
-					if (DeserializeNode(argumentType.ToString() ?? string.Empty, argumentData) is AstNode node)
-					{
-						construction.Arguments.Add(node);
-					}
+					construction.Arguments.Add(node);
 				}
 			}
 		}
@@ -461,19 +456,16 @@ public partial class YamlDeserializer
 		}
 
 		DeserializeVisibility(enumDecl, dict);
-		ReadStrings(dict, "documentation", enumDecl.Documentation);
+		ReadStrings(dict, DocumentationKey, enumDecl.Documentation);
 
-		if (dict.TryGetValue("members", out object? membersObj) && membersObj is List<object> members)
+		if (dict.TryGetValue(MembersKey, out object? membersObj) && membersObj is List<object> members)
 		{
-			foreach (object member in members)
+			foreach (Dictionary<object, object> memberDict in Mappings(members))
 			{
-				if (member is Dictionary<object, object> memberDict && memberDict.Count > 0)
+				(object memberType, object memberData) = memberDict.First();
+				if (DeserializeNode(memberType.ToString() ?? string.Empty, memberData) is EnumMember value)
 				{
-					(object memberType, object memberData) = memberDict.First();
-					if (DeserializeNode(memberType.ToString() ?? string.Empty, memberData) is EnumMember value)
-					{
-						enumDecl.Members.Add(value);
-					}
+					enumDecl.Members.Add(value);
 				}
 			}
 		}
@@ -523,7 +515,7 @@ public partial class YamlDeserializer
 		}
 
 		DeserializeVisibility(field, dict);
-		ReadStrings(dict, "documentation", field.Documentation);
+		ReadStrings(dict, DocumentationKey, field.Documentation);
 
 		if (dict.TryGetValue("initialValue", out object? initialObj) &&
 			initialObj is Dictionary<object, object> initialDict && initialDict.Count > 0)
@@ -535,6 +527,26 @@ public partial class YamlDeserializer
 		DeserializeMetadata(field, dict);
 		return field;
 	}
+
+	/// <summary>The key a node's members are written under.</summary>
+	private const string MembersKey = "members";
+
+	/// <summary>The key a declaration's documentation is written under.</summary>
+	private const string DocumentationKey = "documentation";
+
+	/// <summary>
+	/// Keeps the entries of a sequence that are non-empty mappings, which is the only shape a node
+	/// can have been written as.
+	/// </summary>
+	/// <param name="entries">The sequence read from the document.</param>
+	/// <returns>The entries that are nodes.</returns>
+	/// <remarks>
+	/// Filtering here rather than inside each loop says out loud that anything else in the sequence is
+	/// skipped — a document can hold whatever someone typed, and a loop that quietly steps over half
+	/// its input reads as though it does not.
+	/// </remarks>
+	private static IEnumerable<Dictionary<object, object>> Mappings(List<object> entries) =>
+		entries.OfType<Dictionary<object, object>>().Where(entry => entry.Count > 0);
 
 	/// <summary>
 	/// Reads a sequence of strings into a collection, leaving it alone when the key is absent.
@@ -560,20 +572,17 @@ public partial class YamlDeserializer
 	/// <param name="into">The collection to fill.</param>
 	private void DeserializeMembersInto(Dictionary<object, object> dict, Collection<AstNode> into)
 	{
-		if (!dict.TryGetValue("members", out object? membersObj) || membersObj is not List<object> members)
+		if (!dict.TryGetValue(MembersKey, out object? membersObj) || membersObj is not List<object> members)
 		{
 			return;
 		}
 
-		foreach (object member in members)
+		foreach (Dictionary<object, object> memberDict in Mappings(members))
 		{
-			if (member is Dictionary<object, object> memberDict && memberDict.Count > 0)
+			(object memberType, object memberData) = memberDict.First();
+			if (DeserializeNode(memberType.ToString() ?? string.Empty, memberData) is AstNode node)
 			{
-				(object memberType, object memberData) = memberDict.First();
-				if (DeserializeNode(memberType.ToString() ?? string.Empty, memberData) is AstNode node)
-				{
-					into.Add(node);
-				}
+				into.Add(node);
 			}
 		}
 	}
@@ -603,7 +612,7 @@ public partial class YamlDeserializer
 		}
 
 		DeserializeVisibility(classDecl, dict);
-		ReadStrings(dict, "documentation", classDecl.Documentation);
+		ReadStrings(dict, DocumentationKey, classDecl.Documentation);
 
 		DeserializeClassMembers(classDecl, dict);
 		DeserializeMetadata(classDecl, dict);
