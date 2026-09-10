@@ -227,13 +227,34 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// </remarks>
 	private static string MapToCSType(TypeReference type)
 	{
-		string name = TypeMappings.TryGetValue(type.Name, out string? mapped)
-			? mapped
-			: string.Equals(type.Name, "void", StringComparison.OrdinalIgnoreCase) ? "void" : type.Name;
+		string name = MapTypeName(type.Name);
 
-		return type.TypeArguments.Count > 0
-			? $"{name}<{string.Join(", ", type.TypeArguments.Select(MapToCSType))}>"
-			: DefaultTypeArguments.TryGetValue(type.Name, out string? fallback) ? $"{name}{fallback}" : name;
+		if (type.TypeArguments.Count > 0)
+		{
+			return $"{name}<{string.Join(", ", type.TypeArguments.Select(MapToCSType))}>";
+		}
+
+		return DefaultTypeArguments.TryGetValue(type.Name, out string? fallback) ? $"{name}{fallback}" : name;
+	}
+
+	/// <summary>
+	/// Spells a type's name in C#, leaving any arguments to the caller.
+	/// </summary>
+	/// <param name="name">The name as the AST holds it.</param>
+	/// <returns>The C# name.</returns>
+	/// <remarks>
+	/// <c>void</c> is matched case-insensitively where the rest of the table is not, because it is
+	/// the one name a caller reaches for without knowing which language's casing the AST was written
+	/// in — a return type left unset is spelled <c>void</c> by the generator itself.
+	/// </remarks>
+	private static string MapTypeName(string name)
+	{
+		if (TypeMappings.TryGetValue(name, out string? mapped))
+		{
+			return mapped;
+		}
+
+		return string.Equals(name, "void", StringComparison.OrdinalIgnoreCase) ? "void" : name;
 	}
 
 	private void GenerateVariableDeclaration(VariableDeclaration varDecl, CodeBlocker code)

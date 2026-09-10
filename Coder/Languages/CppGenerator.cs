@@ -290,9 +290,7 @@ public class CppGenerator : StandardLanguageGenerator
 	{
 		string name = TypeMappings.TryGetValue(type.Name, out string? mapped) ? mapped : type.Name;
 
-		string arguments = type.TypeArguments.Count > 0
-			? $"<{string.Join(", ", type.TypeArguments.Select(MapToCppType))}>"
-			: DefaultTypeArguments.TryGetValue(type.Name, out string? fallback) ? fallback : string.Empty;
+		string arguments = SpellTypeArguments(type);
 
 		string indirection = type.Indirection switch
 		{
@@ -302,5 +300,20 @@ public class CppGenerator : StandardLanguageGenerator
 		};
 
 		return $"{(type.IsReadOnly ? "const " : string.Empty)}{name}{arguments}{indirection}";
+	}
+
+	/// <summary>
+	/// Spells a type's argument list, supplying the one a bare container does not name.
+	/// </summary>
+	/// <param name="type">The type whose arguments to spell.</param>
+	/// <returns>The angle-bracketed list, or nothing when the type takes no arguments.</returns>
+	private static string SpellTypeArguments(TypeReference type)
+	{
+		if (type.TypeArguments.Count > 0)
+		{
+			return $"<{string.Join(", ", type.TypeArguments.Select(MapToCppType))}>";
+		}
+
+		return DefaultTypeArguments.TryGetValue(type.Name, out string? fallback) ? fallback : string.Empty;
 	}
 }
