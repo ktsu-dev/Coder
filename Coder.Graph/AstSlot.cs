@@ -44,4 +44,7 @@ public enum AstSlotKind
 
 	/// <summary>A declaration a class can hold: a method, a field, or a nested class.</summary>
 	Member,
+
+	/// <summary>One named value of an enumeration, which is nothing else in the AST.</summary>
+	EnumMember,
 }

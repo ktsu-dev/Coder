@@ -7,7 +7,7 @@ using System.Collections.ObjectModel;
 /// <summary>
 /// Represents a function declaration in the abstract syntax tree.
 /// </summary>
-public class FunctionDeclaration : AstCompositeNode, IHasVisibility
+public class FunctionDeclaration : AstCompositeNode, IHasVisibility, IHasDocumentation
 {
 	/// <summary>
 	/// Initializes a new instance of the <see cref="FunctionDeclaration"/> class.
@@ -64,6 +64,9 @@ public class FunctionDeclaration : AstCompositeNode, IHasVisibility
 	/// </remarks>
 	public bool IsPure { get; set; }
 
+	/// <inheritdoc/>
+	public Collection<string> Documentation { get; init; } = [];
+
 	/// <summary>
 	/// Gets or sets a list of parameters for the function.
 	/// </summary>
@@ -99,6 +102,11 @@ public class FunctionDeclaration : AstCompositeNode, IHasVisibility
 		foreach ((string key, object? value) in Metadata)
 		{
 			clone.Metadata[key] = value;
+		}
+
+		foreach (string line in Documentation)
+		{
+			clone.Documentation.Add(line);
 		}
 
 		// Clone parameters

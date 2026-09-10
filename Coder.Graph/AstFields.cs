@@ -97,6 +97,16 @@ public static class AstFields
 	];
 
 	/// <summary>
+	/// The kinds of type a declaration can be, offered as a menu rather than typed.
+	/// </summary>
+	private static readonly IReadOnlyList<AstFieldChoice> TypeKinds =
+	[
+		.. Enum.GetValues<TypeDeclarationKind>().Select(kind => new AstFieldChoice(
+			kind.ToString(),
+			kind.ToString().ToLowerInvariant())),
+	];
+
+	/// <summary>
 	/// Lists the properties of a node the inspector can edit.
 	/// </summary>
 	/// <param name="node">The node to inspect.</param>
@@ -107,9 +117,41 @@ public static class AstFields
 
 		return node switch
 		{
+			SourceFile file =>
+			[
+				new("Name", AstFieldKind.Text, file.Name ?? string.Empty),
+				new("Header", AstFieldKind.Flag, Spell(file.IsHeader)),
+			],
+
+			NamespaceDeclaration namespaceDecl =>
+			[
+				new("Name", AstFieldKind.Text, namespaceDecl.Name ?? string.Empty),
+			],
+
+			EnumDeclaration enumDecl =>
+			[
+				new("Name", AstFieldKind.Text, enumDecl.Name ?? string.Empty),
+				new("UnderlyingType", AstFieldKind.Text, enumDecl.UnderlyingType?.ToString() ?? string.Empty),
+				new("Visibility", AstFieldKind.Choice, enumDecl.Visibility.ToString(), Visibilities),
+			],
+
+			EnumMember enumMember =>
+			[
+				new("Name", AstFieldKind.Text, enumMember.Name ?? string.Empty),
+				new("Value", AstFieldKind.Text, enumMember.Value ?? string.Empty),
+			],
+
+			FieldDeclaration fieldDecl =>
+			[
+				new("Name", AstFieldKind.Text, fieldDecl.Name ?? string.Empty),
+				new("Type", AstFieldKind.Text, fieldDecl.Type?.ToString() ?? string.Empty),
+				new("Visibility", AstFieldKind.Choice, fieldDecl.Visibility.ToString(), Visibilities),
+			],
+
 			ClassDeclaration classDecl =>
 			[
 				new("Name", AstFieldKind.Text, classDecl.Name ?? string.Empty),
+				new("Kind", AstFieldKind.Choice, classDecl.Kind.ToString(), TypeKinds),
 				new("BaseType", AstFieldKind.Text, classDecl.BaseType?.ToString() ?? string.Empty),
 				new("Visibility", AstFieldKind.Choice, classDecl.Visibility.ToString(), Visibilities),
 			],
@@ -216,9 +258,46 @@ public static class AstFields
 			return false;
 		}
 
+		return TryWriteDeclaration(node, fieldName, value) || TryWriteExpression(node, fieldName, value);
+	}
+
+	/// <summary>
+	/// Writes a field of a declaration.
+	/// </summary>
+	/// <param name="node">The node to write to.</param>
+	/// <param name="fieldName">The field to write.</param>
+	/// <param name="value">The value, as text.</param>
+	/// <returns>True if the node was changed.</returns>
+	/// <remarks>
+	/// Split from <see cref="TryWriteExpression"/> only because one switch over every node the AST
+	/// has is more branches than any analyzer will accept. The line between them is the same one the
+	/// AST already draws: something that declares a name, or something that computes a value.
+	/// </remarks>
+	private static bool TryWriteDeclaration(AstNode node, string fieldName, string value)
+	{
 		return (node, fieldName) switch
 		{
+			(SourceFile file, "Name") => Assign(() => file.Name = OrNull(value)),
+			(SourceFile file, "Header") => TryParseBool(value, out bool isHeader) && Assign(() => file.IsHeader = isHeader),
+
+			(NamespaceDeclaration namespaceDecl, "Name") => Assign(() => namespaceDecl.Name = OrNull(value)),
+
+			(EnumDeclaration enumDecl, "Name") => Assign(() => enumDecl.Name = OrNull(value)),
+			(EnumDeclaration enumDecl, "UnderlyingType") => Assign(() => enumDecl.UnderlyingType = OrNull(value)),
+			(EnumDeclaration enumDecl, "Visibility") =>
+				TryParseVisibility(value, out Visibility enumVisibility) && Assign(() => enumDecl.Visibility = enumVisibility),
+
+			(EnumMember enumMember, "Name") => Assign(() => enumMember.Name = OrNull(value)),
+			(EnumMember enumMember, "Value") => Assign(() => enumMember.Value = OrNull(value)),
+
+			(FieldDeclaration fieldDecl, "Name") => Assign(() => fieldDecl.Name = OrNull(value)),
+			(FieldDeclaration fieldDecl, "Type") => Assign(() => fieldDecl.Type = OrNull(value)),
+			(FieldDeclaration fieldDecl, "Visibility") =>
+				TryParseVisibility(value, out Visibility fieldVisibility) && Assign(() => fieldDecl.Visibility = fieldVisibility),
+
 			(ClassDeclaration classDecl, "Name") => Assign(() => classDecl.Name = OrNull(value)),
+			(ClassDeclaration classDecl, "Kind") =>
+				Enum.TryParse(value, out TypeDeclarationKind typeKind) && Assign(() => classDecl.Kind = typeKind),
 			(ClassDeclaration classDecl, "BaseType") => Assign(() => classDecl.BaseType = OrNull(value)),
 			(ClassDeclaration classDecl, "Visibility") =>
 				TryParseVisibility(value, out Visibility classVisibility) && Assign(() => classDecl.Visibility = classVisibility),
@@ -249,6 +328,21 @@ public static class AstFields
 			(VariableDeclaration varDecl, "Visibility") =>
 				TryParseVisibility(value, out Visibility varVisibility) && Assign(() => varDecl.Visibility = varVisibility),
 
+			_ => false,
+		};
+	}
+
+	/// <summary>
+	/// Writes a field of an expression or a leaf.
+	/// </summary>
+	/// <param name="node">The node to write to.</param>
+	/// <param name="fieldName">The field to write.</param>
+	/// <param name="value">The value, as text.</param>
+	/// <returns>True if the node was changed.</returns>
+	private static bool TryWriteExpression(AstNode node, string fieldName, string value)
+	{
+		return (node, fieldName) switch
+		{
 			(VariableReference varRef, "Name") => value.Length > 0 && Assign(() => varRef.Name = value),
 
 			(BinaryExpression binary, "Operator") =>

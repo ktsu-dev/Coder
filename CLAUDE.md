@@ -51,6 +51,12 @@ source in four target languages. The solution uses:
   as a string can only paste it, so the caller would have to spell the target language itself.
   `Parse` and `ToString` are inverses and text the grammar cannot read becomes a name holding it
   verbatim, so a property that used to hold a string still takes and gives one.
+- `Coder/Ast/SourceFile.cs`, `NamespaceDeclaration.cs`, `EnumDeclaration.cs`, `FieldDeclaration.cs` —
+  what a generated *header* is made of rather than a snippet. `FieldDeclaration` is deliberately not
+  `VariableDeclaration`: a field with no initialiser is value-initialised, so a default-constructed
+  instance is the one the declaration described, and a local with none is ordinary. `SourceFile`'s
+  `Imports` are the one part of the AST that does not translate — a C++ include path, a C# namespace
+  and a Python module are different kinds of thing — so a file is built for a language.
 - `Coder/Languages/LanguageGeneratorBase.cs` — the emitters every generator shares.
 - `Coder/Languages/StandardLanguageGenerator.cs` — owns the node dispatch, so a derived
   generator supplies only the syntax its language does not share. `CSharpGenerator` deliberately

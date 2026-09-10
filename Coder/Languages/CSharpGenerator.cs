@@ -76,6 +76,18 @@ public class CSharpGenerator : LanguageGeneratorBase
 			case LiteralExpression<double> doubleLit:
 				code.Write($"{doubleLit.Value.ToString(CultureInfo.InvariantCulture)}d");
 				break;
+			case SourceFile file:
+				GenerateSourceFile(file, code);
+				break;
+			case NamespaceDeclaration namespaceDecl:
+				GenerateNamespace(namespaceDecl, code);
+				break;
+			case EnumDeclaration enumDecl:
+				GenerateEnum(enumDecl, code);
+				break;
+			case FieldDeclaration field:
+				GenerateField(field, code);
+				break;
 			case VariableDeclaration varDecl:
 				GenerateVariableDeclaration(varDecl, code);
 				break;
@@ -112,7 +124,16 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// </remarks>
 	private void GenerateClass(ClassDeclaration classDecl, CodeBlocker code)
 	{
-		code.Write($"{SpellVisibility(classDecl.Visibility) ?? "public"} class {classDecl.Name ?? "UnnamedClass"}");
+		GenerateDocumentation(classDecl, code);
+
+		string keyword = classDecl.Kind switch
+		{
+			TypeDeclarationKind.Struct => "struct",
+			TypeDeclarationKind.Interface => "interface",
+			_ => "class",
+		};
+
+		code.Write($"{SpellVisibility(classDecl.Visibility) ?? "public"} {keyword} {classDecl.Name ?? "UnnamedClass"}");
 
 		if (classDecl.BaseType is TypeReference baseType)
 		{
@@ -129,6 +150,102 @@ public class CSharpGenerator : LanguageGeneratorBase
 		}
 	}
 
+	/// <inheritdoc/>
+	protected override string? SpellImport(string import) => $"using {import};";
+
+	/// <summary>
+	/// Emits a namespace and its members.
+	/// </summary>
+	/// <param name="namespaceDecl">The declaration to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// Braced rather than file-scoped. A file-scoped namespace has to be the only one in its file and
+	/// cannot contain another, and the AST puts no such restriction on where a namespace may appear —
+	/// so the braced form is the one that is always correct for whatever it is handed.
+	/// </remarks>
+	private void GenerateNamespace(NamespaceDeclaration namespaceDecl, CodeBlocker code)
+	{
+		GenerateDocumentation(namespaceDecl, code);
+
+		code.WriteLine($"namespace {string.Join(".", NamespaceDeclaration.Split(namespaceDecl.Name))}");
+
+		using Scope members = new(code);
+		bool first = true;
+		foreach (AstNode member in namespaceDecl.Members)
+		{
+			if (!first)
+			{
+				code.NewLine();
+			}
+
+			first = false;
+			GenerateInternal(member, code);
+		}
+	}
+
+	/// <summary>
+	/// Emits an enumeration and its members.
+	/// </summary>
+	/// <param name="enumDecl">The declaration to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// The underlying type is written only when the declaration names one, because C#'s default is
+	/// <c>int</c> and saying so adds nothing. A member with no value of its own is left unnumbered,
+	/// which is how C# spells "take it from the position" and keeps the declaration readable.
+	/// </remarks>
+	private void GenerateEnum(EnumDeclaration enumDecl, CodeBlocker code)
+	{
+		GenerateDocumentation(enumDecl, code);
+
+		code.Write($"{SpellVisibility(enumDecl.Visibility) ?? "public"} enum {enumDecl.Name ?? "UnnamedEnum"}");
+
+		if (enumDecl.UnderlyingType is TypeReference underlying)
+		{
+			code.Write($" : {MapToCSType(underlying)}");
+		}
+
+		code.WriteLine();
+
+		using Scope members = new(code);
+		foreach (EnumMember member in enumDecl.Members)
+		{
+			code.Write(member.Name ?? "Unnamed");
+
+			if (member.Value is not null)
+			{
+				code.Write($" = {member.Value}");
+			}
+
+			code.WriteLine(",");
+		}
+	}
+
+	/// <summary>
+	/// Emits a field of a type.
+	/// </summary>
+	/// <param name="field">The declaration to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// Public unless the declaration says otherwise, matching what every other declaration here does
+	/// with an unset visibility. C#'s own default for a field is private, which is not what someone
+	/// who wrote no modifier on a generated type meant.
+	/// </remarks>
+	private void GenerateField(FieldDeclaration field, CodeBlocker code)
+	{
+		GenerateDocumentation(field, code);
+
+		code.Write($"{SpellVisibility(field.Visibility) ?? "public"} ");
+		code.Write($"{MapToCSType(field.Type ?? new TypeReference("object"))} {field.Name}");
+
+		if (field.InitialValue is not null)
+		{
+			code.Write(" = ");
+			GenerateInternal(field.InitialValue, code);
+		}
+
+		EndStatement(code);
+	}
+
 	/// <summary>
 	/// Emits a function.
 	/// </summary>
@@ -141,6 +258,8 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// </remarks>
 	private void GenerateFunction(FunctionDeclaration function, CodeBlocker code)
 	{
+		GenerateDocumentation(function, code);
+
 		if (function.IsPure)
 		{
 			code.WriteLine("[System.Diagnostics.Contracts.Pure]");

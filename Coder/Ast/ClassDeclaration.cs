@@ -16,7 +16,7 @@ using System.Collections.ObjectModel;
 /// its declaration syntax, and interfaces are a language feature the AST does not model yet.
 /// </para>
 /// </remarks>
-public class ClassDeclaration : AstCompositeNode, IHasVisibility
+public class ClassDeclaration : AstCompositeNode, IHasVisibility, IHasDocumentation
 {
 	/// <summary>
 	/// Initializes a new instance of the <see cref="ClassDeclaration"/> class.
@@ -35,6 +35,14 @@ public class ClassDeclaration : AstCompositeNode, IHasVisibility
 	/// Gets or sets the name of the class.
 	/// </summary>
 	public string? Name { get; set; }
+
+	/// <summary>
+	/// Gets or sets what kind of type this declares.
+	/// </summary>
+	public TypeDeclarationKind Kind { get; set; }
+
+	/// <inheritdoc/>
+	public Collection<string> Documentation { get; init; } = [];
 
 	/// <summary>
 	/// Gets or sets the type this class derives from, or null when it derives from nothing.
@@ -66,6 +74,7 @@ public class ClassDeclaration : AstCompositeNode, IHasVisibility
 		ClassDeclaration clone = new()
 		{
 			Name = Name,
+			Kind = Kind,
 			BaseType = BaseType?.Clone(),
 			Visibility = Visibility
 		};
@@ -73,6 +82,11 @@ public class ClassDeclaration : AstCompositeNode, IHasVisibility
 		foreach ((string key, object? value) in Metadata)
 		{
 			clone.Metadata[key] = value;
+		}
+
+		foreach (string line in Documentation)
+		{
+			clone.Documentation.Add(line);
 		}
 
 		foreach (AstNode member in Members)

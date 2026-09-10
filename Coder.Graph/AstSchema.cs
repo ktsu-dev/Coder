@@ -35,6 +35,7 @@ public static class AstSchema
 	private static readonly AstSlot ParametersSlot = new("Parameters", AstSlotCardinality.Many, AstSlotKind.Parameter);
 	private static readonly AstSlot BodySlot = new("Body", AstSlotCardinality.Many, AstSlotKind.Statement);
 	private static readonly AstSlot MembersSlot = new("Members", AstSlotCardinality.Many, AstSlotKind.Member);
+	private static readonly AstSlot EnumMembersSlot = new("Members", AstSlotCardinality.Many, AstSlotKind.EnumMember);
 
 	/// <summary>
 	/// Lists the slots a node exposes, in the order the editor should draw them.
@@ -43,7 +44,11 @@ public static class AstSchema
 	/// <returns>The node's slots, empty for a leaf.</returns>
 	public static IReadOnlyList<AstSlot> SlotsOf(AstNode node) => node switch
 	{
+		SourceFile => [MembersSlot],
+		NamespaceDeclaration => [MembersSlot],
 		ClassDeclaration => [MembersSlot],
+		EnumDeclaration => [EnumMembersSlot],
+		FieldDeclaration => [InitialValueSlot],
 		FunctionDeclaration => [ParametersSlot, BodySlot],
 		EntryPoint => [BodySlot],
 		ReturnStatement => [ExpressionSlot],
@@ -73,6 +78,7 @@ public static class AstSchema
 			(BinaryExpression binary, "Right") => binary.Right,
 			(UnaryExpression unary, "Operand") => unary.Operand,
 			(VariableDeclaration varDecl, "InitialValue") => varDecl.InitialValue,
+			(FieldDeclaration field, "InitialValue") => field.InitialValue,
 			(AssignmentStatement assignment, "Target") => assignment.Target,
 			(AssignmentStatement assignment, "Value") => assignment.Value,
 			_ => null,
@@ -85,7 +91,10 @@ public static class AstSchema
 
 		return (node, slot.Name) switch
 		{
+			(SourceFile file, "Members") => [.. file.Members],
+			(NamespaceDeclaration namespaceDecl, "Members") => [.. namespaceDecl.Members],
 			(ClassDeclaration classDecl, "Members") => [.. classDecl.Members],
+			(EnumDeclaration enumDecl, "Members") => [.. enumDecl.Members],
 			(FunctionDeclaration function, "Parameters") => [.. function.Parameters],
 			(FunctionDeclaration function, "Body") => [.. function.Body],
 			(EntryPoint entryPoint, "Body") => [.. entryPoint.Body],
@@ -147,6 +156,10 @@ public static class AstSchema
 				varDecl.InitialValue = initialExpr;
 				return true;
 
+			case (FieldDeclaration field, "InitialValue") when child is Expression fieldExpr:
+				field.InitialValue = fieldExpr;
+				return true;
+
 			case (AssignmentStatement assignment, "Target") when child is Expression targetExpr:
 				assignment.Target = targetExpr;
 				return true;
@@ -169,6 +182,18 @@ public static class AstSchema
 
 			case (ClassDeclaration classDecl, "Members"):
 				classDecl.Members.Add(child);
+				return true;
+
+			case (SourceFile file, "Members"):
+				file.Members.Add(child);
+				return true;
+
+			case (NamespaceDeclaration namespaceDecl, "Members"):
+				namespaceDecl.Members.Add(child);
+				return true;
+
+			case (EnumDeclaration enumDecl, "Members") when child is EnumMember enumMember:
+				enumDecl.Members.Add(enumMember);
 				return true;
 
 			default:
@@ -202,6 +227,18 @@ public static class AstSchema
 
 			case (ClassDeclaration classDecl, "Members"):
 				classDecl.Members[index] = child;
+				return true;
+
+			case (SourceFile file, "Members"):
+				file.Members[index] = child;
+				return true;
+
+			case (NamespaceDeclaration namespaceDecl, "Members"):
+				namespaceDecl.Members[index] = child;
+				return true;
+
+			case (EnumDeclaration enumDecl, "Members") when child is EnumMember enumMember:
+				enumDecl.Members[index] = enumMember;
 				return true;
 
 			default:
@@ -248,6 +285,11 @@ public static class AstSchema
 				varDecl.InitialValue = null;
 				return hadValue;
 
+			case (FieldDeclaration field, "InitialValue"):
+				bool hadFieldValue = field.InitialValue is not null;
+				field.InitialValue = null;
+				return hadFieldValue;
+
 			case (BinaryExpression binary, "Left"):
 				binary.Left = Unfilled();
 				return true;
@@ -284,6 +326,18 @@ public static class AstSchema
 				classDecl.Members.RemoveAt(index);
 				return true;
 
+			case (SourceFile file, "Members") when index < file.Members.Count:
+				file.Members.RemoveAt(index);
+				return true;
+
+			case (NamespaceDeclaration namespaceDecl, "Members") when index < namespaceDecl.Members.Count:
+				namespaceDecl.Members.RemoveAt(index);
+				return true;
+
+			case (EnumDeclaration enumDecl, "Members") when index < enumDecl.Members.Count:
+				enumDecl.Members.RemoveAt(index);
+				return true;
+
 			default:
 				return false;
 		}
@@ -308,6 +362,7 @@ public static class AstSchema
 			AstSlotKind.Parameter => new Parameter("value", "int"),
 			AstSlotKind.Statement => new ReturnStatement(),
 			AstSlotKind.Member => new FunctionDeclaration("newMethod") { ReturnType = "void" },
+			AstSlotKind.EnumMember => new EnumMember("NewValue"),
 			_ => Unfilled(),
 		};
 	}
@@ -349,7 +404,9 @@ public static class AstSchema
 			// A parameter is not a statement, and neither is an entry point: a program starts
 			// running at one, so it belongs to a class or to the document rather than inside a body.
 			AstSlotKind.Statement => candidate is not (Parameter or EntryPoint),
-			AstSlotKind.Member => candidate is FunctionDeclaration or VariableDeclaration or ClassDeclaration or EntryPoint,
+			AstSlotKind.Member => candidate is FunctionDeclaration or VariableDeclaration or FieldDeclaration
+				or ClassDeclaration or EnumDeclaration or NamespaceDeclaration or EntryPoint,
+			AstSlotKind.EnumMember => candidate is EnumMember,
 			_ => false,
 		};
 	}

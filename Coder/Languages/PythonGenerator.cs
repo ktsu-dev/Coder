@@ -2,6 +2,7 @@
 
 namespace ktsu.Coder.Languages;
 
+using System.Globalization;
 using ktsu.Coder.Ast;
 using ktsu.CodeBlocker;
 
@@ -51,10 +52,86 @@ public class PythonGenerator : StandardLanguageGenerator
 	}
 
 	/// <inheritdoc/>
+	/// <remarks>
+	/// Python's documentation is a docstring rather than a comment, and a docstring belongs inside
+	/// the construct it documents — which is a different shape from every other language here. Rather
+	/// than move the lines somewhere the other three cannot follow, they are emitted as ordinary
+	/// <c>#</c> comments: the reader still gets them, and nothing claims to be a docstring that is
+	/// not one.
+	/// </remarks>
+	protected override string DocumentationPrefix => "#";
+
+	/// <inheritdoc/>
+	protected override string CommentPrefix => "#";
+
+	/// <inheritdoc/>
+	protected override string? SpellImport(string import) => $"import {import}";
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// Python has no enumeration syntax; <c>enum.Enum</c> is a class. A member with no value of its
+	/// own is numbered from its position, matching what a language with real enumerations would give
+	/// it. The <c>from enum import Enum</c> this needs belongs to the file rather than to the
+	/// declaration.
+	/// </remarks>
+	protected override void GenerateEnumDeclaration(EnumDeclaration enumDecl, CodeBlocker code)
+	{
+		Ensure.NotNull(enumDecl);
+		Ensure.NotNull(code);
+
+		GenerateDocumentation(enumDecl, code);
+		code.WriteLine($"class {enumDecl.Name ?? "UnnamedEnum"}(Enum):");
+
+		using IndentScope body = new(code);
+		if (enumDecl.Members.Count == 0)
+		{
+			code.WriteLine("pass");
+			return;
+		}
+
+		for (int index = 0; index < enumDecl.Members.Count; index++)
+		{
+			EnumMember member = enumDecl.Members[index];
+			string value = member.Value ?? index.ToString(CultureInfo.InvariantCulture);
+			code.WriteLine($"{member.Name ?? "UNNAMED"} = {value}");
+		}
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// A field is written as an annotated class attribute. One with no initialiser is left as a bare
+	/// annotation, which is what a dataclass and a type checker both read as "this field exists and
+	/// has this type" without also claiming a value for it.
+	/// </remarks>
+	protected override void GenerateFieldDeclaration(FieldDeclaration field, CodeBlocker code)
+	{
+		Ensure.NotNull(field);
+		Ensure.NotNull(code);
+
+		GenerateDocumentation(field, code);
+		code.Write(field.Name ?? "unnamed");
+
+		if (field.Type is TypeReference type)
+		{
+			code.Write($": {PythonTypeFromGenericType(type)}");
+		}
+
+		if (field.InitialValue is not null)
+		{
+			code.Write(" = ");
+			GenerateInternal(field.InitialValue, code);
+		}
+
+		code.WriteLine();
+	}
+
+	/// <inheritdoc/>
 	protected override void GenerateFunctionDeclaration(FunctionDeclaration funcDecl, CodeBlocker code)
 	{
 		Ensure.NotNull(funcDecl);
 		Ensure.NotNull(code);
+
+		GenerateDocumentation(funcDecl, code);
 
 		// Function signature
 		code.Write($"def {funcDecl.Name ?? "unnamed_function"}(");

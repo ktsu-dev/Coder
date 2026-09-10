@@ -55,6 +55,22 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 				GenerateFunctionDeclaration(funcDecl, code);
 				break;
 
+			case SourceFile file:
+				GenerateSourceFile(file, code);
+				break;
+
+			case NamespaceDeclaration namespaceDecl:
+				GenerateNamespaceDeclaration(namespaceDecl, code);
+				break;
+
+			case EnumDeclaration enumDecl:
+				GenerateEnumDeclaration(enumDecl, code);
+				break;
+
+			case FieldDeclaration field:
+				GenerateFieldDeclaration(field, code);
+				break;
+
 			case EntryPoint entryPoint:
 				GenerateEntryPoint(entryPoint, code);
 				break;
@@ -106,6 +122,49 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	/// <param name="classDecl">The declaration to emit.</param>
 	/// <param name="code">The writer to emit into.</param>
 	protected abstract void GenerateClassDeclaration(ClassDeclaration classDecl, CodeBlocker code);
+
+	/// <summary>
+	/// Emits a namespace and its members.
+	/// </summary>
+	/// <param name="namespaceDecl">The declaration to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// The default emits the members and nothing around them, which is right for a language whose
+	/// unit of naming is the file. A language that writes a namespace overrides this.
+	/// </remarks>
+	protected virtual void GenerateNamespaceDeclaration(NamespaceDeclaration namespaceDecl, CodeBlocker code)
+	{
+		Ensure.NotNull(namespaceDecl);
+		Ensure.NotNull(code);
+
+		GenerateDocumentation(namespaceDecl, code);
+
+		bool first = true;
+		foreach (AstNode member in namespaceDecl.Members)
+		{
+			if (!first)
+			{
+				code.NewLine();
+			}
+
+			first = false;
+			GenerateInternal(member, code);
+		}
+	}
+
+	/// <summary>
+	/// Emits an enumeration declaration, including its members.
+	/// </summary>
+	/// <param name="enumDecl">The declaration to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	protected abstract void GenerateEnumDeclaration(EnumDeclaration enumDecl, CodeBlocker code);
+
+	/// <summary>
+	/// Emits a field of a type.
+	/// </summary>
+	/// <param name="field">The declaration to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	protected abstract void GenerateFieldDeclaration(FieldDeclaration field, CodeBlocker code);
 
 	/// <summary>
 	/// Emits the program's entry point, and whatever else the language needs in order to run it.

@@ -81,6 +81,21 @@ public class YamlSerializer
 	{
 		switch (node)
 		{
+			case SourceFile file:
+				SerializeSourceFile(file, nodeData);
+				break;
+			case NamespaceDeclaration namespaceDecl:
+				SerializeNamespaceDeclaration(namespaceDecl, nodeData);
+				break;
+			case EnumDeclaration enumDecl:
+				SerializeEnumDeclaration(enumDecl, nodeData);
+				break;
+			case EnumMember enumMember:
+				SerializeEnumMember(enumMember, nodeData);
+				break;
+			case FieldDeclaration field:
+				SerializeFieldDeclaration(field, nodeData);
+				break;
 			case ClassDeclaration classDecl:
 				SerializeClassDeclaration(classDecl, nodeData);
 				break;
@@ -154,6 +169,7 @@ public class YamlSerializer
 		}
 
 		SerializeVisibility(funcDecl, nodeData);
+		SerializeDocumentation(funcDecl, nodeData);
 
 		// Written only when true: a modifier nobody asked for should not appear in the document, the
 		// same way an unspecified visibility does not.
@@ -215,11 +231,129 @@ public class YamlSerializer
 		}
 	}
 
+	private static void SerializeSourceFile(SourceFile file, Dictionary<string, object> nodeData)
+	{
+		if (file.Name != null)
+		{
+			nodeData["name"] = file.Name;
+		}
+
+		if (file.IsHeader)
+		{
+			nodeData["isHeader"] = file.IsHeader;
+		}
+
+		if (file.HeaderComment.Count > 0)
+		{
+			nodeData["headerComment"] = file.HeaderComment.ToList();
+		}
+
+		if (file.Imports.Count > 0)
+		{
+			nodeData["imports"] = file.Imports.ToList();
+		}
+
+		if (file.Members.Count > 0)
+		{
+			nodeData["members"] = SerializeBodyStatements(file.Members);
+		}
+	}
+
+	private static void SerializeNamespaceDeclaration(NamespaceDeclaration namespaceDecl, Dictionary<string, object> nodeData)
+	{
+		if (namespaceDecl.Name != null)
+		{
+			nodeData["name"] = namespaceDecl.Name;
+		}
+
+		SerializeDocumentation(namespaceDecl, nodeData);
+
+		if (namespaceDecl.Members.Count > 0)
+		{
+			nodeData["members"] = SerializeBodyStatements(namespaceDecl.Members);
+		}
+	}
+
+	private static void SerializeEnumDeclaration(EnumDeclaration enumDecl, Dictionary<string, object> nodeData)
+	{
+		if (enumDecl.Name != null)
+		{
+			nodeData["name"] = enumDecl.Name;
+		}
+
+		if (enumDecl.UnderlyingType != null)
+		{
+			nodeData["underlyingType"] = enumDecl.UnderlyingType.ToString();
+		}
+
+		SerializeVisibility(enumDecl, nodeData);
+		SerializeDocumentation(enumDecl, nodeData);
+
+		if (enumDecl.Members.Count > 0)
+		{
+			nodeData["members"] = SerializeBodyStatements(enumDecl.Members);
+		}
+	}
+
+	private static void SerializeEnumMember(EnumMember member, Dictionary<string, object> nodeData)
+	{
+		if (member.Name != null)
+		{
+			nodeData["name"] = member.Name;
+		}
+
+		if (member.Value != null)
+		{
+			nodeData["value"] = member.Value;
+		}
+	}
+
+	private static void SerializeFieldDeclaration(FieldDeclaration field, Dictionary<string, object> nodeData)
+	{
+		if (field.Name != null)
+		{
+			nodeData["name"] = field.Name;
+		}
+
+		if (field.Type != null)
+		{
+			nodeData["type"] = field.Type.ToString();
+		}
+
+		SerializeVisibility(field, nodeData);
+		SerializeDocumentation(field, nodeData);
+
+		if (field.InitialValue != null)
+		{
+			Dictionary<string, object> initialValueData = [];
+			SerializeNode(field.InitialValue, initialValueData);
+			nodeData["initialValue"] = initialValueData;
+		}
+	}
+
+	/// <summary>
+	/// Writes a declaration's documentation, when it has any.
+	/// </summary>
+	/// <param name="declaration">The declaration being serialized.</param>
+	/// <param name="nodeData">The mapping to write into.</param>
+	private static void SerializeDocumentation(IHasDocumentation declaration, Dictionary<string, object> nodeData)
+	{
+		if (declaration.Documentation.Count > 0)
+		{
+			nodeData["documentation"] = declaration.Documentation.ToList();
+		}
+	}
+
 	private static void SerializeClassDeclaration(ClassDeclaration classDecl, Dictionary<string, object> nodeData)
 	{
 		if (classDecl.Name != null)
 		{
 			nodeData["name"] = classDecl.Name;
+		}
+
+		if (classDecl.Kind != TypeDeclarationKind.Class)
+		{
+			nodeData["kind"] = classDecl.Kind.ToString();
 		}
 
 		if (classDecl.BaseType != null)
@@ -228,6 +362,7 @@ public class YamlSerializer
 		}
 
 		SerializeVisibility(classDecl, nodeData);
+		SerializeDocumentation(classDecl, nodeData);
 
 		if (classDecl.Members.Count > 0)
 		{

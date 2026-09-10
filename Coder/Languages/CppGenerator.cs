@@ -64,6 +64,8 @@ public class CppGenerator : StandardLanguageGenerator
 		Ensure.NotNull(funcDecl);
 		Ensure.NotNull(code);
 
+		GenerateDocumentation(funcDecl, code);
+
 		if (funcDecl.IsPure)
 		{
 			code.Write("[[nodiscard]] ");
@@ -89,6 +91,77 @@ public class CppGenerator : StandardLanguageGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
+	/// <c>#pragma once</c> rather than an include guard. Every compiler this targets supports it, and
+	/// a guard needs a macro name unique across the whole program — which the file cannot know it
+	/// has, and which a generator picking one would eventually collide on.
+	/// </remarks>
+	protected override bool WriteFileDirectives(SourceFile file, CodeBlocker code)
+	{
+		Ensure.NotNull(file);
+		Ensure.NotNull(code);
+
+		if (!file.IsHeader)
+		{
+			return false;
+		}
+
+		code.WriteLine("#pragma once");
+		return true;
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// An import that already carries its own delimiters is written as it stands, because the choice
+	/// between <c>&lt;&gt;</c> and <c>""</c> says where the compiler should look and only whoever
+	/// wrote the file knows that. One that carries neither is quoted, which is right for a path
+	/// within the project being generated.
+	/// </remarks>
+	protected override string? SpellImport(string import)
+	{
+		Ensure.NotNull(import);
+
+		bool delimited = (import.StartsWith('<') && import.EndsWith('>'))
+			|| (import.StartsWith('"') && import.EndsWith('"'));
+
+		return delimited ? $"#include {import}" : $"#include \"{import}\"";
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// The members are not indented. A namespace usually wraps a whole file, so indenting for it
+	/// would indent everything and buy nothing; the closing brace names what it closes instead, which
+	/// is what tells a reader at the bottom of a long file which one just ended.
+	/// </remarks>
+	protected override void GenerateNamespaceDeclaration(NamespaceDeclaration namespaceDecl, CodeBlocker code)
+	{
+		Ensure.NotNull(namespaceDecl);
+		Ensure.NotNull(code);
+
+		GenerateDocumentation(namespaceDecl, code);
+
+		string name = string.Join("::", NamespaceDeclaration.Split(namespaceDecl.Name));
+		code.WriteLine($"namespace {name}");
+		code.WriteLine("{");
+		code.NewLine();
+
+		bool first = true;
+		foreach (AstNode member in namespaceDecl.Members)
+		{
+			if (!first)
+			{
+				code.NewLine();
+			}
+
+			first = false;
+			GenerateInternal(member, code);
+		}
+
+		code.NewLine();
+		code.WriteLine($"}}  // namespace {name}");
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
 	/// Members are grouped under the access label each one asks for, and a member with no visibility
 	/// of its own lands under <c>public:</c>. A C++ class defaults to private, so a generated class
 	/// with no access specifier at all would compile to something nothing outside it could use.
@@ -103,7 +176,13 @@ public class CppGenerator : StandardLanguageGenerator
 		Ensure.NotNull(classDecl);
 		Ensure.NotNull(code);
 
-		code.Write($"class {classDecl.Name ?? "UnnamedClass"}");
+		GenerateDocumentation(classDecl, code);
+
+		// A struct's members are public already, so labelling them would be noise. An interface has
+		// no keyword in C++ and is a class whose members are all public.
+		bool isStruct = classDecl.Kind == TypeDeclarationKind.Struct;
+
+		code.Write($"{(isStruct ? "struct" : "class")} {classDecl.Name ?? "UnnamedClass"}");
 
 		if (classDecl.BaseType is TypeReference baseType)
 		{
@@ -115,12 +194,29 @@ public class CppGenerator : StandardLanguageGenerator
 		// A C++ class declaration is a statement, so its closing brace takes a semicolon.
 		using ScopeWithTrailingSemicolon body = new(code);
 
-		// Unspecified rather than Public, so the first member always writes its label: an unlabelled
-		// C++ class body is private, which is the one thing the label has to rule out.
-		Visibility current = Visibility.Unspecified;
+		// Unspecified rather than Public, so the first member of a class always writes its label: an
+		// unlabelled C++ class body is private, which is the one thing the label has to rule out.
+		Visibility current = isStruct ? Visibility.Public : Visibility.Unspecified;
+		bool first = true;
 		foreach (AstNode member in classDecl.Members)
 		{
-			Visibility access = AccessOf(member);
+			// Members are separated by a blank line. A documented one needs it or its first comment
+			// line butts against the member above and reads as belonging to that one; an undocumented
+			// one needs it to stay in the same column of whitespace as its neighbours, rather than
+			// packing tight wherever a comment happens to be missing.
+			if (!first)
+			{
+				// NewLine rather than WriteLine: a separator carrying the current indent is a line of
+				// trailing whitespace, which every formatter strips and every diff then shows.
+				code.NewLine();
+			}
+
+			first = false;
+
+			Visibility access = classDecl.Kind == TypeDeclarationKind.Interface
+				? Visibility.Public
+				: AccessOf(member);
+
 			if (access != current)
 			{
 				code.WriteLine($"{SpellVisibility(access)}:");
@@ -136,6 +232,72 @@ public class CppGenerator : StandardLanguageGenerator
 				GenerateInternal(member, code);
 			}
 		}
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// Always <c>enum class</c>, never the unscoped form: an unscoped enumeration leaks its members
+	/// into the surrounding scope and converts to an integer without being asked, and neither is
+	/// something a generated type should do to the code around it.
+	/// </remarks>
+	protected override void GenerateEnumDeclaration(EnumDeclaration enumDecl, CodeBlocker code)
+	{
+		Ensure.NotNull(enumDecl);
+		Ensure.NotNull(code);
+
+		GenerateDocumentation(enumDecl, code);
+
+		code.Write($"enum class {enumDecl.Name ?? "UnnamedEnum"}");
+
+		if (enumDecl.UnderlyingType is TypeReference underlying)
+		{
+			code.Write($" : {MapToCppType(underlying)}");
+		}
+
+		code.WriteLine();
+
+		using ScopeWithTrailingSemicolon body = new(code);
+		foreach (EnumMember member in enumDecl.Members)
+		{
+			code.Write(member.Name ?? "Unnamed");
+
+			if (member.Value is not null)
+			{
+				code.Write($" = {member.Value}");
+			}
+
+			// A trailing comma on the last member too, so adding one after it is a one-line diff.
+			code.WriteLine(",");
+		}
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// A field with no initialiser is written <c>{}</c> rather than left bare. An uninitialised
+	/// member holds whatever was in that memory, and a generated type is usually one whose values
+	/// come from a file or the wire — so the one place it must be right is the case nobody wrote
+	/// anything for.
+	/// </remarks>
+	protected override void GenerateFieldDeclaration(FieldDeclaration field, CodeBlocker code)
+	{
+		Ensure.NotNull(field);
+		Ensure.NotNull(code);
+
+		GenerateDocumentation(field, code);
+
+		code.Write($"{MapToCppType(field.Type ?? new TypeReference("object"))} {field.Name}");
+
+		if (field.InitialValue is not null)
+		{
+			code.Write(" = ");
+			GenerateInternal(field.InitialValue, code);
+		}
+		else
+		{
+			code.Write("{}");
+		}
+
+		EndStatement(code);
 	}
 
 	/// <summary>

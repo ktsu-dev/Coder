@@ -2,6 +2,7 @@
 
 namespace ktsu.Coder.Languages;
 
+using System.Globalization;
 using ktsu.Coder.Ast;
 using ktsu.CodeBlocker;
 
@@ -33,10 +34,106 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	public override string FileExtension => "js";
 
 	/// <inheritdoc/>
+	/// <remarks>
+	/// JavaScript's documentation convention is a <c>/** */</c> block, which is a shape the shared
+	/// emitter's line-at-a-time form cannot write. A <c>//</c> comment carries the same lines to the
+	/// same reader without pretending to be JSDoc, which a tool would then read and find no tags in.
+	/// </remarks>
+	protected override string DocumentationPrefix => "//";
+
+	/// <inheritdoc/>
+	protected override string? SpellImport(string import) => $"import \"{import}\";";
+
+	/// <summary>
+	/// Emits an enumeration declared inside a class, as a static member of it.
+	/// </summary>
+	/// <param name="enumDecl">The declaration to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// A class body is not a block: <c>const</c> is a syntax error inside one, so the namespace-scope
+	/// spelling cannot simply be nested. A static field is the same object reachable by the same
+	/// name, which is what nesting was for.
+	/// </remarks>
+	private void GenerateNestedEnum(EnumDeclaration enumDecl, CodeBlocker code)
+	{
+		GenerateDocumentation(enumDecl, code);
+		code.WriteLine($"static {enumDecl.Name ?? "UnnamedEnum"} = Object.freeze({{");
+
+		using (IndentScope members = new(code))
+		{
+			WriteEnumMembers(enumDecl, code);
+		}
+
+		code.WriteLine("});");
+	}
+
+	/// <summary>
+	/// Writes an enumeration's members as the properties of an object literal.
+	/// </summary>
+	/// <param name="enumDecl">The declaration whose members to write.</param>
+	/// <param name="code">The writer to emit into.</param>
+	private static void WriteEnumMembers(EnumDeclaration enumDecl, CodeBlocker code)
+	{
+		for (int index = 0; index < enumDecl.Members.Count; index++)
+		{
+			EnumMember member = enumDecl.Members[index];
+			string value = member.Value ?? index.ToString(CultureInfo.InvariantCulture);
+			code.WriteLine($"{member.Name ?? "UNNAMED"}: {value},");
+		}
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// JavaScript has no enumeration. A frozen object is the convention: the members are reachable by
+	/// name, and freezing is what stops one being reassigned somewhere far from here. A member with
+	/// no value of its own is numbered from its position.
+	/// </remarks>
+	protected override void GenerateEnumDeclaration(EnumDeclaration enumDecl, CodeBlocker code)
+	{
+		Ensure.NotNull(enumDecl);
+		Ensure.NotNull(code);
+
+		GenerateDocumentation(enumDecl, code);
+		code.WriteLine($"const {enumDecl.Name ?? "UnnamedEnum"} = Object.freeze({{");
+
+		using (IndentScope members = new(code))
+		{
+			WriteEnumMembers(enumDecl, code);
+		}
+
+		code.WriteLine("});");
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// A class field, which JavaScript writes without a type since it has none to write. A field with
+	/// no initialiser is still declared: the property then exists on every instance, which is what
+	/// makes the shape of an object predictable rather than growing as it is assigned to.
+	/// </remarks>
+	protected override void GenerateFieldDeclaration(FieldDeclaration field, CodeBlocker code)
+	{
+		Ensure.NotNull(field);
+		Ensure.NotNull(code);
+
+		GenerateDocumentation(field, code);
+		code.Write(MemberName(field.Name ?? "unnamed", field.Visibility));
+
+		if (field.InitialValue is not null)
+		{
+			code.Write(" = ");
+			GenerateInternal(field.InitialValue, code);
+		}
+
+		EndStatement(code);
+	}
+
+	/// <inheritdoc/>
 	protected override void GenerateFunctionDeclaration(FunctionDeclaration funcDecl, CodeBlocker code)
 	{
 		Ensure.NotNull(funcDecl);
 		Ensure.NotNull(code);
+
+		GenerateDocumentation(funcDecl, code);
 
 		code.Write($"function {funcDecl.Name ?? "unnamedFunction"}(");
 		GenerateParameterList(funcDecl.Parameters, code);
@@ -84,6 +181,10 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 			{
 				case FunctionDeclaration method:
 					GenerateMethod(method, code);
+					break;
+
+				case EnumDeclaration nested:
+					GenerateNestedEnum(nested, code);
 					break;
 
 				// A field is not a variable: `let` is a statement keyword and a syntax error in a

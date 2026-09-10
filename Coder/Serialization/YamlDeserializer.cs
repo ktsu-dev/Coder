@@ -4,6 +4,7 @@ namespace ktsu.Coder.Serialization;
 
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Text.RegularExpressions;
 using ktsu.Coder.Ast;
 using YamlDotNet.Serialization;
@@ -51,6 +52,16 @@ public partial class YamlDeserializer
 	{
 		return nodeType switch
 		{
+			"sourceFile" => DeserializeSourceFile(nodeData),
+			"SourceFile" => DeserializeSourceFile(nodeData),
+			"namespaceDeclaration" => DeserializeNamespaceDeclaration(nodeData),
+			"NamespaceDeclaration" => DeserializeNamespaceDeclaration(nodeData),
+			"enumDeclaration" => DeserializeEnumDeclaration(nodeData),
+			"EnumDeclaration" => DeserializeEnumDeclaration(nodeData),
+			"enumMember" => DeserializeEnumMember(nodeData),
+			"EnumMember" => DeserializeEnumMember(nodeData),
+			"fieldDeclaration" => DeserializeFieldDeclaration(nodeData),
+			"FieldDeclaration" => DeserializeFieldDeclaration(nodeData),
 			"classDeclaration" => DeserializeClassDeclaration(nodeData),
 			"ClassDeclaration" => DeserializeClassDeclaration(nodeData),
 			"functionDeclaration" => DeserializeFunctionDeclaration(nodeData),
@@ -138,6 +149,7 @@ public partial class YamlDeserializer
 		}
 
 		DeserializeVisibility(funcDecl, dict);
+		ReadStrings(dict, "documentation", funcDecl.Documentation);
 	}
 
 	/// <summary>
@@ -248,6 +260,189 @@ public partial class YamlDeserializer
 		}
 	}
 
+	private SourceFile DeserializeSourceFile(object? nodeData)
+	{
+		SourceFile file = new();
+		if (nodeData is not Dictionary<object, object> dict)
+		{
+			return file;
+		}
+
+		if (dict.TryGetValue("name", out object? nameObj))
+		{
+			file.Name = nameObj?.ToString();
+		}
+
+		if (dict.TryGetValue("isHeader", out object? headerObj) &&
+			bool.TryParse(headerObj?.ToString(), out bool isHeader))
+		{
+			file.IsHeader = isHeader;
+		}
+
+		ReadStrings(dict, "headerComment", file.HeaderComment);
+		ReadStrings(dict, "imports", file.Imports);
+		DeserializeMembersInto(dict, file.Members);
+		DeserializeMetadata(file, dict);
+
+		return file;
+	}
+
+	private NamespaceDeclaration DeserializeNamespaceDeclaration(object? nodeData)
+	{
+		NamespaceDeclaration namespaceDecl = new();
+		if (nodeData is not Dictionary<object, object> dict)
+		{
+			return namespaceDecl;
+		}
+
+		if (dict.TryGetValue("name", out object? nameObj))
+		{
+			namespaceDecl.Name = nameObj?.ToString();
+		}
+
+		ReadStrings(dict, "documentation", namespaceDecl.Documentation);
+		DeserializeMembersInto(dict, namespaceDecl.Members);
+		DeserializeMetadata(namespaceDecl, dict);
+
+		return namespaceDecl;
+	}
+
+	private EnumDeclaration DeserializeEnumDeclaration(object? nodeData)
+	{
+		EnumDeclaration enumDecl = new();
+		if (nodeData is not Dictionary<object, object> dict)
+		{
+			return enumDecl;
+		}
+
+		if (dict.TryGetValue("name", out object? nameObj))
+		{
+			enumDecl.Name = nameObj?.ToString();
+		}
+
+		if (dict.TryGetValue("underlyingType", out object? underlyingObj))
+		{
+			enumDecl.UnderlyingType = underlyingObj?.ToString();
+		}
+
+		DeserializeVisibility(enumDecl, dict);
+		ReadStrings(dict, "documentation", enumDecl.Documentation);
+
+		if (dict.TryGetValue("members", out object? membersObj) && membersObj is List<object> members)
+		{
+			foreach (object member in members)
+			{
+				if (member is Dictionary<object, object> memberDict && memberDict.Count > 0)
+				{
+					(object memberType, object memberData) = memberDict.First();
+					if (DeserializeNode(memberType.ToString() ?? string.Empty, memberData) is EnumMember value)
+					{
+						enumDecl.Members.Add(value);
+					}
+				}
+			}
+		}
+
+		DeserializeMetadata(enumDecl, dict);
+		return enumDecl;
+	}
+
+	private static EnumMember DeserializeEnumMember(object? nodeData)
+	{
+		EnumMember member = new();
+		if (nodeData is not Dictionary<object, object> dict)
+		{
+			return member;
+		}
+
+		if (dict.TryGetValue("name", out object? nameObj))
+		{
+			member.Name = nameObj?.ToString();
+		}
+
+		if (dict.TryGetValue("value", out object? valueObj))
+		{
+			member.Value = valueObj?.ToString();
+		}
+
+		DeserializeMetadata(member, dict);
+		return member;
+	}
+
+	private FieldDeclaration DeserializeFieldDeclaration(object? nodeData)
+	{
+		FieldDeclaration field = new();
+		if (nodeData is not Dictionary<object, object> dict)
+		{
+			return field;
+		}
+
+		if (dict.TryGetValue("name", out object? nameObj))
+		{
+			field.Name = nameObj?.ToString();
+		}
+
+		if (dict.TryGetValue("type", out object? typeObj))
+		{
+			field.Type = typeObj?.ToString();
+		}
+
+		DeserializeVisibility(field, dict);
+		ReadStrings(dict, "documentation", field.Documentation);
+
+		if (dict.TryGetValue("initialValue", out object? initialObj) &&
+			initialObj is Dictionary<object, object> initialDict && initialDict.Count > 0)
+		{
+			(object valueType, object valueData) = initialDict.First();
+			field.InitialValue = DeserializeNode(valueType.ToString() ?? string.Empty, valueData) as Expression;
+		}
+
+		DeserializeMetadata(field, dict);
+		return field;
+	}
+
+	/// <summary>
+	/// Reads a sequence of strings into a collection, leaving it alone when the key is absent.
+	/// </summary>
+	/// <param name="dict">The mapping the node was written as.</param>
+	/// <param name="key">The key to read.</param>
+	/// <param name="into">The collection to fill.</param>
+	private static void ReadStrings(Dictionary<object, object> dict, string key, Collection<string> into)
+	{
+		if (dict.TryGetValue(key, out object? value) && value is List<object> lines)
+		{
+			foreach (object line in lines)
+			{
+				into.Add(line?.ToString() ?? string.Empty);
+			}
+		}
+	}
+
+	/// <summary>
+	/// Reads a node's members into a collection.
+	/// </summary>
+	/// <param name="dict">The mapping the node was written as.</param>
+	/// <param name="into">The collection to fill.</param>
+	private void DeserializeMembersInto(Dictionary<object, object> dict, Collection<AstNode> into)
+	{
+		if (!dict.TryGetValue("members", out object? membersObj) || membersObj is not List<object> members)
+		{
+			return;
+		}
+
+		foreach (object member in members)
+		{
+			if (member is Dictionary<object, object> memberDict && memberDict.Count > 0)
+			{
+				(object memberType, object memberData) = memberDict.First();
+				if (DeserializeNode(memberType.ToString() ?? string.Empty, memberData) is AstNode node)
+				{
+					into.Add(node);
+				}
+			}
+		}
+	}
+
 	private ClassDeclaration DeserializeClassDeclaration(object? nodeData)
 	{
 		ClassDeclaration classDecl = new();
@@ -266,7 +461,14 @@ public partial class YamlDeserializer
 			classDecl.BaseType = baseTypeObj?.ToString();
 		}
 
+		if (dict.TryGetValue("kind", out object? kindObj) &&
+			Enum.TryParse(kindObj?.ToString(), out TypeDeclarationKind kind))
+		{
+			classDecl.Kind = kind;
+		}
+
 		DeserializeVisibility(classDecl, dict);
+		ReadStrings(dict, "documentation", classDecl.Documentation);
 
 		DeserializeClassMembers(classDecl, dict);
 		DeserializeMetadata(classDecl, dict);
