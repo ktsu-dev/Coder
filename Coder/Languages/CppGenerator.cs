@@ -88,6 +88,19 @@ public class CppGenerator : StandardLanguageGenerator
 			code.Write("[[nodiscard]] ");
 		}
 
+		// The order is the one C++ requires and the one it is conventionally written in: what the
+		// caller must not ignore, then where the declaration sits, then how it may be called, then
+		// when it may be evaluated.
+		if (funcDecl.IsFriend)
+		{
+			code.Write("friend ");
+		}
+
+		if (funcDecl.IsExplicit)
+		{
+			code.Write("explicit ");
+		}
+
 		if (funcDecl.IsStatic)
 		{
 			code.Write("static ");
@@ -98,6 +111,11 @@ public class CppGenerator : StandardLanguageGenerator
 		if (funcDecl.IsVirtual || funcDecl.IsAbstract)
 		{
 			code.Write("virtual ");
+		}
+
+		if (funcDecl.IsCompileTimeEvaluable)
+		{
+			code.Write("constexpr ");
 		}
 
 		// A constructor, a destructor and a conversion operator have no return type to write. The
@@ -115,6 +133,11 @@ public class CppGenerator : StandardLanguageGenerator
 		if (funcDecl.IsReadOnly)
 		{
 			code.Write(" const");
+		}
+
+		if (funcDecl.IsNoThrow)
+		{
+			code.Write(" noexcept");
 		}
 
 		if (funcDecl.IsAbstract)
@@ -139,12 +162,55 @@ public class CppGenerator : StandardLanguageGenerator
 
 		// The line is ended before the scope opens, so C++'s brace lands on its own line.
 		code.WriteLine();
+		WriteInitialiserList(funcDecl, code);
 
 		using Scope body = new(code);
 		foreach (AstNode statement in funcDecl.Body)
 		{
 			GenerateInternal(statement, code);
 		}
+	}
+
+	/// <summary>
+	/// Writes what the type's members start at, between a constructor's signature and its body.
+	/// </summary>
+	/// <param name="funcDecl">The declaration being emitted.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// Initialising rather than assigning is the only way to start a member that cannot be assigned
+	/// at all, and is the difference between building a value and building an empty one and then
+	/// overwriting it.
+	/// </remarks>
+	private void WriteInitialiserList(FunctionDeclaration funcDecl, CodeBlocker code)
+	{
+		if (funcDecl.Initialisers.Count == 0)
+		{
+			return;
+		}
+
+		code.Indent();
+		code.Write(": ");
+
+		for (int index = 0; index < funcDecl.Initialisers.Count; index++)
+		{
+			if (index > 0)
+			{
+				code.Write(", ");
+			}
+
+			MemberInitialiser initialiser = funcDecl.Initialisers[index];
+			code.Write($"{initialiser.Name}(");
+
+			if (initialiser.Value is not null)
+			{
+				GenerateInternal(initialiser.Value, code);
+			}
+
+			code.Write(")");
+		}
+
+		code.WriteLine();
+		code.Outdent();
 	}
 
 	/// <summary>
@@ -280,13 +346,18 @@ public class CppGenerator : StandardLanguageGenerator
 		AstNode? previous = null;
 		foreach (AstNode member in classDecl.Members)
 		{
-			// A blank line goes between two members when either says something about itself. A
-			// documented member needs air above it or its first comment line butts against the member
-			// before it and reads as belonging to that one; the member after a documented one needs
-			// the same, or it is swallowed into that block. Two members that say nothing stay
-			// together, which is what keeps a run of defaulted and deleted declarations reading as
-			// one group rather than as five paragraphs.
-			if (!first && (NeedsSeparation(previous!) || NeedsSeparation(member)))
+			Visibility access = classDecl.Kind == TypeDeclarationKind.Interface
+				? Visibility.Public
+				: AccessOf(member);
+
+			// A blank line goes between two members when either says something about itself, when
+			// they are different kinds of thing, or where the access changes. A documented member
+			// needs air above it or its first comment line butts against the member before it and
+			// reads as belonging to that one; the member after a documented one needs the same, or it
+			// is swallowed into that block. Two of the same kind that say nothing stay together,
+			// which is what keeps a run of aliases, or of defaulted and deleted declarations, reading
+			// as one group rather than as four paragraphs.
+			if (!first && (NeedsSeparation(previous!, member) || access != current))
 			{
 				// NewLine rather than WriteLine: a separator carrying the current indent is a line of
 				// trailing whitespace, which every formatter strips and every diff then shows.
@@ -295,10 +366,6 @@ public class CppGenerator : StandardLanguageGenerator
 
 			first = false;
 			previous = member;
-
-			Visibility access = classDecl.Kind == TypeDeclarationKind.Interface
-				? Visibility.Public
-				: AccessOf(member);
 
 			if (access != current)
 			{
@@ -325,6 +392,50 @@ public class CppGenerator : StandardLanguageGenerator
 					break;
 			}
 		}
+	}
+
+	/// <inheritdoc/>
+	protected override void GenerateUsingAlias(UsingAlias usingAlias, CodeBlocker code)
+	{
+		Ensure.NotNull(usingAlias);
+		Ensure.NotNull(code);
+
+		GenerateDocumentation(usingAlias, code);
+		code.Write($"using {usingAlias.Name} = {MapToCppType(usingAlias.AliasedType ?? new TypeReference("object"))}");
+		EndStatement(code);
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// Braced rather than parenthesised. Braces will not narrow a value silently, and a construction
+	/// with one argument written with parentheses can be read as a declaration instead — which is a
+	/// mistake a generator should never be able to make.
+	/// </remarks>
+	protected override void GenerateConstructionExpression(ConstructionExpression construction, CodeBlocker code)
+	{
+		Ensure.NotNull(construction);
+		Ensure.NotNull(code);
+
+		code.Write(MapToCppType(construction.Type ?? new TypeReference("object")));
+
+		if (construction.Arguments.Count == 0)
+		{
+			code.Write("{}");
+			return;
+		}
+
+		code.Write("{ ");
+		for (int index = 0; index < construction.Arguments.Count; index++)
+		{
+			if (index > 0)
+			{
+				code.Write(", ");
+			}
+
+			GenerateInternal(construction.Arguments[index], code);
+		}
+
+		code.Write(" }");
 	}
 
 	/// <inheritdoc/>
@@ -406,13 +517,23 @@ public class CppGenerator : StandardLanguageGenerator
 	};
 
 	/// <summary>
-	/// Reports whether a member says enough about itself to want a blank line beside it.
+	/// Reports whether two adjacent members want a blank line between them.
+	/// </summary>
+	/// <param name="previous">The member already written.</param>
+	/// <param name="member">The member about to be written.</param>
+	/// <returns>True when a blank line belongs between them.</returns>
+	private static bool NeedsSeparation(AstNode previous, AstNode member) =>
+		previous.GetType() != member.GetType()
+		|| IsDocumented(previous)
+		|| IsDocumented(member);
+
+	/// <summary>
+	/// Reports whether a member carries documentation.
 	/// </summary>
 	/// <param name="member">The member to test.</param>
-	/// <returns>True when it is documented or is a type in its own right.</returns>
-	private static bool NeedsSeparation(AstNode member) =>
-		member is ClassDeclaration or EnumDeclaration
-		|| (member is IHasDocumentation documented && documented.Documentation.Count > 0);
+	/// <returns>True when it does.</returns>
+	private static bool IsDocumented(AstNode member) =>
+		member is IHasDocumentation documented && documented.Documentation.Count > 0;
 
 	/// <summary>
 	/// Emits a variable declaration as a class member.

@@ -84,6 +84,42 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
+	/// JavaScript has no types to alias. The name is bound to whatever the alias named, which is a
+	/// constructor often enough to be worth writing rather than dropping.
+	/// </remarks>
+	protected override void GenerateUsingAlias(UsingAlias usingAlias, CodeBlocker code)
+	{
+		Ensure.NotNull(usingAlias);
+		Ensure.NotNull(code);
+
+		GenerateDocumentation(usingAlias, code);
+		code.Write($"const {usingAlias.Name} = {usingAlias.AliasedType?.Name ?? "Object"}");
+		EndStatement(code);
+	}
+
+	/// <inheritdoc/>
+	protected override void GenerateConstructionExpression(ConstructionExpression construction, CodeBlocker code)
+	{
+		Ensure.NotNull(construction);
+		Ensure.NotNull(code);
+
+		code.Write($"new {construction.Type?.Name ?? "Object"}(");
+
+		for (int index = 0; index < construction.Arguments.Count; index++)
+		{
+			if (index > 0)
+			{
+				code.Write(", ");
+			}
+
+			GenerateInternal(construction.Arguments[index], code);
+		}
+
+		code.Write(")");
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
 	/// JavaScript has no enumeration. A frozen object is the convention: the members are reachable by
 	/// name, and freezing is what stops one being reassigned somewhere far from here. A member with
 	/// no value of its own is numbered from its position.
@@ -269,6 +305,20 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		{
 			code.WriteLine($"throw new Error(\"{method.Name} must be implemented\");");
 			return;
+		}
+
+		// JavaScript assigns where C++ initialises, before the body's own statements and in the order
+		// declared, which is what the initialiser means where there is no initialiser list.
+		foreach (MemberInitialiser initialiser in method.Initialisers)
+		{
+			code.Write($"this.{initialiser.Name} = ");
+
+			if (initialiser.Value is not null)
+			{
+				GenerateInternal(initialiser.Value, code);
+			}
+
+			EndStatement(code);
 		}
 
 		foreach (AstNode statement in method.Body)

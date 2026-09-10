@@ -394,6 +394,9 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	{
 		// No null check: a type pattern never matches null.
 		return astNode is FunctionDeclaration
+			or UsingAlias
+			or MemberInitialiser
+			or ConstructionExpression
 			or SourceFile
 			or NamespaceDeclaration
 			or ClassDeclaration

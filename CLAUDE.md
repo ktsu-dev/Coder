@@ -63,6 +63,11 @@ source in four target languages. The solution uses:
   that does nothing, one the language supplies, and one that exists to be refused. `IsAbstract` is
   C++'s *pure virtual*, which is a different thing from `IsPure`: one says a declaration has no
   definition, the other that a call has no effect.
+- `Coder/Ast/UsingAlias.cs`, `MemberInitialiser.cs`, `ConstructionExpression.cs` — what a type that
+  shims another needs. A member is *initialised* rather than assigned, which is the only way to start
+  one that cannot be assigned at all; a language without an initialiser list assigns at the top of
+  the constructor instead. `ConstructionExpression` is the one expression that needs a type rather
+  than a name, which is why it could not exist before `TypeReference` did.
 - `Coder/Languages/LanguageGeneratorBase.cs` — the emitters every generator shares.
 - `Coder/Languages/StandardLanguageGenerator.cs` — owns the node dispatch, so a derived
   generator supplies only the syntax its language does not share. `CSharpGenerator` deliberately

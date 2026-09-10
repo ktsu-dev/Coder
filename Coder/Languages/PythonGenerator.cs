@@ -69,6 +69,48 @@ public class PythonGenerator : StandardLanguageGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
+	/// An alias is an ordinary assignment in Python, which is what a type alias is there.
+	/// </remarks>
+	protected override void GenerateUsingAlias(UsingAlias usingAlias, CodeBlocker code)
+	{
+		Ensure.NotNull(usingAlias);
+		Ensure.NotNull(code);
+
+		GenerateDocumentation(usingAlias, code);
+		code.WriteLine($"{usingAlias.Name} = {PythonTypeFromGenericType(usingAlias.AliasedType ?? new TypeReference("object"))}");
+	}
+
+	/// <inheritdoc/>
+	protected override void GenerateConstructionExpression(ConstructionExpression construction, CodeBlocker code)
+	{
+		Ensure.NotNull(construction);
+		Ensure.NotNull(code);
+
+		code.Write($"{PythonTypeFromGenericType(construction.Type ?? new TypeReference("object"))}(");
+		WriteArguments(construction, code);
+		code.Write(")");
+	}
+
+	/// <summary>
+	/// Writes a construction's arguments, separated by commas.
+	/// </summary>
+	/// <param name="construction">The expression whose arguments to write.</param>
+	/// <param name="code">The writer to emit into.</param>
+	private void WriteArguments(ConstructionExpression construction, CodeBlocker code)
+	{
+		for (int index = 0; index < construction.Arguments.Count; index++)
+		{
+			if (index > 0)
+			{
+				code.Write(", ");
+			}
+
+			GenerateInternal(construction.Arguments[index], code);
+		}
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
 	/// Python has no enumeration syntax; <c>enum.Enum</c> is a class. A member with no value of its
 	/// own is numbered from its position, matching what a language with real enumerations would give
 	/// it. The <c>from enum import Enum</c> this needs belongs to the file rather than to the
@@ -287,7 +329,21 @@ public class PythonGenerator : StandardLanguageGenerator
 			return;
 		}
 
-		if (method.Body.Count == 0)
+		// Python assigns where C++ initialises, before the body's own statements and in the order
+		// declared, which is what the initialiser means where there is no initialiser list.
+		foreach (MemberInitialiser initialiser in method.Initialisers)
+		{
+			code.Write($"self.{initialiser.Name} = ");
+
+			if (initialiser.Value is not null)
+			{
+				GenerateInternal(initialiser.Value, code);
+			}
+
+			code.WriteLine();
+		}
+
+		if (method.Body.Count == 0 && method.Initialisers.Count == 0)
 		{
 			code.WriteLine("pass");
 			return;

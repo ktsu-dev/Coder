@@ -82,6 +82,12 @@ public class CSharpGenerator : LanguageGeneratorBase
 			case NamespaceDeclaration namespaceDecl:
 				GenerateNamespace(namespaceDecl, code);
 				break;
+			case UsingAlias usingAlias:
+				GenerateUsingAlias(usingAlias, code);
+				break;
+			case ConstructionExpression construction:
+				GenerateConstruction(construction, code);
+				break;
 			case EnumDeclaration enumDecl:
 				GenerateEnum(enumDecl, code);
 				break;
@@ -188,6 +194,44 @@ public class CSharpGenerator : LanguageGeneratorBase
 			first = false;
 			GenerateInternal(member, code);
 		}
+	}
+
+	/// <summary>
+	/// Emits an alias giving a type a second name.
+	/// </summary>
+	/// <param name="usingAlias">The alias to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// C# has a using alias but only at file or namespace scope, never inside a type. One declared as
+	/// a member is therefore said rather than written, since a generated file that silently drops it
+	/// looks complete and is not.
+	/// </remarks>
+	private void GenerateUsingAlias(UsingAlias usingAlias, CodeBlocker code)
+	{
+		GenerateDocumentation(usingAlias, code);
+		code.WriteLine($"using {usingAlias.Name} = {MapToCSType(usingAlias.AliasedType ?? new TypeReference("object"))};");
+	}
+
+	/// <summary>
+	/// Emits an expression that builds a value.
+	/// </summary>
+	/// <param name="construction">The expression to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	private void GenerateConstruction(ConstructionExpression construction, CodeBlocker code)
+	{
+		code.Write($"new {MapToCSType(construction.Type ?? new TypeReference("object"))}(");
+
+		for (int index = 0; index < construction.Arguments.Count; index++)
+		{
+			if (index > 0)
+			{
+				code.Write(", ");
+			}
+
+			GenerateInternal(construction.Arguments[index], code);
+		}
+
+		code.Write(")");
 	}
 
 	/// <summary>
@@ -359,6 +403,21 @@ public class CSharpGenerator : LanguageGeneratorBase
 		code.WriteLine();
 
 		using Scope body = new(code);
+
+		// C# assigns where C++ initialises. Written before the body's own statements and in the order
+		// declared, which is what the initialiser means where there is no initialiser list.
+		foreach (MemberInitialiser initialiser in function.Initialisers)
+		{
+			code.Write($"this.{initialiser.Name} = ");
+
+			if (initialiser.Value is not null)
+			{
+				GenerateInternal(initialiser.Value, code);
+			}
+
+			EndStatement(code);
+		}
+
 		foreach (AstNode statement in function.Body)
 		{
 			GenerateInternal(statement, code);
@@ -381,7 +440,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 			FunctionKind.Destructor => $"~{typeName}",
 			FunctionKind.Operator => $"operator {function.Name}",
 			FunctionKind.ConversionOperator =>
-				$"implicit operator {MapToCSType(function.ReturnType ?? new TypeReference("object"))}",
+				$"{(function.IsExplicit ? "explicit" : "implicit")} operator {MapToCSType(function.ReturnType ?? new TypeReference("object"))}",
 			_ => function.Name ?? "UnnamedFunction",
 		};
 	}

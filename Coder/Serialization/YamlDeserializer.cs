@@ -56,6 +56,12 @@ public partial class YamlDeserializer
 			"SourceFile" => DeserializeSourceFile(nodeData),
 			"namespaceDeclaration" => DeserializeNamespaceDeclaration(nodeData),
 			"NamespaceDeclaration" => DeserializeNamespaceDeclaration(nodeData),
+			"usingAlias" => DeserializeUsingAlias(nodeData),
+			"UsingAlias" => DeserializeUsingAlias(nodeData),
+			"memberInitialiser" => DeserializeMemberInitialiser(nodeData),
+			"MemberInitialiser" => DeserializeMemberInitialiser(nodeData),
+			"constructionExpression" => DeserializeConstructionExpression(nodeData),
+			"ConstructionExpression" => DeserializeConstructionExpression(nodeData),
 			"enumDeclaration" => DeserializeEnumDeclaration(nodeData),
 			"EnumDeclaration" => DeserializeEnumDeclaration(nodeData),
 			"enumMember" => DeserializeEnumMember(nodeData),
@@ -124,7 +130,7 @@ public partial class YamlDeserializer
 		return funcDecl;
 	}
 
-	private static void DeserializeFunctionBasicProperties(FunctionDeclaration funcDecl, Dictionary<object, object> dict)
+	private void DeserializeFunctionBasicProperties(FunctionDeclaration funcDecl, Dictionary<object, object> dict)
 	{
 		if (dict.TryGetValue("name", out object? nameObj))
 		{
@@ -164,6 +170,25 @@ public partial class YamlDeserializer
 		funcDecl.IsAbstract = ReadFlag(dict, "isAbstract", funcDecl.IsAbstract);
 		funcDecl.IsReadOnly = ReadFlag(dict, "isReadOnly", funcDecl.IsReadOnly);
 		funcDecl.MustUseResult = ReadFlag(dict, "mustUseResult", funcDecl.MustUseResult);
+		funcDecl.IsExplicit = ReadFlag(dict, "isExplicit", funcDecl.IsExplicit);
+		funcDecl.IsCompileTimeEvaluable = ReadFlag(dict, "isCompileTimeEvaluable", funcDecl.IsCompileTimeEvaluable);
+		funcDecl.IsNoThrow = ReadFlag(dict, "isNoThrow", funcDecl.IsNoThrow);
+		funcDecl.IsFriend = ReadFlag(dict, "isFriend", funcDecl.IsFriend);
+
+		if (dict.TryGetValue("initialisers", out object? initialisersObj) && initialisersObj is List<object> initialisers)
+		{
+			foreach (object initialiser in initialisers)
+			{
+				if (initialiser is Dictionary<object, object> initialiserDict && initialiserDict.Count > 0)
+				{
+					(object initialiserType, object initialiserData) = initialiserDict.First();
+					if (DeserializeNode(initialiserType.ToString() ?? string.Empty, initialiserData) is MemberInitialiser member)
+					{
+						funcDecl.Initialisers.Add(member);
+					}
+				}
+			}
+		}
 
 		DeserializeVisibility(funcDecl, dict);
 		ReadStrings(dict, "documentation", funcDecl.Documentation);
@@ -334,6 +359,87 @@ public partial class YamlDeserializer
 		DeserializeMetadata(namespaceDecl, dict);
 
 		return namespaceDecl;
+	}
+
+	private static UsingAlias DeserializeUsingAlias(object? nodeData)
+	{
+		UsingAlias usingAlias = new();
+		if (nodeData is not Dictionary<object, object> dict)
+		{
+			return usingAlias;
+		}
+
+		if (dict.TryGetValue("name", out object? nameObj))
+		{
+			usingAlias.Name = nameObj?.ToString();
+		}
+
+		if (dict.TryGetValue("aliasedType", out object? typeObj))
+		{
+			usingAlias.AliasedType = typeObj?.ToString();
+		}
+
+		DeserializeVisibility(usingAlias, dict);
+		ReadStrings(dict, "documentation", usingAlias.Documentation);
+		DeserializeMetadata(usingAlias, dict);
+
+		return usingAlias;
+	}
+
+	private MemberInitialiser DeserializeMemberInitialiser(object? nodeData)
+	{
+		MemberInitialiser initialiser = new();
+		if (nodeData is not Dictionary<object, object> dict)
+		{
+			return initialiser;
+		}
+
+		if (dict.TryGetValue("name", out object? nameObj))
+		{
+			initialiser.Name = nameObj?.ToString();
+		}
+
+		if (dict.TryGetValue("value", out object? valueObj) &&
+			valueObj is Dictionary<object, object> valueDict && valueDict.Count > 0)
+		{
+			(object valueType, object valueData) = valueDict.First();
+			initialiser.Value = DeserializeNode(valueType.ToString() ?? string.Empty, valueData) as Expression;
+		}
+
+		DeserializeMetadata(initialiser, dict);
+		return initialiser;
+	}
+
+	private ConstructionExpression DeserializeConstructionExpression(object? nodeData)
+	{
+		ConstructionExpression construction = new();
+		if (nodeData is not Dictionary<object, object> dict)
+		{
+			return construction;
+		}
+
+		if (dict.TryGetValue("type", out object? typeObj))
+		{
+			construction.Type = typeObj?.ToString();
+		}
+
+		if (dict.TryGetValue("arguments", out object? argumentsObj) && argumentsObj is List<object> arguments)
+		{
+			foreach (object argument in arguments)
+			{
+				if (argument is Dictionary<object, object> argumentDict && argumentDict.Count > 0)
+				{
+					(object argumentType, object argumentData) = argumentDict.First();
+					if (DeserializeNode(argumentType.ToString() ?? string.Empty, argumentData) is AstNode node)
+					{
+						construction.Arguments.Add(node);
+					}
+				}
+			}
+		}
+
+		DeserializeMetadata(construction, dict);
+		return construction;
 	}
 
 	private EnumDeclaration DeserializeEnumDeclaration(object? nodeData)

@@ -108,6 +108,34 @@ public class YamlSerializer
 			case Parameter param:
 				SerializeParameter(param, nodeData);
 				break;
+			default:
+				SerializeOtherNode(node, nodeData);
+				break;
+		}
+	}
+
+	/// <summary>
+	/// Writes the nodes that are not declarations.
+	/// </summary>
+	/// <param name="node">The node being serialized.</param>
+	/// <param name="nodeData">The mapping to write into.</param>
+	/// <remarks>
+	/// Split from the declarations only because one switch over every node the AST has is more
+	/// branches than the analyzer accepts. The line is the same one the AST already draws.
+	/// </remarks>
+	private static void SerializeOtherNode(AstNode node, Dictionary<string, object> nodeData)
+	{
+		switch (node)
+		{
+			case UsingAlias usingAlias:
+				SerializeUsingAlias(usingAlias, nodeData);
+				break;
+			case MemberInitialiser initialiser:
+				SerializeMemberInitialiser(initialiser, nodeData);
+				break;
+			case ConstructionExpression construction:
+				SerializeConstructionExpression(construction, nodeData);
+				break;
 			case ReturnStatement returnStmt:
 				SerializeReturnStatement(returnStmt, nodeData);
 				break;
@@ -213,6 +241,31 @@ public class YamlSerializer
 			nodeData["mustUseResult"] = funcDecl.MustUseResult;
 		}
 
+		if (funcDecl.IsExplicit)
+		{
+			nodeData["isExplicit"] = funcDecl.IsExplicit;
+		}
+
+		if (funcDecl.IsCompileTimeEvaluable)
+		{
+			nodeData["isCompileTimeEvaluable"] = funcDecl.IsCompileTimeEvaluable;
+		}
+
+		if (funcDecl.IsNoThrow)
+		{
+			nodeData["isNoThrow"] = funcDecl.IsNoThrow;
+		}
+
+		if (funcDecl.IsFriend)
+		{
+			nodeData["isFriend"] = funcDecl.IsFriend;
+		}
+
+		if (funcDecl.Initialisers.Count > 0)
+		{
+			nodeData["initialisers"] = SerializeBodyStatements(funcDecl.Initialisers);
+		}
+
 		if (funcDecl.Parameters.Count > 0)
 		{
 			nodeData["parameters"] = SerializeParameters(funcDecl.Parameters);
@@ -301,6 +354,50 @@ public class YamlSerializer
 		if (namespaceDecl.Members.Count > 0)
 		{
 			nodeData["members"] = SerializeBodyStatements(namespaceDecl.Members);
+		}
+	}
+
+	private static void SerializeUsingAlias(UsingAlias usingAlias, Dictionary<string, object> nodeData)
+	{
+		if (usingAlias.Name != null)
+		{
+			nodeData["name"] = usingAlias.Name;
+		}
+
+		if (usingAlias.AliasedType != null)
+		{
+			nodeData["aliasedType"] = usingAlias.AliasedType.ToString();
+		}
+
+		SerializeVisibility(usingAlias, nodeData);
+		SerializeDocumentation(usingAlias, nodeData);
+	}
+
+	private static void SerializeMemberInitialiser(MemberInitialiser initialiser, Dictionary<string, object> nodeData)
+	{
+		if (initialiser.Name != null)
+		{
+			nodeData["name"] = initialiser.Name;
+		}
+
+		if (initialiser.Value != null)
+		{
+			Dictionary<string, object> valueData = [];
+			SerializeNode(initialiser.Value, valueData);
+			nodeData["value"] = valueData;
+		}
+	}
+
+	private static void SerializeConstructionExpression(ConstructionExpression construction, Dictionary<string, object> nodeData)
+	{
+		if (construction.Type != null)
+		{
+			nodeData["type"] = construction.Type.ToString();
+		}
+
+		if (construction.Arguments.Count > 0)
+		{
+			nodeData["arguments"] = SerializeBodyStatements(construction.Arguments);
 		}
 	}
 

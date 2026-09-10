@@ -35,6 +35,7 @@ public static class AstSchema
 	private static readonly AstSlot ParametersSlot = new("Parameters", AstSlotCardinality.Many, AstSlotKind.Parameter);
 	private static readonly AstSlot BodySlot = new("Body", AstSlotCardinality.Many, AstSlotKind.Statement);
 	private static readonly AstSlot MembersSlot = new("Members", AstSlotCardinality.Many, AstSlotKind.Member);
+	private static readonly AstSlot ArgumentsSlot = new("Arguments", AstSlotCardinality.Many, AstSlotKind.Expression);
 	private static readonly AstSlot EnumMembersSlot = new("Members", AstSlotCardinality.Many, AstSlotKind.EnumMember);
 
 	/// <summary>
@@ -49,6 +50,8 @@ public static class AstSchema
 		ClassDeclaration => [MembersSlot],
 		EnumDeclaration => [EnumMembersSlot],
 		FieldDeclaration => [InitialValueSlot],
+		MemberInitialiser => [ValueSlot],
+		ConstructionExpression => [ArgumentsSlot],
 		FunctionDeclaration => [ParametersSlot, BodySlot],
 		EntryPoint => [BodySlot],
 		ReturnStatement => [ExpressionSlot],
@@ -79,6 +82,7 @@ public static class AstSchema
 			(UnaryExpression unary, "Operand") => unary.Operand,
 			(VariableDeclaration varDecl, "InitialValue") => varDecl.InitialValue,
 			(FieldDeclaration field, "InitialValue") => field.InitialValue,
+			(MemberInitialiser initialiser, "Value") => initialiser.Value,
 			(AssignmentStatement assignment, "Target") => assignment.Target,
 			(AssignmentStatement assignment, "Value") => assignment.Value,
 			_ => null,
@@ -95,6 +99,7 @@ public static class AstSchema
 			(NamespaceDeclaration namespaceDecl, "Members") => [.. namespaceDecl.Members],
 			(ClassDeclaration classDecl, "Members") => [.. classDecl.Members],
 			(EnumDeclaration enumDecl, "Members") => [.. enumDecl.Members],
+			(ConstructionExpression construction, "Arguments") => [.. construction.Arguments],
 			(FunctionDeclaration function, "Parameters") => [.. function.Parameters],
 			(FunctionDeclaration function, "Body") => [.. function.Body],
 			(EntryPoint entryPoint, "Body") => [.. entryPoint.Body],
@@ -158,6 +163,14 @@ public static class AstSchema
 
 			case (FieldDeclaration field, "InitialValue") when child is Expression fieldExpr:
 				field.InitialValue = fieldExpr;
+				return true;
+
+			case (MemberInitialiser initialiser, "Value") when child is Expression initialiserExpr:
+				initialiser.Value = initialiserExpr;
+				return true;
+
+			case (ConstructionExpression construction, "Arguments"):
+				construction.Arguments.Add(child);
 				return true;
 
 			case (AssignmentStatement assignment, "Target") when child is Expression targetExpr:
@@ -241,6 +254,10 @@ public static class AstSchema
 				enumDecl.Members[index] = enumMember;
 				return true;
 
+			case (ConstructionExpression construction, "Arguments"):
+				construction.Arguments[index] = child;
+				return true;
+
 			default:
 				return false;
 		}
@@ -290,6 +307,11 @@ public static class AstSchema
 				field.InitialValue = null;
 				return hadFieldValue;
 
+			case (MemberInitialiser initialiser, "Value"):
+				bool hadInitialiserValue = initialiser.Value is not null;
+				initialiser.Value = null;
+				return hadInitialiserValue;
+
 			case (BinaryExpression binary, "Left"):
 				binary.Left = Unfilled();
 				return true;
@@ -336,6 +358,10 @@ public static class AstSchema
 
 			case (EnumDeclaration enumDecl, "Members") when index < enumDecl.Members.Count:
 				enumDecl.Members.RemoveAt(index);
+				return true;
+
+			case (ConstructionExpression construction, "Arguments") when index < construction.Arguments.Count:
+				construction.Arguments.RemoveAt(index);
 				return true;
 
 			default:
@@ -405,7 +431,7 @@ public static class AstSchema
 			// running at one, so it belongs to a class or to the document rather than inside a body.
 			AstSlotKind.Statement => candidate is not (Parameter or EntryPoint),
 			AstSlotKind.Member => candidate is FunctionDeclaration or VariableDeclaration or FieldDeclaration
-				or ClassDeclaration or EnumDeclaration or NamespaceDeclaration or EntryPoint,
+				or ClassDeclaration or EnumDeclaration or NamespaceDeclaration or UsingAlias or EntryPoint,
 			AstSlotKind.EnumMember => candidate is EnumMember,
 			_ => false,
 		};

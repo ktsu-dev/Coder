@@ -116,6 +116,49 @@ public class FunctionDeclaration : AstCompositeNode, IHasVisibility, IHasDocumen
 	/// </remarks>
 	public bool MustUseResult { get; set; }
 
+	/// <summary>
+	/// Gets or sets a value indicating whether the conversion this declares must be asked for.
+	/// </summary>
+	/// <remarks>
+	/// On a constructor or a conversion operator. C++ spells it <c>explicit</c> and C# spells the
+	/// conversion <c>explicit operator</c> rather than <c>implicit operator</c>. It is how a type that
+	/// shims another says a value never crosses into it by accident.
+	/// </remarks>
+	public bool IsExplicit { get; set; }
+
+	/// <summary>
+	/// Gets or sets a value indicating whether a call can be evaluated while compiling.
+	/// </summary>
+	/// <remarks>
+	/// C++ spells this <c>constexpr</c>. No other target here can say it of a function, so no other
+	/// writes anything: the call still runs, just not before the program does.
+	/// </remarks>
+	public bool IsCompileTimeEvaluable { get; set; }
+
+	/// <summary>
+	/// Gets or sets a value indicating whether a call cannot fail.
+	/// </summary>
+	/// <remarks>
+	/// C++ spells this <c>noexcept</c>. Where a schema says fallibility by returning a result rather
+	/// than by throwing, this is what the rest of the declarations get to say about themselves.
+	/// </remarks>
+	public bool IsNoThrow { get; set; }
+
+	/// <summary>
+	/// Gets or sets a value indicating whether this is declared inside a type but is not a member of
+	/// it.
+	/// </summary>
+	/// <remarks>
+	/// C++ spells this <c>friend</c>, and it is how a symmetric operator is written beside the type it
+	/// is about rather than as a member of one of its operands. Nothing else here has it.
+	/// </remarks>
+	public bool IsFriend { get; set; }
+
+	/// <summary>
+	/// Gets what the type's members start at, as part of constructing it.
+	/// </summary>
+	public Collection<MemberInitialiser> Initialisers { get; init; } = [];
+
 	/// <inheritdoc/>
 	public Collection<string> Documentation { get; init; } = [];
 
@@ -153,7 +196,11 @@ public class FunctionDeclaration : AstCompositeNode, IHasVisibility, IHasDocumen
 			IsVirtual = IsVirtual,
 			IsAbstract = IsAbstract,
 			IsReadOnly = IsReadOnly,
-			MustUseResult = MustUseResult
+			MustUseResult = MustUseResult,
+			IsExplicit = IsExplicit,
+			IsCompileTimeEvaluable = IsCompileTimeEvaluable,
+			IsNoThrow = IsNoThrow,
+			IsFriend = IsFriend
 		};
 
 		// Copy metadata
@@ -165,6 +212,11 @@ public class FunctionDeclaration : AstCompositeNode, IHasVisibility, IHasDocumen
 		foreach (string line in Documentation)
 		{
 			clone.Documentation.Add(line);
+		}
+
+		foreach (MemberInitialiser initialiser in Initialisers)
+		{
+			clone.Initialisers.Add((MemberInitialiser)initialiser.Clone());
 		}
 
 		// Clone parameters

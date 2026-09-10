@@ -63,6 +63,14 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 				GenerateNamespaceDeclaration(namespaceDecl, code);
 				break;
 
+			case UsingAlias usingAlias:
+				GenerateUsingAlias(usingAlias, code);
+				break;
+
+			case ConstructionExpression construction:
+				GenerateConstructionExpression(construction, code);
+				break;
+
 			case EnumDeclaration enumDecl:
 				GenerateEnumDeclaration(enumDecl, code);
 				break;
@@ -151,6 +159,20 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 			GenerateInternal(member, code);
 		}
 	}
+
+	/// <summary>
+	/// Emits an alias giving a type a second name.
+	/// </summary>
+	/// <param name="usingAlias">The alias to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	protected abstract void GenerateUsingAlias(UsingAlias usingAlias, CodeBlocker code);
+
+	/// <summary>
+	/// Emits an expression that builds a value.
+	/// </summary>
+	/// <param name="construction">The expression to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	protected abstract void GenerateConstructionExpression(ConstructionExpression construction, CodeBlocker code);
 
 	/// <summary>
 	/// Emits an enumeration declaration, including its members.
