@@ -1,6 +1,4 @@
-## v3.5.1 (patch)
+## v3.5.1
 
-Changes since v3.5.0:
-
-- Follow the exemplar's rename ([@Claude](https://github.com/Claude))
+No significant changes detected since v3.5.1.
 
