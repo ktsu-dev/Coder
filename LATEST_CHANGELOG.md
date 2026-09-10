@@ -1,9 +1,11 @@
-## v3.3.0 (minor)
+## v3.4.0 (minor)
 
-Changes since v3.2.0:
+Changes since v3.3.0:
 
-- Read a type mapper without holding two branches in your head ([@Claude](https://github.com/Claude))
-- A function can say it takes no receiver and changes nothing ([@Claude](https://github.com/Claude))
-- A type is a type, not a string that happens to spell one ([@Claude](https://github.com/Claude))
-- Bump the ktsu ImGui suite to 3.32.0 ([@Claude](https://github.com/Claude))
+- Say the repeated things once and split what got long ([@Claude](https://github.com/Claude))
+- Cover the vocabulary a shim is built from ([@Claude](https://github.com/Claude))
+- Cover what the graph and the clones actually do ([@Claude](https://github.com/Claude))
+- A type can be a distinct name for something already representable ([@Claude](https://github.com/Claude))
+- A type can declare behaviour for someone else to implement ([@Claude](https://github.com/Claude))
+- An AST can describe a header, not only a snippet ([@Claude](https://github.com/Claude))
 
