@@ -1,6 +1,6 @@
-## v3.5.0 (minor)
+## v3.5.1 (patch)
 
-Changes since v3.4.0:
+Changes since v3.5.0:
 
-- What a generated type promises that the type itself cannot say ([@Claude](https://github.com/Claude))
+- Follow the exemplar's rename ([@Claude](https://github.com/Claude))
 
