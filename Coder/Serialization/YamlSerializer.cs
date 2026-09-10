@@ -155,6 +155,18 @@ public class YamlSerializer
 
 		SerializeVisibility(funcDecl, nodeData);
 
+		// Written only when true: a modifier nobody asked for should not appear in the document, the
+		// same way an unspecified visibility does not.
+		if (funcDecl.IsStatic)
+		{
+			nodeData["isStatic"] = funcDecl.IsStatic;
+		}
+
+		if (funcDecl.IsPure)
+		{
+			nodeData["isPure"] = funcDecl.IsPure;
+		}
+
 		if (funcDecl.Parameters.Count > 0)
 		{
 			nodeData["parameters"] = SerializeParameters(funcDecl.Parameters);

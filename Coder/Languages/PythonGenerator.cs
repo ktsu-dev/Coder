@@ -144,15 +144,36 @@ public class PythonGenerator : StandardLanguageGenerator
 	/// <c>self</c> is Python's spelling of the receiver a method is called on. It is not carried in
 	/// the AST — no other target language has it — so it is supplied here rather than being something
 	/// the user has to remember to add as a parameter and then remove for every other language.
+	/// <para>
+	/// A static method is the one case where that receiver is not supplied, because
+	/// <c>@staticmethod</c> is what says there is none. Every other language spells <c>static</c>
+	/// alongside the signature; Python spells it by changing the signature.
+	/// </para>
 	/// </remarks>
 	private void GenerateMethod(FunctionDeclaration method, CodeBlocker code)
 	{
-		code.Write($"def {method.Name ?? "unnamed_method"}(self");
-
-		foreach (Parameter parameter in method.Parameters)
+		if (method.IsStatic)
 		{
-			code.Write(", ");
-			GenerateParameter(parameter, code, method.Parameters.IndexOf(parameter));
+			code.WriteLine("@staticmethod");
+		}
+
+		code.Write($"def {method.Name ?? "unnamed_method"}(");
+
+		bool needsSeparator = !method.IsStatic;
+		if (needsSeparator)
+		{
+			code.Write("self");
+		}
+
+		for (int index = 0; index < method.Parameters.Count; index++)
+		{
+			if (needsSeparator)
+			{
+				code.Write(", ");
+			}
+
+			GenerateParameter(method.Parameters[index], code, index);
+			needsSeparator = true;
 		}
 
 		code.Write(")");

@@ -132,6 +132,11 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	/// <param name="code">The writer to emit into.</param>
 	private void GenerateMethod(FunctionDeclaration method, CodeBlocker code)
 	{
+		if (method.IsStatic)
+		{
+			code.Write("static ");
+		}
+
 		code.Write($"{MemberName(method.Name ?? "unnamedMethod", method.Visibility)}(");
 		GenerateParameterList(method.Parameters, code);
 		code.Write(") ");

@@ -129,11 +129,33 @@ public class CSharpGenerator : LanguageGeneratorBase
 		}
 	}
 
+	/// <summary>
+	/// Emits a function.
+	/// </summary>
+	/// <param name="function">The function to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// A pure function carries <c>[Pure]</c>, written out in full because the AST has no import to
+	/// hang a <c>using</c> on: a generated file is a fragment, and a short name in it would be one
+	/// the reader has to arrange for.
+	/// </remarks>
 	private void GenerateFunction(FunctionDeclaration function, CodeBlocker code)
 	{
+		if (function.IsPure)
+		{
+			code.WriteLine("[System.Diagnostics.Contracts.Pure]");
+		}
+
 		// Build method signature. A function nobody has given a visibility to is public: an
 		// inaccessible method is not what someone who wrote no modifier meant.
-		code.Write($"{SpellVisibility(function.Visibility) ?? "public"} {MapToCSType(function.ReturnType ?? new TypeReference("void"))} {function.Name}(");
+		code.Write($"{SpellVisibility(function.Visibility) ?? "public"} ");
+
+		if (function.IsStatic)
+		{
+			code.Write("static ");
+		}
+
+		code.Write($"{MapToCSType(function.ReturnType ?? new TypeReference("void"))} {function.Name}(");
 
 		// Add parameters
 		for (int i = 0; i < function.Parameters.Count; i++)

@@ -119,6 +119,8 @@ public static class AstFields
 				new("Name", AstFieldKind.Text, function.Name ?? string.Empty),
 				new("ReturnType", AstFieldKind.Text, function.ReturnType?.ToString() ?? string.Empty),
 				new("Visibility", AstFieldKind.Choice, function.Visibility.ToString(), Visibilities),
+				new("Static", AstFieldKind.Flag, Spell(function.IsStatic)),
+				new("Pure", AstFieldKind.Flag, Spell(function.IsPure)),
 			],
 
 			EntryPoint entryPoint =>
@@ -225,6 +227,10 @@ public static class AstFields
 			(FunctionDeclaration function, "ReturnType") => Assign(() => function.ReturnType = OrNull(value)),
 			(FunctionDeclaration function, "Visibility") =>
 				TryParseVisibility(value, out Visibility functionVisibility) && Assign(() => function.Visibility = functionVisibility),
+			(FunctionDeclaration function, "Static") =>
+				TryParseBool(value, out bool isStatic) && Assign(() => function.IsStatic = isStatic),
+			(FunctionDeclaration function, "Pure") =>
+				TryParseBool(value, out bool isPure) && Assign(() => function.IsPure = isPure),
 
 			(EntryPoint entryPoint, "Arguments") =>
 				TryParseBool(value, out bool acceptsArguments) && Assign(() => entryPoint.AcceptsArguments = acceptsArguments),

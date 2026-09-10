@@ -53,10 +53,26 @@ public class CppGenerator : StandardLanguageGenerator
 	public override string FileExtension => "cpp";
 
 	/// <inheritdoc/>
+	/// <remarks>
+	/// A pure function is written <c>[[nodiscard]]</c>: discarding the result of a call that does
+	/// nothing else is always a mistake, and that is the whole of what the standard can say. The
+	/// compiler-specific <c>__attribute__((pure))</c> asserts to the optimiser that the call may be
+	/// elided or duplicated, which is a stronger promise than the AST is in a position to make.
+	/// </remarks>
 	protected override void GenerateFunctionDeclaration(FunctionDeclaration funcDecl, CodeBlocker code)
 	{
 		Ensure.NotNull(funcDecl);
 		Ensure.NotNull(code);
+
+		if (funcDecl.IsPure)
+		{
+			code.Write("[[nodiscard]] ");
+		}
+
+		if (funcDecl.IsStatic)
+		{
+			code.Write("static ");
+		}
 
 		code.Write($"{MapToCppType(funcDecl.ReturnType ?? new TypeReference("void"))} {funcDecl.Name ?? "unnamedFunction"}(");
 		GenerateParameterList(funcDecl.Parameters, code);

@@ -125,6 +125,18 @@ public partial class YamlDeserializer
 			funcDecl.ReturnType = returnTypeObj?.ToString();
 		}
 
+		if (dict.TryGetValue("isStatic", out object? staticObj) &&
+			bool.TryParse(staticObj?.ToString(), out bool isStatic))
+		{
+			funcDecl.IsStatic = isStatic;
+		}
+
+		if (dict.TryGetValue("isPure", out object? pureObj) &&
+			bool.TryParse(pureObj?.ToString(), out bool isPure))
+		{
+			funcDecl.IsPure = isPure;
+		}
+
 		DeserializeVisibility(funcDecl, dict);
 	}
 
