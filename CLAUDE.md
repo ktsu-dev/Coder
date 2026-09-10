@@ -51,6 +51,23 @@ source in four target languages. The solution uses:
   as a string can only paste it, so the caller would have to spell the target language itself.
   `Parse` and `ToString` are inverses and text the grammar cannot read becomes a name holding it
   verbatim, so a property that used to hold a string still takes and gives one.
+- `Coder/Ast/SourceFile.cs`, `NamespaceDeclaration.cs`, `EnumDeclaration.cs`, `FieldDeclaration.cs` —
+  what a generated *header* is made of rather than a snippet. `FieldDeclaration` is deliberately not
+  `VariableDeclaration`: a field with no initialiser is value-initialised, so a default-constructed
+  instance is the one the declaration described, and a local with none is ordinary. `SourceFile`'s
+  `Imports` are the one part of the AST that does not translate — a C++ include path, a C# namespace
+  and a Python module are different kinds of thing — so a file is built for a language.
+- `Coder/Ast/FunctionKind.cs`, `FunctionDefinition.cs` — what a function declares (method,
+  constructor, destructor, operator, conversion) and where its behaviour comes from (provided,
+  defaulted, deleted). A declaration with no statements is otherwise ambiguous between a function
+  that does nothing, one the language supplies, and one that exists to be refused. `IsAbstract` is
+  C++'s *pure virtual*, which is a different thing from `IsPure`: one says a declaration has no
+  definition, the other that a call has no effect.
+- `Coder/Ast/UsingAlias.cs`, `MemberInitialiser.cs`, `ConstructionExpression.cs` — what a type that
+  shims another needs. A member is *initialised* rather than assigned, which is the only way to start
+  one that cannot be assigned at all; a language without an initialiser list assigns at the top of
+  the constructor instead. `ConstructionExpression` is the one expression that needs a type rather
+  than a name, which is why it could not exist before `TypeReference` did.
 - `Coder/Languages/LanguageGeneratorBase.cs` — the emitters every generator shares.
 - `Coder/Languages/StandardLanguageGenerator.cs` — owns the node dispatch, so a derived
   generator supplies only the syntax its language does not share. `CSharpGenerator` deliberately

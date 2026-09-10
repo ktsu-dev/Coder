@@ -2,6 +2,7 @@
 
 namespace ktsu.Coder.Languages;
 
+using System.Globalization;
 using ktsu.Coder.Ast;
 using ktsu.CodeBlocker;
 
@@ -51,10 +52,128 @@ public class PythonGenerator : StandardLanguageGenerator
 	}
 
 	/// <inheritdoc/>
+	/// <remarks>
+	/// Python's documentation is a docstring rather than a comment, and a docstring belongs inside
+	/// the construct it documents — which is a different shape from every other language here. Rather
+	/// than move the lines somewhere the other three cannot follow, they are emitted as ordinary
+	/// <c>#</c> comments: the reader still gets them, and nothing claims to be a docstring that is
+	/// not one.
+	/// </remarks>
+	protected override string DocumentationPrefix => "#";
+
+	/// <inheritdoc/>
+	protected override string CommentPrefix => "#";
+
+	/// <inheritdoc/>
+	protected override string? SpellImport(string import) => $"import {import}";
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// An alias is an ordinary assignment in Python, which is what a type alias is there.
+	/// </remarks>
+	protected override void GenerateUsingAlias(UsingAlias usingAlias, CodeBlocker code)
+	{
+		Ensure.NotNull(usingAlias);
+		Ensure.NotNull(code);
+
+		GenerateDocumentation(usingAlias, code);
+		code.WriteLine($"{usingAlias.Name} = {PythonTypeFromGenericType(usingAlias.AliasedType ?? new TypeReference("object"))}");
+	}
+
+	/// <inheritdoc/>
+	protected override void GenerateConstructionExpression(ConstructionExpression construction, CodeBlocker code)
+	{
+		Ensure.NotNull(construction);
+		Ensure.NotNull(code);
+
+		code.Write($"{PythonTypeFromGenericType(construction.Type ?? new TypeReference("object"))}(");
+		WriteArguments(construction, code);
+		code.Write(")");
+	}
+
+	/// <summary>
+	/// Writes a construction's arguments, separated by commas.
+	/// </summary>
+	/// <param name="construction">The expression whose arguments to write.</param>
+	/// <param name="code">The writer to emit into.</param>
+	private void WriteArguments(ConstructionExpression construction, CodeBlocker code)
+	{
+		for (int index = 0; index < construction.Arguments.Count; index++)
+		{
+			if (index > 0)
+			{
+				code.Write(", ");
+			}
+
+			GenerateInternal(construction.Arguments[index], code);
+		}
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// Python has no enumeration syntax; <c>enum.Enum</c> is a class. A member with no value of its
+	/// own is numbered from its position, matching what a language with real enumerations would give
+	/// it. The <c>from enum import Enum</c> this needs belongs to the file rather than to the
+	/// declaration.
+	/// </remarks>
+	protected override void GenerateEnumDeclaration(EnumDeclaration enumDecl, CodeBlocker code)
+	{
+		Ensure.NotNull(enumDecl);
+		Ensure.NotNull(code);
+
+		GenerateDocumentation(enumDecl, code);
+		code.WriteLine($"class {enumDecl.Name ?? "UnnamedEnum"}(Enum):");
+
+		using IndentScope body = new(code);
+		if (enumDecl.Members.Count == 0)
+		{
+			code.WriteLine("pass");
+			return;
+		}
+
+		for (int index = 0; index < enumDecl.Members.Count; index++)
+		{
+			EnumMember member = enumDecl.Members[index];
+			string value = member.Value ?? index.ToString(CultureInfo.InvariantCulture);
+			code.WriteLine($"{member.Name ?? "UNNAMED"} = {value}");
+		}
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// A field is written as an annotated class attribute. One with no initialiser is left as a bare
+	/// annotation, which is what a dataclass and a type checker both read as "this field exists and
+	/// has this type" without also claiming a value for it.
+	/// </remarks>
+	protected override void GenerateFieldDeclaration(FieldDeclaration field, CodeBlocker code)
+	{
+		Ensure.NotNull(field);
+		Ensure.NotNull(code);
+
+		GenerateDocumentation(field, code);
+		code.Write(field.Name ?? "unnamed");
+
+		if (field.Type is TypeReference type)
+		{
+			code.Write($": {PythonTypeFromGenericType(type)}");
+		}
+
+		if (field.InitialValue is not null)
+		{
+			code.Write(" = ");
+			GenerateInternal(field.InitialValue, code);
+		}
+
+		code.WriteLine();
+	}
+
+	/// <inheritdoc/>
 	protected override void GenerateFunctionDeclaration(FunctionDeclaration funcDecl, CodeBlocker code)
 	{
 		Ensure.NotNull(funcDecl);
 		Ensure.NotNull(code);
+
+		GenerateDocumentation(funcDecl, code);
 
 		// Function signature
 		code.Write($"def {funcDecl.Name ?? "unnamed_function"}(");
@@ -152,12 +271,65 @@ public class PythonGenerator : StandardLanguageGenerator
 	/// </remarks>
 	private void GenerateMethod(FunctionDeclaration method, CodeBlocker code)
 	{
+		GenerateDocumentation(method, code);
+
+		if (method.Definition != FunctionDefinition.Provided)
+		{
+			string state = method.Definition == FunctionDefinition.Defaulted ? "supplied by the language" : "deleted";
+			WriteInexpressible(code, $"{method.Name} is {state}, which Python has no way to say.");
+			return;
+		}
+
+		if (method.Kind is FunctionKind.Operator or FunctionKind.ConversionOperator)
+		{
+			WriteInexpressible(code, $"operator {method.Name} has no Python spelling.");
+			return;
+		}
+
+		WriteMethodSignature(method, code);
+
+		using IndentScope body = new(code);
+
+		// A method a derived class has to supply is a method whose body is a refusal. Python has no
+		// declaration without a definition, so the definition says what calling it means.
+		if (method.IsAbstract)
+		{
+			code.WriteLine("raise NotImplementedError");
+			return;
+		}
+
+		WriteInitialiserAssignments(method, code);
+
+		if (method.Body.Count == 0 && method.Initialisers.Count == 0)
+		{
+			code.WriteLine("pass");
+			return;
+		}
+
+		foreach (AstNode statement in method.Body)
+		{
+			GenerateInternal(statement, code);
+			code.WriteLine();
+		}
+	}
+
+	/// <summary>
+	/// Writes a method's signature, up to and including the colon that opens its suite.
+	/// </summary>
+	/// <param name="method">The declaration being emitted.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// The receiver is supplied here rather than carried in the AST, because no other target language
+	/// has one — and it is left out of a static method, which is what <c>@staticmethod</c> means.
+	/// </remarks>
+	private void WriteMethodSignature(FunctionDeclaration method, CodeBlocker code)
+	{
 		if (method.IsStatic)
 		{
 			code.WriteLine("@staticmethod");
 		}
 
-		code.Write($"def {method.Name ?? "unnamed_method"}(");
+		code.Write($"def {SpellMethodName(method)}(");
 
 		bool needsSeparator = !method.IsStatic;
 		if (needsSeparator)
@@ -178,26 +350,53 @@ public class PythonGenerator : StandardLanguageGenerator
 
 		code.Write(")");
 
-		if (method.ReturnType is not null)
+		if (method.ReturnType is not null && method.Kind == FunctionKind.Method)
 		{
 			code.Write($" -> {PythonTypeFromGenericType(method.ReturnType)}");
 		}
 
 		code.WriteLine(":");
+	}
 
-		using IndentScope body = new(code);
-		if (method.Body.Count == 0)
+	/// <summary>
+	/// Writes what the type's members start at, as assignments at the top of the body.
+	/// </summary>
+	/// <param name="method">The declaration being emitted.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// Python assigns where C++ initialises, in the order declared, which is what the initialiser
+	/// means where there is no initialiser list to put it in.
+	/// </remarks>
+	private void WriteInitialiserAssignments(FunctionDeclaration method, CodeBlocker code)
+	{
+		foreach (MemberInitialiser initialiser in method.Initialisers)
 		{
-			code.WriteLine("pass");
-			return;
-		}
+			code.Write($"self.{initialiser.Name} = ");
 
-		foreach (AstNode statement in method.Body)
-		{
-			GenerateInternal(statement, code);
+			if (initialiser.Value is not null)
+			{
+				GenerateInternal(initialiser.Value, code);
+			}
+
 			code.WriteLine();
 		}
 	}
+
+	/// <summary>
+	/// Spells the name a method is written under.
+	/// </summary>
+	/// <param name="method">The declaration being emitted.</param>
+	/// <returns>The name as Python writes it.</returns>
+	/// <remarks>
+	/// A constructor and a destructor have fixed names in Python rather than the type's, so whatever
+	/// the declaration is called is ignored for those two.
+	/// </remarks>
+	private static string SpellMethodName(FunctionDeclaration method) => method.Kind switch
+	{
+		FunctionKind.Constructor => "__init__",
+		FunctionKind.Destructor => "__del__",
+		_ => method.Name ?? "unnamed_method",
+	};
 
 	/// <inheritdoc/>
 	/// <remarks>

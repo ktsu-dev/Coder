@@ -2,6 +2,7 @@
 
 namespace ktsu.Coder.Languages;
 
+using System.Globalization;
 using ktsu.Coder.Ast;
 using ktsu.CodeBlocker;
 
@@ -33,10 +34,142 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	public override string FileExtension => "js";
 
 	/// <inheritdoc/>
+	/// <remarks>
+	/// JavaScript's documentation convention is a <c>/** */</c> block, which is a shape the shared
+	/// emitter's line-at-a-time form cannot write. A <c>//</c> comment carries the same lines to the
+	/// same reader without pretending to be JSDoc, which a tool would then read and find no tags in.
+	/// </remarks>
+	protected override string DocumentationPrefix => "//";
+
+	/// <inheritdoc/>
+	protected override string? SpellImport(string import) => $"import \"{import}\";";
+
+	/// <summary>
+	/// Emits an enumeration declared inside a class, as a static member of it.
+	/// </summary>
+	/// <param name="enumDecl">The declaration to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// A class body is not a block: <c>const</c> is a syntax error inside one, so the namespace-scope
+	/// spelling cannot simply be nested. A static field is the same object reachable by the same
+	/// name, which is what nesting was for.
+	/// </remarks>
+	private void GenerateNestedEnum(EnumDeclaration enumDecl, CodeBlocker code)
+	{
+		GenerateDocumentation(enumDecl, code);
+		code.WriteLine($"static {enumDecl.Name ?? "UnnamedEnum"} = Object.freeze({{");
+
+		using (IndentScope members = new(code))
+		{
+			WriteEnumMembers(enumDecl, code);
+		}
+
+		code.WriteLine("});");
+	}
+
+	/// <summary>
+	/// Writes an enumeration's members as the properties of an object literal.
+	/// </summary>
+	/// <param name="enumDecl">The declaration whose members to write.</param>
+	/// <param name="code">The writer to emit into.</param>
+	private static void WriteEnumMembers(EnumDeclaration enumDecl, CodeBlocker code)
+	{
+		for (int index = 0; index < enumDecl.Members.Count; index++)
+		{
+			EnumMember member = enumDecl.Members[index];
+			string value = member.Value ?? index.ToString(CultureInfo.InvariantCulture);
+			code.WriteLine($"{member.Name ?? "UNNAMED"}: {value},");
+		}
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// JavaScript has no types to alias. The name is bound to whatever the alias named, which is a
+	/// constructor often enough to be worth writing rather than dropping.
+	/// </remarks>
+	protected override void GenerateUsingAlias(UsingAlias usingAlias, CodeBlocker code)
+	{
+		Ensure.NotNull(usingAlias);
+		Ensure.NotNull(code);
+
+		GenerateDocumentation(usingAlias, code);
+		code.Write($"const {usingAlias.Name} = {usingAlias.AliasedType?.Name ?? "Object"}");
+		EndStatement(code);
+	}
+
+	/// <inheritdoc/>
+	protected override void GenerateConstructionExpression(ConstructionExpression construction, CodeBlocker code)
+	{
+		Ensure.NotNull(construction);
+		Ensure.NotNull(code);
+
+		code.Write($"new {construction.Type?.Name ?? "Object"}(");
+
+		for (int index = 0; index < construction.Arguments.Count; index++)
+		{
+			if (index > 0)
+			{
+				code.Write(", ");
+			}
+
+			GenerateInternal(construction.Arguments[index], code);
+		}
+
+		code.Write(")");
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// JavaScript has no enumeration. A frozen object is the convention: the members are reachable by
+	/// name, and freezing is what stops one being reassigned somewhere far from here. A member with
+	/// no value of its own is numbered from its position.
+	/// </remarks>
+	protected override void GenerateEnumDeclaration(EnumDeclaration enumDecl, CodeBlocker code)
+	{
+		Ensure.NotNull(enumDecl);
+		Ensure.NotNull(code);
+
+		GenerateDocumentation(enumDecl, code);
+		code.WriteLine($"const {enumDecl.Name ?? "UnnamedEnum"} = Object.freeze({{");
+
+		using (IndentScope members = new(code))
+		{
+			WriteEnumMembers(enumDecl, code);
+		}
+
+		code.WriteLine("});");
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// A class field, which JavaScript writes without a type since it has none to write. A field with
+	/// no initialiser is still declared: the property then exists on every instance, which is what
+	/// makes the shape of an object predictable rather than growing as it is assigned to.
+	/// </remarks>
+	protected override void GenerateFieldDeclaration(FieldDeclaration field, CodeBlocker code)
+	{
+		Ensure.NotNull(field);
+		Ensure.NotNull(code);
+
+		GenerateDocumentation(field, code);
+		code.Write(MemberName(field.Name ?? "unnamed", field.Visibility));
+
+		if (field.InitialValue is not null)
+		{
+			code.Write(" = ");
+			GenerateInternal(field.InitialValue, code);
+		}
+
+		EndStatement(code);
+	}
+
+	/// <inheritdoc/>
 	protected override void GenerateFunctionDeclaration(FunctionDeclaration funcDecl, CodeBlocker code)
 	{
 		Ensure.NotNull(funcDecl);
 		Ensure.NotNull(code);
+
+		GenerateDocumentation(funcDecl, code);
 
 		code.Write($"function {funcDecl.Name ?? "unnamedFunction"}(");
 		GenerateParameterList(funcDecl.Parameters, code);
@@ -86,6 +219,10 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 					GenerateMethod(method, code);
 					break;
 
+				case EnumDeclaration nested:
+					GenerateNestedEnum(nested, code);
+					break;
+
 				// A field is not a variable: `let` is a statement keyword and a syntax error in a
 				// class body, so the declaration is emitted as the name and its initializer alone.
 				case VariableDeclaration field:
@@ -132,16 +269,58 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	/// <param name="code">The writer to emit into.</param>
 	private void GenerateMethod(FunctionDeclaration method, CodeBlocker code)
 	{
+		GenerateDocumentation(method, code);
+
+		if (method.Definition != FunctionDefinition.Provided)
+		{
+			string state = method.Definition == FunctionDefinition.Defaulted ? "supplied by the language" : "deleted";
+			WriteInexpressible(code, $"{method.Name} is {state}, which JavaScript has no way to say.");
+			return;
+		}
+
+		if (method.Kind is FunctionKind.Destructor or FunctionKind.Operator or FunctionKind.ConversionOperator)
+		{
+			WriteInexpressible(code, $"{method.Name} has no JavaScript spelling.");
+			return;
+		}
+
 		if (method.IsStatic)
 		{
 			code.Write("static ");
 		}
 
-		code.Write($"{MemberName(method.Name ?? "unnamedMethod", method.Visibility)}(");
+		code.Write(method.Kind == FunctionKind.Constructor
+			? "constructor"
+			: MemberName(method.Name ?? "unnamedMethod", method.Visibility));
+
+		code.Write("(");
 		GenerateParameterList(method.Parameters, code);
 		code.Write(") ");
 
 		using Scope body = new(code);
+
+		// A method a subclass has to supply is one whose body refuses. JavaScript has no declaration
+		// without a definition, so the definition is where that is said.
+		if (method.IsAbstract)
+		{
+			code.WriteLine($"throw new Error(\"{method.Name} must be implemented\");");
+			return;
+		}
+
+		// JavaScript assigns where C++ initialises, before the body's own statements and in the order
+		// declared, which is what the initialiser means where there is no initialiser list.
+		foreach (MemberInitialiser initialiser in method.Initialisers)
+		{
+			code.Write($"this.{initialiser.Name} = ");
+
+			if (initialiser.Value is not null)
+			{
+				GenerateInternal(initialiser.Value, code);
+			}
+
+			EndStatement(code);
+		}
+
 		foreach (AstNode statement in method.Body)
 		{
 			GenerateInternal(statement, code);

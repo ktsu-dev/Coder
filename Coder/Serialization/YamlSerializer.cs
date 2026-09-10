@@ -81,6 +81,21 @@ public class YamlSerializer
 	{
 		switch (node)
 		{
+			case SourceFile file:
+				SerializeSourceFile(file, nodeData);
+				break;
+			case NamespaceDeclaration namespaceDecl:
+				SerializeNamespaceDeclaration(namespaceDecl, nodeData);
+				break;
+			case EnumDeclaration enumDecl:
+				SerializeEnumDeclaration(enumDecl, nodeData);
+				break;
+			case EnumMember enumMember:
+				SerializeEnumMember(enumMember, nodeData);
+				break;
+			case FieldDeclaration field:
+				SerializeFieldDeclaration(field, nodeData);
+				break;
 			case ClassDeclaration classDecl:
 				SerializeClassDeclaration(classDecl, nodeData);
 				break;
@@ -92,6 +107,34 @@ public class YamlSerializer
 				break;
 			case Parameter param:
 				SerializeParameter(param, nodeData);
+				break;
+			default:
+				SerializeOtherNode(node, nodeData);
+				break;
+		}
+	}
+
+	/// <summary>
+	/// Writes the nodes that are not declarations.
+	/// </summary>
+	/// <param name="node">The node being serialized.</param>
+	/// <param name="nodeData">The mapping to write into.</param>
+	/// <remarks>
+	/// Split from the declarations only because one switch over every node the AST has is more
+	/// branches than the analyzer accepts. The line is the same one the AST already draws.
+	/// </remarks>
+	private static void SerializeOtherNode(AstNode node, Dictionary<string, object> nodeData)
+	{
+		switch (node)
+		{
+			case UsingAlias usingAlias:
+				SerializeUsingAlias(usingAlias, nodeData);
+				break;
+			case MemberInitialiser initialiser:
+				SerializeMemberInitialiser(initialiser, nodeData);
+				break;
+			case ConstructionExpression construction:
+				SerializeConstructionExpression(construction, nodeData);
 				break;
 			case ReturnStatement returnStmt:
 				SerializeReturnStatement(returnStmt, nodeData);
@@ -154,6 +197,7 @@ public class YamlSerializer
 		}
 
 		SerializeVisibility(funcDecl, nodeData);
+		SerializeDocumentation(funcDecl, nodeData);
 
 		// Written only when true: a modifier nobody asked for should not appear in the document, the
 		// same way an unspecified visibility does not.
@@ -166,6 +210,8 @@ public class YamlSerializer
 		{
 			nodeData["isPure"] = funcDecl.IsPure;
 		}
+
+		SerializeFunctionShape(funcDecl, nodeData);
 
 		if (funcDecl.Parameters.Count > 0)
 		{
@@ -215,11 +261,247 @@ public class YamlSerializer
 		}
 	}
 
+	private static void SerializeSourceFile(SourceFile file, Dictionary<string, object> nodeData)
+	{
+		if (file.Name != null)
+		{
+			nodeData["name"] = file.Name;
+		}
+
+		if (file.IsHeader)
+		{
+			nodeData["isHeader"] = file.IsHeader;
+		}
+
+		if (file.HeaderComment.Count > 0)
+		{
+			nodeData["headerComment"] = file.HeaderComment.ToList();
+		}
+
+		if (file.Imports.Count > 0)
+		{
+			nodeData["imports"] = file.Imports.ToList();
+		}
+
+		if (file.Members.Count > 0)
+		{
+			nodeData[MembersKey] = SerializeBodyStatements(file.Members);
+		}
+	}
+
+	private static void SerializeNamespaceDeclaration(NamespaceDeclaration namespaceDecl, Dictionary<string, object> nodeData)
+	{
+		if (namespaceDecl.Name != null)
+		{
+			nodeData["name"] = namespaceDecl.Name;
+		}
+
+		SerializeDocumentation(namespaceDecl, nodeData);
+
+		if (namespaceDecl.Members.Count > 0)
+		{
+			nodeData[MembersKey] = SerializeBodyStatements(namespaceDecl.Members);
+		}
+	}
+
+	/// <summary>The key a node's single value is written under.</summary>
+	private const string ValueKey = "value";
+
+	/// <summary>The key a node's members are written under.</summary>
+	private const string MembersKey = "members";
+
+	private static void SerializeUsingAlias(UsingAlias usingAlias, Dictionary<string, object> nodeData)
+	{
+		if (usingAlias.Name != null)
+		{
+			nodeData["name"] = usingAlias.Name;
+		}
+
+		if (usingAlias.AliasedType != null)
+		{
+			nodeData["aliasedType"] = usingAlias.AliasedType.ToString();
+		}
+
+		SerializeVisibility(usingAlias, nodeData);
+		SerializeDocumentation(usingAlias, nodeData);
+	}
+
+	private static void SerializeMemberInitialiser(MemberInitialiser initialiser, Dictionary<string, object> nodeData)
+	{
+		if (initialiser.Name != null)
+		{
+			nodeData["name"] = initialiser.Name;
+		}
+
+		if (initialiser.Value != null)
+		{
+			Dictionary<string, object> valueData = [];
+			SerializeNode(initialiser.Value, valueData);
+			nodeData[ValueKey] = valueData;
+		}
+	}
+
+	private static void SerializeConstructionExpression(ConstructionExpression construction, Dictionary<string, object> nodeData)
+	{
+		if (construction.Type != null)
+		{
+			nodeData["type"] = construction.Type.ToString();
+		}
+
+		if (construction.Arguments.Count > 0)
+		{
+			nodeData["arguments"] = SerializeBodyStatements(construction.Arguments);
+		}
+	}
+
+	private static void SerializeEnumDeclaration(EnumDeclaration enumDecl, Dictionary<string, object> nodeData)
+	{
+		if (enumDecl.Name != null)
+		{
+			nodeData["name"] = enumDecl.Name;
+		}
+
+		if (enumDecl.UnderlyingType != null)
+		{
+			nodeData["underlyingType"] = enumDecl.UnderlyingType.ToString();
+		}
+
+		SerializeVisibility(enumDecl, nodeData);
+		SerializeDocumentation(enumDecl, nodeData);
+
+		if (enumDecl.Members.Count > 0)
+		{
+			nodeData[MembersKey] = SerializeBodyStatements(enumDecl.Members);
+		}
+	}
+
+	private static void SerializeEnumMember(EnumMember member, Dictionary<string, object> nodeData)
+	{
+		if (member.Name != null)
+		{
+			nodeData["name"] = member.Name;
+		}
+
+		if (member.Value != null)
+		{
+			nodeData[ValueKey] = member.Value;
+		}
+	}
+
+	private static void SerializeFieldDeclaration(FieldDeclaration field, Dictionary<string, object> nodeData)
+	{
+		if (field.Name != null)
+		{
+			nodeData["name"] = field.Name;
+		}
+
+		if (field.Type != null)
+		{
+			nodeData["type"] = field.Type.ToString();
+		}
+
+		SerializeVisibility(field, nodeData);
+		SerializeDocumentation(field, nodeData);
+
+		if (field.InitialValue != null)
+		{
+			Dictionary<string, object> initialValueData = [];
+			SerializeNode(field.InitialValue, initialValueData);
+			nodeData["initialValue"] = initialValueData;
+		}
+	}
+
+	/// <summary>
+	/// Writes what a function declares and how, omitting whatever it did not ask for.
+	/// </summary>
+	/// <param name="funcDecl">The declaration being serialized.</param>
+	/// <param name="nodeData">The mapping to write into.</param>
+	/// <remarks>
+	/// Separate from the name and the return type only because one method writing every property a
+	/// declaration has is more branches than the analyzer accepts. Nothing is written for a property
+	/// left at its default, so a document says only what someone chose.
+	/// </remarks>
+	private static void SerializeFunctionShape(FunctionDeclaration funcDecl, Dictionary<string, object> nodeData)
+	{
+		if (funcDecl.Kind != FunctionKind.Method)
+		{
+			nodeData["kind"] = funcDecl.Kind.ToString();
+		}
+
+		if (funcDecl.Definition != FunctionDefinition.Provided)
+		{
+			nodeData["definition"] = funcDecl.Definition.ToString();
+		}
+
+		if (funcDecl.IsVirtual)
+		{
+			nodeData["isVirtual"] = funcDecl.IsVirtual;
+		}
+
+		if (funcDecl.IsAbstract)
+		{
+			nodeData["isAbstract"] = funcDecl.IsAbstract;
+		}
+
+		if (funcDecl.IsReadOnly)
+		{
+			nodeData["isReadOnly"] = funcDecl.IsReadOnly;
+		}
+
+		if (funcDecl.MustUseResult)
+		{
+			nodeData["mustUseResult"] = funcDecl.MustUseResult;
+		}
+
+		if (funcDecl.IsExplicit)
+		{
+			nodeData["isExplicit"] = funcDecl.IsExplicit;
+		}
+
+		if (funcDecl.IsCompileTimeEvaluable)
+		{
+			nodeData["isCompileTimeEvaluable"] = funcDecl.IsCompileTimeEvaluable;
+		}
+
+		if (funcDecl.IsNoThrow)
+		{
+			nodeData["isNoThrow"] = funcDecl.IsNoThrow;
+		}
+
+		if (funcDecl.IsFriend)
+		{
+			nodeData["isFriend"] = funcDecl.IsFriend;
+		}
+
+		if (funcDecl.Initialisers.Count > 0)
+		{
+			nodeData["initialisers"] = SerializeBodyStatements(funcDecl.Initialisers);
+		}
+	}
+
+	/// <summary>
+	/// Writes a declaration's documentation, when it has any.
+	/// </summary>
+	/// <param name="declaration">The declaration being serialized.</param>
+	/// <param name="nodeData">The mapping to write into.</param>
+	private static void SerializeDocumentation(IHasDocumentation declaration, Dictionary<string, object> nodeData)
+	{
+		if (declaration.Documentation.Count > 0)
+		{
+			nodeData["documentation"] = declaration.Documentation.ToList();
+		}
+	}
+
 	private static void SerializeClassDeclaration(ClassDeclaration classDecl, Dictionary<string, object> nodeData)
 	{
 		if (classDecl.Name != null)
 		{
 			nodeData["name"] = classDecl.Name;
+		}
+
+		if (classDecl.Kind != TypeDeclarationKind.Class)
+		{
+			nodeData["kind"] = classDecl.Kind.ToString();
 		}
 
 		if (classDecl.BaseType != null)
@@ -228,11 +510,12 @@ public class YamlSerializer
 		}
 
 		SerializeVisibility(classDecl, nodeData);
+		SerializeDocumentation(classDecl, nodeData);
 
 		if (classDecl.Members.Count > 0)
 		{
 			// Members are serialized the same way a function body is: each is a node in its own right.
-			nodeData["members"] = SerializeBodyStatements(classDecl.Members);
+			nodeData[MembersKey] = SerializeBodyStatements(classDecl.Members);
 		}
 	}
 
@@ -344,7 +627,7 @@ public class YamlSerializer
 	{
 		if (literal.Value != null)
 		{
-			nodeData["value"] = literal.Value;
+			nodeData[ValueKey] = literal.Value;
 		}
 
 		if (literal.ExpectedType != null)
@@ -400,7 +683,7 @@ public class YamlSerializer
 
 		Dictionary<string, object> valueData = [];
 		SerializeNode(assignment.Value, valueData);
-		nodeData["value"] = valueData;
+		nodeData[ValueKey] = valueData;
 
 		nodeData["operator"] = assignment.Operator.ToString();
 	}

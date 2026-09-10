@@ -97,6 +97,40 @@ public static class AstFields
 	];
 
 	/// <summary>
+	/// The kinds of type a declaration can be, offered as a menu rather than typed.
+	/// </summary>
+	/// <summary>The name of the field every declaration that has a visibility exposes.</summary>
+	private const string VisibilityField = "Visibility";
+
+	/// <summary>The name of the field every node holding one value exposes.</summary>
+	private const string ValueField = "Value";
+
+	private static readonly IReadOnlyList<AstFieldChoice> FunctionKinds =
+	[
+		.. Enum.GetValues<FunctionKind>().Select(kind => new AstFieldChoice(kind.ToString(), kind.ToString())),
+	];
+
+	/// <summary>
+	/// Where a function's behaviour comes from, offered as a menu rather than typed.
+	/// </summary>
+	private static readonly IReadOnlyList<AstFieldChoice> FunctionDefinitions =
+	[
+		.. Enum.GetValues<FunctionDefinition>().Select(definition => new AstFieldChoice(
+			definition.ToString(),
+			definition.ToString().ToLowerInvariant())),
+	];
+
+	/// <summary>
+	/// The kinds of type a declaration can be, offered as a menu rather than typed.
+	/// </summary>
+	private static readonly IReadOnlyList<AstFieldChoice> TypeKinds =
+	[
+		.. Enum.GetValues<TypeDeclarationKind>().Select(kind => new AstFieldChoice(
+			kind.ToString(),
+			kind.ToString().ToLowerInvariant())),
+	];
+
+	/// <summary>
 	/// Lists the properties of a node the inspector can edit.
 	/// </summary>
 	/// <param name="node">The node to inspect.</param>
@@ -107,20 +141,82 @@ public static class AstFields
 
 		return node switch
 		{
+			SourceFile file =>
+			[
+				new("Name", AstFieldKind.Text, file.Name ?? string.Empty),
+				new("Header", AstFieldKind.Flag, Spell(file.IsHeader)),
+			],
+
+			NamespaceDeclaration namespaceDecl =>
+			[
+				new("Name", AstFieldKind.Text, namespaceDecl.Name ?? string.Empty),
+			],
+
+			EnumDeclaration enumDecl =>
+			[
+				new("Name", AstFieldKind.Text, enumDecl.Name ?? string.Empty),
+				new("UnderlyingType", AstFieldKind.Text, enumDecl.UnderlyingType?.ToString() ?? string.Empty),
+				new(VisibilityField, AstFieldKind.Choice, enumDecl.Visibility.ToString(), Visibilities),
+			],
+
+			EnumMember enumMember =>
+			[
+				new("Name", AstFieldKind.Text, enumMember.Name ?? string.Empty),
+				new(ValueField, AstFieldKind.Text, enumMember.Value ?? string.Empty),
+			],
+
+			UsingAlias usingAlias =>
+			[
+				new("Name", AstFieldKind.Text, usingAlias.Name ?? string.Empty),
+				new("AliasedType", AstFieldKind.Text, usingAlias.AliasedType?.ToString() ?? string.Empty),
+				new(VisibilityField, AstFieldKind.Choice, usingAlias.Visibility.ToString(), Visibilities),
+			],
+
+			FieldDeclaration fieldDecl =>
+			[
+				new("Name", AstFieldKind.Text, fieldDecl.Name ?? string.Empty),
+				new("Type", AstFieldKind.Text, fieldDecl.Type?.ToString() ?? string.Empty),
+				new(VisibilityField, AstFieldKind.Choice, fieldDecl.Visibility.ToString(), Visibilities),
+			],
+
 			ClassDeclaration classDecl =>
 			[
 				new("Name", AstFieldKind.Text, classDecl.Name ?? string.Empty),
+				new("Kind", AstFieldKind.Choice, classDecl.Kind.ToString(), TypeKinds),
 				new("BaseType", AstFieldKind.Text, classDecl.BaseType?.ToString() ?? string.Empty),
-				new("Visibility", AstFieldKind.Choice, classDecl.Visibility.ToString(), Visibilities),
+				new(VisibilityField, AstFieldKind.Choice, classDecl.Visibility.ToString(), Visibilities),
 			],
 
+			_ => OfCallable(node),
+		};
+	}
+
+	/// <summary>
+	/// Lists the properties of a function, a parameter or a variable the inspector can edit.
+	/// </summary>
+	/// <param name="node">The node to describe.</param>
+	/// <returns>The fields, in the order the inspector should draw them.</returns>
+	/// <remarks>
+	/// Split from the type declarations only because one switch over every node the AST has is more
+	/// branches than the analyzer accepts.
+	/// </remarks>
+	private static IReadOnlyList<AstField> OfCallable(AstNode node)
+	{
+		return node switch
+		{
 			FunctionDeclaration function =>
 			[
 				new("Name", AstFieldKind.Text, function.Name ?? string.Empty),
 				new("ReturnType", AstFieldKind.Text, function.ReturnType?.ToString() ?? string.Empty),
-				new("Visibility", AstFieldKind.Choice, function.Visibility.ToString(), Visibilities),
+				new(VisibilityField, AstFieldKind.Choice, function.Visibility.ToString(), Visibilities),
 				new("Static", AstFieldKind.Flag, Spell(function.IsStatic)),
 				new("Pure", AstFieldKind.Flag, Spell(function.IsPure)),
+				new("Kind", AstFieldKind.Choice, function.Kind.ToString(), FunctionKinds),
+				new("Definition", AstFieldKind.Choice, function.Definition.ToString(), FunctionDefinitions),
+				new("Virtual", AstFieldKind.Flag, Spell(function.IsVirtual)),
+				new("Abstract", AstFieldKind.Flag, Spell(function.IsAbstract)),
+				new("ReadOnly", AstFieldKind.Flag, Spell(function.IsReadOnly)),
+				new("MustUseResult", AstFieldKind.Flag, Spell(function.MustUseResult)),
 			],
 
 			EntryPoint entryPoint =>
@@ -143,9 +239,26 @@ public static class AstFields
 				new("Type", AstFieldKind.Text, varDecl.Type?.ToString() ?? string.Empty),
 				new("Constant", AstFieldKind.Flag, Spell(varDecl.IsConstant)),
 				new("Inferred", AstFieldKind.Flag, Spell(varDecl.IsTypeInferred)),
-				new("Visibility", AstFieldKind.Choice, varDecl.Visibility.ToString(), Visibilities),
+				new(VisibilityField, AstFieldKind.Choice, varDecl.Visibility.ToString(), Visibilities),
 			],
 
+			_ => OfExpression(node),
+		};
+	}
+
+	/// <summary>
+	/// Lists the properties of an expression or a leaf the inspector can edit.
+	/// </summary>
+	/// <param name="node">The node to describe.</param>
+	/// <returns>The fields, in the order the inspector should draw them.</returns>
+	/// <remarks>
+	/// Split from the declarations only because one switch over every node the AST has is more
+	/// branches than the analyzer accepts. The line is the same one <see cref="TryWrite"/> draws.
+	/// </remarks>
+	private static IReadOnlyList<AstField> OfExpression(AstNode node)
+	{
+		return node switch
+		{
 			VariableReference varRef =>
 			[
 				new("Name", AstFieldKind.Text, varRef.Name),
@@ -166,15 +279,15 @@ public static class AstFields
 				new("Operator", AstFieldKind.Choice, assignment.Operator.ToString(), OperatorChoices<AssignmentOperator>()),
 			],
 
-			LiteralExpression<string> literal => [new("Value", AstFieldKind.Text, literal.Value ?? string.Empty)],
-			LiteralExpression<int> literal => [new("Value", AstFieldKind.Number, Spell(literal.Value))],
-			LiteralExpression<double> literal => [new("Value", AstFieldKind.Fraction, Spell(literal.Value))],
-			LiteralExpression<bool> literal => [new("Value", AstFieldKind.Flag, Spell(literal.Value))],
+			LiteralExpression<string> literal => [new(ValueField, AstFieldKind.Text, literal.Value ?? string.Empty)],
+			LiteralExpression<int> literal => [new(ValueField, AstFieldKind.Number, Spell(literal.Value))],
+			LiteralExpression<double> literal => [new(ValueField, AstFieldKind.Fraction, Spell(literal.Value))],
+			LiteralExpression<bool> literal => [new(ValueField, AstFieldKind.Flag, Spell(literal.Value))],
 
-			AstLeafNode<string> leaf => [new("Value", AstFieldKind.Text, leaf.Value ?? string.Empty)],
-			AstLeafNode<int> leaf => [new("Value", AstFieldKind.Number, Spell(leaf.Value))],
-			AstLeafNode<double> leaf => [new("Value", AstFieldKind.Fraction, Spell(leaf.Value))],
-			AstLeafNode<bool> leaf => [new("Value", AstFieldKind.Flag, Spell(leaf.Value))],
+			AstLeafNode<string> leaf => [new(ValueField, AstFieldKind.Text, leaf.Value ?? string.Empty)],
+			AstLeafNode<int> leaf => [new(ValueField, AstFieldKind.Number, Spell(leaf.Value))],
+			AstLeafNode<double> leaf => [new(ValueField, AstFieldKind.Fraction, Spell(leaf.Value))],
+			AstLeafNode<bool> leaf => [new(ValueField, AstFieldKind.Flag, Spell(leaf.Value))],
 
 			_ => [],
 		};
@@ -216,21 +329,90 @@ public static class AstFields
 			return false;
 		}
 
+		return TryWriteDeclaration(node, fieldName, value) || TryWriteExpression(node, fieldName, value);
+	}
+
+	/// <summary>
+	/// Writes a field of a declaration.
+	/// </summary>
+	/// <param name="node">The node to write to.</param>
+	/// <param name="fieldName">The field to write.</param>
+	/// <param name="value">The value, as text.</param>
+	/// <returns>True if the node was changed.</returns>
+	/// <remarks>
+	/// Split from <see cref="TryWriteExpression"/> only because one switch over every node the AST
+	/// has is more branches than any analyzer will accept. The line between them is the same one the
+	/// AST already draws: something that declares a name, or something that computes a value.
+	/// </remarks>
+	private static bool TryWriteDeclaration(AstNode node, string fieldName, string value)
+	{
 		return (node, fieldName) switch
 		{
+			(SourceFile file, "Name") => Assign(() => file.Name = OrNull(value)),
+			(SourceFile file, "Header") => TryParseBool(value, out bool isHeader) && Assign(() => file.IsHeader = isHeader),
+
+			(NamespaceDeclaration namespaceDecl, "Name") => Assign(() => namespaceDecl.Name = OrNull(value)),
+
+			(EnumDeclaration enumDecl, "Name") => Assign(() => enumDecl.Name = OrNull(value)),
+			(EnumDeclaration enumDecl, "UnderlyingType") => Assign(() => enumDecl.UnderlyingType = OrNull(value)),
+			(EnumDeclaration enumDecl, VisibilityField) =>
+				TryParseVisibility(value, out Visibility enumVisibility) && Assign(() => enumDecl.Visibility = enumVisibility),
+
+			(EnumMember enumMember, "Name") => Assign(() => enumMember.Name = OrNull(value)),
+			(EnumMember enumMember, ValueField) => Assign(() => enumMember.Value = OrNull(value)),
+
+			(UsingAlias usingAlias, "Name") => Assign(() => usingAlias.Name = OrNull(value)),
+			(UsingAlias usingAlias, "AliasedType") => Assign(() => usingAlias.AliasedType = OrNull(value)),
+			(UsingAlias usingAlias, VisibilityField) =>
+				TryParseVisibility(value, out Visibility aliasVisibility) && Assign(() => usingAlias.Visibility = aliasVisibility),
+
+			(FieldDeclaration fieldDecl, "Name") => Assign(() => fieldDecl.Name = OrNull(value)),
+			(FieldDeclaration fieldDecl, "Type") => Assign(() => fieldDecl.Type = OrNull(value)),
+			(FieldDeclaration fieldDecl, VisibilityField) =>
+				TryParseVisibility(value, out Visibility fieldVisibility) && Assign(() => fieldDecl.Visibility = fieldVisibility),
+
 			(ClassDeclaration classDecl, "Name") => Assign(() => classDecl.Name = OrNull(value)),
+			(ClassDeclaration classDecl, "Kind") =>
+				Enum.TryParse(value, out TypeDeclarationKind typeKind) && Assign(() => classDecl.Kind = typeKind),
 			(ClassDeclaration classDecl, "BaseType") => Assign(() => classDecl.BaseType = OrNull(value)),
-			(ClassDeclaration classDecl, "Visibility") =>
+			(ClassDeclaration classDecl, VisibilityField) =>
 				TryParseVisibility(value, out Visibility classVisibility) && Assign(() => classDecl.Visibility = classVisibility),
 
 			(FunctionDeclaration function, "Name") => Assign(() => function.Name = OrNull(value)),
 			(FunctionDeclaration function, "ReturnType") => Assign(() => function.ReturnType = OrNull(value)),
-			(FunctionDeclaration function, "Visibility") =>
+			(FunctionDeclaration function, VisibilityField) =>
 				TryParseVisibility(value, out Visibility functionVisibility) && Assign(() => function.Visibility = functionVisibility),
 			(FunctionDeclaration function, "Static") =>
 				TryParseBool(value, out bool isStatic) && Assign(() => function.IsStatic = isStatic),
 			(FunctionDeclaration function, "Pure") =>
 				TryParseBool(value, out bool isPure) && Assign(() => function.IsPure = isPure),
+			_ => TryWriteFunctionShape(node, fieldName, value),
+		};
+	}
+
+	/// <summary>
+	/// Writes a field describing what a function declares and how.
+	/// </summary>
+	/// <param name="node">The node to write to.</param>
+	/// <param name="fieldName">The field to write.</param>
+	/// <param name="value">The value, as text.</param>
+	/// <returns>True if the node was changed.</returns>
+	private static bool TryWriteFunctionShape(AstNode node, string fieldName, string value)
+	{
+		return (node, fieldName) switch
+		{
+			(FunctionDeclaration function, "Kind") =>
+				Enum.TryParse(value, out FunctionKind kind) && Assign(() => function.Kind = kind),
+			(FunctionDeclaration function, "Definition") =>
+				Enum.TryParse(value, out FunctionDefinition definition) && Assign(() => function.Definition = definition),
+			(FunctionDeclaration function, "Virtual") =>
+				TryParseBool(value, out bool isVirtual) && Assign(() => function.IsVirtual = isVirtual),
+			(FunctionDeclaration function, "Abstract") =>
+				TryParseBool(value, out bool isAbstract) && Assign(() => function.IsAbstract = isAbstract),
+			(FunctionDeclaration function, "ReadOnly") =>
+				TryParseBool(value, out bool isReadOnly) && Assign(() => function.IsReadOnly = isReadOnly),
+			(FunctionDeclaration function, "MustUseResult") =>
+				TryParseBool(value, out bool mustUse) && Assign(() => function.MustUseResult = mustUse),
 
 			(EntryPoint entryPoint, "Arguments") =>
 				TryParseBool(value, out bool acceptsArguments) && Assign(() => entryPoint.AcceptsArguments = acceptsArguments),
@@ -246,9 +428,24 @@ public static class AstFields
 			(VariableDeclaration varDecl, "Type") => Assign(() => varDecl.Type = OrNull(value)),
 			(VariableDeclaration varDecl, "Constant") => TryParseBool(value, out bool constant) && Assign(() => varDecl.IsConstant = constant),
 			(VariableDeclaration varDecl, "Inferred") => TryParseBool(value, out bool inferred) && Assign(() => varDecl.IsTypeInferred = inferred),
-			(VariableDeclaration varDecl, "Visibility") =>
+			(VariableDeclaration varDecl, VisibilityField) =>
 				TryParseVisibility(value, out Visibility varVisibility) && Assign(() => varDecl.Visibility = varVisibility),
 
+			_ => false,
+		};
+	}
+
+	/// <summary>
+	/// Writes a field of an expression or a leaf.
+	/// </summary>
+	/// <param name="node">The node to write to.</param>
+	/// <param name="fieldName">The field to write.</param>
+	/// <param name="value">The value, as text.</param>
+	/// <returns>True if the node was changed.</returns>
+	private static bool TryWriteExpression(AstNode node, string fieldName, string value)
+	{
+		return (node, fieldName) switch
+		{
 			(VariableReference varRef, "Name") => value.Length > 0 && Assign(() => varRef.Name = value),
 
 			(BinaryExpression binary, "Operator") =>
@@ -258,15 +455,15 @@ public static class AstFields
 			(AssignmentStatement assignment, "Operator") =>
 				Enum.TryParse(value, out AssignmentOperator assignOp) && Assign(() => assignment.Operator = assignOp),
 
-			(LiteralExpression<string> literal, "Value") => Assign(() => literal.Value = value),
-			(LiteralExpression<int> literal, "Value") => TryParseInt(value, out int number) && Assign(() => literal.Value = number),
-			(LiteralExpression<double> literal, "Value") => TryParseDouble(value, out double number) && Assign(() => literal.Value = number),
-			(LiteralExpression<bool> literal, "Value") => TryParseBool(value, out bool flag) && Assign(() => literal.Value = flag),
+			(LiteralExpression<string> literal, ValueField) => Assign(() => literal.Value = value),
+			(LiteralExpression<int> literal, ValueField) => TryParseInt(value, out int number) && Assign(() => literal.Value = number),
+			(LiteralExpression<double> literal, ValueField) => TryParseDouble(value, out double number) && Assign(() => literal.Value = number),
+			(LiteralExpression<bool> literal, ValueField) => TryParseBool(value, out bool flag) && Assign(() => literal.Value = flag),
 
-			(AstLeafNode<string> leaf, "Value") => Assign(() => leaf.Value = value),
-			(AstLeafNode<int> leaf, "Value") => TryParseInt(value, out int number) && Assign(() => leaf.Value = number),
-			(AstLeafNode<double> leaf, "Value") => TryParseDouble(value, out double number) && Assign(() => leaf.Value = number),
-			(AstLeafNode<bool> leaf, "Value") => TryParseBool(value, out bool flag) && Assign(() => leaf.Value = flag),
+			(AstLeafNode<string> leaf, ValueField) => Assign(() => leaf.Value = value),
+			(AstLeafNode<int> leaf, ValueField) => TryParseInt(value, out int number) && Assign(() => leaf.Value = number),
+			(AstLeafNode<double> leaf, ValueField) => TryParseDouble(value, out double number) && Assign(() => leaf.Value = number),
+			(AstLeafNode<bool> leaf, ValueField) => TryParseBool(value, out bool flag) && Assign(() => leaf.Value = flag),
 
 			_ => false,
 		};

@@ -76,6 +76,24 @@ public class CSharpGenerator : LanguageGeneratorBase
 			case LiteralExpression<double> doubleLit:
 				code.Write($"{doubleLit.Value.ToString(CultureInfo.InvariantCulture)}d");
 				break;
+			case SourceFile file:
+				GenerateSourceFile(file, code);
+				break;
+			case NamespaceDeclaration namespaceDecl:
+				GenerateNamespace(namespaceDecl, code);
+				break;
+			case UsingAlias usingAlias:
+				GenerateUsingAlias(usingAlias, code);
+				break;
+			case ConstructionExpression construction:
+				GenerateConstruction(construction, code);
+				break;
+			case EnumDeclaration enumDecl:
+				GenerateEnum(enumDecl, code);
+				break;
+			case FieldDeclaration field:
+				GenerateField(field, code);
+				break;
 			case VariableDeclaration varDecl:
 				GenerateVariableDeclaration(varDecl, code);
 				break;
@@ -112,7 +130,16 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// </remarks>
 	private void GenerateClass(ClassDeclaration classDecl, CodeBlocker code)
 	{
-		code.Write($"{SpellVisibility(classDecl.Visibility) ?? "public"} class {classDecl.Name ?? "UnnamedClass"}");
+		GenerateDocumentation(classDecl, code);
+
+		string keyword = classDecl.Kind switch
+		{
+			TypeDeclarationKind.Struct => "struct",
+			TypeDeclarationKind.Interface => "interface",
+			_ => "class",
+		};
+
+		code.Write($"{SpellVisibility(classDecl.Visibility) ?? DefaultVisibility} {keyword} {classDecl.Name ?? "UnnamedClass"}");
 
 		if (classDecl.BaseType is TypeReference baseType)
 		{
@@ -125,8 +152,149 @@ public class CSharpGenerator : LanguageGeneratorBase
 		using Scope members = new(code);
 		foreach (AstNode member in classDecl.Members)
 		{
+			if (member is FunctionDeclaration method)
+			{
+				GenerateFunction(method, code, classDecl.Name);
+			}
+			else
+			{
+				GenerateInternal(member, code);
+			}
+		}
+	}
+
+	/// <inheritdoc/>
+	protected override string? SpellImport(string import) => $"using {import};";
+
+	/// <summary>
+	/// Emits a namespace and its members.
+	/// </summary>
+	/// <param name="namespaceDecl">The declaration to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// Braced rather than file-scoped. A file-scoped namespace has to be the only one in its file and
+	/// cannot contain another, and the AST puts no such restriction on where a namespace may appear —
+	/// so the braced form is the one that is always correct for whatever it is handed.
+	/// </remarks>
+	private void GenerateNamespace(NamespaceDeclaration namespaceDecl, CodeBlocker code)
+	{
+		GenerateDocumentation(namespaceDecl, code);
+
+		code.WriteLine($"namespace {string.Join(".", NamespaceDeclaration.Split(namespaceDecl.Name))}");
+
+		using Scope members = new(code);
+		bool first = true;
+		foreach (AstNode member in namespaceDecl.Members)
+		{
+			if (!first)
+			{
+				code.NewLine();
+			}
+
+			first = false;
 			GenerateInternal(member, code);
 		}
+	}
+
+	/// <summary>
+	/// Emits an alias giving a type a second name.
+	/// </summary>
+	/// <param name="usingAlias">The alias to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// C# has a using alias but only at file or namespace scope, never inside a type. One declared as
+	/// a member is therefore said rather than written, since a generated file that silently drops it
+	/// looks complete and is not.
+	/// </remarks>
+	private void GenerateUsingAlias(UsingAlias usingAlias, CodeBlocker code)
+	{
+		GenerateDocumentation(usingAlias, code);
+		code.WriteLine($"using {usingAlias.Name} = {MapToCSType(usingAlias.AliasedType ?? new TypeReference(UnknownTypeName))};");
+	}
+
+	/// <summary>
+	/// Emits an expression that builds a value.
+	/// </summary>
+	/// <param name="construction">The expression to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	private void GenerateConstruction(ConstructionExpression construction, CodeBlocker code)
+	{
+		code.Write($"new {MapToCSType(construction.Type ?? new TypeReference(UnknownTypeName))}(");
+
+		for (int index = 0; index < construction.Arguments.Count; index++)
+		{
+			if (index > 0)
+			{
+				code.Write(", ");
+			}
+
+			GenerateInternal(construction.Arguments[index], code);
+		}
+
+		code.Write(")");
+	}
+
+	/// <summary>
+	/// Emits an enumeration and its members.
+	/// </summary>
+	/// <param name="enumDecl">The declaration to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// The underlying type is written only when the declaration names one, because C#'s default is
+	/// <c>int</c> and saying so adds nothing. A member with no value of its own is left unnumbered,
+	/// which is how C# spells "take it from the position" and keeps the declaration readable.
+	/// </remarks>
+	private void GenerateEnum(EnumDeclaration enumDecl, CodeBlocker code)
+	{
+		GenerateDocumentation(enumDecl, code);
+
+		code.Write($"{SpellVisibility(enumDecl.Visibility) ?? DefaultVisibility} enum {enumDecl.Name ?? "UnnamedEnum"}");
+
+		if (enumDecl.UnderlyingType is TypeReference underlying)
+		{
+			code.Write($" : {MapToCSType(underlying)}");
+		}
+
+		code.WriteLine();
+
+		using Scope members = new(code);
+		foreach (EnumMember member in enumDecl.Members)
+		{
+			code.Write(member.Name ?? "Unnamed");
+
+			if (member.Value is not null)
+			{
+				code.Write($" = {member.Value}");
+			}
+
+			code.WriteLine(",");
+		}
+	}
+
+	/// <summary>
+	/// Emits a field of a type.
+	/// </summary>
+	/// <param name="field">The declaration to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// Public unless the declaration says otherwise, matching what every other declaration here does
+	/// with an unset visibility. C#'s own default for a field is private, which is not what someone
+	/// who wrote no modifier on a generated type meant.
+	/// </remarks>
+	private void GenerateField(FieldDeclaration field, CodeBlocker code)
+	{
+		GenerateDocumentation(field, code);
+
+		code.Write($"{SpellVisibility(field.Visibility) ?? DefaultVisibility} ");
+		code.Write($"{MapToCSType(field.Type ?? new TypeReference(UnknownTypeName))} {field.Name}");
+
+		if (field.InitialValue is not null)
+		{
+			code.Write(" = ");
+			GenerateInternal(field.InitialValue, code);
+		}
+
+		EndStatement(code);
 	}
 
 	/// <summary>
@@ -139,25 +307,44 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// hang a <c>using</c> on: a generated file is a fragment, and a short name in it would be one
 	/// the reader has to arrange for.
 	/// </remarks>
-	private void GenerateFunction(FunctionDeclaration function, CodeBlocker code)
+	private void GenerateFunction(FunctionDeclaration function, CodeBlocker code) =>
+		GenerateFunction(function, code, null);
+
+	/// <summary>
+	/// Emits a function, which may be a member of a type.
+	/// </summary>
+	/// <param name="function">The declaration to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <param name="enclosingType">The name of the type it belongs to, when it belongs to one.</param>
+	/// <remarks>
+	/// C# expresses a defaulted or deleted member by not declaring it: the compiler supplies the one
+	/// and the absence of the other is what makes a call fail to compile. So neither is emitted, and
+	/// a note says which member went and why — a generated file that silently drops one looks
+	/// complete and is not.
+	/// <para>
+	/// A defaulted constructor is the exception, because a type that declares any other constructor
+	/// stops getting one for free. It is written with an empty body, which is exactly what
+	/// <c>= default</c> means there.
+	/// </para>
+	/// </remarks>
+	private void GenerateFunction(FunctionDeclaration function, CodeBlocker code, string? enclosingType)
 	{
-		if (function.IsPure)
+		GenerateDocumentation(function, code);
+
+		if (function.Definition != FunctionDefinition.Provided
+			&& !(function.Kind == FunctionKind.Constructor && function.Definition == FunctionDefinition.Defaulted))
 		{
-			code.WriteLine("[System.Diagnostics.Contracts.Pure]");
+			string state = function.Definition == FunctionDefinition.Defaulted ? "supplied by the language" : "deleted";
+			WriteInexpressible(code, $"{SpellFunctionName(function, enclosingType)} is {state}, which C# expresses by not declaring it.");
+			return;
 		}
 
-		// Build method signature. A function nobody has given a visibility to is public: an
-		// inaccessible method is not what someone who wrote no modifier meant.
-		code.Write($"{SpellVisibility(function.Visibility) ?? "public"} ");
+		WriteFunctionAttributes(function, code);
+		WriteFunctionModifiers(function, code);
 
-		if (function.IsStatic)
-		{
-			code.Write("static ");
-		}
+		code.Write(SpellFunctionName(function, enclosingType));
+		code.Write("(");
 
-		code.Write($"{MapToCSType(function.ReturnType ?? new TypeReference("void"))} {function.Name}(");
-
-		// Add parameters
 		for (int i = 0; i < function.Parameters.Count; i++)
 		{
 			if (i > 0)
@@ -168,26 +355,150 @@ public class CSharpGenerator : LanguageGeneratorBase
 			GenerateParameter(function.Parameters[i], code);
 		}
 
-		// The line is ended before the scope opens, so C#'s brace lands on its own line.
-		code.WriteLine(")");
+		code.Write(")");
 
-		// Add body
+		if (function.IsAbstract)
+		{
+			code.WriteLine(";");
+			return;
+		}
+
+		// The line is ended before the scope opens, so C#'s brace lands on its own line.
+		code.WriteLine();
+
 		using Scope body = new(code);
+
+		// C# assigns where C++ initialises. Written before the body's own statements and in the order
+		// declared, which is what the initialiser means where there is no initialiser list.
+		foreach (MemberInitialiser initialiser in function.Initialisers)
+		{
+			code.Write($"this.{initialiser.Name} = ");
+
+			if (initialiser.Value is not null)
+			{
+				GenerateInternal(initialiser.Value, code);
+			}
+
+			EndStatement(code);
+		}
+
 		foreach (AstNode statement in function.Body)
 		{
 			GenerateInternal(statement, code);
 		}
 	}
 
+	/// <summary>
+	/// Writes the attributes a declaration earns.
+	/// </summary>
+	/// <param name="function">The declaration being emitted.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// Purity already says the result must be used, so a declaration carrying both gets the one
+	/// attribute that says the stronger thing rather than two saying overlapping ones.
+	/// </remarks>
+	private static void WriteFunctionAttributes(FunctionDeclaration function, CodeBlocker code)
+	{
+		if (function.IsPure)
+		{
+			code.WriteLine("[System.Diagnostics.Contracts.Pure]");
+			return;
+		}
+
+		if (function.MustUseResult)
+		{
+			code.WriteLine("[System.Diagnostics.CodeAnalysis.SuppressMessage(\"Usage\", \"CA1806\", Justification = \"The result must be used.\")]");
+		}
+	}
+
+	/// <summary>
+	/// Writes the modifiers in front of a declaration, up to and including its return type.
+	/// </summary>
+	/// <param name="function">The declaration being emitted.</param>
+	/// <param name="code">The writer to emit into.</param>
+	private static void WriteFunctionModifiers(FunctionDeclaration function, CodeBlocker code)
+	{
+		// A function nobody has given a visibility to is public: an inaccessible method is not what
+		// someone who wrote no modifier meant.
+		code.Write($"{SpellVisibility(function.Visibility) ?? DefaultVisibility} ");
+
+		if (function.IsStatic || function.Kind is FunctionKind.Operator or FunctionKind.ConversionOperator)
+		{
+			// A C# operator is always static, whether or not the declaration thought to say so.
+			code.Write("static ");
+		}
+
+		if (function.IsAbstract)
+		{
+			code.Write("abstract ");
+		}
+		else if (function.IsVirtual)
+		{
+			code.Write("virtual ");
+		}
+
+		if (function.IsReadOnly)
+		{
+			code.Write("readonly ");
+		}
+
+		// A constructor, a destructor and a conversion operator have no return type to write.
+		if (function.Kind is FunctionKind.Method or FunctionKind.Operator)
+		{
+			code.Write($"{MapToCSType(function.ReturnType ?? new TypeReference("void"))} ");
+		}
+	}
+
+	/// <summary>
+	/// Spells the name a declaration is written under.
+	/// </summary>
+	/// <param name="function">The declaration being emitted.</param>
+	/// <param name="enclosingType">The name of the type it belongs to, when it belongs to one.</param>
+	/// <returns>The name as C# writes it.</returns>
+	private static string SpellFunctionName(FunctionDeclaration function, string? enclosingType)
+	{
+		string typeName = enclosingType ?? function.Name ?? "UnnamedType";
+
+		return function.Kind switch
+		{
+			FunctionKind.Constructor => typeName,
+			FunctionKind.Destructor => $"~{typeName}",
+			FunctionKind.Operator => $"operator {function.Name}",
+			FunctionKind.ConversionOperator =>
+				$"{(function.IsExplicit ? "explicit" : "implicit")} operator {MapToCSType(function.ReturnType ?? new TypeReference(UnknownTypeName))}",
+			_ => function.Name ?? "UnnamedFunction",
+		};
+	}
+
 	private static void GenerateParameter(Parameter parameter, CodeBlocker code)
 	{
-		code.Write($"{MapToCSType(parameter.Type ?? new TypeReference("object"))} {parameter.Name}");
+		code.Write($"{MapToCSType(parameter.Type ?? new TypeReference(UnknownTypeName))} {parameter.Name}");
 
 		if (parameter.IsOptional && !string.IsNullOrEmpty(parameter.DefaultValue))
 		{
 			code.Write($" = {parameter.DefaultValue}");
 		}
 	}
+
+	/// <summary>
+	/// What a declaration nobody gave a visibility to gets.
+	/// </summary>
+	/// <remarks>
+	/// C#'s own default is private for a member and internal for a type. Neither is what someone who
+	/// wrote no modifier on a generated declaration meant: an inaccessible one is not a declaration
+	/// anybody asked for.
+	/// </remarks>
+	private const string DefaultVisibility = "public";
+
+	/// <summary>
+	/// What a declaration that never said what type it is gets.
+	/// </summary>
+	/// <remarks>
+	/// A type is optional on every node that carries one, because a half-built AST is a thing the
+	/// editor has to be able to hold. Emitting the most general type there keeps the output compiling
+	/// while making it obvious which declaration was never finished.
+	/// </remarks>
+	private const string UnknownTypeName = "object";
 
 	private static readonly Dictionary<string, string> TypeMappings = new()
 	{

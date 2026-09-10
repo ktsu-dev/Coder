@@ -7,7 +7,7 @@ using System.Collections.ObjectModel;
 /// <summary>
 /// Represents a function declaration in the abstract syntax tree.
 /// </summary>
-public class FunctionDeclaration : AstCompositeNode, IHasVisibility
+public class FunctionDeclaration : AstCompositeNode, IHasVisibility, IHasDocumentation
 {
 	/// <summary>
 	/// Initializes a new instance of the <see cref="FunctionDeclaration"/> class.
@@ -65,6 +65,104 @@ public class FunctionDeclaration : AstCompositeNode, IHasVisibility
 	public bool IsPure { get; set; }
 
 	/// <summary>
+	/// Gets or sets what this declares.
+	/// </summary>
+	public FunctionKind Kind { get; set; }
+
+	/// <summary>
+	/// Gets or sets where the behaviour comes from.
+	/// </summary>
+	/// <remarks>
+	/// Named apart from <see cref="Body"/>, which holds the statements: this says whether those
+	/// statements are the behaviour at all.
+	/// </remarks>
+	public FunctionDefinition Definition { get; set; }
+
+	/// <summary>
+	/// Gets or sets a value indicating whether a derived type may replace this.
+	/// </summary>
+	public bool IsVirtual { get; set; }
+
+	/// <summary>
+	/// Gets or sets a value indicating whether this has no implementation of its own and a derived
+	/// type must supply one.
+	/// </summary>
+	/// <remarks>
+	/// C++ spells this <c>= 0</c> and calls it pure virtual, which is a different thing from
+	/// <see cref="IsPure"/> — one says a declaration has no definition, the other says a call has no
+	/// effect. An abstract declaration is virtual whether or not <see cref="IsVirtual"/> says so,
+	/// since there is nothing else it could be.
+	/// </remarks>
+	public bool IsAbstract { get; set; }
+
+	/// <summary>
+	/// Gets or sets a value indicating whether calling this leaves the receiver unchanged.
+	/// </summary>
+	/// <remarks>
+	/// C++ spells this as a trailing <c>const</c> and C# as <c>readonly</c> on a member of a struct.
+	/// Weaker than <see cref="IsPure"/>, which says a call has no effect at all rather than no effect
+	/// on the one object.
+	/// </remarks>
+	public bool IsReadOnly { get; set; }
+
+	/// <summary>
+	/// Gets or sets a value indicating whether ignoring the result is a mistake.
+	/// </summary>
+	/// <remarks>
+	/// C++ spells this <c>[[nodiscard]]</c>, which is also what <see cref="IsPure"/> earns — purity
+	/// implies it, since a call that does nothing else and whose result is thrown away did nothing at
+	/// all. This says it for a call that does something too: one returning a result that may be a
+	/// failure has to be looked at.
+	/// </remarks>
+	public bool MustUseResult { get; set; }
+
+	/// <summary>
+	/// Gets or sets a value indicating whether the conversion this declares must be asked for.
+	/// </summary>
+	/// <remarks>
+	/// On a constructor or a conversion operator. C++ spells it <c>explicit</c> and C# spells the
+	/// conversion <c>explicit operator</c> rather than <c>implicit operator</c>. It is how a type that
+	/// shims another says a value never crosses into it by accident.
+	/// </remarks>
+	public bool IsExplicit { get; set; }
+
+	/// <summary>
+	/// Gets or sets a value indicating whether a call can be evaluated while compiling.
+	/// </summary>
+	/// <remarks>
+	/// C++ spells this <c>constexpr</c>. No other target here can say it of a function, so no other
+	/// writes anything: the call still runs, just not before the program does.
+	/// </remarks>
+	public bool IsCompileTimeEvaluable { get; set; }
+
+	/// <summary>
+	/// Gets or sets a value indicating whether a call cannot fail.
+	/// </summary>
+	/// <remarks>
+	/// C++ spells this <c>noexcept</c>. Where a schema says fallibility by returning a result rather
+	/// than by throwing, this is what the rest of the declarations get to say about themselves.
+	/// </remarks>
+	public bool IsNoThrow { get; set; }
+
+	/// <summary>
+	/// Gets or sets a value indicating whether this is declared inside a type but is not a member of
+	/// it.
+	/// </summary>
+	/// <remarks>
+	/// C++ spells this <c>friend</c>, and it is how a symmetric operator is written beside the type it
+	/// is about rather than as a member of one of its operands. Nothing else here has it.
+	/// </remarks>
+	public bool IsFriend { get; set; }
+
+	/// <summary>
+	/// Gets what the type's members start at, as part of constructing it.
+	/// </summary>
+	public Collection<MemberInitialiser> Initialisers { get; init; } = [];
+
+	/// <inheritdoc/>
+	public Collection<string> Documentation { get; init; } = [];
+
+	/// <summary>
 	/// Gets or sets a list of parameters for the function.
 	/// </summary>
 	public Collection<Parameter> Parameters { get; init; } = [];
@@ -91,14 +189,34 @@ public class FunctionDeclaration : AstCompositeNode, IHasVisibility
 			Name = Name,
 			ReturnType = ReturnType?.Clone(),
 			Visibility = Visibility,
+			Kind = Kind,
+			Definition = Definition,
 			IsStatic = IsStatic,
-			IsPure = IsPure
+			IsPure = IsPure,
+			IsVirtual = IsVirtual,
+			IsAbstract = IsAbstract,
+			IsReadOnly = IsReadOnly,
+			MustUseResult = MustUseResult,
+			IsExplicit = IsExplicit,
+			IsCompileTimeEvaluable = IsCompileTimeEvaluable,
+			IsNoThrow = IsNoThrow,
+			IsFriend = IsFriend
 		};
 
 		// Copy metadata
 		foreach ((string key, object? value) in Metadata)
 		{
 			clone.Metadata[key] = value;
+		}
+
+		foreach (string line in Documentation)
+		{
+			clone.Documentation.Add(line);
+		}
+
+		foreach (MemberInitialiser initialiser in Initialisers)
+		{
+			clone.Initialisers.Add((MemberInitialiser)initialiser.Clone());
 		}
 
 		// Clone parameters

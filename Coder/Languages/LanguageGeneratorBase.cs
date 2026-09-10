@@ -152,6 +152,137 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	protected virtual string FormatBoolean(bool value) => value ? "true" : "false";
 
 	/// <summary>
+	/// Gets what a documentation comment starts with in this language.
+	/// </summary>
+	/// <remarks>
+	/// C-family languages that have a documentation comment write <c>///</c>; one that does not, or a
+	/// language whose documentation is a construct rather than a comment, overrides this with its own
+	/// ordinary comment marker. Writing an ordinary comment is the honest fallback: the lines still
+	/// reach the reader, and nothing pretends to be a docstring that is not one.
+	/// </remarks>
+	protected virtual string DocumentationPrefix => "///";
+
+	/// <summary>
+	/// Writes a note where the language has no way to say what a declaration asked for.
+	/// </summary>
+	/// <param name="code">The writer to emit into.</param>
+	/// <param name="what">What was asked for, in the reader's terms.</param>
+	/// <remarks>
+	/// A generated file that silently drops a member is worse than one that says which member and
+	/// why: the first looks complete and is not, and there is nothing in it to search for.
+	/// </remarks>
+	protected void WriteInexpressible(CodeBlocker code, string what)
+	{
+		Ensure.NotNull(code);
+		code.WriteLine($"{CommentPrefix} {what}");
+	}
+
+	/// <summary>
+	/// Gets what an ordinary comment starts with in this language.
+	/// </summary>
+	protected virtual string CommentPrefix => "//";
+
+	/// <summary>
+	/// Spells one of a file's imports, or reports that the language has nothing to write for it.
+	/// </summary>
+	/// <param name="import">The import as the file carries it.</param>
+	/// <returns>The line to write, or null when the language has no import statement.</returns>
+	protected virtual string? SpellImport(string import) => null;
+
+	/// <summary>
+	/// Emits whatever a file needs before its imports.
+	/// </summary>
+	/// <param name="file">The file being emitted.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <returns>True if anything was written.</returns>
+	/// <remarks>
+	/// Empty for every language but C++, which is the only one here where a file can be included
+	/// twice and has to say what that means.
+	/// </remarks>
+	protected virtual bool WriteFileDirectives(SourceFile file, CodeBlocker code) => false;
+
+	/// <summary>
+	/// Emits a whole source file: its banner, what it depends on, and what it declares.
+	/// </summary>
+	/// <param name="file">The file to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	protected void GenerateSourceFile(SourceFile file, CodeBlocker code)
+	{
+		Ensure.NotNull(file);
+		Ensure.NotNull(code);
+
+		bool wroteAnything = false;
+
+		foreach (string line in file.HeaderComment)
+		{
+			code.WriteLine(line.Length == 0 ? CommentPrefix : $"{CommentPrefix} {line}");
+			wroteAnything = true;
+		}
+
+		if (wroteAnything)
+		{
+			code.NewLine();
+		}
+
+		if (WriteFileDirectives(file, code))
+		{
+			code.NewLine();
+		}
+
+		bool wroteImport = false;
+		foreach (string import in file.Imports)
+		{
+			// An empty import is a group separator rather than an import of nothing.
+			if (import.Length == 0)
+			{
+				code.NewLine();
+				continue;
+			}
+
+			if (SpellImport(import) is string spelled)
+			{
+				code.WriteLine(spelled);
+				wroteImport = true;
+			}
+		}
+
+		if (wroteImport)
+		{
+			code.NewLine();
+		}
+
+		bool first = true;
+		foreach (AstNode member in file.Members)
+		{
+			if (!first)
+			{
+				code.NewLine();
+			}
+
+			first = false;
+			GenerateInternal(member, code);
+		}
+	}
+
+	/// <summary>
+	/// Emits a declaration's documentation, one comment per line.
+	/// </summary>
+	/// <param name="node">The declaration whose documentation to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	protected void GenerateDocumentation(IHasDocumentation node, CodeBlocker code)
+	{
+		Ensure.NotNull(node);
+		Ensure.NotNull(code);
+
+		foreach (string line in node.Documentation)
+		{
+			// A blank line is written as a bare marker rather than one with a trailing space, which
+			// every formatter and most reviewers would strip anyway.
+			code.WriteLine(line.Length == 0 ? DocumentationPrefix : $"{DocumentationPrefix} {line}");
+		}
+	}
+
+	/// <summary>
 	/// Ends a statement with the terminator and line break the language uses.
 	/// </summary>
 	/// <param name="code">The writer to emit into.</param>
@@ -263,7 +394,15 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	{
 		// No null check: a type pattern never matches null.
 		return astNode is FunctionDeclaration
+			or UsingAlias
+			or MemberInitialiser
+			or ConstructionExpression
+			or SourceFile
+			or NamespaceDeclaration
 			or ClassDeclaration
+			or EnumDeclaration
+			or EnumMember
+			or FieldDeclaration
 			or EntryPoint
 			or Parameter
 			or ReturnStatement
