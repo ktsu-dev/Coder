@@ -110,14 +110,14 @@ public static class AstFields
 			ClassDeclaration classDecl =>
 			[
 				new("Name", AstFieldKind.Text, classDecl.Name ?? string.Empty),
-				new("BaseType", AstFieldKind.Text, classDecl.BaseType ?? string.Empty),
+				new("BaseType", AstFieldKind.Text, classDecl.BaseType?.ToString() ?? string.Empty),
 				new("Visibility", AstFieldKind.Choice, classDecl.Visibility.ToString(), Visibilities),
 			],
 
 			FunctionDeclaration function =>
 			[
 				new("Name", AstFieldKind.Text, function.Name ?? string.Empty),
-				new("ReturnType", AstFieldKind.Text, function.ReturnType ?? string.Empty),
+				new("ReturnType", AstFieldKind.Text, function.ReturnType?.ToString() ?? string.Empty),
 				new("Visibility", AstFieldKind.Choice, function.Visibility.ToString(), Visibilities),
 			],
 
@@ -130,7 +130,7 @@ public static class AstFields
 			Parameter parameter =>
 			[
 				new("Name", AstFieldKind.Text, parameter.Name ?? string.Empty),
-				new("Type", AstFieldKind.Text, parameter.Type ?? string.Empty),
+				new("Type", AstFieldKind.Text, parameter.Type?.ToString() ?? string.Empty),
 				new("Optional", AstFieldKind.Flag, Spell(parameter.IsOptional)),
 				new("Default", AstFieldKind.Text, parameter.DefaultValue ?? string.Empty),
 			],
@@ -138,7 +138,7 @@ public static class AstFields
 			VariableDeclaration varDecl =>
 			[
 				new("Name", AstFieldKind.Text, varDecl.Name),
-				new("Type", AstFieldKind.Text, varDecl.Type ?? string.Empty),
+				new("Type", AstFieldKind.Text, varDecl.Type?.ToString() ?? string.Empty),
 				new("Constant", AstFieldKind.Flag, Spell(varDecl.IsConstant)),
 				new("Inferred", AstFieldKind.Flag, Spell(varDecl.IsTypeInferred)),
 				new("Visibility", AstFieldKind.Choice, varDecl.Visibility.ToString(), Visibilities),

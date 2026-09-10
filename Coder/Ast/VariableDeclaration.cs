@@ -17,7 +17,7 @@ public class VariableDeclaration : AstNode, IHasVisibility
 	/// Gets or sets the declared type of the variable.
 	/// Can be null for type-inferred declarations.
 	/// </summary>
-	public string? Type { get; set; }
+	public TypeReference? Type { get; set; }
 
 	/// <summary>
 	/// Gets or sets the initial value expression.
@@ -82,7 +82,7 @@ public class VariableDeclaration : AstNode, IHasVisibility
 		VariableDeclaration clone = new()
 		{
 			Name = Name,
-			Type = Type,
+			Type = Type?.Clone(),
 			InitialValue = (Expression?)InitialValue?.DeepClone(),
 			IsConstant = IsConstant,
 			IsTypeInferred = IsTypeInferred,
@@ -104,7 +104,7 @@ public class VariableDeclaration : AstNode, IHasVisibility
 	/// <returns>String representation.</returns>
 	public override string ToString()
 	{
-		string typeInfo = IsTypeInferred ? "var" : Type ?? "?";
+		string typeInfo = IsTypeInferred ? "var" : Type?.ToString() ?? "?";
 		string valueInfo = InitialValue != null ? $" = {InitialValue}" : "";
 		string modifiers = Visibility != Visibility.Unspecified ? $"{Visibility.ToString().ToLowerInvariant()} " : "";
 		modifiers += IsConstant ? "const " : "";

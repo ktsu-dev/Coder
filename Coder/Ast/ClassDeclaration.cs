@@ -39,7 +39,7 @@ public class ClassDeclaration : AstCompositeNode, IHasVisibility
 	/// <summary>
 	/// Gets or sets the type this class derives from, or null when it derives from nothing.
 	/// </summary>
-	public string? BaseType { get; set; }
+	public TypeReference? BaseType { get; set; }
 
 	/// <summary>
 	/// Gets or sets how widely the class is visible.
@@ -66,7 +66,7 @@ public class ClassDeclaration : AstCompositeNode, IHasVisibility
 		ClassDeclaration clone = new()
 		{
 			Name = Name,
-			BaseType = BaseType,
+			BaseType = BaseType?.Clone(),
 			Visibility = Visibility
 		};
 

@@ -30,7 +30,7 @@ public class FunctionDeclaration : AstCompositeNode, IHasVisibility
 	/// <summary>
 	/// Gets or sets the return type of the function.
 	/// </summary>
-	public string? ReturnType { get; set; }
+	public TypeReference? ReturnType { get; set; }
 
 	/// <summary>
 	/// Gets or sets how widely the function is visible.
@@ -62,7 +62,7 @@ public class FunctionDeclaration : AstCompositeNode, IHasVisibility
 		FunctionDeclaration clone = new()
 		{
 			Name = Name,
-			ReturnType = ReturnType,
+			ReturnType = ReturnType?.Clone(),
 			Visibility = Visibility
 		};
 

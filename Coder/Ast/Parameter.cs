@@ -39,7 +39,7 @@ public class Parameter : AstNode
 	/// <summary>
 	/// Gets or sets the type of the parameter.
 	/// </summary>
-	public string? Type { get; set; }
+	public TypeReference? Type { get; set; }
 
 	/// <summary>
 	/// Gets or sets a value indicating whether the parameter is optional.
@@ -66,7 +66,7 @@ public class Parameter : AstNode
 		Parameter clone = new()
 		{
 			Name = Name,
-			Type = Type,
+			Type = Type?.Clone(),
 			IsOptional = IsOptional,
 			DefaultValue = DefaultValue
 		};

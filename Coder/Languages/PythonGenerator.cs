@@ -102,9 +102,9 @@ public class PythonGenerator : StandardLanguageGenerator
 
 		code.Write($"class {classDecl.Name ?? "UnnamedClass"}");
 
-		if (!string.IsNullOrEmpty(classDecl.BaseType))
+		if (classDecl.BaseType is TypeReference baseType)
 		{
-			code.Write($"({classDecl.BaseType})");
+			code.Write($"({PythonTypeFromGenericType(baseType)})");
 		}
 
 		code.WriteLine(":");
@@ -253,9 +253,19 @@ public class PythonGenerator : StandardLanguageGenerator
 		AppendDefaultValue(parameter, code);
 	}
 
-	private static string PythonTypeFromGenericType(string genericType)
+	/// <summary>
+	/// Spells a type in Python.
+	/// </summary>
+	/// <param name="type">The type to spell.</param>
+	/// <returns>The Python source for it.</returns>
+	/// <remarks>
+	/// Python parameterises a type with brackets rather than angle brackets, which is only spellable
+	/// now that the arguments are a list rather than part of a name. Read-only-ness and indirection
+	/// have no spelling in Python at all, so neither is emitted.
+	/// </remarks>
+	private static string PythonTypeFromGenericType(TypeReference type)
 	{
-		return genericType.ToLowerInvariant() switch
+		string name = type.Name.ToLowerInvariant() switch
 		{
 			"int" => "int",
 			"string" => "str",
@@ -263,8 +273,12 @@ public class PythonGenerator : StandardLanguageGenerator
 			"float" => "float",
 			"double" => "float",
 			"void" => "None",
-			_ => genericType
+			_ => type.Name
 		};
+
+		return type.TypeArguments.Count == 0
+			? name
+			: $"{name}[{string.Join(", ", type.TypeArguments.Select(PythonTypeFromGenericType))}]";
 	}
 
 	/// <inheritdoc/>

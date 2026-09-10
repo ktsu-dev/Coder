@@ -150,7 +150,7 @@ public class YamlSerializer
 
 		if (funcDecl.ReturnType != null)
 		{
-			nodeData["returnType"] = funcDecl.ReturnType;
+			nodeData["returnType"] = funcDecl.ReturnType.ToString();
 		}
 
 		SerializeVisibility(funcDecl, nodeData);
@@ -212,7 +212,7 @@ public class YamlSerializer
 
 		if (classDecl.BaseType != null)
 		{
-			nodeData["baseType"] = classDecl.BaseType;
+			nodeData["baseType"] = classDecl.BaseType.ToString();
 		}
 
 		SerializeVisibility(classDecl, nodeData);
@@ -259,7 +259,7 @@ public class YamlSerializer
 
 		if (param.Type != null)
 		{
-			nodeData["type"] = param.Type;
+			nodeData["type"] = param.Type.ToString();
 		}
 
 		if (param.IsOptional)
@@ -357,7 +357,7 @@ public class YamlSerializer
 
 		if (varDecl.Type != null)
 		{
-			nodeData["type"] = varDecl.Type;
+			nodeData["type"] = varDecl.Type.ToString();
 		}
 
 		if (varDecl.InitialValue != null)
