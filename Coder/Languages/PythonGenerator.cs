@@ -102,9 +102,9 @@ public class PythonGenerator : StandardLanguageGenerator
 
 		code.Write($"class {classDecl.Name ?? "UnnamedClass"}");
 
-		if (!string.IsNullOrEmpty(classDecl.BaseType))
+		if (classDecl.BaseType is TypeReference baseType)
 		{
-			code.Write($"({classDecl.BaseType})");
+			code.Write($"({PythonTypeFromGenericType(baseType)})");
 		}
 
 		code.WriteLine(":");
@@ -144,15 +144,36 @@ public class PythonGenerator : StandardLanguageGenerator
 	/// <c>self</c> is Python's spelling of the receiver a method is called on. It is not carried in
 	/// the AST — no other target language has it — so it is supplied here rather than being something
 	/// the user has to remember to add as a parameter and then remove for every other language.
+	/// <para>
+	/// A static method is the one case where that receiver is not supplied, because
+	/// <c>@staticmethod</c> is what says there is none. Every other language spells <c>static</c>
+	/// alongside the signature; Python spells it by changing the signature.
+	/// </para>
 	/// </remarks>
 	private void GenerateMethod(FunctionDeclaration method, CodeBlocker code)
 	{
-		code.Write($"def {method.Name ?? "unnamed_method"}(self");
-
-		foreach (Parameter parameter in method.Parameters)
+		if (method.IsStatic)
 		{
-			code.Write(", ");
-			GenerateParameter(parameter, code, method.Parameters.IndexOf(parameter));
+			code.WriteLine("@staticmethod");
+		}
+
+		code.Write($"def {method.Name ?? "unnamed_method"}(");
+
+		bool needsSeparator = !method.IsStatic;
+		if (needsSeparator)
+		{
+			code.Write("self");
+		}
+
+		for (int index = 0; index < method.Parameters.Count; index++)
+		{
+			if (needsSeparator)
+			{
+				code.Write(", ");
+			}
+
+			GenerateParameter(method.Parameters[index], code, index);
+			needsSeparator = true;
 		}
 
 		code.Write(")");
@@ -253,9 +274,19 @@ public class PythonGenerator : StandardLanguageGenerator
 		AppendDefaultValue(parameter, code);
 	}
 
-	private static string PythonTypeFromGenericType(string genericType)
+	/// <summary>
+	/// Spells a type in Python.
+	/// </summary>
+	/// <param name="type">The type to spell.</param>
+	/// <returns>The Python source for it.</returns>
+	/// <remarks>
+	/// Python parameterises a type with brackets rather than angle brackets, which is only spellable
+	/// now that the arguments are a list rather than part of a name. Read-only-ness and indirection
+	/// have no spelling in Python at all, so neither is emitted.
+	/// </remarks>
+	private static string PythonTypeFromGenericType(TypeReference type)
 	{
-		return genericType.ToLowerInvariant() switch
+		string name = type.Name.ToLowerInvariant() switch
 		{
 			"int" => "int",
 			"string" => "str",
@@ -263,8 +294,12 @@ public class PythonGenerator : StandardLanguageGenerator
 			"float" => "float",
 			"double" => "float",
 			"void" => "None",
-			_ => genericType
+			_ => type.Name
 		};
+
+		return type.TypeArguments.Count == 0
+			? name
+			: $"{name}[{string.Join(", ", type.TypeArguments.Select(PythonTypeFromGenericType))}]";
 	}
 
 	/// <inheritdoc/>

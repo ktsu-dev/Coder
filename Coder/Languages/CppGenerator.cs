@@ -4,6 +4,7 @@ namespace ktsu.Coder.Languages;
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using ktsu.Coder.Ast;
 using ktsu.CodeBlocker;
 
@@ -30,8 +31,8 @@ public class CppGenerator : StandardLanguageGenerator
 		{ "float", "float" },
 		{ "double", "double" },
 		{ "bool", "bool" },
-		{ "list", "std::vector<std::any>" },
-		{ "dict", "std::map<std::string, std::any>" },
+		{ "list", "std::vector" },
+		{ "dict", "std::map" },
 		{ "void", "void" },
 		{ "object", "std::any" }
 	};
@@ -52,12 +53,28 @@ public class CppGenerator : StandardLanguageGenerator
 	public override string FileExtension => "cpp";
 
 	/// <inheritdoc/>
+	/// <remarks>
+	/// A pure function is written <c>[[nodiscard]]</c>: discarding the result of a call that does
+	/// nothing else is always a mistake, and that is the whole of what the standard can say. The
+	/// compiler-specific <c>__attribute__((pure))</c> asserts to the optimiser that the call may be
+	/// elided or duplicated, which is a stronger promise than the AST is in a position to make.
+	/// </remarks>
 	protected override void GenerateFunctionDeclaration(FunctionDeclaration funcDecl, CodeBlocker code)
 	{
 		Ensure.NotNull(funcDecl);
 		Ensure.NotNull(code);
 
-		code.Write($"{MapToCppType(funcDecl.ReturnType ?? "void")} {funcDecl.Name ?? "unnamedFunction"}(");
+		if (funcDecl.IsPure)
+		{
+			code.Write("[[nodiscard]] ");
+		}
+
+		if (funcDecl.IsStatic)
+		{
+			code.Write("static ");
+		}
+
+		code.Write($"{MapToCppType(funcDecl.ReturnType ?? new TypeReference("void"))} {funcDecl.Name ?? "unnamedFunction"}(");
 		GenerateParameterList(funcDecl.Parameters, code);
 
 		// The line is ended before the scope opens, so C++'s brace lands on its own line.
@@ -88,9 +105,9 @@ public class CppGenerator : StandardLanguageGenerator
 
 		code.Write($"class {classDecl.Name ?? "UnnamedClass"}");
 
-		if (!string.IsNullOrEmpty(classDecl.BaseType))
+		if (classDecl.BaseType is TypeReference baseType)
 		{
-			code.Write($" : public {MapToCppType(classDecl.BaseType!)}");
+			code.Write($" : public {MapToCppType(baseType)}");
 		}
 
 		code.WriteLine();
@@ -200,7 +217,7 @@ public class CppGenerator : StandardLanguageGenerator
 		Ensure.NotNull(parameter);
 		Ensure.NotNull(code);
 
-		code.Write($"{MapToCppType(parameter.Type ?? "object")} {parameter.Name ?? $"param{position}"}");
+		code.Write($"{MapToCppType(parameter.Type ?? new TypeReference("object"))} {parameter.Name ?? $"param{position}"}");
 		AppendDefaultValue(parameter, code);
 	}
 
@@ -237,14 +254,66 @@ public class CppGenerator : StandardLanguageGenerator
 	/// </remarks>
 	private static string GetDeclaredType(VariableDeclaration varDecl)
 	{
-		if (!varDecl.IsTypeInferred && !string.IsNullOrEmpty(varDecl.Type))
+		if (!varDecl.IsTypeInferred && varDecl.Type is TypeReference declared)
 		{
-			return MapToCppType(varDecl.Type!);
+			return MapToCppType(declared);
 		}
 
 		return varDecl.InitialValue is not null ? "auto" : "std::any";
 	}
 
-	private static string MapToCppType(string type) =>
-		TypeMappings.TryGetValue(type, out string? mapped) ? mapped : type;
+	/// <summary>
+	/// What a container named without arguments is a container of.
+	/// </summary>
+	/// <remarks>
+	/// <c>list</c> comes from languages that do not say what is in one, and C++ insists. These are
+	/// keyed by the name as written rather than by the mapped one, because that is what the schema
+	/// said. A <c>list&lt;int&gt;</c> is a <c>std::vector&lt;int&gt;</c> and never reaches here.
+	/// </remarks>
+	private static readonly Dictionary<string, string> DefaultTypeArguments = new(StringComparer.OrdinalIgnoreCase)
+	{
+		{ "list", "<std::any>" },
+		{ "dict", "<std::string, std::any>" }
+	};
+
+	/// <summary>
+	/// Spells a type in C++.
+	/// </summary>
+	/// <param name="type">The type to spell.</param>
+	/// <returns>The C++ source for it.</returns>
+	/// <remarks>
+	/// Only the name is mapped; the shape around it — arguments, <c>const</c>, <c>&amp;</c> and
+	/// <c>*</c> — is C++'s own spelling of what the type says, which is what the string form could
+	/// not express.
+	/// </remarks>
+	private static string MapToCppType(TypeReference type)
+	{
+		string name = TypeMappings.TryGetValue(type.Name, out string? mapped) ? mapped : type.Name;
+
+		string arguments = SpellTypeArguments(type);
+
+		string indirection = type.Indirection switch
+		{
+			TypeIndirection.Reference => "&",
+			TypeIndirection.Pointer => "*",
+			_ => string.Empty,
+		};
+
+		return $"{(type.IsReadOnly ? "const " : string.Empty)}{name}{arguments}{indirection}";
+	}
+
+	/// <summary>
+	/// Spells a type's argument list, supplying the one a bare container does not name.
+	/// </summary>
+	/// <param name="type">The type whose arguments to spell.</param>
+	/// <returns>The angle-bracketed list, or nothing when the type takes no arguments.</returns>
+	private static string SpellTypeArguments(TypeReference type)
+	{
+		if (type.TypeArguments.Count > 0)
+		{
+			return $"<{string.Join(", ", type.TypeArguments.Select(MapToCppType))}>";
+		}
+
+		return DefaultTypeArguments.TryGetValue(type.Name, out string? fallback) ? fallback : string.Empty;
+	}
 }

@@ -4,6 +4,7 @@ namespace ktsu.Coder.Languages;
 
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using ktsu.Coder.Ast;
 using ktsu.CodeBlocker;
 
@@ -113,9 +114,9 @@ public class CSharpGenerator : LanguageGeneratorBase
 	{
 		code.Write($"{SpellVisibility(classDecl.Visibility) ?? "public"} class {classDecl.Name ?? "UnnamedClass"}");
 
-		if (!string.IsNullOrEmpty(classDecl.BaseType))
+		if (classDecl.BaseType is TypeReference baseType)
 		{
-			code.Write($" : {MapToCSType(classDecl.BaseType!)}");
+			code.Write($" : {MapToCSType(baseType)}");
 		}
 
 		// The line is ended before the scope opens, so C#'s brace lands on its own line.
@@ -128,11 +129,33 @@ public class CSharpGenerator : LanguageGeneratorBase
 		}
 	}
 
+	/// <summary>
+	/// Emits a function.
+	/// </summary>
+	/// <param name="function">The function to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// A pure function carries <c>[Pure]</c>, written out in full because the AST has no import to
+	/// hang a <c>using</c> on: a generated file is a fragment, and a short name in it would be one
+	/// the reader has to arrange for.
+	/// </remarks>
 	private void GenerateFunction(FunctionDeclaration function, CodeBlocker code)
 	{
+		if (function.IsPure)
+		{
+			code.WriteLine("[System.Diagnostics.Contracts.Pure]");
+		}
+
 		// Build method signature. A function nobody has given a visibility to is public: an
 		// inaccessible method is not what someone who wrote no modifier meant.
-		code.Write($"{SpellVisibility(function.Visibility) ?? "public"} {MapToCSType(function.ReturnType ?? "void")} {function.Name}(");
+		code.Write($"{SpellVisibility(function.Visibility) ?? "public"} ");
+
+		if (function.IsStatic)
+		{
+			code.Write("static ");
+		}
+
+		code.Write($"{MapToCSType(function.ReturnType ?? new TypeReference("void"))} {function.Name}(");
 
 		// Add parameters
 		for (int i = 0; i < function.Parameters.Count; i++)
@@ -158,7 +181,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 
 	private static void GenerateParameter(Parameter parameter, CodeBlocker code)
 	{
-		code.Write($"{MapToCSType(parameter.Type ?? "object")} {parameter.Name}");
+		code.Write($"{MapToCSType(parameter.Type ?? new TypeReference("object"))} {parameter.Name}");
 
 		if (parameter.IsOptional && !string.IsNullOrEmpty(parameter.DefaultValue))
 		{
@@ -173,20 +196,71 @@ public class CSharpGenerator : LanguageGeneratorBase
 		{ "float", "float" },
 		{ "double", "double" },
 		{ "bool", "bool" },
-		{ "list", "List<object>" },
-		{ "dict", "Dictionary<string, object>" },
+		{ "list", "List" },
+		{ "dict", "Dictionary" },
 		{ "void", "void" }
 	};
 
-	private static string MapToCSType(string pythonType) =>
-		TypeMappings.TryGetValue(pythonType, out string? mapped)
-			? mapped
-			: string.Equals(pythonType, "void", StringComparison.OrdinalIgnoreCase) ? "void" : pythonType;
+	/// <summary>
+	/// What a container named without arguments is a container of.
+	/// </summary>
+	/// <remarks>
+	/// Keyed by the name as written rather than by the mapped one, because that is what the schema
+	/// said. A <c>list&lt;int&gt;</c> is a <c>List&lt;int&gt;</c> and never reaches here.
+	/// </remarks>
+	private static readonly Dictionary<string, string> DefaultTypeArguments = new(StringComparer.OrdinalIgnoreCase)
+	{
+		{ "list", "<object>" },
+		{ "dict", "<string, object>" }
+	};
+
+	/// <summary>
+	/// Spells a type in C#.
+	/// </summary>
+	/// <param name="type">The type to spell.</param>
+	/// <returns>The C# source for it.</returns>
+	/// <remarks>
+	/// C# has no <c>const</c> on a type and no pointer outside unsafe code, so
+	/// <see cref="TypeReference.IsReadOnly"/> and <see cref="TypeReference.Indirection"/> have no
+	/// spelling here. Read-only-ness of an argument is <c>in</c>, which belongs on the parameter
+	/// rather than on the type, and is not something the AST can say yet.
+	/// </remarks>
+	private static string MapToCSType(TypeReference type)
+	{
+		string name = MapTypeName(type.Name);
+
+		if (type.TypeArguments.Count > 0)
+		{
+			return $"{name}<{string.Join(", ", type.TypeArguments.Select(MapToCSType))}>";
+		}
+
+		return DefaultTypeArguments.TryGetValue(type.Name, out string? fallback) ? $"{name}{fallback}" : name;
+	}
+
+	/// <summary>
+	/// Spells a type's name in C#, leaving any arguments to the caller.
+	/// </summary>
+	/// <param name="name">The name as the AST holds it.</param>
+	/// <returns>The C# name.</returns>
+	/// <remarks>
+	/// <c>void</c> is matched case-insensitively where the rest of the table is not, because it is
+	/// the one name a caller reaches for without knowing which language's casing the AST was written
+	/// in — a return type left unset is spelled <c>void</c> by the generator itself.
+	/// </remarks>
+	private static string MapTypeName(string name)
+	{
+		if (TypeMappings.TryGetValue(name, out string? mapped))
+		{
+			return mapped;
+		}
+
+		return string.Equals(name, "void", StringComparison.OrdinalIgnoreCase) ? "void" : name;
+	}
 
 	private void GenerateVariableDeclaration(VariableDeclaration varDecl, CodeBlocker code)
 	{
 		// Use type or var for type inference
-		string type = varDecl.IsTypeInferred || string.IsNullOrEmpty(varDecl.Type)
+		string type = varDecl.IsTypeInferred || varDecl.Type is null
 			? "var"
 			: MapToCSType(varDecl.Type);
 

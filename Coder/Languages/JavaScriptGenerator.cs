@@ -69,9 +69,9 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 
 		code.Write($"class {classDecl.Name ?? "UnnamedClass"}");
 
-		if (!string.IsNullOrEmpty(classDecl.BaseType))
+		if (classDecl.BaseType is TypeReference baseType)
 		{
-			code.Write($" extends {classDecl.BaseType}");
+			code.Write($" extends {baseType.Name}");
 		}
 
 		// The line is left open, so the scope's brace lands on it: JavaScript braces hang.
@@ -132,6 +132,11 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	/// <param name="code">The writer to emit into.</param>
 	private void GenerateMethod(FunctionDeclaration method, CodeBlocker code)
 	{
+		if (method.IsStatic)
+		{
+			code.Write("static ");
+		}
+
 		code.Write($"{MemberName(method.Name ?? "unnamedMethod", method.Visibility)}(");
 		GenerateParameterList(method.Parameters, code);
 		code.Write(") ");

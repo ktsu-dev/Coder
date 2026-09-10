@@ -46,7 +46,11 @@ source in four target languages. The solution uses:
   keyed child dictionary; `Expression` marks the nodes that evaluate to a value. `Visibility` is an
   enumeration rather than the modifier's text, because each generator spells it differently — or,
   in Python's case, not at all — and `IHasVisibility` is how a generator reads it off a member
-  without switching on which kind of member it is.
+  without switching on which kind of member it is. `TypeReference` is structure rather than the
+  type's text for the same reason, and a stronger one: a generator handed `std::span<const Velocity>`
+  as a string can only paste it, so the caller would have to spell the target language itself.
+  `Parse` and `ToString` are inverses and text the grammar cannot read becomes a name holding it
+  verbatim, so a property that used to hold a string still takes and gives one.
 - `Coder/Languages/LanguageGeneratorBase.cs` — the emitters every generator shares.
 - `Coder/Languages/StandardLanguageGenerator.cs` — owns the node dispatch, so a derived
   generator supplies only the syntax its language does not share. `CSharpGenerator` deliberately

@@ -30,12 +30,39 @@ public class FunctionDeclaration : AstCompositeNode, IHasVisibility
 	/// <summary>
 	/// Gets or sets the return type of the function.
 	/// </summary>
-	public string? ReturnType { get; set; }
+	public TypeReference? ReturnType { get; set; }
 
 	/// <summary>
 	/// Gets or sets how widely the function is visible.
 	/// </summary>
 	public Visibility Visibility { get; set; }
+
+	/// <summary>
+	/// Gets or sets a value indicating whether the function is called without a receiver.
+	/// </summary>
+	/// <remarks>
+	/// C++ and C# spell this <c>static</c>, JavaScript spells it <c>static</c> on a class member and
+	/// nothing at module scope, and Python spells it <c>@staticmethod</c> — which also decides whether
+	/// the method takes <c>self</c>, so this is the one modifier that changes a signature rather than
+	/// only decorating it.
+	/// </remarks>
+	public bool IsStatic { get; set; }
+
+	/// <summary>
+	/// Gets or sets a value indicating whether the function's result depends only on its arguments
+	/// and calling it changes nothing.
+	/// </summary>
+	/// <remarks>
+	/// Not to be confused with C++'s <em>pure virtual</em>, which means a declaration has no
+	/// definition. That is a different property and the AST does not model it yet.
+	/// <para>
+	/// Only two languages can say anything: C++ gets <c>[[nodiscard]]</c> and C# gets
+	/// <c>[Pure]</c>. Both are the same observation — discarding the result of a call that does
+	/// nothing else is always a mistake — rather than a promise to the optimiser, which is what
+	/// <c>__attribute__((pure))</c> would be and which the AST is in no position to make.
+	/// </para>
+	/// </remarks>
+	public bool IsPure { get; set; }
 
 	/// <summary>
 	/// Gets or sets a list of parameters for the function.
@@ -62,8 +89,10 @@ public class FunctionDeclaration : AstCompositeNode, IHasVisibility
 		FunctionDeclaration clone = new()
 		{
 			Name = Name,
-			ReturnType = ReturnType,
-			Visibility = Visibility
+			ReturnType = ReturnType?.Clone(),
+			Visibility = Visibility,
+			IsStatic = IsStatic,
+			IsPure = IsPure
 		};
 
 		// Copy metadata
