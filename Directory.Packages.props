@@ -10,15 +10,15 @@
     <PackageVersion Include="ktsu.Essentials.FileSystemProviders.Native" Version="2.3.2" />
     <PackageVersion Include="ktsu.Essentials.PersistenceProviders.ConfigHome" Version="2.3.2" />
     <PackageVersion Include="ktsu.Essentials.SerializationProviders.Yaml" Version="2.3.2" />
-    <PackageVersion Include="ktsu.ImGui.App" Version="3.31.0" />
+    <PackageVersion Include="ktsu.ImGui.App" Version="3.32.0" />
     <PackageVersion Include="ktsu.UndoRedo.Core" Version="1.0.19" />
-    <PackageVersion Include="ktsu.ImGui.App.Testing" Version="3.31.0" />
-    <PackageVersion Include="ktsu.ImGui.SyntaxHighlighting" Version="3.31.0" />
-    <PackageVersion Include="ktsu.ImGui.Probes" Version="3.31.0" />
-    <PackageVersion Include="ktsu.ImGui.Widgets" Version="3.31.0" />
+    <PackageVersion Include="ktsu.ImGui.App.Testing" Version="3.32.0" />
+    <PackageVersion Include="ktsu.ImGui.SyntaxHighlighting" Version="3.32.0" />
+    <PackageVersion Include="ktsu.ImGui.Probes" Version="3.32.0" />
+    <PackageVersion Include="ktsu.ImGui.Widgets" Version="3.32.0" />
     <PackageVersion Include="Silk.NET.Windowing.Common" Version="2.23.0" />
-    <PackageVersion Include="ktsu.ImGui.NodeEditor" Version="3.31.0" />
-    <PackageVersion Include="ktsu.ForceDirectedLayout" Version="3.31.0" />
+    <PackageVersion Include="ktsu.ImGui.NodeEditor" Version="3.32.0" />
+    <PackageVersion Include="ktsu.ForceDirectedLayout" Version="3.32.0" />
     <PackageVersion Include="ktsu.CodeBlocker" Version="2.0.4" />
     <PackageVersion Include="ktsu.DeepClone" Version="2.0.2" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.11" />
