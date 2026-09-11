@@ -67,7 +67,19 @@ source in four target languages. The solution uses:
   shims another needs. A member is *initialised* rather than assigned, which is the only way to start
   one that cannot be assigned at all; a language without an initialiser list assigns at the top of
   the constructor instead. `ConstructionExpression` is the one expression that needs a type rather
-  than a name, which is why it could not exist before `TypeReference` did.
+  than a name, which is why it could not exist before `TypeReference` did. It is also what a braced
+  list is: with no type it is the list alone, which is what initialises a declaration that has
+  already said its type, and a `MemberInitialiser` among its arguments is an element that names the
+  member it is for — a designated initialiser in C++, an object initialiser in C#, a keyword
+  argument in Python, an object literal in JavaScript. A list whose own elements are lists is a
+  table and is written one per line; a list of plain values stays on one.
+- `Coder/Ast/TypeReference.cs`'s `IsArray` and `Coder/Ast/FieldDeclaration.cs`'s `IsStatic` and
+  `IsConstant` — what a generated constant table needs beyond a type and a name. `IsArray` says only
+  that it is an array, with no bound, because where the brackets go is the generator's business and
+  C++ is the one language here that puts them on the declarator rather than the type.
+  `IsConstant` is the intent rather than the keyword: C++ writes `inline constexpr` at namespace
+  scope and `static constexpr` inside a type, C# writes `static readonly`, and a language with no
+  spelling for it omits it the way it omits an indirection.
 - `Coder/Ast/CompileTimeAssertion.cs` — what a generated type promises that the type itself cannot
   say. Its `Condition` is text for the same reason `SourceFile.Imports` are: a compile-time predicate
   is language-specific in a way most of the AST is not, and there is no shared idea underneath

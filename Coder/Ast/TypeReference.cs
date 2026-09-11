@@ -73,6 +73,19 @@ public sealed class TypeReference : IEquatable<TypeReference>
 	public TypeIndirection Indirection { get; set; }
 
 	/// <summary>
+	/// Gets or sets a value indicating whether this is an array of the type rather than one of it.
+	/// </summary>
+	/// <remarks>
+	/// A bound is deliberately not modelled. What a generated table needs is an array whose length
+	/// is its initialiser's, which every language writes by leaving the bound out; a fixed bound is
+	/// a different thing that would have to be an expression rather than a number, and nothing asks
+	/// for it yet. Where the brackets go is the generator's business - C++ puts them after the name
+	/// being declared and C# after the type - which is exactly the kind of difference this class
+	/// exists to absorb.
+	/// </remarks>
+	public bool IsArray { get; set; }
+
+	/// <summary>
 	/// Reads a type from its text form.
 	/// </summary>
 	/// <param name="text">The text to read.</param>
@@ -82,7 +95,8 @@ public sealed class TypeReference : IEquatable<TypeReference>
 	/// </returns>
 	/// <remarks>
 	/// The grammar is deliberately small: an optional <c>const</c> or <c>readonly</c>, a name, an
-	/// optional angle-bracketed argument list, and any number of <c>&amp;</c> or <c>*</c> suffixes.
+	/// optional angle-bracketed argument list, an optional <c>[]</c>, and any number of
+	/// <c>&amp;</c> or <c>*</c> suffixes.
 	/// It exists to read what the string-shaped properties already hold, not to parse a language.
 	/// </remarks>
 	public static TypeReference Parse(string text)
@@ -149,6 +163,11 @@ public sealed class TypeReference : IEquatable<TypeReference>
 			text.Append('>');
 		}
 
+		if (IsArray)
+		{
+			text.Append("[]");
+		}
+
 		return text.Append(Indirection switch
 		{
 			TypeIndirection.Reference => "&",
@@ -168,6 +187,7 @@ public sealed class TypeReference : IEquatable<TypeReference>
 			Name = Name,
 			IsReadOnly = IsReadOnly,
 			Indirection = Indirection,
+			IsArray = IsArray,
 		};
 
 		foreach (TypeReference argument in TypeArguments)
@@ -194,6 +214,7 @@ public sealed class TypeReference : IEquatable<TypeReference>
 		return string.Equals(Name, other.Name, StringComparison.Ordinal)
 			&& IsReadOnly == other.IsReadOnly
 			&& Indirection == other.Indirection
+			&& IsArray == other.IsArray
 			&& TypeArguments.SequenceEqual(other.TypeArguments);
 	}
 
@@ -207,6 +228,7 @@ public sealed class TypeReference : IEquatable<TypeReference>
 		hash.Add(Name, StringComparer.Ordinal);
 		hash.Add(IsReadOnly);
 		hash.Add(Indirection);
+		hash.Add(IsArray);
 		foreach (TypeReference argument in TypeArguments)
 		{
 			hash.Add(argument);
@@ -252,6 +274,13 @@ public sealed class TypeReference : IEquatable<TypeReference>
 		if (position < text.Length && text[position] == '<' && !TryReadArguments(text, ref position, type))
 		{
 			return null;
+		}
+
+		SkipWhitespace(text, ref position);
+		if (position + 1 < text.Length && text[position] == '[' && text[position + 1] == ']')
+		{
+			type.IsArray = true;
+			position += 2;
 		}
 
 		SkipWhitespace(text, ref position);
@@ -354,7 +383,7 @@ public sealed class TypeReference : IEquatable<TypeReference>
 	/// <param name="character">The character to test.</param>
 	/// <returns><see langword="true"/> when the character ends a name.</returns>
 	private static bool IsPunctuation(char character) =>
-		character is '<' or '>' or ',' or '&' or '*';
+		character is '<' or '>' or ',' or '&' or '*' or '[' or ']';
 
 	/// <summary>
 	/// Advances past any whitespace.
