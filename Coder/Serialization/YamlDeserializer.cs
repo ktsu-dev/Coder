@@ -674,12 +674,15 @@ public partial class YamlDeserializer
 			return;
 		}
 
-		foreach (object argument in argumentList)
+		// A null or empty entry is not an argument. Filtering before the loop rather than inside it
+		// so that what the loop takes is what the loop does.
+		IEnumerable<string> written = argumentList
+			.Select(argument => argument?.ToString() ?? string.Empty)
+			.Where(text => text.Length > 0);
+
+		foreach (string text in written)
 		{
-			if (argument?.ToString() is string text && text.Length > 0)
-			{
-				classDecl.SpecialisationArguments.Add(TypeReference.Parse(text));
-			}
+			classDecl.SpecialisationArguments.Add(TypeReference.Parse(text));
 		}
 	}
 
