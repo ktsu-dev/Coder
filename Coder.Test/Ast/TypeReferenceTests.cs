@@ -44,6 +44,53 @@ public class TypeReferenceTests
 	}
 
 	/// <summary>
+	/// An array is the type with <c>[]</c> after it, and it round-trips like everything else the
+	/// grammar reads.
+	/// </summary>
+	/// <remarks>
+	/// Before this, <c>int[]</c> parsed as a name holding that text verbatim — lossless, and useless
+	/// to a generator that has to decide where its own language puts the brackets.
+	/// </remarks>
+	[TestMethod]
+	public void Parse_ReadsAnArray()
+	{
+		TypeReference type = TypeReference.Parse("int[]");
+
+		Assert.AreEqual("int", type.Name);
+		Assert.IsTrue(type.IsArray);
+		Assert.AreEqual("int[]", type.ToString());
+	}
+
+	/// <summary>
+	/// An array of a parameterised type reads both parts, and the brackets go outside the arguments
+	/// where a reader expects them.
+	/// </summary>
+	[TestMethod]
+	public void Parse_ReadsAnArrayOfAParameterisedType()
+	{
+		TypeReference type = TypeReference.Parse("std::span<const Velocity>[]");
+
+		Assert.AreEqual("std::span", type.Name);
+		Assert.IsTrue(type.IsArray);
+		Assert.HasCount(1, type.TypeArguments);
+		Assert.AreEqual("std::span<const Velocity>[]", type.ToString());
+	}
+
+	/// <summary>
+	/// Being an array is part of what a type is, so two types that differ only in it are different
+	/// types. A set keyed on one would otherwise treat them as the same.
+	/// </summary>
+	[TestMethod]
+	public void AnArrayIsNotEqualToItsElementType()
+	{
+		TypeReference element = new("int");
+		TypeReference array = new("int") { IsArray = true };
+
+		Assert.AreNotEqual(element, array);
+		Assert.IsTrue(array.Clone().IsArray);
+	}
+
+	/// <summary>
 	/// The argument list is a list, which is the whole difference from a string.
 	/// </summary>
 	[TestMethod]

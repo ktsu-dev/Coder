@@ -111,12 +111,33 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	}
 
 	/// <inheritdoc/>
+	/// <remarks>
+	/// JavaScript has nothing that names the member an argument is for, so arguments that do become
+	/// an object literal — passed to the constructor when a type is named, on their own when one is
+	/// not. That is the options-object convention rather than a translation of the C++ form, and it
+	/// is the only shape in this language where the names survive at all.
+	/// </remarks>
 	protected override void GenerateConstructionExpression(ConstructionExpression construction, CodeBlocker code)
 	{
 		Ensure.NotNull(construction);
 		Ensure.NotNull(code);
 
-		code.Write($"new {construction.Type?.Name ?? "Object"}(");
+		bool named = construction.Arguments.Any(argument => argument is MemberInitialiser);
+
+		if (construction.Type is null)
+		{
+			WriteLiteral(construction, code, named);
+			return;
+		}
+
+		code.Write($"new {construction.Type.Name}(");
+
+		if (named)
+		{
+			WriteLiteral(construction, code, true);
+			code.Write(")");
+			return;
+		}
 
 		for (int index = 0; index < construction.Arguments.Count; index++)
 		{
@@ -129,6 +150,36 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		}
 
 		code.Write(")");
+	}
+
+	/// <summary>
+	/// Writes a construction's arguments as an object or array literal.
+	/// </summary>
+	/// <param name="construction">The expression whose arguments to write.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <param name="named">Whether the arguments name the members they are for.</param>
+	private void WriteLiteral(ConstructionExpression construction, CodeBlocker code, bool named)
+	{
+		code.Write(named ? "{ " : "[");
+
+		for (int index = 0; index < construction.Arguments.Count; index++)
+		{
+			if (index > 0)
+			{
+				code.Write(", ");
+			}
+
+			if (construction.Arguments[index] is MemberInitialiser member)
+			{
+				code.Write($"{member.Name}: ");
+				GenerateInternal(member.Value ?? new VariableReference(string.Empty), code);
+				continue;
+			}
+
+			GenerateInternal(construction.Arguments[index], code);
+		}
+
+		code.Write(named ? " }" : "]");
 	}
 
 	/// <inheritdoc/>

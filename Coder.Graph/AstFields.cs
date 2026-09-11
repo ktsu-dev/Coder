@@ -183,6 +183,8 @@ public static class AstFields
 				new("Name", AstFieldKind.Text, fieldDecl.Name ?? string.Empty),
 				new("Type", AstFieldKind.Text, fieldDecl.Type?.ToString() ?? string.Empty),
 				new(VisibilityField, AstFieldKind.Choice, fieldDecl.Visibility.ToString(), Visibilities),
+				new("Static", AstFieldKind.Flag, Spell(fieldDecl.IsStatic)),
+				new("Constant", AstFieldKind.Flag, Spell(fieldDecl.IsConstant)),
 			],
 
 			ClassDeclaration classDecl =>
@@ -379,6 +381,10 @@ public static class AstFields
 			(FieldDeclaration fieldDecl, "Type") => Assign(() => fieldDecl.Type = OrNull(value)),
 			(FieldDeclaration fieldDecl, VisibilityField) =>
 				TryParseVisibility(value, out Visibility fieldVisibility) && Assign(() => fieldDecl.Visibility = fieldVisibility),
+			(FieldDeclaration fieldDecl, "Static") =>
+				TryParseBool(value, out bool fieldIsStatic) && Assign(() => fieldDecl.IsStatic = fieldIsStatic),
+			(FieldDeclaration fieldDecl, "Constant") =>
+				TryParseBool(value, out bool fieldIsConstant) && Assign(() => fieldDecl.IsConstant = fieldIsConstant),
 
 			(ClassDeclaration classDecl, "Name") => Assign(() => classDecl.Name = OrNull(value)),
 			(ClassDeclaration classDecl, "Kind") =>

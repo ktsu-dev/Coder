@@ -416,6 +416,16 @@ public class YamlSerializer
 			nodeData["type"] = field.Type.ToString();
 		}
 
+		if (field.IsStatic)
+		{
+			nodeData["isStatic"] = field.IsStatic;
+		}
+
+		if (field.IsConstant)
+		{
+			nodeData["isConstant"] = field.IsConstant;
+		}
+
 		SerializeVisibility(field, nodeData);
 		SerializeDocumentation(field, nodeData);
 

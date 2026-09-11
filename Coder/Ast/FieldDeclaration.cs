@@ -58,6 +58,27 @@ public class FieldDeclaration : AstNode, IHasVisibility, IHasDocumentation
 	/// </summary>
 	public Visibility Visibility { get; set; }
 
+	/// <summary>
+	/// Gets or sets a value indicating whether the field belongs to the type rather than to an
+	/// instance of it.
+	/// </summary>
+	public bool IsStatic { get; set; }
+
+	/// <summary>
+	/// Gets or sets a value indicating whether the field's value is fixed and known where it is
+	/// written.
+	/// </summary>
+	/// <remarks>
+	/// The intent rather than the keyword, because no two of these languages spell it the same way
+	/// and one of them spells it differently depending on where the field sits: C++ writes
+	/// <c>inline constexpr</c> at namespace scope and <c>static constexpr</c> inside a class, since
+	/// only the first of those has to say out loud that one definition is meant. C# writes
+	/// <c>static readonly</c>, which is legal for every type where <c>const</c> is legal for a
+	/// handful. A constant field is static whether or not <see cref="IsStatic"/> says so - there is
+	/// no per-instance copy of a value fixed at compile time.
+	/// </remarks>
+	public bool IsConstant { get; set; }
+
 	/// <inheritdoc/>
 	public Collection<string> Documentation { get; init; } = [];
 
@@ -79,6 +100,8 @@ public class FieldDeclaration : AstNode, IHasVisibility, IHasDocumentation
 			Type = Type?.Clone(),
 			InitialValue = (Expression?)InitialValue?.DeepClone(),
 			Visibility = Visibility,
+			IsStatic = IsStatic,
+			IsConstant = IsConstant,
 		};
 
 		foreach ((string key, object? value) in Metadata)

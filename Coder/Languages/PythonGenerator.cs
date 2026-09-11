@@ -94,14 +94,57 @@ public class PythonGenerator : StandardLanguageGenerator
 	}
 
 	/// <inheritdoc/>
+	/// <remarks>
+	/// An argument that names the member it is for becomes a keyword argument, which is what Python
+	/// has in place of a designated initialiser and reads the same way. A construction with no type
+	/// is a literal rather than a call: a dictionary when its arguments are named, a list when they
+	/// are not, which is what a language with no aggregate type to name uses instead.
+	/// </remarks>
 	protected override void GenerateConstructionExpression(ConstructionExpression construction, CodeBlocker code)
 	{
 		Ensure.NotNull(construction);
 		Ensure.NotNull(code);
 
-		code.Write($"{PythonTypeFromGenericType(construction.Type ?? new TypeReference("object"))}(");
+		if (construction.Type is null)
+		{
+			WriteLiteral(construction, code);
+			return;
+		}
+
+		code.Write($"{PythonTypeFromGenericType(construction.Type)}(");
 		WriteArguments(construction, code);
 		code.Write(")");
+	}
+
+	/// <summary>
+	/// Writes a typeless construction as the literal Python builds that value with.
+	/// </summary>
+	/// <param name="construction">The expression whose arguments to write.</param>
+	/// <param name="code">The writer to emit into.</param>
+	private void WriteLiteral(ConstructionExpression construction, CodeBlocker code)
+	{
+		bool named = construction.Arguments.Any(argument => argument is MemberInitialiser);
+
+		code.Write(named ? "{" : "[");
+
+		for (int index = 0; index < construction.Arguments.Count; index++)
+		{
+			if (index > 0)
+			{
+				code.Write(", ");
+			}
+
+			if (construction.Arguments[index] is MemberInitialiser member)
+			{
+				code.Write($"\"{member.Name}\": ");
+				GenerateInternal(member.Value ?? new VariableReference(string.Empty), code);
+				continue;
+			}
+
+			GenerateInternal(construction.Arguments[index], code);
+		}
+
+		code.Write(named ? "}" : "]");
 	}
 
 	/// <summary>
@@ -116,6 +159,13 @@ public class PythonGenerator : StandardLanguageGenerator
 			if (index > 0)
 			{
 				code.Write(", ");
+			}
+
+			if (construction.Arguments[index] is MemberInitialiser member)
+			{
+				code.Write($"{member.Name}=");
+				GenerateInternal(member.Value ?? new VariableReference(string.Empty), code);
+				continue;
 			}
 
 			GenerateInternal(construction.Arguments[index], code);
@@ -509,9 +559,13 @@ public class PythonGenerator : StandardLanguageGenerator
 			_ => type.Name
 		};
 
-		return type.TypeArguments.Count == 0
+		string spelled = type.TypeArguments.Count == 0
 			? name
 			: $"{name}[{string.Join(", ", type.TypeArguments.Select(PythonTypeFromGenericType))}]";
+
+		// Python spells an array as a list of the element type, since the bracketed form after a
+		// name is a subscript rather than a declarator here.
+		return type.IsArray ? $"list[{spelled}]" : spelled;
 	}
 
 	/// <inheritdoc/>

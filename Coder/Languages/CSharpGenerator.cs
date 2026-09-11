@@ -239,9 +239,34 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// </summary>
 	/// <param name="construction">The expression to emit.</param>
 	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// Three shapes, decided by what the expression holds rather than by a flag. Arguments that name
+	/// the member they are for become an object initialiser — <c>new T { Name = value }</c> — which
+	/// is what C# has in place of a designated initialiser, and it is written in the order given
+	/// because C# does not care about declaration order the way C++ does. A construction with no
+	/// type at all is the braced list on its own, which C# accepts where the declaration has
+	/// already named an array type. Everything else is a constructor call.
+	/// </remarks>
 	private void GenerateConstruction(ConstructionExpression construction, CodeBlocker code)
 	{
-		code.Write($"new {MapToCSType(construction.Type ?? new TypeReference(UnknownTypeName))}(");
+		bool designated = construction.Arguments.Any(argument => argument is MemberInitialiser);
+
+		if (construction.Type is null)
+		{
+			WriteBracedList(construction, code);
+			return;
+		}
+
+		code.Write($"new {MapToCSType(construction.Type)}");
+
+		if (designated)
+		{
+			code.Write(" ");
+			WriteBracedList(construction, code);
+			return;
+		}
+
+		code.Write("(");
 
 		for (int index = 0; index < construction.Arguments.Count; index++)
 		{
@@ -254,6 +279,75 @@ public class CSharpGenerator : LanguageGeneratorBase
 		}
 
 		code.Write(")");
+	}
+
+	/// <summary>
+	/// Emits a construction's arguments as a braced list.
+	/// </summary>
+	/// <param name="construction">The expression whose arguments to write.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// A list whose elements are themselves lists is a table, and a table on one line is a diff
+	/// nobody can read, so it goes one element per line with a trailing comma. A list of plain
+	/// values is a value and stays where it is.
+	/// </remarks>
+	private void WriteBracedList(ConstructionExpression construction, CodeBlocker code)
+	{
+		if (construction.Arguments.Count == 0)
+		{
+			code.Write("{ }");
+			return;
+		}
+
+		bool stacked = construction.Arguments.Any(argument =>
+			argument is ConstructionExpression or MemberInitialiser { Value: ConstructionExpression });
+
+		if (stacked)
+		{
+			code.WriteLine("{");
+			code.Indent();
+
+			foreach (AstNode argument in construction.Arguments)
+			{
+				WriteListElement(argument, code);
+				code.WriteLine(",");
+			}
+
+			code.Outdent();
+			code.Write("}");
+			return;
+		}
+
+		code.Write("{ ");
+
+		for (int index = 0; index < construction.Arguments.Count; index++)
+		{
+			if (index > 0)
+			{
+				code.Write(", ");
+			}
+
+			WriteListElement(construction.Arguments[index], code);
+		}
+
+		code.Write(" }");
+	}
+
+	/// <summary>
+	/// Emits one element of a braced list, which may name the member it is for.
+	/// </summary>
+	/// <param name="argument">The element to write.</param>
+	/// <param name="code">The writer to emit into.</param>
+	private void WriteListElement(AstNode argument, CodeBlocker code)
+	{
+		if (argument is MemberInitialiser designated)
+		{
+			code.Write($"{designated.Name} = ");
+			GenerateInternal(designated.Value ?? new VariableReference(string.Empty), code);
+			return;
+		}
+
+		GenerateInternal(argument, code);
 	}
 
 	/// <summary>
@@ -308,6 +402,19 @@ public class CSharpGenerator : LanguageGeneratorBase
 		GenerateDocumentation(field, code);
 
 		code.Write($"{SpellVisibility(field.Visibility) ?? DefaultVisibility} ");
+
+		// static readonly rather than const: const is legal only for the primitives and strings,
+		// and a generated table is neither. The two mean the same thing to a reader and only one of
+		// them is always available.
+		if (field.IsConstant)
+		{
+			code.Write("static readonly ");
+		}
+		else if (field.IsStatic)
+		{
+			code.Write("static ");
+		}
+
 		code.Write($"{MapToCSType(field.Type ?? new TypeReference(UnknownTypeName))} {field.Name}");
 
 		if (field.InitialValue is not null)
@@ -562,12 +669,16 @@ public class CSharpGenerator : LanguageGeneratorBase
 	{
 		string name = MapTypeName(type.Name);
 
+		string array = type.IsArray ? "[]" : string.Empty;
+
 		if (type.TypeArguments.Count > 0)
 		{
-			return $"{name}<{string.Join(", ", type.TypeArguments.Select(MapToCSType))}>";
+			return $"{name}<{string.Join(", ", type.TypeArguments.Select(MapToCSType))}>{array}";
 		}
 
-		return DefaultTypeArguments.TryGetValue(type.Name, out string? fallback) ? $"{name}{fallback}" : name;
+		return DefaultTypeArguments.TryGetValue(type.Name, out string? fallback)
+			? $"{name}{fallback}{array}"
+			: $"{name}{array}";
 	}
 
 	/// <summary>

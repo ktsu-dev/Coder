@@ -553,6 +553,9 @@ public partial class YamlDeserializer
 			field.Type = typeObj?.ToString();
 		}
 
+		field.IsStatic = ReadFlag(dict, "isStatic", field.IsStatic);
+		field.IsConstant = ReadFlag(dict, "isConstant", field.IsConstant);
+
 		DeserializeVisibility(field, dict);
 		ReadStrings(dict, DocumentationKey, field.Documentation);
 

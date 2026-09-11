@@ -32,6 +32,16 @@ public class CppGenerator : StandardLanguageGenerator
 	/// </remarks>
 	private const string UnknownTypeName = "object";
 
+	/// <summary>
+	/// How many type declarations enclose what is being written.
+	/// </summary>
+	/// <remarks>
+	/// A depth rather than a flag, so a type declared inside a type leaves the count right when it
+	/// closes. The one thing it decides is whether a constant field says <c>inline</c> or
+	/// <c>static</c>; see <see cref="SpellStorage"/>.
+	/// </remarks>
+	private int insideType;
+
 	private static readonly Dictionary<string, string> TypeMappings = new(StringComparer.OrdinalIgnoreCase)
 	{
 		{ "str", "std::string" },
@@ -357,6 +367,8 @@ public class CppGenerator : StandardLanguageGenerator
 		Visibility current = isStruct ? Visibility.Public : Visibility.Unspecified;
 		bool first = true;
 		AstNode? previous = null;
+
+		insideType++;
 		foreach (AstNode member in classDecl.Members)
 		{
 			Visibility access = classDecl.Kind == TypeDeclarationKind.Interface
@@ -405,6 +417,8 @@ public class CppGenerator : StandardLanguageGenerator
 					break;
 			}
 		}
+
+		insideType--;
 	}
 
 	/// <inheritdoc/>
@@ -448,17 +462,37 @@ public class CppGenerator : StandardLanguageGenerator
 	/// Braced rather than parenthesised. Braces will not narrow a value silently, and a construction
 	/// with one argument written with parentheses can be read as a declaration instead — which is a
 	/// mistake a generator should never be able to make.
+	/// <para>
+	/// A construction with no type is the braced list on its own, which is what initialises a
+	/// declaration that has already said what its type is — an array of rows most of all, where
+	/// naming the array's type again would be wrong rather than merely redundant.
+	/// </para>
+	/// <para>
+	/// An argument that is a <see cref="MemberInitialiser"/> is a designated initialiser, so a row
+	/// says which member each value is for instead of depending on the order the members happen to
+	/// be declared in. C++20 requires designators to appear in declaration order, which is the
+	/// caller's business: the generator writes the order it is given.
+	/// </para>
 	/// </remarks>
 	protected override void GenerateConstructionExpression(ConstructionExpression construction, CodeBlocker code)
 	{
 		Ensure.NotNull(construction);
 		Ensure.NotNull(code);
 
-		code.Write(MapToCppType(construction.Type ?? new TypeReference(UnknownTypeName)));
+		if (construction.Type is not null)
+		{
+			code.Write(MapToCppType(construction.Type));
+		}
 
 		if (construction.Arguments.Count == 0)
 		{
 			code.Write("{}");
+			return;
+		}
+
+		if (SpansLines(construction))
+		{
+			WriteStacked(construction, code);
 			return;
 		}
 
@@ -470,11 +504,67 @@ public class CppGenerator : StandardLanguageGenerator
 				code.Write(", ");
 			}
 
-			GenerateInternal(construction.Arguments[index], code);
+			WriteArgument(construction.Arguments[index], code);
 		}
 
 		code.Write(" }");
 	}
+
+	/// <summary>
+	/// Writes a braced list one element per line.
+	/// </summary>
+	/// <param name="construction">The expression whose arguments to write.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// A trailing comma after the last element, which C++ allows in a braced list and which keeps
+	/// adding a row to a generated table from touching the row above it in the diff.
+	/// </remarks>
+	private void WriteStacked(ConstructionExpression construction, CodeBlocker code)
+	{
+		code.WriteLine("{");
+		code.Indent();
+
+		foreach (AstNode argument in construction.Arguments)
+		{
+			WriteArgument(argument, code);
+			code.WriteLine(",");
+		}
+
+		code.Outdent();
+		code.Write("}");
+	}
+
+	/// <summary>
+	/// Writes one element of a braced list, which may name the member it is for.
+	/// </summary>
+	/// <param name="argument">The element to write.</param>
+	/// <param name="code">The writer to emit into.</param>
+	private void WriteArgument(AstNode argument, CodeBlocker code)
+	{
+		if (argument is MemberInitialiser designated)
+		{
+			code.Write($".{designated.Name} = ");
+			GenerateInternal(designated.Value ?? new VariableReference(string.Empty), code);
+			return;
+		}
+
+		GenerateInternal(argument, code);
+	}
+
+	/// <summary>
+	/// Reports whether a braced list is worth breaking across lines.
+	/// </summary>
+	/// <param name="construction">The expression to judge.</param>
+	/// <returns><see langword="true"/> when it should be written one element per line.</returns>
+	/// <remarks>
+	/// A list of values is a value and belongs on one line; a list whose elements are themselves
+	/// lists is a table, and a table written on one line is a row of a diff nobody can read. The
+	/// test is the shape of the data rather than a column count, because a generated file has no
+	/// idea how wide anyone's editor is and a rule about that would have to be guessed.
+	/// </remarks>
+	private static bool SpansLines(ConstructionExpression construction) =>
+		construction.Arguments.Any(argument =>
+			argument is ConstructionExpression or MemberInitialiser { Value: ConstructionExpression });
 
 	/// <inheritdoc/>
 	/// <remarks>
@@ -527,7 +617,8 @@ public class CppGenerator : StandardLanguageGenerator
 
 		GenerateDocumentation(field, code);
 
-		code.Write($"{MapToCppType(field.Type ?? new TypeReference(UnknownTypeName))} {field.Name}");
+		code.Write(SpellStorage(field));
+		code.Write(SpellDeclarator(field.Type ?? new TypeReference(UnknownTypeName), field.Name ?? string.Empty));
 
 		if (field.InitialValue is not null)
 		{
@@ -740,7 +831,54 @@ public class CppGenerator : StandardLanguageGenerator
 			_ => string.Empty,
 		};
 
-		return $"{(type.IsReadOnly ? "const " : string.Empty)}{name}{arguments}{indirection}";
+		string array = type.IsArray ? "[]" : string.Empty;
+
+		return $"{(type.IsReadOnly ? "const " : string.Empty)}{name}{arguments}{array}{indirection}";
+	}
+
+	/// <summary>
+	/// Spells a declaration of <paramref name="name"/> with that type.
+	/// </summary>
+	/// <param name="type">The declared type.</param>
+	/// <param name="name">The name being declared.</param>
+	/// <returns>The declaration, without an initialiser or a terminator.</returns>
+	/// <remarks>
+	/// C++ puts an array's brackets on the declarator rather than on the type — <c>T name[]</c>,
+	/// never <c>T[] name</c> — so a declaration cannot be built by writing the type and the name in
+	/// that order, which is what every other language here does. This is the one place that
+	/// difference lives.
+	/// </remarks>
+	private static string SpellDeclarator(TypeReference type, string name)
+	{
+		TypeReference element = type.IsArray ? type.Clone() : type;
+		if (type.IsArray)
+		{
+			element.IsArray = false;
+		}
+
+		return $"{MapToCppType(element)} {name}{(type.IsArray ? "[]" : string.Empty)}";
+	}
+
+	/// <summary>
+	/// Spells what a field says about where it lives and when its value is fixed.
+	/// </summary>
+	/// <param name="field">The field.</param>
+	/// <returns>The keywords, with a trailing space, or empty when there are none.</returns>
+	/// <remarks>
+	/// <c>inline</c> is what makes a namespace-scope constant safe to define in a header, which is
+	/// the only place a generated one ever appears; a static data member is already implicitly
+	/// inline, so saying it inside a class would be noise at best. <see cref="insideType"/> is what
+	/// tells the two apart, and it is a depth rather than a flag so a type nested in a type stays
+	/// balanced.
+	/// </remarks>
+	private string SpellStorage(FieldDeclaration field)
+	{
+		if (field.IsConstant)
+		{
+			return insideType > 0 ? "static constexpr " : "inline constexpr ";
+		}
+
+		return field.IsStatic ? "static " : string.Empty;
 	}
 
 	/// <summary>
