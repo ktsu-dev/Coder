@@ -92,6 +92,12 @@ source in five target languages. The solution uses:
 - `Coder/Languages/StandardLanguageGenerator.cs` — owns the node dispatch, so a derived
   generator supplies only the syntax its language does not share. `CSharpGenerator` deliberately
   does not derive from it.
+- `Coder/Languages/CFamilyGenerator.cs` — what C and C++ share beyond what every generator shares,
+  and all of it is about C: the preprocessor (`#pragma once`, `#include`), the braced list with its
+  designated initialisers, the declarator that puts an array's brackets after the name, and the rule
+  that two undocumented members of a kind stay in one block. The type mappings deliberately stay
+  with each generator, because `str` is a `std::string` in one language and a `const char*` in the
+  other and the whole of what a mapping is is the spelling.
 - `Coder/Languages/CGenerator.cs` — the target with the least to map onto, and so the one whose
   decisions are worth reading. C has no classes, namespaces, overloading or generics, so a type is a
   `typedef struct`, a member function is a free function taking the instance, an interface is a

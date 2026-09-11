@@ -33,7 +33,7 @@ using ktsu.CodeBlocker;
 /// language anyway.
 /// </para>
 /// </remarks>
-public class CGenerator : StandardLanguageGenerator
+public class CGenerator : CFamilyGenerator
 {
 	/// <summary>
 	/// What a declaration that never said what type it is gets.
@@ -65,17 +65,6 @@ public class CGenerator : StandardLanguageGenerator
 	/// </remarks>
 	private const string BaseMemberName = "base";
 
-	/// <summary>
-	/// How many type declarations enclose what is being written.
-	/// </summary>
-	/// <remarks>
-	/// A depth rather than a flag, so a type declared inside a type leaves the count right when it
-	/// closes. It decides what a field may say about itself: at file scope a constant is
-	/// <c>static const</c>, and inside a struct there is no such thing — C has neither static data
-	/// members nor default member initialisers.
-	/// </remarks>
-	private int insideType;
-
 	private static readonly Dictionary<string, string> TypeMappings = new(StringComparer.OrdinalIgnoreCase)
 	{
 		{ "str", "const char*" },
@@ -91,40 +80,73 @@ public class CGenerator : StandardLanguageGenerator
 	};
 
 	/// <summary>
-	/// The word each operator is named by, where C has to spell an operator as a function.
+	/// How many type declarations enclose what is being written.
+	/// </summary>
+	/// <remarks>
+	/// A depth rather than a flag, so a type declared inside a type leaves the count right when it
+	/// closes. It decides what a field may say about itself: at file scope a constant is
+	/// <c>static const</c>, and inside a struct there is no such thing — C has neither static data
+	/// members nor default member initialisers.
+	/// </remarks>
+	private int insideType;
+
+	/// <summary>
+	/// The word each operator symbol is named by, where C has to spell an operator as a function.
 	/// </summary>
 	/// <remarks>
 	/// C has no operator overloading, so an operator declaration becomes an ordinary function and
-	/// needs an ordinary name. The words are the ones the standard library and most C APIs already
-	/// use for these operations, so <c>Vector_add</c> reads as what it is; a symbol with no word here
-	/// keeps the symbol, spelled out of the way of the identifier grammar by
-	/// <see cref="SpellOperatorName"/>.
+	/// needs an ordinary name. The names are the AST's own — <see cref="BinaryOperator.Add"/> is
+	/// <c>add</c> and <see cref="BinaryOperator.LessThanOrEqual"/> is <c>less_than_or_equal</c> —
+	/// derived from the vocabulary rather than listed beside it, so an operator added to the AST is
+	/// named here without anybody remembering to. A symbol the AST does not have keeps the symbol,
+	/// spelled out of the way of the identifier grammar by <see cref="SpellOperatorName"/>.
+	/// <para>
+	/// A symbol that is both a binary and a unary operator — <c>-</c> is subtraction and negation —
+	/// is named for the binary one, which is what a declaration taking an operand beside the instance
+	/// means.
+	/// </para>
 	/// </remarks>
-	private static readonly Dictionary<string, string> OperatorNames = new(StringComparer.Ordinal)
+	private static readonly Dictionary<string, string> OperatorNames = BuildOperatorNames();
+
+	/// <summary>
+	/// Builds the operator names from the AST's own operator vocabulary.
+	/// </summary>
+	/// <returns>The name for each symbol the AST can spell.</returns>
+	private static Dictionary<string, string> BuildOperatorNames()
 	{
-		{ "+", "add" },
-		{ "-", "subtract" },
-		{ "*", "multiply" },
-		{ "/", "divide" },
-		{ "%", "modulo" },
-		{ "==", "equals" },
-		{ "!=", "not_equals" },
-		{ "<", "less" },
-		{ "<=", "less_equal" },
-		{ ">", "greater" },
-		{ ">=", "greater_equal" },
-		{ "&&", "and" },
-		{ "||", "or" },
-		{ "!", "not" },
-		{ "&", "bit_and" },
-		{ "|", "bit_or" },
-		{ "^", "bit_xor" },
-		{ "~", "bit_not" },
-		{ "<<", "shift_left" },
-		{ ">>", "shift_right" },
-		{ "[]", "at" },
-		{ "()", "call" }
-	};
+		Dictionary<string, string> names = new(StringComparer.Ordinal);
+
+		foreach (BinaryOperator op in Enum.GetValues<BinaryOperator>())
+		{
+			if (OperatorSymbols.TryGetSymbol(op, out string? symbol) && symbol is not null)
+			{
+				names[symbol] = SnakeCase(op.ToString());
+			}
+		}
+
+		// Added second, and without replacing: a symbol both kinds of operator share is named for
+		// the binary one.
+		foreach (UnaryOperator op in Enum.GetValues<UnaryOperator>())
+		{
+			if (OperatorSymbols.TryGetSymbol(op, out string? symbol) && symbol is not null)
+			{
+				names.TryAdd(symbol, SnakeCase(op.ToString()));
+			}
+		}
+
+		return names;
+	}
+
+	/// <summary>
+	/// Writes a name the way C names things.
+	/// </summary>
+	/// <param name="name">The name, as the AST spells it.</param>
+	/// <returns>The same name in lower case, with an underscore where each word begins.</returns>
+	private static string SnakeCase(string name) =>
+		string.Concat(name.Select((character, index) =>
+			char.IsUpper(character) && index > 0
+				? $"_{char.ToLowerInvariant(character)}"
+				: char.ToLowerInvariant(character).ToString()));
 
 	/// <summary>
 	/// Gets the unique identifier for this language generator.
@@ -142,20 +164,10 @@ public class CGenerator : StandardLanguageGenerator
 	public override string FileExtension => "c";
 
 	/// <inheritdoc/>
-	protected override void GenerateFunctionDeclaration(FunctionDeclaration funcDecl, CodeBlocker code) =>
-		GenerateFunction(funcDecl, code, null);
-
-	/// <summary>
-	/// Emits a function, which may have been declared as a member of a type.
-	/// </summary>
-	/// <param name="funcDecl">The declaration to emit.</param>
-	/// <param name="code">The writer to emit into.</param>
-	/// <param name="enclosingType">The name of the type it belongs to, when it belongs to one.</param>
 	/// <remarks>
 	/// C has no member functions, so a member becomes a free function named for the type it belongs
 	/// to and taking the instance as its first parameter — <c>Point_translate(Point* self, …)</c>.
-	/// That is what C code written by hand does, and it is why the type's name has to be passed in
-	/// rather than read off the declaration: the declaration does not know it.
+	/// That is what C code written by hand does.
 	/// <para>
 	/// Nothing is written for <see cref="FunctionDeclaration.IsPure"/>,
 	/// <see cref="FunctionDeclaration.MustUseResult"/>,
@@ -172,7 +184,7 @@ public class CGenerator : StandardLanguageGenerator
 	/// ordinary function that happens to be overridable in a language that is not C.
 	/// </para>
 	/// </remarks>
-	private void GenerateFunction(FunctionDeclaration funcDecl, CodeBlocker code, string? enclosingType)
+	protected override void GenerateFunction(FunctionDeclaration funcDecl, CodeBlocker code, string? enclosingType)
 	{
 		Ensure.NotNull(funcDecl);
 		Ensure.NotNull(code);
@@ -405,44 +417,6 @@ public class CGenerator : StandardLanguageGenerator
 		}
 
 		code.Write(")");
-	}
-
-	/// <inheritdoc/>
-	/// <remarks>
-	/// <c>#pragma once</c> rather than an include guard, for the reason a guard cannot answer: the
-	/// macro it needs must be unique across the whole program, which the file cannot know it has and
-	/// which a generator picking one would eventually collide on. Every C compiler this targets
-	/// supports the pragma.
-	/// </remarks>
-	protected override bool WriteFileDirectives(SourceFile file, CodeBlocker code)
-	{
-		Ensure.NotNull(file);
-		Ensure.NotNull(code);
-
-		if (!file.IsHeader)
-		{
-			return false;
-		}
-
-		code.WriteLine("#pragma once");
-		return true;
-	}
-
-	/// <inheritdoc/>
-	/// <remarks>
-	/// An import that already carries its own delimiters is written as it stands, because the choice
-	/// between <c>&lt;&gt;</c> and <c>""</c> says where the compiler should look and only whoever
-	/// wrote the file knows that. One that carries neither is quoted, which is right for a path
-	/// within the project being generated.
-	/// </remarks>
-	protected override string? SpellImport(string import)
-	{
-		Ensure.NotNull(import);
-
-		bool delimited = (import.StartsWith('<') && import.EndsWith('>'))
-			|| (import.StartsWith('"') && import.EndsWith('"'));
-
-		return delimited ? $"#include {import}" : $"#include \"{import}\"";
 	}
 
 	/// <inheritdoc/>
@@ -698,7 +672,7 @@ public class CGenerator : StandardLanguageGenerator
 	/// <inheritdoc/>
 	/// <remarks>
 	/// A typedef, which is what C has where another language has an alias — and it is written through
-	/// <see cref="SpellDeclarator"/> rather than by naming the type and then the name, because a
+	/// <see cref="CFamilyGenerator.SpellDeclarator"/> rather than by naming the type and then the name, because a
 	/// typedef declares a name the same way a variable declaration does and an alias for an array
 	/// puts its brackets after the name.
 	/// </remarks>
@@ -725,7 +699,7 @@ public class CGenerator : StandardLanguageGenerator
 	/// </para>
 	/// </remarks>
 	protected override void GenerateConstructionExpression(ConstructionExpression construction, CodeBlocker code) =>
-		WriteBracedList(construction, code, asExpression: true);
+		WriteList(construction, code, asExpression: true);
 
 	/// <summary>
 	/// Writes what a declaration starts at.
@@ -738,16 +712,8 @@ public class CGenerator : StandardLanguageGenerator
 	/// has to be initialised by. Naming the type again would be redundant in the best case and
 	/// rejected at file scope in the ordinary one.
 	/// </remarks>
-	private void WriteInitialiser(Expression initialValue, CodeBlocker code)
-	{
-		if (initialValue is ConstructionExpression construction)
-		{
-			WriteBracedList(construction, code, asExpression: false);
-			return;
-		}
-
-		GenerateInternal(initialValue, code);
-	}
+	private void WriteInitialiser(Expression initialValue, CodeBlocker code) =>
+		WriteListValue(initialValue, code);
 
 	/// <summary>
 	/// Writes a braced list, as either an initialiser or a value in its own right.
@@ -757,7 +723,7 @@ public class CGenerator : StandardLanguageGenerator
 	/// <param name="asExpression">
 	/// Whether the list stands where a value is wanted, and so needs its type in front of it.
 	/// </param>
-	private void WriteBracedList(ConstructionExpression construction, CodeBlocker code, bool asExpression)
+	private void WriteList(ConstructionExpression construction, CodeBlocker code, bool asExpression)
 	{
 		Ensure.NotNull(construction);
 		Ensure.NotNull(code);
@@ -767,97 +733,28 @@ public class CGenerator : StandardLanguageGenerator
 			code.Write($"({MapToCType(construction.Type)})");
 		}
 
-		if (construction.Arguments.Count == 0)
-		{
-			// Not `{}`, which C only allows from C23.
-			code.Write("{0}");
-			return;
-		}
-
-		if (SpansLines(construction))
-		{
-			WriteStacked(construction, code);
-			return;
-		}
-
-		code.Write("{ ");
-		for (int index = 0; index < construction.Arguments.Count; index++)
-		{
-			if (index > 0)
-			{
-				code.Write(", ");
-			}
-
-			WriteArgument(construction.Arguments[index], code);
-		}
-
-		code.Write(" }");
+		// `{0}` rather than `{}`, which C only allows from C23, and which zeroes a whole object
+		// whatever the type of its first member is.
+		WriteBracedList(construction, code, "{0}");
 	}
 
-	/// <summary>
-	/// Writes a braced list one element per line.
-	/// </summary>
-	/// <param name="construction">The expression whose arguments to write.</param>
-	/// <param name="code">The writer to emit into.</param>
-	/// <remarks>
-	/// A trailing comma after the last element, which C allows in a braced list and which keeps
-	/// adding a row to a generated table from touching the row above it in the diff.
-	/// </remarks>
-	private void WriteStacked(ConstructionExpression construction, CodeBlocker code)
-	{
-		code.WriteLine("{");
-		code.Indent();
-
-		foreach (AstNode argument in construction.Arguments)
-		{
-			WriteArgument(argument, code);
-			code.WriteLine(",");
-		}
-
-		code.Outdent();
-		code.Write("}");
-	}
-
-	/// <summary>
-	/// Writes one element of a braced list, which may name the member it is for.
-	/// </summary>
-	/// <param name="argument">The element to write.</param>
-	/// <param name="code">The writer to emit into.</param>
+	/// <inheritdoc/>
 	/// <remarks>
 	/// An element that is itself a braced list is written without its type. The enclosing list has
 	/// already said what each element is, so a row of a table is <c>{ .x = 1 }</c> rather than
-	/// <c>(Point){ .x = 1 }</c> — and at file scope the second is not a constant expression.
+	/// <c>(Point){ .x = 1 }</c> — and at file scope the second is not a constant expression, which
+	/// is what a constant table has to be initialised by.
 	/// </remarks>
-	private void WriteArgument(AstNode argument, CodeBlocker code)
+	protected override void WriteListValue(AstNode value, CodeBlocker code)
 	{
-		if (argument is MemberInitialiser designated)
+		if (value is ConstructionExpression nested)
 		{
-			code.Write($".{designated.Name} = ");
-			WriteInitialiser(designated.Value ?? new VariableReference(string.Empty), code);
+			WriteList(nested, code, asExpression: false);
 			return;
 		}
 
-		if (argument is Expression element)
-		{
-			WriteInitialiser(element, code);
-			return;
-		}
-
-		GenerateInternal(argument, code);
+		GenerateInternal(value, code);
 	}
-
-	/// <summary>
-	/// Reports whether a braced list is worth breaking across lines.
-	/// </summary>
-	/// <param name="construction">The expression to judge.</param>
-	/// <returns><see langword="true"/> when it should be written one element per line.</returns>
-	/// <remarks>
-	/// A list of values is a value and belongs on one line; a list whose elements are themselves
-	/// lists is a table, and a table written on one line is a row of a diff nobody can read.
-	/// </remarks>
-	private static bool SpansLines(ConstructionExpression construction) =>
-		construction.Arguments.Any(argument =>
-			argument is ConstructionExpression or MemberInitialiser { Value: ConstructionExpression });
 
 	/// <inheritdoc/>
 	/// <remarks>
@@ -987,29 +884,6 @@ public class CGenerator : StandardLanguageGenerator
 
 		EndStatement(code);
 	}
-
-	/// <inheritdoc/>
-	/// <remarks>
-	/// Two of a kind that say nothing about themselves stay together, which is what keeps a run of
-	/// typedefs, of struct members, or of assertions about one type reading as one block.
-	/// </remarks>
-	protected override bool NeedsSeparation(AstNode previous, AstNode member)
-	{
-		Ensure.NotNull(previous);
-		Ensure.NotNull(member);
-
-		return previous.GetType() != member.GetType()
-			|| IsDocumented(previous)
-			|| IsDocumented(member);
-	}
-
-	/// <summary>
-	/// Reports whether a member carries documentation.
-	/// </summary>
-	/// <param name="member">The member to test.</param>
-	/// <returns>True when it does.</returns>
-	private static bool IsDocumented(AstNode member) =>
-		member is IHasDocumentation documented && documented.Documentation.Count > 0;
 
 	/// <inheritdoc/>
 	/// <remarks>
@@ -1164,26 +1038,10 @@ public class CGenerator : StandardLanguageGenerator
 			: $"{type.Name}_{string.Join("_", type.TypeArguments.Select(argument => Identifier(SpellTypeName(argument))))}";
 	}
 
-	/// <summary>
-	/// Spells a declaration of <paramref name="name"/> with that type.
-	/// </summary>
-	/// <param name="type">The declared type.</param>
-	/// <param name="name">The name being declared.</param>
-	/// <returns>The declaration, without an initialiser or a terminator.</returns>
-	/// <remarks>
-	/// C puts an array's brackets on the declarator rather than on the type — <c>T name[]</c>, never
-	/// <c>T[] name</c> — so a declaration cannot be built by writing the type and the name in that
-	/// order, which is what a language with a whole type on the left does. This is the one place that
-	/// difference lives.
-	/// </remarks>
-	private static string SpellDeclarator(TypeReference type, string name)
+	/// <inheritdoc/>
+	protected override string SpellType(TypeReference type)
 	{
-		TypeReference element = type.IsArray ? type.Clone() : type;
-		if (type.IsArray)
-		{
-			element.IsArray = false;
-		}
-
-		return $"{MapToCType(element)} {name}{(type.IsArray ? "[]" : string.Empty)}";
+		Ensure.NotNull(type);
+		return MapToCType(type);
 	}
 }
