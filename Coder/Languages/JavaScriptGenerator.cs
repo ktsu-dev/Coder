@@ -264,6 +264,14 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		Ensure.NotNull(classDecl);
 		Ensure.NotNull(code);
 
+		// C++ can attach a declaration to a type it does not own, by specialising a template on it.
+		// Nothing here can, so the fact is written down rather than lost: what follows is an
+		// ordinary declaration, and the comment says which type it was the declaration for.
+		if (classDecl.IsSpecialisation)
+		{
+			WriteInexpressible(code, $"specialised for {string.Join(", ", classDecl.SpecialisationArguments)}");
+		}
+
 		code.Write($"class {classDecl.Name ?? "UnnamedClass"}");
 
 		if (classDecl.BaseType is TypeReference baseType)

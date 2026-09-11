@@ -658,11 +658,29 @@ public partial class YamlDeserializer
 
 		DeserializeVisibility(classDecl, dict);
 		ReadStrings(dict, DocumentationKey, classDecl.Documentation);
+		DeserializeSpecialisationArguments(classDecl, dict);
 
 		DeserializeClassMembers(classDecl, dict);
 		DeserializeMetadata(classDecl, dict);
 
 		return classDecl;
+	}
+
+	private static void DeserializeSpecialisationArguments(ClassDeclaration classDecl, Dictionary<object, object> dict)
+	{
+		if (!dict.TryGetValue("specialisationArguments", out object? argumentsObj) ||
+			argumentsObj is not List<object> argumentList)
+		{
+			return;
+		}
+
+		foreach (object argument in argumentList)
+		{
+			if (argument?.ToString() is string text && text.Length > 0)
+			{
+				classDecl.SpecialisationArguments.Add(TypeReference.Parse(text));
+			}
+		}
 	}
 
 	private void DeserializeClassMembers(ClassDeclaration classDecl, Dictionary<object, object> dict)
