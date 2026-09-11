@@ -36,7 +36,7 @@ public class GeneratedCodeHighlightingTests
 	}
 
 	private static ILanguageGenerator[] Generators() =>
-		[new CSharpGenerator(), new PythonGenerator(), new CppGenerator(), new JavaScriptGenerator()];
+		[new CSharpGenerator(), new PythonGenerator(), new CppGenerator(), new CGenerator(), new JavaScriptGenerator()];
 
 	/// <summary>
 	/// Tests that every generator's language id is one the highlighter recognises, by generating real

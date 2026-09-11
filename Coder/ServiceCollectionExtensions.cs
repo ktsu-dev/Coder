@@ -24,6 +24,7 @@ public static class ServiceCollectionExtensions
 		services.AddSingleton<ILanguageGenerator, CSharpGenerator>();
 		services.AddSingleton<ILanguageGenerator, JavaScriptGenerator>();
 		services.AddSingleton<ILanguageGenerator, CppGenerator>();
+		services.AddSingleton<ILanguageGenerator, CGenerator>();
 
 		return services;
 	}

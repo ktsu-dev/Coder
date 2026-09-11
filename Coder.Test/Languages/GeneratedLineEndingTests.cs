@@ -45,6 +45,7 @@ public class GeneratedLineEndingTests
 	[DataRow("python")]
 	[DataRow("csharp")]
 	[DataRow("cpp")]
+	[DataRow("c")]
 	[DataRow("javascript")]
 	public void Generators_EmitLineFeedsOnly(string languageId)
 	{
@@ -53,6 +54,7 @@ public class GeneratedLineEndingTests
 			"python" => new PythonGenerator(),
 			"csharp" => new CSharpGenerator(),
 			"cpp" => new CppGenerator(),
+			"c" => new CGenerator(),
 			"javascript" => new JavaScriptGenerator(),
 			_ => throw new ArgumentOutOfRangeException(nameof(languageId))
 		};

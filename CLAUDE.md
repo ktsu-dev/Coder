@@ -23,7 +23,7 @@ dotnet run --project Coder.Editor
 ## Project Structure
 
 `ktsu.Coder` represents code as a language-agnostic AST, round-trips it through YAML, and generates
-source in four target languages. The solution uses:
+source in five target languages. The solution uses:
 
 - **ktsu.Sdk** — custom SDK providing shared build configuration
 - **MSTest.Sdk** — test project SDK with Microsoft Testing Platform
@@ -78,17 +78,30 @@ source in four target languages. The solution uses:
   that it is an array, with no bound, because where the brackets go is the generator's business and
   C++ is the one language here that puts them on the declarator rather than the type.
   `IsConstant` is the intent rather than the keyword: C++ writes `inline constexpr` at namespace
-  scope and `static constexpr` inside a type, C# writes `static readonly`, and a language with no
-  spelling for it omits it the way it omits an indirection.
+  scope and `static constexpr` inside a type, C# writes `static readonly`, C writes `static const`
+  at file scope and a note inside a struct, having no static data member at all, and a language with
+  no spelling for it omits it the way it omits an indirection.
 - `Coder/Ast/CompileTimeAssertion.cs` — what a generated type promises that the type itself cannot
   say. Its `Condition` is text for the same reason `SourceFile.Imports` are: a compile-time predicate
   is language-specific in a way most of the AST is not, and there is no shared idea underneath
-  `std::is_trivially_copyable_v<T>` to model. Only C++ has one; the others write a comment, because a
-  file that quietly loses a guarantee looks like one that still makes it.
+  `std::is_trivially_copyable_v<T>` to model. Only C++ and C have one — `static_assert` and
+  `_Static_assert`, the second of which requires a message, so an assertion with none is given its
+  own condition; the others write a comment, because a file that quietly loses a guarantee looks
+  like one that still makes it.
 - `Coder/Languages/LanguageGeneratorBase.cs` — the emitters every generator shares.
 - `Coder/Languages/StandardLanguageGenerator.cs` — owns the node dispatch, so a derived
   generator supplies only the syntax its language does not share. `CSharpGenerator` deliberately
   does not derive from it.
+- `Coder/Languages/CGenerator.cs` — the target with the least to map onto, and so the one whose
+  decisions are worth reading. C has no classes, namespaces, overloading or generics, so a type is a
+  `typedef struct`, a member function is a free function taking the instance, an interface is a
+  struct of function pointers, a base type is the first member (which is what makes the two
+  layout-compatible), and a namespace is a comment — folding its name into the declarations would
+  rename them without renaming the references to them. The dialect is C99 plus C11's
+  `_Static_assert`, which is why a pure function gets no `[[nodiscard]]` and an enumeration no fixed
+  underlying type. `Coder.Test/Languages/CGeneratedSourceCompilesTests.cs` compiles what it writes,
+  because C's rules about linkage, empty parameter lists and what may initialise an object with
+  static storage duration are not visible in the text.
 - `Coder.Graph/AstSchema.cs` — the uniform view of the AST's parent/child structure, hand-written
   rather than reflective. Adding a node type means adding it here.
 - `Coder.Graph/AstFields.cs` — a node's editable properties as named fields of a kind, which is what
