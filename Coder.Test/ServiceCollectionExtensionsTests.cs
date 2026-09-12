@@ -62,7 +62,7 @@ public class ServiceCollectionExtensionsTests
 		Assert.IsInstanceOfType<RustGenerator>(generators.FirstOrDefault(g => g.LanguageId == "rust"));
 		Assert.IsInstanceOfType<GoGenerator>(generators.FirstOrDefault(g => g.LanguageId == "go"));
 
-		Assert.AreEqual(7, generators.Count, "A new generator needs a registration and an entry here");
+		Assert.HasCount(7, generators, "A new generator needs a registration and an entry here");
 	}
 
 	/// <summary>

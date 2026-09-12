@@ -104,10 +104,20 @@ public class GoGenerator : StandardLanguageGenerator
 	/// </summary>
 	private const string RuntimePackage = "\"os\"";
 
+	/// <summary>
+	/// How Go spells a string.
+	/// </summary>
+	/// <remarks>
+	/// Named because the generator asks three different questions of it: which Go type a name maps
+	/// to, whether a type is already a view of what it holds, and whether a conversion is the one the
+	/// standard library prints a value with.
+	/// </remarks>
+	private const string StringTypeName = "string";
+
 	private static readonly Dictionary<string, string> TypeMappings = new(StringComparer.OrdinalIgnoreCase)
 	{
-		{ "str", "string" },
-		{ "string", "string" },
+		{ "str", StringTypeName },
+		{ "string", StringTypeName },
 		{ "int", "int" },
 		{ "long", "int64" },
 		{ "float", "float32" },
@@ -869,7 +879,9 @@ public class GoGenerator : StandardLanguageGenerator
 	private static string ConversionName(TypeReference? target)
 	{
 		string spelled = SpellType(target ?? new TypeReference(UnknownTypeName));
-		return string.Equals(spelled, "string", StringComparison.Ordinal) ? "String" : $"To{Identifier(spelled)}";
+		return string.Equals(spelled, StringTypeName, StringComparison.Ordinal)
+			? "String"
+			: $"To{Identifier(spelled)}";
 	}
 
 	/// <summary>
@@ -1444,7 +1456,7 @@ public class GoGenerator : StandardLanguageGenerator
 	/// <returns>The type as Go writes it, or null where the value does not say.</returns>
 	private static string? TypeOfValue(AstNode value) => value switch
 	{
-		LiteralExpression<string> or AstLeafNode<string> => "string",
+		LiteralExpression<string> or AstLeafNode<string> => StringTypeName,
 		LiteralExpression<int> or AstLeafNode<int> => "int",
 		LiteralExpression<bool> or AstLeafNode<bool> => "bool",
 		LiteralExpression<double> => "float64",
@@ -1669,7 +1681,7 @@ public class GoGenerator : StandardLanguageGenerator
 	/// <param name="spelled">The type as Go spells it.</param>
 	/// <returns>True when a pointer to it would be a pointer to a pointer.</returns>
 	private static bool IsView(string spelled) =>
-		string.Equals(spelled, "string", StringComparison.Ordinal)
+		string.Equals(spelled, StringTypeName, StringComparison.Ordinal)
 			|| spelled.StartsWith("[]", StringComparison.Ordinal)
 			|| spelled.StartsWith("map[", StringComparison.Ordinal);
 
@@ -1712,7 +1724,7 @@ public class GoGenerator : StandardLanguageGenerator
 		{
 			return type.TypeArguments.Count == 2
 				? $"map[{SpellType(type.TypeArguments[0])}]{SpellType(type.TypeArguments[1])}"
-				: $"map[string]{unknown}";
+				: $"map[{StringTypeName}]{unknown}";
 		}
 
 		string name = TypeMappings.TryGetValue(type.Name, out string? mapped) ? mapped : type.Name;

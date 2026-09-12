@@ -235,12 +235,37 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 			code.NewLine();
 		}
 
+		WriteImports(file, code);
+
+		AstNode? previous = null;
+		foreach (AstNode member in file.Members)
+		{
+			if (previous is not null && NeedsSeparation(previous, member))
+			{
+				code.NewLine();
+			}
+
+			previous = member;
+			GenerateInternal(member, code);
+		}
+	}
+
+	/// <summary>
+	/// Emits what a file depends on, and the blank line after it.
+	/// </summary>
+	/// <param name="file">The file being emitted.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// A language with no import statement writes nothing at all here, including no blank lines: an
+	/// empty import is a group separator, and a separator between groups separates nothing until a
+	/// group has been written.
+	/// </remarks>
+	private void WriteImports(SourceFile file, CodeBlocker code)
+	{
 		bool wroteImport = false;
+
 		foreach (string import in file.Imports)
 		{
-			// An empty import is a group separator rather than an import of nothing, and separates
-			// nothing until a group has been written — which is also what keeps a language whose
-			// imports are written elsewhere from getting a blank line for each of them here.
 			if (import.Length == 0)
 			{
 				if (wroteImport)
@@ -261,18 +286,6 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 		if (wroteImport)
 		{
 			code.NewLine();
-		}
-
-		AstNode? previous = null;
-		foreach (AstNode member in file.Members)
-		{
-			if (previous is not null && NeedsSeparation(previous, member))
-			{
-				code.NewLine();
-			}
-
-			previous = member;
-			GenerateInternal(member, code);
 		}
 	}
 
