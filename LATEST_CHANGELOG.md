@@ -1,8 +1,9 @@
-## v3.9.0 (minor)
+## v3.10.0 (minor)
 
-Changes since v3.8.0:
+Changes since v3.9.0:
 
-- Address the SonarCloud findings from #57 ([@Claude](https://github.com/Claude))
-- Merge main, and teach the new nodes the Rust generator ([@Claude](https://github.com/Claude))
-- [minor] Add CallExpression, ExpressionStatement and ConditionalExpression ([@Claude](https://github.com/Claude))
+- refactor: address the SonarCloud findings this PR introduced [patch] ([@Claude](https://github.com/Claude))
+- Merge main, and teach Go the three nodes it gained ([@Claude](https://github.com/Claude))
+- refactor: map the declarations rather than the loop variable [patch] ([@Claude](https://github.com/Claude))
+- feat: add a Go language generator [minor] ([@Claude](https://github.com/Claude))
 
