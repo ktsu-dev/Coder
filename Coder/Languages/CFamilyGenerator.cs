@@ -2,7 +2,6 @@
 
 namespace ktsu.Coder.Languages;
 
-using System.Linq;
 using ktsu.Coder.Ast;
 using ktsu.CodeBlocker;
 
@@ -152,6 +151,18 @@ public abstract class CFamilyGenerator : StandardLanguageGenerator
 		return $"{SpellType(element)} {name}{(type.IsArray ? "[]" : string.Empty)}";
 	}
 
+	/// <inheritdoc/>
+	/// <remarks>
+	/// A designated initialiser, which C invented and C++20 adopted — with the one difference that
+	/// C++ requires the designators to appear in declaration order. That is the caller's business:
+	/// the generator writes the order it is given.
+	/// </remarks>
+	protected override void WriteDesignator(string name, CodeBlocker code)
+	{
+		Ensure.NotNull(code);
+		code.Write($".{name} = ");
+	}
+
 	/// <summary>
 	/// Writes a braced list, without whatever the language writes in front of it.
 	/// </summary>
@@ -161,108 +172,7 @@ public abstract class CFamilyGenerator : StandardLanguageGenerator
 	/// <remarks>
 	/// The empty list is the caller's because it is the one part the two languages spell
 	/// differently: <c>{}</c> is C++'s, and C only allows it from C23.
-	/// <para>
-	/// A list of values is a value and belongs on one line; a list whose elements are themselves
-	/// lists is a table, and a table written on one line is a row of a diff nobody can read. The test
-	/// is the shape of the data rather than a column count, because a generated file has no idea how
-	/// wide anyone's editor is and a rule about that would have to be guessed.
-	/// </para>
 	/// </remarks>
-	protected void WriteBracedList(ConstructionExpression construction, CodeBlocker code, string emptyList)
-	{
-		Ensure.NotNull(construction);
-		Ensure.NotNull(code);
-
-		if (construction.Arguments.Count == 0)
-		{
-			code.Write(emptyList);
-			return;
-		}
-
-		if (SpansLines(construction))
-		{
-			WriteStackedList(construction, code);
-			return;
-		}
-
-		code.Write("{ ");
-		for (int index = 0; index < construction.Arguments.Count; index++)
-		{
-			if (index > 0)
-			{
-				code.Write(", ");
-			}
-
-			WriteListElement(construction.Arguments[index], code);
-		}
-
-		code.Write(" }");
-	}
-
-	/// <summary>
-	/// Writes a braced list one element per line.
-	/// </summary>
-	/// <param name="construction">The expression whose arguments to write.</param>
-	/// <param name="code">The writer to emit into.</param>
-	/// <remarks>
-	/// A trailing comma after the last element, which both languages allow in a braced list and which
-	/// keeps adding a row to a generated table from touching the row above it in the diff.
-	/// </remarks>
-	private void WriteStackedList(ConstructionExpression construction, CodeBlocker code)
-	{
-		code.WriteLine("{");
-		code.Indent();
-
-		foreach (AstNode argument in construction.Arguments)
-		{
-			WriteListElement(argument, code);
-			code.WriteLine(",");
-		}
-
-		code.Outdent();
-		code.Write("}");
-	}
-
-	/// <summary>
-	/// Writes one element of a braced list, which may name the member it is for.
-	/// </summary>
-	/// <param name="argument">The element to write.</param>
-	/// <param name="code">The writer to emit into.</param>
-	/// <remarks>
-	/// A <see cref="MemberInitialiser"/> is a designated initialiser, spelled the same in both
-	/// languages — C invented it and C++20 adopted it, with the one difference that C++ requires the
-	/// designators to appear in declaration order. That is the caller's business: the generator
-	/// writes the order it is given.
-	/// </remarks>
-	private void WriteListElement(AstNode argument, CodeBlocker code)
-	{
-		if (argument is MemberInitialiser designated)
-		{
-			code.Write($".{designated.Name} = ");
-			WriteListValue(designated.Value ?? new VariableReference(string.Empty), code);
-			return;
-		}
-
-		WriteListValue(argument, code);
-	}
-
-	/// <summary>
-	/// Writes what one element of a braced list is.
-	/// </summary>
-	/// <param name="value">The value to write.</param>
-	/// <param name="code">The writer to emit into.</param>
-	/// <remarks>
-	/// Ordinary generation, unless a language has something to say about a value that stands inside
-	/// a list rather than on its own — which C does, since only there may it leave the type out.
-	/// </remarks>
-	protected virtual void WriteListValue(AstNode value, CodeBlocker code) => GenerateInternal(value, code);
-
-	/// <summary>
-	/// Reports whether a braced list is worth breaking across lines.
-	/// </summary>
-	/// <param name="construction">The expression to judge.</param>
-	/// <returns><see langword="true"/> when it should be written one element per line.</returns>
-	private static bool SpansLines(ConstructionExpression construction) =>
-		construction.Arguments.Any(argument =>
-			argument is ConstructionExpression or MemberInitialiser { Value: ConstructionExpression });
+	protected void WriteBracedList(ConstructionExpression construction, CodeBlocker code, string emptyList) =>
+		WriteElementList(construction, code, "{", "}", emptyList);
 }

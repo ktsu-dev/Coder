@@ -62,7 +62,7 @@ public class ExpressionStatementTests
 	}
 
 	/// <summary>
-	/// Tests that the four languages with a statement terminator end this with one.
+	/// Tests that the five languages with a statement terminator end this with one.
 	/// </summary>
 	[TestMethod]
 	public void LanguagesWithATerminator_EndTheStatementWithOne()
@@ -73,6 +73,7 @@ public class ExpressionStatementTests
 		Assert.AreEqual(expected, new CppGenerator().Generate(Effect()), "C++");
 		Assert.AreEqual(expected, new CGenerator().Generate(Effect()), "C");
 		Assert.AreEqual(expected, new JavaScriptGenerator().Generate(Effect()), "JavaScript");
+		Assert.AreEqual(expected, new RustGenerator().Generate(Effect()), "Rust");
 	}
 
 	/// <summary>
@@ -140,7 +141,7 @@ public class ExpressionStatementTests
 		ExpressionStatement statement = Effect();
 
 		foreach (ILanguageGenerator generator in
-			new ILanguageGenerator[] { new CSharpGenerator(), new CppGenerator(), new CGenerator(), new PythonGenerator(), new JavaScriptGenerator() })
+			new ILanguageGenerator[] { new CSharpGenerator(), new CppGenerator(), new CGenerator(), new PythonGenerator(), new JavaScriptGenerator(), new RustGenerator() })
 		{
 			Assert.IsTrue(generator.CanGenerate(statement), $"{generator.DisplayName} should accept an expression statement");
 		}

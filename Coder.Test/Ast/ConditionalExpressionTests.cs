@@ -93,6 +93,18 @@ public class ConditionalExpressionTests
 		Assert.AreEqual("(go if ready else wait)", new PythonGenerator().Generate(Choice()));
 
 	/// <summary>
+	/// Tests that Rust writes an if-expression, having no ternary operator at all.
+	/// </summary>
+	/// <remarks>
+	/// The strongest case for the node being a node: the inherited <c>?:</c> is not merely a different
+	/// spelling in Rust, it is not Rust. A caller who had passed this as text would have had to know
+	/// that before writing it.
+	/// </remarks>
+	[TestMethod]
+	public void Rust_SpellsItAsAnIfExpression() =>
+		Assert.AreEqual("(if ready { go } else { wait })", new RustGenerator().Generate(Choice()));
+
+	/// <summary>
 	/// Tests that the operands are recursed into rather than stringified, so a conditional can
 	/// choose between compound expressions.
 	/// </summary>
@@ -106,6 +118,7 @@ public class ConditionalExpressionTests
 
 		Assert.AreEqual("((a < b) ? first() : second())", new CSharpGenerator().Generate(conditional));
 		Assert.AreEqual("(first() if (a < b) else second())", new PythonGenerator().Generate(conditional));
+		Assert.AreEqual("(if (a < b) { first() } else { second() })", new RustGenerator().Generate(conditional));
 	}
 
 	/// <summary>
@@ -151,7 +164,7 @@ public class ConditionalExpressionTests
 		ConditionalExpression conditional = Choice();
 
 		foreach (ILanguageGenerator generator in
-			new ILanguageGenerator[] { new CSharpGenerator(), new CppGenerator(), new CGenerator(), new PythonGenerator(), new JavaScriptGenerator() })
+			new ILanguageGenerator[] { new CSharpGenerator(), new CppGenerator(), new CGenerator(), new PythonGenerator(), new JavaScriptGenerator(), new RustGenerator() })
 		{
 			Assert.IsTrue(generator.CanGenerate(conditional), $"{generator.DisplayName} should accept a conditional");
 		}

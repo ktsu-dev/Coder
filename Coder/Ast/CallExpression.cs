@@ -16,7 +16,7 @@ using System.Collections.ObjectModel;
 /// language.
 /// <para>
 /// <see cref="Receiver"/> is modelled rather than folded into <see cref="Callee"/> because that is
-/// the part the languages disagree about: <c>a.b(c)</c> in C#, C++, Python and JavaScript, and
+/// the part the languages disagree about: <c>a.b(c)</c> in C#, C++, Python, JavaScript and Rust, and
 /// <c>b(&amp;a, c)</c> in C, which has no member functions and lowers one to a free function taking
 /// the instance. That is the same transformation <see cref="Languages.CGenerator"/> already performs
 /// on the declaration side, so modelling the receiver is what lets the call site follow the
@@ -25,7 +25,7 @@ using System.Collections.ObjectModel;
 /// <para>
 /// <see cref="Callee"/> is text and is written verbatim, which is a decision rather than an
 /// oversight. A square root is <c>std::sqrt</c>, <c>Math.Sqrt</c>, <c>math.sqrt</c> and
-/// <c>Math.sqrt</c> in the five targets, and there is no shared idea underneath those four spellings
+/// <c>f64::sqrt</c> across the targets, and there is no shared idea underneath those spellings
 /// for the AST to hold — the way there is underneath a type, which is why
 /// <see cref="TypeReference"/> is structure. Choosing the name is the caller's, exactly as
 /// <see cref="SourceFile.Imports"/> and <see cref="CompileTimeAssertion.Condition"/> are the

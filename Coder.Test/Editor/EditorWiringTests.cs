@@ -24,7 +24,7 @@ public sealed class EditorWiringTests
 {
 	private const string ConfigHomeVariable = "XDG_CONFIG_HOME";
 
-	private static readonly string[] ExpectedLanguageIds = ["python", "csharp", "javascript", "cpp", "c"];
+	private static readonly string[] ExpectedLanguageIds = ["python", "csharp", "javascript", "cpp", "c", "rust"];
 	private static readonly string[] ExpectedRecentFiles = ["/work/second.coder.yaml", "/work/first.coder.yaml"];
 
 	private string root = string.Empty;

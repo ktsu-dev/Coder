@@ -366,8 +366,8 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// <param name="callExpr">The call to emit.</param>
 	/// <param name="code">The writer to emit into.</param>
 	/// <remarks>
-	/// A receiver is written in front of the callee, separated by a dot, which is how four of the
-	/// five targets spell a member call. C is the exception and overrides this: it has no member
+	/// A receiver is written in front of the callee, separated by a dot, which is how five of the
+	/// six targets spell a member call. C is the exception and overrides this: it has no member
 	/// functions, so the receiver becomes the first argument.
 	/// <para>
 	/// <see cref="CallExpression.Callee"/> is written verbatim. Nothing here maps a function's name
@@ -398,7 +398,8 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// <param name="code">The writer to emit into.</param>
 	/// <remarks>
 	/// Defaults to the C-family <c>?:</c>. Python spells the same thing with its operands in a
-	/// different order and overrides this.
+	/// different order, and Rust has no ternary operator at all and writes an <c>if</c> expression;
+	/// both override this.
 	/// <para>
 	/// Parenthesised for the reason a binary expression is: the AST carries no precedence, so nesting
 	/// one of these inside another would otherwise be ambiguous.

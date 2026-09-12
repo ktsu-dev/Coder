@@ -7,11 +7,16 @@ namespace ktsu.Coder.Ast;
 /// Examples: <c>ready ? go : wait</c>, and in Python <c>go if ready else wait</c>
 /// </summary>
 /// <remarks>
-/// A choice between two values is not a choice between two statements: four of the five targets
-/// spell this as an expression and would need a temporary and a branch to say it any other way, and
-/// the fifth — Python — reorders the operands rather than lacking it. That reordering is precisely
-/// the kind of difference the AST exists to absorb, and it is invisible to a caller that hands a
-/// generator this node instead of the text.
+/// A choice between two values is not a choice between two statements: every target can say it as an
+/// expression and would need a temporary and a branch to say it any other way. Each spells it
+/// differently, which is precisely the kind of difference the AST exists to absorb: <c>?:</c> in the
+/// four C-family targets, <c>go if ready else wait</c> in Python, and <c>if ready { go } else
+/// { wait }</c> in Rust, which has no ternary operator at all.
+/// <para>
+/// Rust is why this is worth a node rather than text. Python only reorders the operands, so a caller
+/// spelling the C-family form by hand would be merely unidiomatic there; in Rust the same text does
+/// not parse.
+/// </para>
 /// </remarks>
 public class ConditionalExpression : Expression
 {

@@ -96,6 +96,7 @@ public class CallExpressionTests
 		Assert.AreEqual("sqrt(x)", new CGenerator().Generate(call), "C");
 		Assert.AreEqual("sqrt(x)", new PythonGenerator().Generate(call), "Python");
 		Assert.AreEqual("sqrt(x)", new JavaScriptGenerator().Generate(call), "JavaScript");
+		Assert.AreEqual("sqrt(x)", new RustGenerator().Generate(call), "Rust");
 	}
 
 	/// <summary>
@@ -121,7 +122,7 @@ public class CallExpressionTests
 	}
 
 	/// <summary>
-	/// Tests that four of the five targets write a member call with a dot.
+	/// Tests that five of the six targets write a member call with a dot.
 	/// </summary>
 	[TestMethod]
 	public void MemberCall_IsWrittenWithADotByEveryLanguageThatHasMembers()
@@ -135,6 +136,7 @@ public class CallExpressionTests
 		Assert.AreEqual("point.translate(dx)", new CppGenerator().Generate(call), "C++");
 		Assert.AreEqual("point.translate(dx)", new PythonGenerator().Generate(call), "Python");
 		Assert.AreEqual("point.translate(dx)", new JavaScriptGenerator().Generate(call), "JavaScript");
+		Assert.AreEqual("point.translate(dx)", new RustGenerator().Generate(call), "Rust");
 	}
 
 	/// <summary>
@@ -239,7 +241,7 @@ public class CallExpressionTests
 		CallExpression call = new("sqrt");
 
 		foreach (ILanguageGenerator generator in
-			new ILanguageGenerator[] { new CSharpGenerator(), new CppGenerator(), new CGenerator(), new PythonGenerator(), new JavaScriptGenerator() })
+			new ILanguageGenerator[] { new CSharpGenerator(), new CppGenerator(), new CGenerator(), new PythonGenerator(), new JavaScriptGenerator(), new RustGenerator() })
 		{
 			Assert.IsTrue(generator.CanGenerate(call), $"{generator.DisplayName} should accept a call");
 		}

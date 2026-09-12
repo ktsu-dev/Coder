@@ -23,7 +23,7 @@ dotnet run --project Coder.Editor
 ## Project Structure
 
 `ktsu.Coder` represents code as a language-agnostic AST, round-trips it through YAML, and generates
-source in five target languages. The solution uses:
+source in six target languages. The solution uses:
 
 - **ktsu.Sdk** — custom SDK providing shared build configuration
 - **MSTest.Sdk** — test project SDK with Microsoft Testing Platform
@@ -79,14 +79,17 @@ source in five target languages. The solution uses:
   C++ is the one language here that puts them on the declarator rather than the type.
   `IsConstant` is the intent rather than the keyword: C++ writes `inline constexpr` at namespace
   scope and `static constexpr` inside a type, C# writes `static readonly`, C writes `static const`
-  at file scope and a note inside a struct, having no static data member at all, and a language with no
-  spelling for it omits it the way it omits an indirection.
+  at file scope and a note inside a struct, having no static data member at all, Rust picks between
+  a `const` and a `static` with it and lets it decide whether a local is `let` or `let mut`, and a
+  language with no spelling for it omits it the way it omits an indirection.
 - `Coder/Ast/ClassDeclaration.cs`'s `SpecialisationArguments` — what makes a declaration be *for* a
   type rather than *of* one. `template<> struct Describe<RigidBody>` is how C++ attaches a fact to a
   type without touching the type, which is what a generated reflection table needs: the alternative
   is naming, and a `DescribeRigidBody` every consumer has to spell for itself is the thing a lookup
-  by type exists to avoid. Only C++ has it and the other three write a comment, the same as
-  `CompileTimeAssertion`; the arguments are `TypeReference` rather than text, though, because a
+  by type exists to avoid. C++ has it, and Rust answers it exactly — `impl Describe for RigidBody`
+  attaches facts to a type without touching the type, which is the whole of what the specialisation
+  is for; the rest write a comment, the same as `CompileTimeAssertion`. The arguments are
+  `TypeReference` rather than text, though, because a
   specialisation argument is a type and the comma in `Result<Handle, Error>` belongs to one of them
   rather than separating two.
  - `Coder/Ast/CompileTimeAssertion.cs` — what a generated type promises that the type itself cannot
@@ -94,19 +97,22 @@ source in five target languages. The solution uses:
   is language-specific in a way most of the AST is not, and there is no shared idea underneath
   `std::is_trivially_copyable_v<T>` to model. Only C++ and C have one — `static_assert` and
   `_Static_assert`, the second of which requires a message, so an assertion with none is given its
-  own condition; the others write a comment, because a file that quietly loses a guarantee looks
-  like one that still makes it.
+  own condition — and Rust, whose `const _: () = assert!(…)` needs no macro crate because a constant
+  nobody names still has to be evaluated for the program to build; the others write a comment,
+  because a file that quietly loses a guarantee looks like one that still makes it.
 - `Coder/Ast/CallExpression.cs`, `ExpressionStatement.cs`, `ConditionalExpression.cs` — what a
   function *body* is made of beyond an operator applied to operands. `CallExpression`'s `Callee` is
   text and written verbatim, for the reason `SourceFile.Imports` and `CompileTimeAssertion.Condition`
-  are: a square root is `std::sqrt`, `Math.Sqrt`, `math.sqrt` and `Math.sqrt`, and there is no shared
+  are: a square root is `std::sqrt`, `Math.Sqrt`, `math.sqrt` and `f64::sqrt`, and there is no shared
   idea underneath those to model. Its `Receiver` *is* modelled, because that is the part the
-  languages disagree about — `a.b(c)` in four of them and `b(&a, c)` in C, which is the same lowering
+  languages disagree about — `a.b(c)` in five of them and `b(&a, c)` in C, which is the same lowering
   `CGenerator` already performs on the declaration, so the call site follows the declaration.
   `ExpressionStatement` is where a call made for its effect stands: without it a `void` call has
   nowhere to go, since the AST could say what to do with a value but not that a value is beside the
-  point. `ConditionalExpression` is one node rather than a branch and a temporary because four
-  targets spell it as an expression and the fifth, Python, only reorders the operands.
+  point. `ConditionalExpression` is a choice between two values rather than between two statements,
+  which every target can express and each spells differently: `?:` in the four C-family ones,
+  `go if ready else wait` in Python, and `if ready { go } else { wait }` in Rust, which has no
+  ternary operator at all and makes `if` an expression instead.
 - `Coder/Languages/LanguageGeneratorBase.cs` — the emitters every generator shares.
 - `Coder/Languages/StandardLanguageGenerator.cs` — owns the node dispatch, so a derived
   generator supplies only the syntax its language does not share. `CSharpGenerator` deliberately
@@ -127,6 +133,19 @@ source in five target languages. The solution uses:
   underlying type. `Coder.Test/Languages/CGeneratedSourceCompilesTests.cs` compiles what it writes,
   because C's rules about linkage, empty parameter lists and what may initialise an object with
   static storage duration are not visible in the text.
+- `Coder/Languages/RustGenerator.cs` — the target with the most to map onto, and so the one where the
+  interesting question is which feature each part of a declaration became rather than what to write
+  in place of it. Data goes in a `struct` and behaviour in an `impl` block; an interface is a `trait`
+  and a base type on one is a supertrait; a destructor is `impl Drop`, an operator is its `std::ops`
+  trait, a conversion is `impl From`, and a specialisation is `impl Trait for Type` — which is the
+  one place a target answers C++'s explicit specialisation exactly. What is left over is inheritance,
+  which Rust does not have, and the operators it supplies from another one and will not let a type
+  define by itself. `Coder.Editor/RustSyntax.cs` registers the highlighter definition, because the
+  highlighter ships fifteen languages and Rust is not one of them.
+- `Coder.Test/Languages/CompiledExemplar.cs` — one AST, compiled by two real compilers. The C and
+  Rust generators are each checked by compiling what they write, and they are checked against the
+  same declarations, which says more than two parallel fixtures could: the claim being made is that
+  the same AST comes out as valid source in each target.
 - `Coder.Graph/AstSchema.cs` — the uniform view of the AST's parent/child structure, hand-written
   rather than reflective. Adding a node type means adding it here.
 - `Coder.Graph/AstFields.cs` — a node's editable properties as named fields of a kind, which is what

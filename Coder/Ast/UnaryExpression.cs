@@ -73,7 +73,7 @@ public class UnaryExpression : Expression
 /// Defines the types of unary operators supported.
 /// </summary>
 /// <remarks>
-/// Every operator here exists in all five target languages, so no AST using them is untranslatable.
+/// Every operator here exists in all six target languages, so no AST using them is untranslatable.
 /// Only the spelling of <see cref="LogicalNot"/> differs, in Python.
 /// </remarks>
 public enum UnaryOperator
