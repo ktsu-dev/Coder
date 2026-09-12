@@ -190,6 +190,47 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	protected virtual string CommentPrefix => "//";
 
 	/// <summary>
+	/// Spells one piece of metadata attached to a declaration, or reports that the language has no
+	/// syntax for one.
+	/// </summary>
+	/// <param name="annotation">The annotation as the declaration carries it.</param>
+	/// <returns>The line to write, or null when the language has no metadata syntax.</returns>
+	/// <remarks>
+	/// The same shape as <see cref="SpellImport"/>, and for the same reason: what the annotation
+	/// says is the caller's — a <c>[TestMethod]</c> means nothing outside the framework that reads
+	/// it — and what is around it is the language's. Four targets have somewhere to put one and
+	/// three do not.
+	/// </remarks>
+	protected virtual string? SpellAnnotation(Annotation annotation) => null;
+
+	/// <summary>
+	/// Writes a declaration's metadata, above the declaration.
+	/// </summary>
+	/// <param name="annotations">The annotations the declaration carries.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// A target with no metadata syntax writes down the one it was given rather than dropping it. A
+	/// file that quietly loses its <c>[Obsolete]</c> looks like a file that never had one.
+	/// </remarks>
+	protected void WriteAnnotations(IEnumerable<Annotation> annotations, CodeBlocker code)
+	{
+		Ensure.NotNull(annotations);
+		Ensure.NotNull(code);
+
+		foreach (Annotation annotation in annotations)
+		{
+			if (SpellAnnotation(annotation) is string spelled)
+			{
+				code.WriteLine(spelled);
+			}
+			else
+			{
+				WriteInexpressible(code, $"annotated {annotation}");
+			}
+		}
+	}
+
+	/// <summary>
 	/// Writes down the types a declaration is written over, for a target that has no generics.
 	/// </summary>
 	/// <param name="parameters">The declaration's type parameters.</param>

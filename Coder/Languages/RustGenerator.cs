@@ -276,6 +276,8 @@ public class RustGenerator : StandardLanguageGenerator
 	public override string FileExtension => "rs";
 
 	/// <inheritdoc/>
+	protected override string? SpellAnnotation(Annotation annotation) => $"#[{annotation}]";
+	/// <inheritdoc/>
 	/// <remarks>
 	/// <c>use</c>, which is what Rust writes where the others write an include or an import. A path
 	/// that already ends in a semicolon is left alone, so a caller who wrote the whole item — a
@@ -483,6 +485,7 @@ public class RustGenerator : StandardLanguageGenerator
 	private void GenerateStruct(ClassDeclaration classDecl, string name, CodeBlocker code)
 	{
 		GenerateDocumentation(classDecl, code);
+		WriteAnnotations(classDecl.Annotations, code);
 
 		// A trait a struct implements needs an impl block, and an impl block needs the bodies of
 		// the methods it supplies, which the declaration does not have: the members here belong to
@@ -568,6 +571,7 @@ public class RustGenerator : StandardLanguageGenerator
 	private void GenerateTrait(ClassDeclaration classDecl, string name, CodeBlocker code)
 	{
 		GenerateDocumentation(classDecl, code);
+		WriteAnnotations(classDecl.Annotations, code);
 		WriteTypePromises(classDecl, code);
 		WriteUnaskedConstraints(
 			classDecl.TypeParameters,
@@ -786,6 +790,8 @@ public class RustGenerator : StandardLanguageGenerator
 			WriteInexpressible(code, $"{SpellFunctionName(funcDecl)} is defaulted: derive it, or implement Default");
 			return;
 		}
+
+		WriteAnnotations(funcDecl.Annotations, code);
 
 		// #[must_use] says what a pure function's purity means to a caller, and is worth nothing on
 		// one that answers nothing.
@@ -1022,6 +1028,7 @@ public class RustGenerator : StandardLanguageGenerator
 		if (insideType > 0)
 		{
 			GenerateDocumentation(field, code);
+			WriteAnnotations(field.Annotations, code);
 			WriteStructMember(field.Name, field.Type, field.Visibility, code);
 			return;
 		}

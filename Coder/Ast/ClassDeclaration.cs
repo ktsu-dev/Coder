@@ -84,6 +84,11 @@ public class ClassDeclaration : AstCompositeNode, IHasVisibility, IHasDocumentat
 	public bool IsSpecialisation => SpecialisationArguments.Count > 0;
 
 	/// <summary>
+	/// Gets the metadata attached to this declaration, which may be none.
+	/// </summary>
+	public Collection<Annotation> Annotations { get; init; } = [];
+
+	/// <summary>
 	/// Gets the types this declaration is written over, which may be none.
 	/// </summary>
 	/// <remarks>
@@ -197,6 +202,11 @@ public class ClassDeclaration : AstCompositeNode, IHasVisibility, IHasDocumentat
 		foreach (TypeParameter parameter in TypeParameters)
 		{
 			clone.TypeParameters.Add(parameter.Clone());
+		}
+
+		foreach (Annotation annotation in Annotations)
+		{
+			clone.Annotations.Add(annotation.Clone());
 		}
 
 		foreach ((string key, object? value) in Metadata)

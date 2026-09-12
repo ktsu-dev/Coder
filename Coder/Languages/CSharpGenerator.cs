@@ -162,6 +162,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 	private void GenerateClass(ClassDeclaration classDecl, CodeBlocker code)
 	{
 		GenerateDocumentation(classDecl, code);
+		WriteAnnotations(classDecl.Annotations, code);
 
 		// C++ can attach a declaration to a type it does not own, by specialising a template on it.
 		// Nothing here can, so the fact is written down rather than lost: what follows is an
@@ -276,6 +277,13 @@ public class CSharpGenerator : LanguageGeneratorBase
 			TypeConstraintKind.Constructible => 2,
 			_ => 1,
 		});
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// Square brackets, and one attribute per line rather than several in one pair of them: a
+	/// declaration with four of them reads down the page, and a diff that adds one touches one line.
+	/// </remarks>
+	protected override string? SpellAnnotation(Annotation annotation) => $"[{annotation}]";
 
 	/// <inheritdoc/>
 	protected override string? SpellImport(string import) => $"using {import};";
@@ -492,6 +500,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 	private void GenerateField(FieldDeclaration field, CodeBlocker code)
 	{
 		GenerateDocumentation(field, code);
+		WriteAnnotations(field.Annotations, code);
 
 		code.Write($"{SpellVisibility(field.Visibility) ?? DefaultVisibility} ");
 
@@ -560,6 +569,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 			return;
 		}
 
+		WriteAnnotations(function.Annotations, code);
 		WriteFunctionAttributes(function, code);
 		WriteFunctionModifiers(function, code);
 

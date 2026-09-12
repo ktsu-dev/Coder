@@ -273,6 +273,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 			WriteInexpressible(code, $"specialised for {string.Join(", ", classDecl.SpecialisationArguments)}");
 		}
 
+		WriteAnnotations(classDecl.Annotations, code);
 		WriteTypePromises(classDecl, code);
 		WriteTypeParametersDown(classDecl.TypeParameters, code);
 

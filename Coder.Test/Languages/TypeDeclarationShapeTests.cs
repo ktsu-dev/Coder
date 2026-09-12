@@ -475,6 +475,121 @@ public class TypeDeclarationShapeTests
 		Assert.AreEqual("U", TypeParameter.Parse("U").ToString());
 	}
 
+	// ------------------------------------------------------------------ Annotations
+
+	/// <summary>
+	/// A declaration carrying the attribute ktsu.Semantics puts on its physics operators.
+	/// </summary>
+	/// <returns>The declaration.</returns>
+	private static FunctionDeclaration Suppressed()
+	{
+		FunctionDeclaration multiply = new("Multiply") { ReturnType = "Energy", IsStatic = true };
+		Annotation suppress = new("SuppressMessage");
+		suppress.Arguments.Add("\"Usage\"");
+		suppress.Arguments.Add("\"CA2225:Operator overloads have named alternates\"");
+		multiply.Annotations.Add(suppress);
+		return multiply;
+	}
+
+	/// <summary>
+	/// The four targets with a metadata syntax each write the same name in their own brackets.
+	/// </summary>
+	/// <param name="language">The generator to ask.</param>
+	/// <param name="expected">The line it should write.</param>
+	/// <remarks>
+	/// The name and the arguments are the caller's, written verbatim — a <c>[TestMethod]</c> means
+	/// nothing outside the framework that reads it, so there is nothing underneath for the AST to
+	/// translate. What is around them is the language's, and that is the whole of what these four
+	/// disagree about.
+	/// </remarks>
+	[TestMethod]
+	[DataRow("csharp", "[Obsolete(\"use Mass\")]")]
+	[DataRow("cpp", "[[Obsolete(\"use Mass\")]]")]
+	[DataRow("rust", "#[Obsolete(\"use Mass\")]")]
+	[DataRow("python", "@Obsolete(\"use Mass\")")]
+	public void TargetsWithMetadataSyntax_WriteItInTheirOwnBrackets(string language, string expected)
+	{
+		ClassDeclaration mass = new("Mass");
+		Annotation obsolete = new("Obsolete");
+		obsolete.Arguments.Add("\"use Mass\"");
+		mass.Annotations.Add(obsolete);
+
+		ILanguageGenerator generator = language switch
+		{
+			"csharp" => new CSharpGenerator(),
+			"cpp" => new CppGenerator(),
+			"rust" => new RustGenerator(),
+			_ => new PythonGenerator(),
+		};
+
+		StringAssert.Contains(Generate(generator, mass), expected);
+	}
+
+	/// <summary>
+	/// A target with no metadata syntax writes the annotation down rather than dropping it.
+	/// </summary>
+	/// <param name="language">The generator to ask.</param>
+	/// <remarks>
+	/// A file that quietly loses its <c>[Obsolete]</c> looks like a file that never had one.
+	/// </remarks>
+	[TestMethod]
+	[DataRow("c")]
+	[DataRow("javascript")]
+	[DataRow("go")]
+	public void TargetsWithNoMetadataSyntax_WriteItDown(string language)
+	{
+		ILanguageGenerator generator = language switch
+		{
+			"c" => new CGenerator(),
+			"javascript" => new JavaScriptGenerator(),
+			_ => new GoGenerator(),
+		};
+
+		ClassDeclaration mass = new("Mass");
+		mass.Annotations.Add(new Annotation("Obsolete"));
+
+		StringAssert.Contains(Generate(generator, mass), "// annotated Obsolete");
+	}
+
+	/// <summary>
+	/// A function's annotations are written above it, arguments and all.
+	/// </summary>
+	[TestMethod]
+	public void CSharp_WritesAFunctionsAnnotations()
+	{
+		StringAssert.Contains(
+			Generate(new CSharpGenerator(), Suppressed()),
+			"[SuppressMessage(\"Usage\", \"CA2225:Operator overloads have named alternates\")]");
+	}
+
+	/// <summary>
+	/// An annotation survives a trip through YAML, and the comma inside an argument stays inside it.
+	/// </summary>
+	/// <remarks>
+	/// Which is the whole reason the arguments are a sequence rather than one string:
+	/// <c>SuppressMessage("Usage", "CA2225:Operator overloads have named alternates")</c> has two
+	/// arguments and three commas.
+	/// </remarks>
+	[TestMethod]
+	public void Yaml_CarriesAnAnnotationWithCommasInsideItsArguments()
+	{
+		FunctionDeclaration original = Suppressed();
+		original.Annotations.Add(new Annotation("Pure"));
+
+		ktsu.Coder.Serialization.YamlSerializer serializer = new();
+		ktsu.Coder.Serialization.YamlDeserializer deserializer = new();
+
+		FunctionDeclaration restored = (FunctionDeclaration)deserializer.Deserialize(serializer.Serialize(original))!;
+
+		Assert.AreEqual(2, restored.Annotations.Count);
+		Assert.AreEqual("SuppressMessage", restored.Annotations[0].Name);
+		Assert.AreSequenceEqual(
+			(string[])["\"Usage\"", "\"CA2225:Operator overloads have named alternates\""],
+			[.. restored.Annotations[0].Arguments]);
+		Assert.AreEqual("Pure", restored.Annotations[1].Name);
+		Assert.IsEmpty(restored.Annotations[1].Arguments);
+	}
+
 	// ------------------------------------------------------------------ Round trip
 
 	/// <summary>

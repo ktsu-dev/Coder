@@ -95,6 +95,13 @@ public class CppGenerator : CFamilyGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
+	/// Doubled brackets, which is the standard syntax rather than a compiler's own. An attribute
+	/// the compiler does not know is ignored with a warning rather than refused, which is what
+	/// makes writing a caller's attribute through safe here.
+	/// </remarks>
+	protected override string? SpellAnnotation(Annotation annotation) => $"[[{annotation}]]";
+	/// <inheritdoc/>
+	/// <remarks>
 	/// A constructor and a destructor are named after the type rather than after themselves, so the
 	/// name comes from the class emitter rather than from the declaration. That is what stops the two
 	/// desynchronising when the type is renamed — the alternative is holding the type's name twice
@@ -112,6 +119,7 @@ public class CppGenerator : CFamilyGenerator
 		Ensure.NotNull(code);
 
 		GenerateDocumentation(funcDecl, code);
+		WriteAnnotations(funcDecl.Annotations, code);
 		WriteUnaskedConstraints(funcDecl.TypeParameters, code);
 		WriteTemplateHead(funcDecl.TypeParameters, code);
 
@@ -339,6 +347,7 @@ public class CppGenerator : CFamilyGenerator
 
 		WriteTemplateHead(classDecl.TypeParameters, code);
 
+		WriteAnnotations(classDecl.Annotations, code);
 		WriteTypePromises(classDecl, code);
 
 		// Every constraint. A concept is a predicate over a type and can ask anything at all, so
@@ -551,6 +560,7 @@ public class CppGenerator : CFamilyGenerator
 		Ensure.NotNull(code);
 
 		GenerateDocumentation(field, code);
+		WriteAnnotations(field.Annotations, code);
 
 		code.Write(SpellStorage(field));
 		code.Write(SpellDeclarator(field.Type ?? new TypeReference(UnknownTypeName), field.Name ?? string.Empty));

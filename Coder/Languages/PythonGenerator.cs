@@ -87,6 +87,14 @@ public class PythonGenerator : StandardLanguageGenerator
 	protected override string CommentPrefix => "#";
 
 	/// <inheritdoc/>
+	/// <remarks>
+	/// A decorator, which is the one of these that is an ordinary runtime value: <c>@name</c> looks
+	/// the name up and calls it on what follows. That makes it the closest of the four to being a
+	/// caller's own, and the least likely to be something the language itself reads.
+	/// </remarks>
+	protected override string? SpellAnnotation(Annotation annotation) => $"@{annotation}";
+
+	/// <inheritdoc/>
 	protected override string? SpellImport(string import) => $"import {import}";
 
 	/// <inheritdoc/>
@@ -316,6 +324,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		// needs an import, and a class is generated on its own as readily as inside a file whose
 		// imports the AST carries. Emitting one would be a change to how this generator writes a
 		// file rather than to how it writes a class.
+		WriteAnnotations(classDecl.Annotations, code);
 		WriteTypePromises(classDecl, code);
 
 		// Python has TypeVar and Generic, and both need an import the AST does not carry for a

@@ -585,6 +585,7 @@ public class GoGenerator : StandardLanguageGenerator
 	private void GenerateStruct(ClassDeclaration classDecl, string name, CodeBlocker code)
 	{
 		GenerateDocumentation(classDecl, code);
+		WriteAnnotations(classDecl.Annotations, code);
 		WriteTypePromises(classDecl, code);
 
 		// Go has generics, and a generic type is still written down here. A method on one needs its
@@ -677,6 +678,7 @@ public class GoGenerator : StandardLanguageGenerator
 	private void GenerateInterface(ClassDeclaration classDecl, string name, CodeBlocker code)
 	{
 		GenerateDocumentation(classDecl, code);
+		WriteAnnotations(classDecl.Annotations, code);
 		WriteTypePromises(classDecl, code);
 		WriteTypeParametersDown(classDecl.TypeParameters, code);
 		WriteExportNote(name, classDecl.Visibility, code);
@@ -793,6 +795,7 @@ public class GoGenerator : StandardLanguageGenerator
 			return;
 		}
 
+		WriteAnnotations(funcDecl.Annotations, code);
 		WriteExportNote(name, funcDecl.Visibility, code);
 
 		code.Write("func ");

@@ -84,6 +84,16 @@ source in seven target languages. The solution uses:
   honours it only where the language can — a Go `const` holds a number, a string or a boolean and
   nothing with a field in it, so a table is a `var` with a note — and a language with no spelling for
   it omits it the way it omits an indirection.
+- `Coder/Ast/Annotation.cs` — metadata attached to a declaration: an attribute in C# and C++, an
+  attribute macro in Rust, a decorator in Python. The name here is the one that is nobody's keyword.
+  Its `Name` and `Arguments` are **text, written verbatim**, for the reason `CallExpression.Callee`
+  is: `[Obsolete]`, `#[serde(rename = "x")]` and `@staticmethod` have nothing underneath them to
+  hold, and one of them usually means nothing at all in the others. What *is* shared, and is what
+  each generator supplies, is the syntax around them — `[…]`, `[[…]]`, `#[…]`, `@…` — which is
+  exactly the split `SpellImport` already makes. C, JavaScript and Go have no metadata syntax and
+  write the annotation down, because a file that quietly loses its `[Obsolete]` looks like a file
+  that never had one. The arguments are a sequence rather than one string so that a comma inside an
+  argument stays inside it.
 - `Coder/Ast/TypeParameter.cs` and `TypeConstraint.cs` — what a declaration is written *over*, on
   `ClassDeclaration` and on `FunctionDeclaration`. Values rather than nodes, like
   `SpecialisationArguments` and for the same reason: a type parameter is part of the thing being

@@ -179,6 +179,7 @@ public partial class YamlDeserializer
 
 		DeserializeVisibility(funcDecl, dict);
 		ReadStrings(dict, DocumentationKey, funcDecl.Documentation);
+		DeserializeAnnotations(dict, funcDecl.Annotations);
 		DeserializeTypeParameters(dict, funcDecl.TypeParameters);
 	}
 
@@ -680,6 +681,7 @@ public partial class YamlDeserializer
 
 		DeserializeVisibility(field, dict);
 		ReadStrings(dict, DocumentationKey, field.Documentation);
+		DeserializeAnnotations(dict, field.Annotations);
 
 		if (dict.TryGetValue("initialValue", out object? initialObj) &&
 			initialObj is Dictionary<object, object> initialDict && initialDict.Count > 0)
@@ -784,6 +786,7 @@ public partial class YamlDeserializer
 
 		DeserializeVisibility(classDecl, dict);
 		ReadStrings(dict, DocumentationKey, classDecl.Documentation);
+		DeserializeAnnotations(dict, classDecl.Annotations);
 		DeserializeTypeParameters(dict, classDecl.TypeParameters);
 		DeserializeTypeList(dict, "interfaces", classDecl.Interfaces);
 		DeserializeTypeList(dict, "specialisationArguments", classDecl.SpecialisationArguments);
@@ -792,6 +795,116 @@ public partial class YamlDeserializer
 		DeserializeMetadata(classDecl, dict);
 
 		return classDecl;
+	}
+
+	/// <summary>
+	/// Reads a declaration's metadata into a collection.
+	/// </summary>
+	/// <param name="dict">The mapping to read from.</param>
+	/// <param name="annotations">The collection to fill.</param>
+	/// <remarks>
+	/// Each written the way <see cref="Annotation.ToString"/> writes it: a name, and its arguments
+	/// in brackets when it has any. The arguments are split at the commas outside any brackets of
+	/// their own, so an argument holding one keeps it.
+	/// </remarks>
+	private static void DeserializeAnnotations(Dictionary<object, object> dict, Collection<Annotation> annotations)
+	{
+		if (!dict.TryGetValue("annotations", out object? writtenObj) || writtenObj is not List<object> written)
+		{
+			return;
+		}
+
+		IEnumerable<string> spelled = written
+			.Select(annotation => annotation?.ToString() ?? string.Empty)
+			.Where(text => text.Length > 0);
+
+		foreach (string text in spelled)
+		{
+			annotations.Add(ReadAnnotation(text));
+		}
+	}
+
+	/// <summary>
+	/// Reads one written annotation.
+	/// </summary>
+	/// <param name="text">The annotation as it is written.</param>
+	/// <returns>The annotation.</returns>
+	private static Annotation ReadAnnotation(string text)
+	{
+		string written = text.Trim();
+		int opened = written.IndexOf('(');
+
+		if (opened < 0 || !written.EndsWith(')'))
+		{
+			return new Annotation(written);
+		}
+
+		Annotation annotation = new(written[..opened].Trim());
+
+		foreach (string argument in SplitArguments(written[(opened + 1)..^1]))
+		{
+			string trimmed = argument.Trim();
+			if (trimmed.Length > 0)
+			{
+				annotation.Arguments.Add(trimmed);
+			}
+		}
+
+		return annotation;
+	}
+
+	/// <summary>
+	/// Splits an argument list at the commas that separate its entries.
+	/// </summary>
+	/// <param name="text">The list, without the brackets around it.</param>
+	/// <returns>The entries.</returns>
+	/// <remarks>
+	/// A comma inside a string or inside brackets of an argument's own belongs to it:
+	/// <c>SuppressMessage("Usage", "CA2225:Operator overloads have named alternates")</c> has two
+	/// arguments and three commas.
+	/// </remarks>
+	private static IEnumerable<string> SplitArguments(string text)
+	{
+		int depth = 0;
+		bool quoted = false;
+		int start = 0;
+
+		for (int index = 0; index < text.Length; index++)
+		{
+			char character = text[index];
+
+			if (character == '"')
+			{
+				quoted = !quoted;
+				continue;
+			}
+
+			if (quoted)
+			{
+				continue;
+			}
+
+			switch (character)
+			{
+				case '(' or '[' or '<':
+					depth++;
+					break;
+
+				case ')' or ']' or '>':
+					depth--;
+					break;
+
+				case ',' when depth == 0:
+					yield return text[start..index];
+					start = index + 1;
+					break;
+
+				default:
+					break;
+			}
+		}
+
+		yield return text[start..];
 	}
 
 	/// <summary>

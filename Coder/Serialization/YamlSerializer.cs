@@ -2,6 +2,7 @@
 
 namespace ktsu.Coder.Serialization;
 
+using System.Collections.ObjectModel;
 using System.Collections.Generic;
 using System.Linq;
 using ktsu.Coder.Ast;
@@ -224,6 +225,7 @@ public class YamlSerializer
 			nodeData["isPure"] = funcDecl.IsPure;
 		}
 
+		SerializeAnnotations(funcDecl.Annotations, nodeData);
 		SerializeFunctionShape(funcDecl, nodeData);
 
 		if (funcDecl.TypeParameters.Count > 0)
@@ -496,6 +498,7 @@ public class YamlSerializer
 
 		SerializeVisibility(field, nodeData);
 		SerializeDocumentation(field, nodeData);
+		SerializeAnnotations(field.Annotations, nodeData);
 
 		if (field.InitialValue != null)
 		{
@@ -586,6 +589,24 @@ public class YamlSerializer
 		}
 	}
 
+	/// <summary>
+	/// Writes a declaration's metadata, when it has any.
+	/// </summary>
+	/// <param name="annotations">The annotations the declaration carries.</param>
+	/// <param name="nodeData">The mapping to write into.</param>
+	/// <remarks>
+	/// One line per annotation, name and arguments together, because
+	/// <see cref="Annotation.ToString"/> writes what a person would and the syntax around it is the
+	/// generator's rather than the document's.
+	/// </remarks>
+	private static void SerializeAnnotations(Collection<Annotation> annotations, Dictionary<string, object> nodeData)
+	{
+		if (annotations.Count > 0)
+		{
+			nodeData["annotations"] = annotations.Select(annotation => annotation.ToString()).ToList();
+		}
+	}
+
 	private static void SerializeClassDeclaration(ClassDeclaration classDecl, Dictionary<string, object> nodeData)
 	{
 		if (classDecl.Name != null)
@@ -645,6 +666,7 @@ public class YamlSerializer
 
 		SerializeVisibility(classDecl, nodeData);
 		SerializeDocumentation(classDecl, nodeData);
+		SerializeAnnotations(classDecl.Annotations, nodeData);
 
 		if (classDecl.Members.Count > 0)
 		{

@@ -168,6 +168,11 @@ public class FunctionDeclaration : AstCompositeNode, IHasVisibility, IHasDocumen
 	public Collection<Parameter> Parameters { get; init; } = [];
 
 	/// <summary>
+	/// Gets the metadata attached to this declaration, which may be none.
+	/// </summary>
+	public Collection<Annotation> Annotations { get; init; } = [];
+
+	/// <summary>
 	/// Gets the types this function is written over, which may be none.
 	/// </summary>
 	/// <remarks>
@@ -233,6 +238,11 @@ public class FunctionDeclaration : AstCompositeNode, IHasVisibility, IHasDocumen
 		foreach (TypeParameter typeParameter in TypeParameters)
 		{
 			clone.TypeParameters.Add(typeParameter.Clone());
+		}
+
+		foreach (Annotation annotation in Annotations)
+		{
+			clone.Annotations.Add(annotation.Clone());
 		}
 
 		foreach (Parameter parameter in Parameters)

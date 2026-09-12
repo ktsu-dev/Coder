@@ -505,6 +505,7 @@ public class CGenerator : CFamilyGenerator
 		}
 
 		GenerateDocumentation(classDecl, code);
+		WriteAnnotations(classDecl.Annotations, code);
 		WriteTypePromises(classDecl, code);
 		WriteTypeParametersDown(classDecl.TypeParameters, code);
 
