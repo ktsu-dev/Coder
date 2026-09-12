@@ -1,3 +1,17 @@
+## v3.9.0 (minor)
+
+Changes since v3.8.0:
+
+- Merge main, and teach the new nodes the Rust generator ([@Claude](https://github.com/Claude))
+- [minor] Add CallExpression, ExpressionStatement and ConditionalExpression ([@Claude](https://github.com/Claude))
+
+## v3.8.0 (minor)
+
+Changes since v3.7.0:
+
+- refactor: name the two notes the comparison operators share ([@Claude](https://github.com/Claude))
+- feat: add a Rust language generator [minor] ([@Claude](https://github.com/Claude))
+
 ## v3.7.0 (minor)
 
 Changes since v3.6.0:

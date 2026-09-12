@@ -860,6 +860,127 @@ public class GoGeneratorTests
 	}
 
 	/// <summary>
+	/// Tests that a call is written the way Go spells one, and that a receiver goes in front of it.
+	/// </summary>
+	[TestMethod]
+	public void Call_IsWrittenWithItsReceiverInFront()
+	{
+		FunctionDeclaration function = new("run");
+		function.Body.Add(new ExpressionStatement(
+			new CallExpression(new VariableReference("self"), "Shift") { Arguments = { Literal.Number(1) } }));
+		function.Body.Add(new ExpressionStatement(new CallExpression("reset")));
+
+		string generated = Generator.Generate(function);
+
+		StringAssert.Contains(generated, $"{NewLine}	self.Shift(1){NewLine}", StringComparison.Ordinal);
+		StringAssert.Contains(generated, $"{NewLine}	reset(){NewLine}", StringComparison.Ordinal);
+	}
+
+	/// <summary>
+	/// Tests that a conditional in a return becomes the statement Go has in place of one, since Go's
+	/// <c>if</c> yields nothing and there is no expression to write it as.
+	/// </summary>
+	[TestMethod]
+	public void ConditionalInAReturn_BecomesAnIfStatement()
+	{
+		FunctionDeclaration function = new("pick") { ReturnType = "int" };
+		function.Body.Add(new ReturnStatement(new ConditionalExpression(
+			new BinaryExpression(new VariableReference("x"), BinaryOperator.GreaterThan, new VariableReference("y")),
+			new VariableReference("x"),
+			new VariableReference("y"))));
+
+		Assert.AreEqual(
+			$"func pick() int {{{NewLine}	if x > y {{{NewLine}		return x{NewLine}	}}{NewLine}	return y{NewLine}}}{NewLine}",
+			Generator.Generate(function));
+	}
+
+	/// <summary>
+	/// Tests that a conditional being assigned becomes an if with both arms, since falling through
+	/// would leave the target holding what it held before rather than the other branch.
+	/// </summary>
+	[TestMethod]
+	public void ConditionalInAnAssignment_BecomesAnIfElse()
+	{
+		FunctionDeclaration function = new("choose");
+		function.Body.Add(new AssignmentStatement(
+			new VariableReference("total"),
+			new ConditionalExpression(new VariableReference("ready"), Literal.Number(1), Literal.Number(2)),
+			AssignmentOperator.Assign));
+
+		StringAssert.Contains(
+			Generator.Generate(function),
+			$"	if ready {{{NewLine}		total = 1{NewLine}	}} else {{{NewLine}		total = 2{NewLine}	}}{NewLine}",
+			StringComparison.Ordinal);
+	}
+
+	/// <summary>
+	/// Tests that a declaration naming its type takes the same lowering, which is the only one of the
+	/// three that knows what the branches are.
+	/// </summary>
+	[TestMethod]
+	public void ConditionalInADeclaration_DeclaresThenChooses()
+	{
+		FunctionDeclaration function = new("choose");
+		function.Body.Add(new VariableDeclaration("chosen", "Point", new ConditionalExpression(
+			new VariableReference("ready"), new VariableReference("a"), new VariableReference("b"))));
+
+		StringAssert.Contains(
+			Generator.Generate(function),
+			$"	var chosen Point{NewLine}	if ready {{{NewLine}		chosen = a{NewLine}	}} else {{{NewLine}		chosen = b{NewLine}	}}{NewLine}",
+			StringComparison.Ordinal);
+	}
+
+	/// <summary>
+	/// Tests that a conditional the statement around it cannot take becomes a function literal called
+	/// where it stands, which is the only expression Go has that chooses — and that its result type
+	/// is read off whichever branch says what it is.
+	/// </summary>
+	[TestMethod]
+	public void ConditionalInsideAnExpression_BecomesACalledFunctionLiteral()
+	{
+		FunctionDeclaration function = new("total") { ReturnType = "int" };
+		function.Body.Add(new ReturnStatement(new BinaryExpression(
+			new VariableReference("base"),
+			BinaryOperator.Add,
+			new ConditionalExpression(new VariableReference("ready"), Literal.Number(1), Literal.Number(2)))));
+
+		StringAssert.Contains(
+			Generator.Generate(function),
+			$"	return (base + func() int {{{NewLine}		if ready {{{NewLine}			return 1{NewLine}		}}{NewLine}		return 2{NewLine}	}}()){NewLine}",
+			StringComparison.Ordinal);
+	}
+
+	/// <summary>
+	/// Tests that a conditional whose branches say nothing about themselves answers with the type
+	/// this generator writes wherever one was never given.
+	/// </summary>
+	[TestMethod]
+	public void ConditionalWithUnsaidBranches_AnswersAny()
+	{
+		FunctionDeclaration function = new("total");
+		function.Body.Add(new ExpressionStatement(new ConditionalExpression(
+			new VariableReference("ready"), new VariableReference("a"), new VariableReference("b"))));
+
+		StringAssert.Contains(Generator.Generate(function), "	func() any {", StringComparison.Ordinal);
+	}
+
+	/// <summary>
+	/// Tests that the clause of an <c>if</c> carries no parentheses, since gofmt removes them there
+	/// and nowhere else.
+	/// </summary>
+	[TestMethod]
+	public void ConditionOfAnIf_IsNotParenthesised()
+	{
+		FunctionDeclaration function = new("pick") { ReturnType = "int" };
+		function.Body.Add(new ReturnStatement(new ConditionalExpression(
+			new UnaryExpression(UnaryOperator.LogicalNot, new VariableReference("ready")),
+			Literal.Number(1),
+			Literal.Number(2))));
+
+		StringAssert.Contains(Generator.Generate(function), $"	if !ready {{{NewLine}", StringComparison.Ordinal);
+	}
+
+	/// <summary>
 	/// Tests that a struct's fields have their types lined up, which is what gofmt does and therefore
 	/// what the file has to look like already.
 	/// </summary>

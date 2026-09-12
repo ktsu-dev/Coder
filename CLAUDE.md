@@ -107,6 +107,20 @@ source in seven target languages. The solution uses:
   checked while compiling, so `map[bool]struct{}{false: {}, cond: {}}` is a compile error exactly when
   `cond` is false. The rest write a comment, because a file that quietly loses a guarantee looks like
   one that still makes it.
+- `Coder/Ast/CallExpression.cs`, `ExpressionStatement.cs`, `ConditionalExpression.cs` — what a
+  function *body* is made of beyond an operator applied to operands. `CallExpression`'s `Callee` is
+  text and written verbatim, for the reason `SourceFile.Imports` and `CompileTimeAssertion.Condition`
+  are: a square root is `std::sqrt`, `Math.Sqrt`, `math.sqrt` and `f64::sqrt`, and there is no shared
+  idea underneath those to model. Its `Receiver` *is* modelled, because that is the part the
+  languages disagree about — `a.b(c)` in six of them and `b(&a, c)` in C, which is the same lowering
+  `CGenerator` already performs on the declaration, so the call site follows the declaration.
+  `ExpressionStatement` is where a call made for its effect stands: without it a `void` call has
+  nowhere to go, since the AST could say what to do with a value but not that a value is beside the
+  point. `ConditionalExpression` is a choice between two values rather than between two statements,
+  and it is the one node where Go is the language with least to offer: `?:` in the four C-family
+  ones, `go if ready else wait` in Python, `if ready { go } else { wait }` in Rust, which makes `if`
+  an expression — and in Go a closure called where it stands, because `if` there is a statement and
+  yields nothing at all.
 - `Coder/Languages/LanguageGeneratorBase.cs` — the emitters every generator shares.
 - `Coder/Languages/StandardLanguageGenerator.cs` — owns the node dispatch, so a derived
   generator supplies only the syntax its language does not share. `CSharpGenerator` deliberately

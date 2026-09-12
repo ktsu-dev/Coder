@@ -140,6 +140,15 @@ public class YamlSerializer
 			case ConstructionExpression construction:
 				SerializeConstructionExpression(construction, nodeData);
 				break;
+			case CallExpression callExpr:
+				SerializeCallExpression(callExpr, nodeData);
+				break;
+			case ConditionalExpression conditional:
+				SerializeConditionalExpression(conditional, nodeData);
+				break;
+			case ExpressionStatement statement:
+				SerializeExpressionStatement(statement, nodeData);
+				break;
 			case ReturnStatement returnStmt:
 				SerializeReturnStatement(returnStmt, nodeData);
 				break;
@@ -311,6 +320,9 @@ public class YamlSerializer
 	/// <summary>The key a node's single value is written under.</summary>
 	private const string ValueKey = "value";
 
+	/// <summary>The key an expression's expected type is written under.</summary>
+	private const string ExpectedTypeKey = "expectedType";
+
 	/// <summary>The key a node's members are written under.</summary>
 	private const string MembersKey = "members";
 
@@ -369,6 +381,55 @@ public class YamlSerializer
 		{
 			nodeData["arguments"] = SerializeBodyStatements(construction.Arguments);
 		}
+	}
+
+	private static void SerializeCallExpression(CallExpression callExpr, Dictionary<string, object> nodeData)
+	{
+		nodeData["callee"] = callExpr.Callee;
+
+		if (callExpr.Receiver is not null)
+		{
+			Dictionary<string, object> receiverData = [];
+			SerializeNode(callExpr.Receiver, receiverData);
+			nodeData["receiver"] = receiverData;
+		}
+
+		if (callExpr.Arguments.Count > 0)
+		{
+			nodeData["arguments"] = SerializeBodyStatements(callExpr.Arguments);
+		}
+
+		if (callExpr.ExpectedType != null)
+		{
+			nodeData[ExpectedTypeKey] = callExpr.ExpectedType;
+		}
+	}
+
+	private static void SerializeConditionalExpression(ConditionalExpression conditional, Dictionary<string, object> nodeData)
+	{
+		Dictionary<string, object> conditionData = [];
+		SerializeNode(conditional.Condition, conditionData);
+		nodeData["condition"] = conditionData;
+
+		Dictionary<string, object> whenTrueData = [];
+		SerializeNode(conditional.WhenTrue, whenTrueData);
+		nodeData["whenTrue"] = whenTrueData;
+
+		Dictionary<string, object> whenFalseData = [];
+		SerializeNode(conditional.WhenFalse, whenFalseData);
+		nodeData["whenFalse"] = whenFalseData;
+
+		if (conditional.ExpectedType != null)
+		{
+			nodeData[ExpectedTypeKey] = conditional.ExpectedType;
+		}
+	}
+
+	private static void SerializeExpressionStatement(ExpressionStatement statement, Dictionary<string, object> nodeData)
+	{
+		Dictionary<string, object> expressionData = [];
+		SerializeNode(statement.Expression, expressionData);
+		nodeData["expression"] = expressionData;
 	}
 
 	private static void SerializeEnumDeclaration(EnumDeclaration enumDecl, Dictionary<string, object> nodeData)
@@ -640,7 +701,7 @@ public class YamlSerializer
 
 		if (binaryExpr.ExpectedType != null)
 		{
-			nodeData["expectedType"] = binaryExpr.ExpectedType;
+			nodeData[ExpectedTypeKey] = binaryExpr.ExpectedType;
 		}
 	}
 
@@ -654,7 +715,7 @@ public class YamlSerializer
 
 		if (unaryExpr.ExpectedType != null)
 		{
-			nodeData["expectedType"] = unaryExpr.ExpectedType;
+			nodeData[ExpectedTypeKey] = unaryExpr.ExpectedType;
 		}
 	}
 
@@ -667,7 +728,7 @@ public class YamlSerializer
 
 		if (literal.ExpectedType != null)
 		{
-			nodeData["expectedType"] = literal.ExpectedType;
+			nodeData[ExpectedTypeKey] = literal.ExpectedType;
 		}
 	}
 
@@ -677,7 +738,7 @@ public class YamlSerializer
 
 		if (varRef.ExpectedType != null)
 		{
-			nodeData["expectedType"] = varRef.ExpectedType;
+			nodeData[ExpectedTypeKey] = varRef.ExpectedType;
 		}
 	}
 

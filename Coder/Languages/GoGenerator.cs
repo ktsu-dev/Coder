@@ -972,6 +972,24 @@ public class GoGenerator : StandardLanguageGenerator
 
 		bool inferred = varDecl.IsTypeInferred || varDecl.Type is null;
 
+		// A declaration that says its type is the third statement a conditional can be lowered into,
+		// and the only one that knows what the branches are: `var x T` first, then the choice
+		// assigning to it. Without this the expression form would have to name a type nobody gave it.
+		if (!inferred && varDecl.InitialValue is ConditionalExpression chosen)
+		{
+			code.Write($"var {varDecl.Name} {SpellType(varDecl.Type!)}");
+			EndStatement(code);
+
+			WriteChoice(chosen, code, bothArms: true, branch =>
+			{
+				code.Write($"{varDecl.Name} = ");
+				GenerateInternal(branch, code);
+				EndStatement(code);
+			});
+
+			return;
+		}
+
 		// The short form declares a variable, so it is not open to a constant — which is the one
 		// reason the decision has to be made before the keyword is written rather than with it.
 		if (inferred && varDecl.InitialValue is not null && !IsConstant(varDecl.IsConstant, varDecl.InitialValue))
@@ -1242,6 +1260,197 @@ public class GoGenerator : StandardLanguageGenerator
 		code.Write($"var _ = map[bool]struct{{}}{{false: {{}}, {assertion.Condition ?? "false"}: {{}}}}");
 		EndStatement(code);
 	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// Go is the one target here with no conditional expression at all. The C family has <c>?:</c>,
+	/// Python spells the same thing with its operands reordered, and Rust makes <c>if</c> an
+	/// expression — Go's <c>if</c> is a statement and yields nothing, so there is nothing to spell
+	/// this as in the place it stands.
+	/// <para>
+	/// So it is lowered to the statement around it, which is what anybody writing Go by hand does:
+	/// <c>if cond { return a }</c> followed by <c>return b</c>. That is exact rather than merely
+	/// close — only the branch taken is evaluated, the same as a ternary — and, unlike every
+	/// expression form Go has, it needs nobody to name the branches' type.
+	/// </para>
+	/// </remarks>
+	protected override void GenerateReturnStatement(ReturnStatement returnStmt, CodeBlocker code)
+	{
+		Ensure.NotNull(returnStmt);
+		Ensure.NotNull(code);
+
+		if (returnStmt.Expression is not ConditionalExpression conditional)
+		{
+			base.GenerateReturnStatement(returnStmt, code);
+			return;
+		}
+
+		// One arm: a return leaves the statement, so the second branch is what follows rather than
+		// what an else holds.
+		WriteChoice(conditional, code, bothArms: false, branch =>
+		{
+			code.Write("return ");
+			GenerateInternal(branch, code);
+			EndStatement(code);
+		});
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// The same lowering <see cref="GenerateReturnStatement"/> does, in the other statement that can
+	/// hold a choice between two values. Here it needs both arms, since falling through would leave
+	/// the target holding what it held before rather than the other branch.
+	/// </remarks>
+	protected override void GenerateAssignmentStatement(AssignmentStatement assignment, CodeBlocker code)
+	{
+		Ensure.NotNull(assignment);
+		Ensure.NotNull(code);
+
+		if (assignment.Value is not ConditionalExpression conditional)
+		{
+			base.GenerateAssignmentStatement(assignment, code);
+			return;
+		}
+
+		WriteChoice(conditional, code, bothArms: true, branch =>
+		{
+			GenerateInternal(assignment.Target, code);
+			code.Write($" {GetAssignmentOperator(assignment.Operator)} ");
+			GenerateInternal(branch, code);
+			EndStatement(code);
+		});
+	}
+
+	/// <summary>
+	/// Writes a conditional as the <c>if</c> Go has in place of it.
+	/// </summary>
+	/// <param name="conditional">The expression being lowered.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <param name="bothArms">
+	/// Whether the second branch needs an <c>else</c> to hold it, or is simply what comes next —
+	/// which it is when the first branch left the statement.
+	/// </param>
+	/// <param name="writeArm">How to write one branch once it has been chosen.</param>
+	/// <remarks>
+	/// The braces are written out rather than opened as a scope because of Go's semicolon insertion:
+	/// a line break between <c>}</c> and <c>else</c> ends the statement, so the two have to share a
+	/// line and nothing that writes a closing brace on its own can be used.
+	/// </remarks>
+	private void WriteChoice(
+		ConditionalExpression conditional,
+		CodeBlocker code,
+		bool bothArms,
+		Action<AstNode> writeArm)
+	{
+		code.Write("if ");
+		WriteCondition(conditional.Condition, code);
+		code.WriteLine(" {");
+
+		code.Indent();
+		writeArm(conditional.WhenTrue);
+		code.Outdent();
+
+		if (!bothArms)
+		{
+			code.WriteLine("}");
+			writeArm(conditional.WhenFalse);
+			return;
+		}
+
+		code.WriteLine("} else {");
+		code.Indent();
+		writeArm(conditional.WhenFalse);
+		code.Outdent();
+		code.WriteLine("}");
+	}
+
+	/// <summary>
+	/// Writes the expression an <c>if</c> tests, without the parentheses every other position keeps.
+	/// </summary>
+	/// <param name="condition">The expression to write.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// The AST carries no operator precedence, so an operator applied to operands is parenthesised
+	/// wherever it stands — and <c>gofmt</c> removes exactly those parentheses from the clause of an
+	/// <c>if</c>, a <c>for</c> or a <c>switch</c> and nowhere else. This is the one place this
+	/// generator writes such a clause, so it is the one place the parentheses are left off.
+	/// <para>
+	/// Only the outermost pair: <c>gofmt</c> takes no view on the ones inside, which are what make
+	/// the expression unambiguous in the first place.
+	/// </para>
+	/// </remarks>
+	private void WriteCondition(AstNode condition, CodeBlocker code)
+	{
+		switch (condition)
+		{
+			case BinaryExpression binary:
+				GenerateInternal(binary.Left, code);
+				code.Write($" {GetOperatorSpelling(binary.Operator)} ");
+				GenerateInternal(binary.Right, code);
+				return;
+
+			case UnaryExpression unary:
+				code.Write(GetUnaryOperatorSpelling(unary.Operator));
+				GenerateInternal(unary.Operand, code);
+				return;
+
+			default:
+				GenerateInternal(condition, code);
+				return;
+		}
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// Where the statement around it could not take the lowering — nested inside another expression,
+	/// or passed as an argument — what is left is a function literal called where it stands, which is
+	/// the only expression Go has that can choose. It has to name what it answers with and the AST
+	/// does not say, so the type is read off whichever branch says what it is, and is <c>any</c> when
+	/// neither does — which is what this generator writes wherever a type was never given.
+	/// </remarks>
+	protected override void GenerateConditionalExpression(ConditionalExpression conditional, CodeBlocker code)
+	{
+		Ensure.NotNull(conditional);
+		Ensure.NotNull(code);
+
+		code.WriteLine($"func() {BranchType(conditional)} {{");
+		code.Indent();
+
+		WriteChoice(conditional, code, bothArms: false, branch =>
+		{
+			code.Write("return ");
+			GenerateInternal(branch, code);
+			EndStatement(code);
+		});
+
+		code.Outdent();
+		code.Write("}()");
+	}
+
+	/// <summary>
+	/// Spells what a conditional answers with, which Go makes the caller name.
+	/// </summary>
+	/// <param name="conditional">The expression being written.</param>
+	/// <returns>The type as Go writes it.</returns>
+	private static string BranchType(ConditionalExpression conditional) =>
+		TypeOfValue(conditional.WhenTrue)
+			?? TypeOfValue(conditional.WhenFalse)
+			?? TypeMappings[UnknownTypeName];
+
+	/// <summary>
+	/// Reads a type off a value that says what it is.
+	/// </summary>
+	/// <param name="value">The value to read.</param>
+	/// <returns>The type as Go writes it, or null where the value does not say.</returns>
+	private static string? TypeOfValue(AstNode value) => value switch
+	{
+		LiteralExpression<string> or AstLeafNode<string> => "string",
+		LiteralExpression<int> or AstLeafNode<int> => "int",
+		LiteralExpression<bool> or AstLeafNode<bool> => "bool",
+		LiteralExpression<double> => "float64",
+		ConstructionExpression { Type: not null } built => SpellType(built.Type),
+		_ => null,
+	};
 
 	/// <inheritdoc/>
 	/// <remarks>

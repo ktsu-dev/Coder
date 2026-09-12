@@ -65,6 +65,12 @@ public partial class YamlDeserializer
 			"MemberInitialiser" => DeserializeMemberInitialiser(nodeData),
 			"constructionExpression" => DeserializeConstructionExpression(nodeData),
 			"ConstructionExpression" => DeserializeConstructionExpression(nodeData),
+			"callExpression" => DeserializeCallExpression(nodeData),
+			"CallExpression" => DeserializeCallExpression(nodeData),
+			"conditionalExpression" => DeserializeConditionalExpression(nodeData),
+			"ConditionalExpression" => DeserializeConditionalExpression(nodeData),
+			"expressionStatement" => DeserializeExpressionStatement(nodeData),
+			"ExpressionStatement" => DeserializeExpressionStatement(nodeData),
 			"enumDeclaration" => DeserializeEnumDeclaration(nodeData),
 			"EnumDeclaration" => DeserializeEnumDeclaration(nodeData),
 			"enumMember" => DeserializeEnumMember(nodeData),
@@ -474,6 +480,121 @@ public partial class YamlDeserializer
 
 		DeserializeMetadata(construction, dict);
 		return construction;
+	}
+
+	/// <summary>
+	/// Reads back an expression written as a single-entry mapping of node type to node data.
+	/// </summary>
+	/// <param name="value">The mapping, as the deserializer produced it.</param>
+	/// <returns>The expression, or null when the mapping holds nothing that is one.</returns>
+	private Expression? DeserializeNestedExpression(object? value)
+	{
+		if (value is not Dictionary<object, object> dict)
+		{
+			return null;
+		}
+
+		foreach ((object nodeType, object nodeData) in dict)
+		{
+			if (DeserializeNode(nodeType.ToString() ?? string.Empty, nodeData) is Expression expression)
+			{
+				return expression;
+			}
+		}
+
+		return null;
+	}
+
+	private CallExpression DeserializeCallExpression(object? nodeData)
+	{
+		CallExpression callExpr = new();
+		if (nodeData is not Dictionary<object, object> dict)
+		{
+			return callExpr;
+		}
+
+		if (dict.TryGetValue("callee", out object? calleeObj))
+		{
+			callExpr.Callee = calleeObj?.ToString() ?? string.Empty;
+		}
+
+		if (dict.TryGetValue("receiver", out object? receiverObj))
+		{
+			callExpr.Receiver = DeserializeNestedExpression(receiverObj);
+		}
+
+		if (dict.TryGetValue("arguments", out object? argumentsObj) && argumentsObj is List<object> arguments)
+		{
+			foreach (Dictionary<object, object> argumentDict in Mappings(arguments))
+			{
+				(object argumentType, object argumentData) = argumentDict.First();
+				if (DeserializeNode(argumentType.ToString() ?? string.Empty, argumentData) is AstNode node)
+				{
+					callExpr.Arguments.Add(node);
+				}
+			}
+		}
+
+		if (dict.TryGetValue("expectedType", out object? typeObj))
+		{
+			callExpr.ExpectedType = typeObj?.ToString();
+		}
+
+		DeserializeMetadata(callExpr, dict);
+		return callExpr;
+	}
+
+	private ConditionalExpression DeserializeConditionalExpression(object? nodeData)
+	{
+		ConditionalExpression conditional = new();
+		if (nodeData is not Dictionary<object, object> dict)
+		{
+			return conditional;
+		}
+
+		if (dict.TryGetValue("condition", out object? conditionObj) &&
+			DeserializeNestedExpression(conditionObj) is Expression condition)
+		{
+			conditional.Condition = condition;
+		}
+
+		if (dict.TryGetValue("whenTrue", out object? whenTrueObj) &&
+			DeserializeNestedExpression(whenTrueObj) is Expression whenTrue)
+		{
+			conditional.WhenTrue = whenTrue;
+		}
+
+		if (dict.TryGetValue("whenFalse", out object? whenFalseObj) &&
+			DeserializeNestedExpression(whenFalseObj) is Expression whenFalse)
+		{
+			conditional.WhenFalse = whenFalse;
+		}
+
+		if (dict.TryGetValue("expectedType", out object? typeObj))
+		{
+			conditional.ExpectedType = typeObj?.ToString();
+		}
+
+		DeserializeMetadata(conditional, dict);
+		return conditional;
+	}
+
+	private ExpressionStatement DeserializeExpressionStatement(object? nodeData)
+	{
+		ExpressionStatement statement = new();
+		if (nodeData is not Dictionary<object, object> dict)
+		{
+			return statement;
+		}
+
+		if (dict.TryGetValue("expression", out object? expressionObj) &&
+			DeserializeNestedExpression(expressionObj) is Expression expression)
+		{
+			statement.Expression = expression;
+		}
+
+		DeserializeMetadata(statement, dict);
+		return statement;
 	}
 
 	private EnumDeclaration DeserializeEnumDeclaration(object? nodeData)

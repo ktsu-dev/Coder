@@ -37,10 +37,13 @@ This makes it ideal for code generation tools, transpilers, and any application 
 -   **FunctionDeclaration**: Represents function/method declarations with parameters and body
 -   **Parameter**: Function parameters with optional default values
 -   **ReturnStatement**: Return statements with optional expressions
+-   **ExpressionStatement**: An expression evaluated for its effect rather than its value (`items.clear();`)
 -   **VariableDeclaration**: Variable declarations, optionally constant or type-inferred
 -   **AssignmentStatement**: Assignments, including the compound operators (`+=`, `<<=`, …)
 -   **BinaryExpression**: Two operands and an operator (`a + b`, `x == y`, `p && q`)
 -   **UnaryExpression**: One operator applied to one operand (`-x`, `!ready`, `~mask`)
+-   **ConditionalExpression**: A choice between two values (`ready ? go : wait`; `if ready { go } else { wait }` in Rust; an `if` statement in Go, which has no expression form at all)
+-   **CallExpression**: Calling something, with an optional receiver (`sqrt(x)`, `point.translate(dx, dy)`)
 -   **VariableReference**: A reference to a variable by name
 -   **LiteralExpression<T>**: Typed literals (string, int, bool, double)
 -   **AstLeafNode<T>**: Generic leaf nodes for literals (strings, numbers, booleans)
@@ -53,6 +56,26 @@ the operators it spells differently.
 Increment and decrement are deliberately absent from `UnaryOperator`: Python has no spelling for
 them, and an `AssignmentStatement` with `AssignmentOperator.AddAssign` expresses the same effect in
 every target language.
+
+A `CallExpression`'s `Callee` is text and is written verbatim, which is a decision rather than a
+gap. A square root is `std::sqrt`, `Math.Sqrt`, `math.sqrt` and `f64::sqrt` across the targets, and
+there is no shared idea underneath those spellings for the AST to hold — the way there is
+underneath a type, which is why `TypeReference` is structure. What the AST does carry is the shape
+of the call, and the shape is what the languages disagree about: `Receiver` is modelled separately
+so that `a.b(c)` in six of the targets becomes `b(&a, c)` in C, which has no member functions and
+lowers one to a free function taking the instance.
+
+A `ConditionalExpression` is the same idea for a different disagreement. The four C-family targets
+write `?:`, Python reorders the operands into `go if ready else wait`, and Rust has no ternary
+operator at all — it makes `if` an expression instead. That last one is why this is a node rather
+than text: the C-family spelling is not merely unidiomatic in Rust, it does not parse.
+
+Go goes further and has no expression that chooses at all, since its `if` is a statement and yields
+nothing. There it is **lowered to the statement around it** — `if cond { return a }` then
+`return b`, which is what a Go programmer writes and which needs nobody to name the branches' type.
+Where the surrounding statement cannot take that (nested inside another expression, or passed as an
+argument), what is left is a function literal called where it stands, whose result type is read off
+whichever branch says what it is.
 
 ### Visibility
 

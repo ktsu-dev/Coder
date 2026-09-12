@@ -78,6 +78,7 @@ public class RustGeneratedSourceCompilesTests
 		point.Members.Add(CompiledExemplar.Plus());
 		point.Members.Add(CompiledExemplar.Negate());
 		point.Members.Add(CompiledExemplar.ToDouble("value.x as f64"));
+		point.Members.Add(CompiledExemplar.Pick("pick", "shift"));
 
 		ClassDeclaration circle = new("Circle") { BaseType = "Point" };
 		circle.Documentation.Add("A shape with one radius.");

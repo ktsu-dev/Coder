@@ -79,7 +79,7 @@ public class GoGeneratedSourceCompilesTests
 			circle.Close()
 
 			// circle.Sum is Point's, reached through the embedded field rather than inherited.
-			return built.Sum() + zeroed.y + first.x + named.x + circle.Sum() +
+			return built.Sum() + zeroed.y + first.x + named.x + circle.Sum() + built.Pick() +
 				built.Add(zeroed).x + built.Negate().x +
 				int(built.ToFloat64()) + int(shape.area()) + int(ColourGreen) + measure("a", []int{1})
 		}
@@ -138,6 +138,7 @@ public class GoGeneratedSourceCompilesTests
 		point.Members.Add(CompiledExemplar.Plus());
 		point.Members.Add(CompiledExemplar.Negate());
 		point.Members.Add(CompiledExemplar.ToDouble("float64(self.x)"));
+		point.Members.Add(CompiledExemplar.Pick("Pick", "Shift"));
 
 		ClassDeclaration circle = new("Circle") { BaseType = "Point" };
 		circle.Documentation.Add("A shape with one radius.");

@@ -194,6 +194,39 @@ internal static class CompiledExemplar
 	}
 
 	/// <summary>
+	/// Gets a member that calls another for its effect and then chooses between two values.
+	/// </summary>
+	/// <param name="name">What the target's own conventions call it.</param>
+	/// <param name="callee">What the member it calls is called there.</param>
+	/// <returns>The declaration.</returns>
+	/// <remarks>
+	/// The two nodes neither target can take on trust. An <see cref="ExpressionStatement"/> holding a
+	/// call is the only way to say "do this and discard what it answers with", and a
+	/// <see cref="ConditionalExpression"/> has no ternary operator to fall back on in either: the
+	/// inherited <c>?:</c> would not be a different spelling, it would not parse. Go is the further
+	/// of the two from it, since <c>if</c> there is not an expression at all.
+	/// </remarks>
+	public static FunctionDeclaration Pick(string name, string callee)
+	{
+		// Not read-only, so the receiver is the one that may call the member that shifts it.
+		FunctionDeclaration pick = new(name) { ReturnType = "int" };
+
+		pick.Body.Add(new ExpressionStatement(
+			new CallExpression(new VariableReference("self"), callee)
+			{
+				Arguments = { new LiteralExpression<int>(1) },
+			}));
+
+		pick.Body.Add(new ReturnStatement(new ConditionalExpression(
+			new BinaryExpression(
+				new VariableReference("self.x"), BinaryOperator.GreaterThan, new VariableReference("self.y")),
+			new VariableReference("self.x"),
+			new VariableReference("self.y"))));
+
+		return pick;
+	}
+
+	/// <summary>
 	/// Gets the conversion, which neither target declares as one.
 	/// </summary>
 	/// <param name="answer">What it answers with, spelled as the target spells it.</param>
