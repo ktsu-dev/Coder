@@ -26,7 +26,7 @@ public class CallExpressionTests
 
 		Assert.AreEqual("sqrt", call.Callee);
 		Assert.IsNull(call.Receiver);
-		Assert.AreEqual(1, call.Arguments.Count);
+		Assert.HasCount(1, call.Arguments);
 	}
 
 	/// <summary>
@@ -75,7 +75,7 @@ public class CallExpressionTests
 		Assert.IsNotNull(clone.Receiver);
 		Assert.AreNotSame(original.Receiver, clone.Receiver);
 		Assert.AreEqual("point", ((VariableReference)clone.Receiver).Name);
-		Assert.AreEqual(2, clone.Arguments.Count);
+		Assert.HasCount(2, clone.Arguments);
 		Assert.AreNotSame(original.Arguments[0], clone.Arguments[0]);
 	}
 
@@ -210,7 +210,7 @@ public class CallExpressionTests
 		Assert.AreEqual("void", roundTripped.ExpectedType);
 		Assert.IsInstanceOfType<VariableReference>(roundTripped.Receiver);
 		Assert.AreEqual("point", ((VariableReference)roundTripped.Receiver!).Name);
-		Assert.AreEqual(2, roundTripped.Arguments.Count);
+		Assert.HasCount(2, roundTripped.Arguments);
 		Assert.AreEqual("point.translate(dx, 3)", new CSharpGenerator().Generate(roundTripped));
 	}
 

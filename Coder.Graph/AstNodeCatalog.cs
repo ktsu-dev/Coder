@@ -39,47 +39,59 @@ public sealed record AstNodeTemplate(string Category, string Label, Func<AstNode
 /// </remarks>
 public static class AstNodeCatalog
 {
+	/// <summary>The category a declaration is listed under.</summary>
+	private const string Declarations = "Declarations";
+
+	/// <summary>The category a statement is listed under.</summary>
+	private const string Statements = "Statements";
+
+	/// <summary>The category an expression is listed under.</summary>
+	private const string Expressions = "Expressions";
+
+	/// <summary>The category a literal is listed under.</summary>
+	private const string Literals = "Literals";
+
 	/// <summary>
 	/// Gets every node the palette offers, grouped and ordered for display.
 	/// </summary>
 	public static IReadOnlyList<AstNodeTemplate> Templates { get; } =
 	[
-		new("Declarations", "Class", () => new ClassDeclaration("NewClass")),
-		new("Declarations", "Function", () => new FunctionDeclaration("newFunction") { ReturnType = "void" }),
-		new("Declarations", "Parameter", () => new Parameter("value", "int")),
-		new("Declarations", "Variable", () => new VariableDeclaration("value", "int")),
-		new("Declarations", "Constant", () => new VariableDeclaration("VALUE", "int", Literal.Number(0)) { IsConstant = true }),
-		new("Declarations", "Entry point", () => new EntryPoint()),
+		new(Declarations, "Class", () => new ClassDeclaration("NewClass")),
+		new(Declarations, "Function", () => new FunctionDeclaration("newFunction") { ReturnType = "void" }),
+		new(Declarations, "Parameter", () => new Parameter("value", "int")),
+		new(Declarations, "Variable", () => new VariableDeclaration("value", "int")),
+		new(Declarations, "Constant", () => new VariableDeclaration("VALUE", "int", Literal.Number(0)) { IsConstant = true }),
+		new(Declarations, "Entry point", () => new EntryPoint()),
 
-		new("Statements", "Return", () => new ReturnStatement()),
-		new("Statements", "Expression", () => new ExpressionStatement()),
+		new(Statements, "Return", () => new ReturnStatement()),
+		new(Statements, "Expression", () => new ExpressionStatement()),
 		.. Enum.GetValues<AssignmentOperator>().Select(op => new AstNodeTemplate(
-			"Statements",
+			Statements,
 			Spell(op),
 			() => new AssignmentStatement(new VariableReference("target"), AstSchema.Unfilled(), op),
 			"Assignment")),
 
 		.. Enum.GetValues<BinaryOperator>().Select(op => new AstNodeTemplate(
-			"Expressions",
+			Expressions,
 			Spell(op),
 			() => new BinaryExpression(AstSchema.Unfilled(), op, AstSchema.Unfilled()),
 			"Binary")),
 		.. Enum.GetValues<UnaryOperator>().Select(op => new AstNodeTemplate(
-			"Expressions",
+			Expressions,
 			Spell(op),
 			() => new UnaryExpression(op, AstSchema.Unfilled()),
 			"Unary")),
-		new("Expressions", "Variable reference", () => new VariableReference("value")),
-		new("Expressions", "Call", () => new CallExpression("function")),
-		new("Expressions", "Conditional", () => new ConditionalExpression(
+		new(Expressions, "Variable reference", () => new VariableReference("value")),
+		new(Expressions, "Call", () => new CallExpression("function")),
+		new(Expressions, "Conditional", () => new ConditionalExpression(
 			AstSchema.Unfilled(),
 			AstSchema.Unfilled(),
 			AstSchema.Unfilled())),
 
-		new("Literals", "Text", () => Literal.Text("text")),
-		new("Literals", "Number", () => Literal.Number(0)),
-		new("Literals", "Decimal", () => Literal.DecimalValue(0)),
-		new("Literals", "Boolean", () => Literal.Bool(true)),
+		new(Literals, "Text", () => Literal.Text("text")),
+		new(Literals, "Number", () => Literal.Number(0)),
+		new(Literals, "Decimal", () => Literal.DecimalValue(0)),
+		new(Literals, "Boolean", () => Literal.Bool(true)),
 	];
 
 	/// <summary>

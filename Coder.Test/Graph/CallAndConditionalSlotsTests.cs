@@ -37,17 +37,17 @@ public class CallAndConditionalSlotsTests
 	[TestMethod]
 	public void SlotsOf_DescribesTheNewNodes()
 	{
-		CollectionAssert.AreEqual(
+		Assert.AreSequenceEqual(
 			CallSlots,
-			AstSchema.SlotsOf(new CallExpression("f")).Select(slot => slot.Name).ToArray());
+			AstSchema.SlotsOf(new CallExpression("f")).Select(slot => slot.Name));
 
-		CollectionAssert.AreEqual(
+		Assert.AreSequenceEqual(
 			ConditionalSlots,
-			AstSchema.SlotsOf(NewConditional()).Select(slot => slot.Name).ToArray());
+			AstSchema.SlotsOf(NewConditional()).Select(slot => slot.Name));
 
-		CollectionAssert.AreEqual(
+		Assert.AreSequenceEqual(
 			ExpressionStatementSlots,
-			AstSchema.SlotsOf(new ExpressionStatement()).Select(slot => slot.Name).ToArray());
+			AstSchema.SlotsOf(new ExpressionStatement()).Select(slot => slot.Name));
 	}
 
 	/// <summary>
@@ -59,7 +59,7 @@ public class CallAndConditionalSlotsTests
 	{
 		CallExpression call = new("sqrt");
 
-		Assert.AreEqual(0, AstSchema.ChildrenOf(call, Slot(call, "Receiver")).Count);
+		Assert.IsEmpty(AstSchema.ChildrenOf(call, Slot(call, "Receiver")));
 	}
 
 	/// <summary>
@@ -76,7 +76,7 @@ public class CallAndConditionalSlotsTests
 		Assert.IsTrue(AstSchema.TryAttach(call, Slot(call, "Arguments"), new VariableReference("dy")));
 
 		Assert.AreSame(receiver, call.Receiver);
-		Assert.AreEqual(2, call.Arguments.Count);
+		Assert.HasCount(2, call.Arguments);
 		Assert.AreEqual("dx", ((VariableReference)call.Arguments[0]).Name);
 		Assert.AreEqual("dy", ((VariableReference)call.Arguments[1]).Name);
 	}
@@ -95,7 +95,7 @@ public class CallAndConditionalSlotsTests
 
 		Assert.IsTrue(AstSchema.TryAttachAt(call, Slot(call, "Arguments"), 0, new VariableReference("z")));
 
-		Assert.AreEqual(2, call.Arguments.Count);
+		Assert.HasCount(2, call.Arguments);
 		Assert.AreEqual("z", ((VariableReference)call.Arguments[0]).Name);
 		Assert.AreEqual("b", ((VariableReference)call.Arguments[1]).Name);
 	}
@@ -132,7 +132,7 @@ public class CallAndConditionalSlotsTests
 
 		Assert.IsTrue(AstSchema.TryDetachAt(call, Slot(call, "Arguments"), 0));
 
-		Assert.AreEqual(1, call.Arguments.Count);
+		Assert.HasCount(1, call.Arguments);
 		Assert.AreEqual("b", ((VariableReference)call.Arguments[0]).Name);
 	}
 
@@ -187,7 +187,7 @@ public class CallAndConditionalSlotsTests
 
 		Assert.IsTrue(AstSchema.TryAttach(function, body, new ExpressionStatement(new CallExpression("reset"))));
 
-		Assert.AreEqual(1, function.Body.Count);
+		Assert.HasCount(1, function.Body);
 	}
 
 	/// <summary>
@@ -239,27 +239,46 @@ public class CallAndConditionalSlotsTests
 	[TestMethod]
 	public void ThePalette_OffersTheNewNodes()
 	{
-		Assert.IsTrue(AstNodeCatalog.Templates.Any(template => template.Create() is CallExpression), "call");
-		Assert.IsTrue(AstNodeCatalog.Templates.Any(template => template.Create() is ConditionalExpression), "conditional");
-		Assert.IsTrue(AstNodeCatalog.Templates.Any(template => template.Create() is ExpressionStatement), "expression statement");
+		Type[] offered = [.. AstNodeCatalog.Templates.Select(template => template.Create().GetType())];
+
+		Assert.Contains(typeof(CallExpression), offered);
+		Assert.Contains(typeof(ConditionalExpression), offered);
+		Assert.Contains(typeof(ExpressionStatement), offered);
 	}
 
 	/// <summary>
 	/// Tests that what the palette creates is valid on its own, which is what lets a freshly created
 	/// node be connected rather than filled in first.
 	/// </summary>
+	/// <remarks>
+	/// "Valid on its own" means every slot can be read and every operand already in one is the
+	/// placeholder <see cref="AstSchema.Unfilled"/> produces, never a null the rest of the library
+	/// does not understand. A call's receiver is the one slot that starts empty rather than
+	/// placeholdered, because a call with no receiver is a free function rather than an unfinished
+	/// member call.
+	/// </remarks>
 	[TestMethod]
 	public void WhatThePaletteCreates_IsReadyToConnect()
 	{
-		foreach (AstNodeTemplate template in AstNodeCatalog.Templates
-			.Where(template => template.Create() is CallExpression or ConditionalExpression or ExpressionStatement))
+		AstNodeTemplate[] templates = [.. AstNodeCatalog.Templates
+			.Where(template => template.Create() is CallExpression or ConditionalExpression or ExpressionStatement)];
+
+		// Asserted rather than assumed: a filter that matched nothing would make the loop below pass
+		// without checking anything, which is exactly what this test exists to rule out.
+		Assert.HasCount(3, templates);
+
+		foreach (AstNodeTemplate template in templates)
 		{
 			AstNode node = template.Create();
 
 			foreach (AstSlot slot in AstSchema.SlotsOf(node))
 			{
-				// Reading a slot must not throw, whether or not anything is in it yet.
-				AstSchema.ChildrenOf(node, slot);
+				foreach (AstNode child in AstSchema.ChildrenOf(node, slot))
+				{
+					Assert.IsTrue(
+						AstSchema.IsUnfilled(child),
+						$"{AstSchema.Describe(node)}'s {slot.Name} should start unfilled, not as {AstSchema.Describe(child)}");
+				}
 			}
 		}
 	}
