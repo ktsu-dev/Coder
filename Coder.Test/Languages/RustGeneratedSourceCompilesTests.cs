@@ -98,6 +98,7 @@ public class RustGeneratedSourceCompilesTests
 		geometry.Members.Add(CompiledExemplar.OriginAlias());
 		geometry.Members.Add(CompiledExemplar.OriginTable());
 		geometry.Members.Add(CompiledExemplar.Measure());
+		geometry.Members.Add(Boxed());
 		geometry.Members.Add(new CompileTimeAssertion
 		{
 			Condition = "std::mem::size_of::<i32>() == 4",
@@ -106,6 +107,32 @@ public class RustGeneratedSourceCompilesTests
 
 		file.Members.Add(geometry);
 		return file;
+	}
+
+	/// <summary>
+	/// A type written over one parameter, so its impl block has to carry the parameter too.
+	/// </summary>
+	/// <returns>The declaration.</returns>
+	/// <remarks>
+	/// The whole of what makes this worth compiling: a generic struct's inherent impl has to repeat
+	/// the parameter and bound it — <c>impl&lt;T: Clone&gt; Boxed&lt;T&gt;</c> — and a generator
+	/// that wrote <c>impl Boxed</c> beside a <c>struct Boxed&lt;T&gt;</c> would produce something
+	/// that reads correctly and does not build. The bound is load-bearing rather than decoration:
+	/// without it the body's call to <c>clone</c> does not resolve.
+	/// </remarks>
+	private static ClassDeclaration Boxed()
+	{
+		ClassDeclaration boxed = new("Boxed") { Kind = TypeDeclarationKind.Struct };
+		boxed.Documentation.Add("Holds one of whatever it was given.");
+		boxed.TypeParameters.Add(TypeParameter.Parse("T : Clone"));
+		boxed.Members.Add(new FieldDeclaration("held", "T"));
+
+		FunctionDeclaration copy = new("copy") { ReturnType = "T", IsReadOnly = true };
+		copy.Body.Add(new ReturnStatement(
+			new CallExpression(new VariableReference("self.held"), "clone")));
+		boxed.Members.Add(copy);
+
+		return boxed;
 	}
 
 	/// <summary>

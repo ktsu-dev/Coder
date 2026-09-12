@@ -318,6 +318,10 @@ public class PythonGenerator : StandardLanguageGenerator
 		// file rather than to how it writes a class.
 		WriteTypePromises(classDecl, code);
 
+		// Python has TypeVar and Generic, and both need an import the AST does not carry for a
+		// class generated on its own -- the same reason @dataclass is not written above.
+		WriteTypeParametersDown(classDecl.TypeParameters, code);
+
 		code.Write($"class {classDecl.Name ?? "UnnamedClass"}");
 
 		// Python inherits from as many things as it is given and has no separate notion of an

@@ -84,6 +84,27 @@ source in seven target languages. The solution uses:
   honours it only where the language can — a Go `const` holds a number, a string or a boolean and
   nothing with a field in it, so a table is a `var` with a note — and a language with no spelling for
   it omits it the way it omits an indirection.
+- `Coder/Ast/TypeParameter.cs` and `TypeConstraint.cs` — what a declaration is written *over*, on
+  `ClassDeclaration` and on `FunctionDeclaration`. Values rather than nodes, like
+  `SpecialisationArguments` and for the same reason: a type parameter is part of the thing being
+  declared rather than a member of it, and `Parse`/`ToString` are inverses so a document carries a
+  whole parameter on one line. **The constraints are where the targets part, and that is the
+  decision worth knowing.** A parameter's *name* travels everywhere; what a language can say about
+  that name does not. `TypeConstraintKind` names four intents — implements a type, is a value, is a
+  reference, is constructible — and stops there, because those are the ones with a shared idea
+  underneath; a C++ concept is a predicate that can ask anything at all (`requires (T a) {
+  a.begin(); }`), which is the same reason `CompileTimeAssertion.Condition` is text. Then: C# spells
+  all four, and reorders them, because C# requires the class or struct constraint first and `new()`
+  last and the AST has no reason to know that. Rust spells two — a trait bound is exactly
+  `Implements` and `Default` is exactly `Constructible` — and carries the parameters onto every
+  `impl` block, which is what makes `impl<T: Bound> Mass<T>` compile where `impl Mass` would not.
+  Go spells one, `Implements` being exactly a Go constraint interface, and only for a *function*: a
+  method on a generic type needs the parameters in three places and spelled two ways (`NewPoint` for
+  the constructor's name, `Point[T]` for its receiver and result), so a generic type is written
+  down instead. C++ writes `template <typename T>` and notes every constraint, the standard concepts
+  needing an include the AST does not carry. C, Python and JavaScript write the whole parameter
+  down. `RustGeneratedSourceCompilesTests` compiles a generic struct with a load-bearing bound, so
+  the `impl` repetition is checked rather than asserted.
 - `Coder/Ast/ClassDeclaration.cs`'s `Interfaces`, `IsRecord`, `IsPartial` and `IsReadOnly` — what a
   type declaration says about itself beyond its name. `Interfaces` is separate from `BaseType`
   rather than folded into one list, because what a target does with the two differs: C# writes them

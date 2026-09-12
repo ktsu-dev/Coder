@@ -84,6 +84,17 @@ public class ClassDeclaration : AstCompositeNode, IHasVisibility, IHasDocumentat
 	public bool IsSpecialisation => SpecialisationArguments.Count > 0;
 
 	/// <summary>
+	/// Gets the types this declaration is written over, which may be none.
+	/// </summary>
+	/// <remarks>
+	/// Separate from <see cref="SpecialisationArguments"/> and the opposite of it: these are the
+	/// parameters a declaration takes, and those are the arguments a specialisation supplies. A
+	/// declaration has one or the other and not both, since a full specialisation by definition
+	/// leaves nothing open.
+	/// </remarks>
+	public Collection<TypeParameter> TypeParameters { get; init; } = [];
+
+	/// <summary>
 	/// Gets the interfaces this type implements, which may be none.
 	/// </summary>
 	/// <remarks>
@@ -181,6 +192,11 @@ public class ClassDeclaration : AstCompositeNode, IHasVisibility, IHasDocumentat
 		foreach (TypeReference contract in Interfaces)
 		{
 			clone.Interfaces.Add(contract.Clone());
+		}
+
+		foreach (TypeParameter parameter in TypeParameters)
+		{
+			clone.TypeParameters.Add(parameter.Clone());
 		}
 
 		foreach ((string key, object? value) in Metadata)

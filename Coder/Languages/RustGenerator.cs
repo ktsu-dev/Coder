@@ -106,6 +106,72 @@ public class RustGenerator : StandardLanguageGenerator
 	private bool insideTraitImplementation;
 
 	/// <summary>
+	/// The bounded parameter list every <c>impl</c> block for the type being written needs.
+	/// </summary>
+	/// <remarks>
+	/// Held rather than passed because the four places that open an <c>impl</c> — the inherent
+	/// block, an operator, a conversion and <c>Drop</c> — are reached by three different routes
+	/// from the type that owns them, and every one of them has to say the same thing. A generic
+	/// type whose <c>impl</c> block forgot the parameter does not compile, which makes this the one
+	/// piece of state here that is load-bearing rather than a convenience.
+	/// </remarks>
+	private string implBounds = string.Empty;
+
+	/// <summary>
+	/// Spells type parameters where they are being declared, bounds and all.
+	/// </summary>
+	/// <param name="parameters">The declaration's type parameters.</param>
+	/// <returns>Something like <c>&lt;T: INumber&lt;T&gt;&gt;</c>, or an empty string.</returns>
+	/// <remarks>
+	/// A trait bound is exactly what <see cref="TypeConstraintKind.Implements"/> means, and
+	/// <c>Default</c> is exactly what <see cref="TypeConstraintKind.Constructible"/> means. The
+	/// other two have no bound at all: every Rust type is a value, and whether one is referenced
+	/// is a property of the binding rather than of the type.
+	/// </remarks>
+	private static string SpellParameterDeclarations(IEnumerable<TypeParameter> parameters)
+	{
+		string[] declared = [.. parameters.Select(SpellOneParameter)];
+
+		return declared.Length == 0 ? string.Empty : $"<{string.Join(", ", declared)}>";
+	}
+
+	private static string SpellOneParameter(TypeParameter parameter)
+	{
+		string[] bounds =
+		[
+			.. parameter.Constraints
+				.Select(SpellBound)
+				.Where(bound => bound.Length > 0),
+		];
+
+		return bounds.Length == 0 ? parameter.Name : $"{parameter.Name}: {string.Join(" + ", bounds)}";
+	}
+
+	private static string SpellBound(TypeConstraint constraint) => constraint.Kind switch
+	{
+		TypeConstraintKind.Implements => SpellType(constraint.Type ?? new TypeReference(UnknownTypeName)),
+		TypeConstraintKind.Constructible => "Default",
+		_ => string.Empty,
+	};
+
+	/// <summary>
+	/// Spells type parameters where they are being used, names only.
+	/// </summary>
+	/// <param name="parameters">The declaration's type parameters.</param>
+	/// <returns>Something like <c>&lt;T&gt;</c>, or an empty string.</returns>
+	/// <remarks>
+	/// The bounds belong to the declaration and are a repetition anywhere else, which Rust warns
+	/// about: <c>impl&lt;T: Bound&gt; Mass&lt;T&gt;</c> declares the parameter once and then names
+	/// it.
+	/// </remarks>
+	private static string SpellParameterArguments(IEnumerable<TypeParameter> parameters)
+	{
+		string[] names = [.. parameters.Select(parameter => parameter.Name)];
+
+		return names.Length == 0 ? string.Empty : $"<{string.Join(", ", names)}>";
+	}
+
+	/// <summary>
 	/// Whether a member should say nothing about who may see it.
 	/// </summary>
 	/// <remarks>
@@ -311,6 +377,12 @@ public class RustGenerator : StandardLanguageGenerator
 			return;
 		}
 
+		// Everything below writes `Name<T>` where it names the type and `impl<T: Bound>` where it
+		// opens a block, which is the one shape that compiles: the parameter is declared once, on
+		// the impl, and named everywhere else.
+		implBounds = SpellParameterDeclarations(classDecl.TypeParameters);
+		string applied = $"{name}{SpellParameterArguments(classDecl.TypeParameters)}";
+
 		GenerateStruct(classDecl, name, code);
 
 		List<FunctionDeclaration> functions =
@@ -326,7 +398,7 @@ public class RustGenerator : StandardLanguageGenerator
 		if (inherent.Count > 0)
 		{
 			code.NewLine();
-			code.Write($"impl {name} ");
+			code.Write($"impl{implBounds} {applied} ");
 
 			using Scope block = new(code);
 			bool first = true;
@@ -345,7 +417,7 @@ public class RustGenerator : StandardLanguageGenerator
 		foreach (FunctionDeclaration function in functions.Except(inherent))
 		{
 			code.NewLine();
-			GenerateTraitImplementation(function, name, code);
+			GenerateTraitImplementation(function, applied, code);
 		}
 
 		foreach (FunctionDeclaration destructor in classDecl.Members
@@ -353,8 +425,10 @@ public class RustGenerator : StandardLanguageGenerator
 			.Where(member => member.Kind == FunctionKind.Destructor))
 		{
 			code.NewLine();
-			GenerateDrop(destructor, name, code);
+			GenerateDrop(destructor, applied, code);
 		}
+
+		implBounds = string.Empty;
 	}
 
 	/// <summary>
@@ -421,17 +495,23 @@ public class RustGenerator : StandardLanguageGenerator
 					+ "each needs an impl block of its own, which this declaration does not say how to fill");
 		}
 
+		WriteTypePromises(classDecl, code, recordIsSpelled: true);
+		WriteUnaskedConstraints(
+			classDecl.TypeParameters,
+			code,
+			TypeConstraintKind.Implements,
+			TypeConstraintKind.Constructible);
+
 		// What a record asks for is exactly what derive supplies, which makes this the one target
 		// besides C# that has a word for it rather than a comment about it. Clone is the copy,
-		// PartialEq the comparison, Debug the readable form.
+		// PartialEq the comparison, Debug the readable form. Written last of the lines above the
+		// struct, so that it sits against the item it applies to rather than behind the notes.
 		if (classDecl.IsRecord)
 		{
 			code.WriteLine("#[derive(Clone, Debug, PartialEq)]");
 		}
 
-		WriteTypePromises(classDecl, code, recordIsSpelled: true);
-
-		code.Write($"{SpellVisibilityOf(classDecl)}struct {name} ");
+		code.Write($"{SpellVisibilityOf(classDecl)}struct {name}{SpellParameterDeclarations(classDecl.TypeParameters)} ");
 
 		using Scope body = new(code);
 
@@ -489,7 +569,12 @@ public class RustGenerator : StandardLanguageGenerator
 	{
 		GenerateDocumentation(classDecl, code);
 		WriteTypePromises(classDecl, code);
-		code.Write($"{SpellVisibilityOf(classDecl)}trait {name}");
+		WriteUnaskedConstraints(
+			classDecl.TypeParameters,
+			code,
+			TypeConstraintKind.Implements,
+			TypeConstraintKind.Constructible);
+		code.Write($"{SpellVisibilityOf(classDecl)}trait {name}{SpellParameterDeclarations(classDecl.TypeParameters)}");
 
 		// A supertrait: something every implementation of this one must also be. A base type and an
 		// interface are the same thing to a trait, which is the one place Rust answers the
@@ -563,7 +648,7 @@ public class RustGenerator : StandardLanguageGenerator
 		}
 
 		GenerateDocumentation(funcDecl, code);
-		code.Write($"impl {op.Name} for {typeName} ");
+		code.Write($"impl{implBounds} {op.Name} for {typeName} ");
 
 		using Scope block = new(code);
 
@@ -624,7 +709,7 @@ public class RustGenerator : StandardLanguageGenerator
 		string target = SpellType(funcDecl.ReturnType ?? new TypeReference(UnknownTypeName));
 
 		GenerateDocumentation(funcDecl, code);
-		code.Write($"impl From<{typeName}> for {target} ");
+		code.Write($"impl{implBounds} From<{typeName}> for {target} ");
 
 		using Scope block = new(code);
 		code.Write($"fn from(value: {typeName}) -> {target} ");
@@ -647,7 +732,7 @@ public class RustGenerator : StandardLanguageGenerator
 	private void GenerateDrop(FunctionDeclaration funcDecl, string typeName, CodeBlocker code)
 	{
 		GenerateDocumentation(funcDecl, code);
-		code.Write($"impl Drop for {typeName} ");
+		code.Write($"impl{implBounds} Drop for {typeName} ");
 
 		using Scope block = new(code);
 		code.Write("fn drop(&mut self) ");
@@ -719,7 +804,13 @@ public class RustGenerator : StandardLanguageGenerator
 			code.Write("const ");
 		}
 
-		code.Write($"fn {SpellFunctionName(funcDecl)}(");
+		WriteUnaskedConstraints(
+			funcDecl.TypeParameters,
+			code,
+			TypeConstraintKind.Implements,
+			TypeConstraintKind.Constructible);
+
+		code.Write($"fn {SpellFunctionName(funcDecl)}{SpellParameterDeclarations(funcDecl.TypeParameters)}(");
 		WriteReceiver(funcDecl, enclosingType, code);
 		GenerateParameterList(funcDecl.Parameters, code);
 		code.Write(")");

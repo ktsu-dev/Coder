@@ -274,6 +274,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		}
 
 		WriteTypePromises(classDecl, code);
+		WriteTypeParametersDown(classDecl.TypeParameters, code);
 
 		// JavaScript extends one thing and has no interfaces at all, so anything the declaration
 		// implements is written down rather than lost: a duck-typed object is expected to have the

@@ -506,6 +506,7 @@ public class CGenerator : CFamilyGenerator
 
 		GenerateDocumentation(classDecl, code);
 		WriteTypePromises(classDecl, code);
+		WriteTypeParametersDown(classDecl.TypeParameters, code);
 
 		code.WriteLine($"typedef struct {name}");
 		code.WriteLine("{");

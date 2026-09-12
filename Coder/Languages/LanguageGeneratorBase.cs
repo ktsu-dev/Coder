@@ -5,6 +5,7 @@ namespace ktsu.Coder.Languages;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using ktsu.Coder.Ast;
 using ktsu.CodeBlocker;
 
@@ -187,6 +188,75 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// Gets what an ordinary comment starts with in this language.
 	/// </summary>
 	protected virtual string CommentPrefix => "//";
+
+	/// <summary>
+	/// Writes down the types a declaration is written over, for a target that has no generics.
+	/// </summary>
+	/// <param name="parameters">The declaration's type parameters.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// Constraints and all, because for a target in this position the whole of the parameter is
+	/// something it cannot say: there is no name in the file for the requirement to be attached to.
+	/// </remarks>
+	protected void WriteTypeParametersDown(IEnumerable<TypeParameter> parameters, CodeBlocker code)
+	{
+		Ensure.NotNull(parameters);
+
+		string[] written = [.. parameters.Select(parameter => parameter.ToString())];
+
+		if (written.Length > 0)
+		{
+			WriteInexpressible(code, $"over {string.Join("; ", written)}");
+		}
+	}
+
+	/// <summary>
+	/// Writes down the requirements on a declaration's type parameters that this target has type
+	/// parameters but no way to ask for.
+	/// </summary>
+	/// <param name="parameters">The declaration's type parameters.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <param name="asked">The kinds this target wrote for itself; anything else is written down.</param>
+	/// <remarks>
+	/// The middle case, and the common one. A target with generics can always write the parameter's
+	/// name, and what it can say about that name is where they part: C# says all four, Rust says
+	/// two of them and Go one, and C++ says none of them without an include the AST does not carry.
+	/// A requirement that goes unwritten is a guarantee quietly dropped, which is the same reason
+	/// <see cref="WriteTypePromises"/> exists.
+	/// </remarks>
+	protected void WriteUnaskedConstraints(
+		IEnumerable<TypeParameter> parameters,
+		CodeBlocker code,
+		params TypeConstraintKind[] asked)
+	{
+		Ensure.NotNull(parameters);
+		Ensure.NotNull(asked);
+
+		string[] unasked =
+		[
+			.. parameters.SelectMany(parameter => parameter.Constraints
+				.Where(constraint => Array.IndexOf(asked, constraint.Kind) < 0)
+				.Select(constraint => $"{parameter.Name} is {Describe(constraint)}")),
+		];
+
+		if (unasked.Length > 0)
+		{
+			WriteInexpressible(code, $"requires that {string.Join(", and that ", unasked)}");
+		}
+	}
+
+	/// <summary>
+	/// Says what a constraint asks for, in a reader's terms rather than a language's.
+	/// </summary>
+	/// <param name="constraint">The constraint to describe.</param>
+	/// <returns>The description, to follow "T is".</returns>
+	private static string Describe(TypeConstraint constraint) => constraint.Kind switch
+	{
+		TypeConstraintKind.ValueType => "a value type",
+		TypeConstraintKind.ReferenceType => "a reference type",
+		TypeConstraintKind.Constructible => "constructible with no arguments",
+		_ => constraint.Type?.ToString() ?? "unconstrained",
+	};
 
 	/// <summary>
 	/// Writes the promises a type declaration makes that this language has no word for.

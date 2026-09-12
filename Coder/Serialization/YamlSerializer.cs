@@ -226,6 +226,12 @@ public class YamlSerializer
 
 		SerializeFunctionShape(funcDecl, nodeData);
 
+		if (funcDecl.TypeParameters.Count > 0)
+		{
+			nodeData["typeParameters"] =
+				funcDecl.TypeParameters.Select(parameter => parameter.ToString()).ToList();
+		}
+
 		if (funcDecl.Parameters.Count > 0)
 		{
 			nodeData["parameters"] = SerializeParameters(funcDecl.Parameters);
@@ -595,6 +601,14 @@ public class YamlSerializer
 		if (classDecl.BaseType != null)
 		{
 			nodeData["baseType"] = classDecl.BaseType.ToString();
+		}
+
+		if (classDecl.TypeParameters.Count > 0)
+		{
+			// One line per parameter, constraints and all: TypeParameter.Parse and ToString are
+			// inverses, so what is written is what a person would write.
+			nodeData["typeParameters"] =
+				classDecl.TypeParameters.Select(parameter => parameter.ToString()).ToList();
 		}
 
 		if (classDecl.Interfaces.Count > 0)

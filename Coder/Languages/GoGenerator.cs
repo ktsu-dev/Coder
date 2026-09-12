@@ -70,6 +70,9 @@ public class GoGenerator : StandardLanguageGenerator
 	/// </remarks>
 	private const string ReceiverName = "self";
 
+	/// <summary>The interface that asks nothing of a type parameter.</summary>
+	private const string AnyConstraint = "any";
+
 	/// <summary>
 	/// The package a file with an entry point is in.
 	/// </summary>
@@ -536,7 +539,12 @@ public class GoGenerator : StandardLanguageGenerator
 	/// </remarks>
 	private static void WriteInterfaceAssertions(ClassDeclaration classDecl, string name, CodeBlocker code)
 	{
-		if (classDecl.Interfaces.Count == 0)
+		// Not for a type this generator wrote down rather than wrote. The assertion names the type,
+		// and the name of a generic type is not the name of a type -- `(*Mass)(nil)` where the
+		// declaration said `Mass[T]` asserts something about nothing. The note above the
+		// declaration already says the whole type is approximate; a second wrong line under it
+		// would not add to that.
+		if (classDecl.Interfaces.Count == 0 || classDecl.TypeParameters.Count > 0)
 		{
 			return;
 		}
@@ -578,6 +586,13 @@ public class GoGenerator : StandardLanguageGenerator
 	{
 		GenerateDocumentation(classDecl, code);
 		WriteTypePromises(classDecl, code);
+
+		// Go has generics, and a generic type is still written down here. A method on one needs its
+		// parameters in three places and spelled two ways -- `NewPoint` for the constructor's name
+		// but `Point[T]` for its receiver and for what the constructor answers with -- so making a
+		// type generic is a change to how this generator writes a whole type rather than to how it
+		// writes one line. A function of its own has none of that, and is written as a generic one.
+		WriteTypeParametersDown(classDecl.TypeParameters, code);
 		WriteExportNote(name, classDecl.Visibility, code);
 
 		List<AlignedLine> fields = [.. StructFields(classDecl)];
@@ -663,6 +678,7 @@ public class GoGenerator : StandardLanguageGenerator
 	{
 		GenerateDocumentation(classDecl, code);
 		WriteTypePromises(classDecl, code);
+		WriteTypeParametersDown(classDecl.TypeParameters, code);
 		WriteExportNote(name, classDecl.Visibility, code);
 
 		List<AstNode> members = [.. classDecl.Members.Where(member => member is FunctionDeclaration or FieldDeclaration)];
@@ -807,7 +823,7 @@ public class GoGenerator : StandardLanguageGenerator
 	/// <param name="enclosingType">The name of the type it belongs to, when it belongs to one.</param>
 	private void WriteSignature(FunctionDeclaration funcDecl, string name, CodeBlocker code, string? enclosingType)
 	{
-		code.Write($"{name}(");
+		code.Write($"{name}{SpellTypeParameters(funcDecl.TypeParameters)}(");
 		GenerateParameterList(funcDecl.Parameters, code);
 		code.Write(")");
 
@@ -815,6 +831,48 @@ public class GoGenerator : StandardLanguageGenerator
 		{
 			code.Write($" {result}");
 		}
+	}
+
+	/// <summary>
+	/// Spells a function's own type parameters, or nothing when it has none.
+	/// </summary>
+	/// <param name="parameters">The function's type parameters.</param>
+	/// <returns>Something like <c>[T Ordered]</c>, or an empty string.</returns>
+	/// <remarks>
+	/// A Go type parameter is constrained by an interface, and every one of them is constrained by
+	/// something: <c>any</c> is the interface that asks for nothing, and is what a parameter with
+	/// no requirement gets. Several requirements become an interface written in place, which is
+	/// Go's own way of combining them.
+	/// <para>
+	/// Only <see cref="TypeConstraintKind.Implements"/> maps, and it maps exactly. The other three
+	/// are not things Go says about a type parameter at all, so they are written down beside the
+	/// declaration instead.
+	/// </para>
+	/// </remarks>
+	private static string SpellTypeParameters(IEnumerable<TypeParameter> parameters)
+	{
+		string[] declared = [.. parameters.Select(SpellOneTypeParameter)];
+
+		return declared.Length == 0 ? string.Empty : $"[{string.Join(", ", declared)}]";
+	}
+
+	private static string SpellOneTypeParameter(TypeParameter parameter)
+	{
+		string[] required =
+		[
+			.. parameter.Constraints
+				.Where(constraint => constraint.Kind == TypeConstraintKind.Implements)
+				.Select(constraint => SpellType(constraint.Type ?? new TypeReference(AnyConstraint))),
+		];
+
+		string constraint = required.Length switch
+		{
+			0 => AnyConstraint,
+			1 => required[0],
+			_ => $"interface{{ {string.Join("; ", required)} }}",
+		};
+
+		return $"{parameter.Name} {constraint}";
 	}
 
 	/// <summary>

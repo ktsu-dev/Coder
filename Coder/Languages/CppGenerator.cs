@@ -72,6 +72,27 @@ public class CppGenerator : CFamilyGenerator
 	/// </summary>
 	public override string FileExtension => "cpp";
 
+	/// <summary>
+	/// Writes the template head a declaration written over types needs.
+	/// </summary>
+	/// <param name="parameters">The declaration's type parameters.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// Names only, and <c>typename</c> for each: C++ takes non-type parameters as well, and the AST
+	/// models only the ones that are types. What each has to be goes in a note beside the
+	/// declaration rather than in a <c>requires</c> clause, for the reason
+	/// <see cref="LanguageGeneratorBase.WriteUnaskedConstraints"/> gives.
+	/// </remarks>
+	private static void WriteTemplateHead(IEnumerable<TypeParameter> parameters, CodeBlocker code)
+	{
+		string[] names = [.. parameters.Select(parameter => $"typename {parameter.Name}")];
+
+		if (names.Length > 0)
+		{
+			code.WriteLine($"template <{string.Join(", ", names)}>");
+		}
+	}
+
 	/// <inheritdoc/>
 	/// <remarks>
 	/// A constructor and a destructor are named after the type rather than after themselves, so the
@@ -91,6 +112,8 @@ public class CppGenerator : CFamilyGenerator
 		Ensure.NotNull(code);
 
 		GenerateDocumentation(funcDecl, code);
+		WriteUnaskedConstraints(funcDecl.TypeParameters, code);
+		WriteTemplateHead(funcDecl.TypeParameters, code);
 
 		// Purity earns [[nodiscard]] on its own: a call that does nothing else and whose result is
 		// thrown away did nothing at all.
@@ -314,7 +337,16 @@ public class CppGenerator : CFamilyGenerator
 			code.WriteLine("template <>");
 		}
 
+		WriteTemplateHead(classDecl.TypeParameters, code);
+
 		WriteTypePromises(classDecl, code);
+
+		// Every constraint. A concept is a predicate over a type and can ask anything at all, so
+		// there is no shared idea underneath `struct` and `std::floating_point` to translate
+		// between -- the same reason CompileTimeAssertion.Condition is text. The standard ones
+		// would also need <concepts> included, which the AST does not carry for a declaration
+		// generated on its own.
+		WriteUnaskedConstraints(classDecl.TypeParameters, code);
 
 		code.Write($"{(isStruct ? "struct" : "class")} {classDecl.Name ?? "UnnamedClass"}");
 

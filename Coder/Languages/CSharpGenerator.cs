@@ -191,7 +191,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 			keyword,
 		];
 
-		code.Write($"{string.Join(" ", modifiers)} {classDecl.Name ?? "UnnamedClass"}");
+		code.Write($"{string.Join(" ", modifiers)} {classDecl.Name ?? "UnnamedClass"}{SpellTypeParameters(classDecl.TypeParameters)}");
 
 		// One list, base first. C# takes at most one class in it and puts it first, which is why
 		// the AST keeps the two apart: the order is not something a generator could recover.
@@ -208,6 +208,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 
 		// The line is ended before the scope opens, so C#'s brace lands on its own line.
 		code.WriteLine();
+		WriteConstraintClauses(classDecl.TypeParameters, code);
 
 		using Scope members = new(code);
 		foreach (AstNode member in classDecl.Members)
@@ -222,6 +223,59 @@ public class CSharpGenerator : LanguageGeneratorBase
 			}
 		}
 	}
+
+	/// <summary>
+	/// Spells a declaration's type parameters, or nothing when it has none.
+	/// </summary>
+	/// <param name="parameters">The declaration's type parameters.</param>
+	/// <returns>The list, angle brackets and all, or an empty string.</returns>
+	/// <remarks>
+	/// Names only. C# writes the requirements in a <c>where</c> clause of their own rather than
+	/// beside the name, which is what <see cref="WriteConstraintClauses"/> is for.
+	/// </remarks>
+	private static string SpellTypeParameters(IEnumerable<TypeParameter> parameters)
+	{
+		string[] names = [.. parameters.Select(parameter => parameter.Name)];
+
+		return names.Length == 0 ? string.Empty : $"<{string.Join(", ", names)}>";
+	}
+
+	/// <summary>
+	/// Writes one <c>where</c> clause per constrained parameter, indented under the declaration.
+	/// </summary>
+	/// <param name="parameters">The declaration's type parameters.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// The order within a clause is the language's rather than the declaration's, and putting it
+	/// right is this generator's job: C# requires the class or struct constraint first and
+	/// <c>new()</c> last, and rejects any other order. The AST has no reason to know that, and a
+	/// caller listing them as they think of them should still get a file that compiles.
+	/// </remarks>
+	private static void WriteConstraintClauses(IEnumerable<TypeParameter> parameters, CodeBlocker code)
+	{
+		using IndentScope clauses = new(code);
+
+		foreach (TypeParameter parameter in parameters.Where(parameter => parameter.Constraints.Count > 0))
+		{
+			IEnumerable<string> written = InDeclarationOrder(parameter.Constraints)
+				.Select(constraint => constraint.ToString());
+
+			code.WriteLine($"where {parameter.Name} : {string.Join(", ", written)}");
+		}
+	}
+
+	/// <summary>
+	/// Puts a parameter's constraints into the order C# accepts them in.
+	/// </summary>
+	/// <param name="constraints">The constraints as the declaration lists them.</param>
+	/// <returns>The constraints, reordered.</returns>
+	private static IEnumerable<TypeConstraint> InDeclarationOrder(IEnumerable<TypeConstraint> constraints) =>
+		constraints.OrderBy(constraint => constraint.Kind switch
+		{
+			TypeConstraintKind.ValueType or TypeConstraintKind.ReferenceType => 0,
+			TypeConstraintKind.Constructible => 2,
+			_ => 1,
+		});
 
 	/// <inheritdoc/>
 	protected override string? SpellImport(string import) => $"using {import};";
@@ -510,6 +564,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 		WriteFunctionModifiers(function, code);
 
 		code.Write(SpellFunctionName(function, enclosingType));
+		code.Write(SpellTypeParameters(function.TypeParameters));
 		code.Write("(");
 
 		for (int i = 0; i < function.Parameters.Count; i++)
@@ -527,11 +582,13 @@ public class CSharpGenerator : LanguageGeneratorBase
 		if (function.IsAbstract)
 		{
 			code.WriteLine(";");
+			WriteConstraintClauses(function.TypeParameters, code);
 			return;
 		}
 
 		// The line is ended before the scope opens, so C#'s brace lands on its own line.
 		code.WriteLine();
+		WriteConstraintClauses(function.TypeParameters, code);
 
 		using Scope body = new(code);
 

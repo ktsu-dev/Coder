@@ -168,6 +168,16 @@ public class FunctionDeclaration : AstCompositeNode, IHasVisibility, IHasDocumen
 	public Collection<Parameter> Parameters { get; init; } = [];
 
 	/// <summary>
+	/// Gets the types this function is written over, which may be none.
+	/// </summary>
+	/// <remarks>
+	/// A function's own parameters rather than its enclosing type's: a method of
+	/// <c>Table&lt;TKey&gt;</c> that takes a <c>TValue</c> of its own declares the second here and
+	/// not the first, and a generator writes the enclosing type's where it writes the type.
+	/// </remarks>
+	public Collection<TypeParameter> TypeParameters { get; init; } = [];
+
+	/// <summary>
 	/// Gets or sets a list of statements that make up the function body.
 	/// </summary>
 	public Collection<AstNode> Body { get; init; } = [];
@@ -220,6 +230,11 @@ public class FunctionDeclaration : AstCompositeNode, IHasVisibility, IHasDocumen
 		}
 
 		// Clone parameters
+		foreach (TypeParameter typeParameter in TypeParameters)
+		{
+			clone.TypeParameters.Add(typeParameter.Clone());
+		}
+
 		foreach (Parameter parameter in Parameters)
 		{
 			clone.Parameters.Add((Parameter)parameter.Clone());

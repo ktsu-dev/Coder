@@ -306,6 +306,175 @@ public class TypeDeclarationShapeTests
 		StringAssert.Contains(Generate(new CSharpGenerator(), split), "public partial class Split");
 	}
 
+	// ------------------------------------------------------------------ Type parameters
+
+	/// <summary>
+	/// A type written over one parameter with the constraints ktsu.Semantics actually uses.
+	/// </summary>
+	/// <returns>The declaration.</returns>
+	private static ClassDeclaration Mass()
+	{
+		ClassDeclaration mass = new("Mass") { Kind = TypeDeclarationKind.Struct };
+		mass.TypeParameters.Add(TypeParameter.Parse("T : struct, INumber<T>"));
+		return mass;
+	}
+
+	/// <summary>
+	/// C# writes the names beside the type and the requirements in a clause of their own.
+	/// </summary>
+	[TestMethod]
+	public void CSharp_WritesTheParametersAndAWhereClause()
+	{
+		string code = Generate(new CSharpGenerator(), Mass());
+
+		StringAssert.Contains(code, "struct Mass<T>");
+		StringAssert.Contains(code, "where T : struct, INumber<T>");
+	}
+
+	/// <summary>
+	/// The order within a clause is the language's rather than the declaration's.
+	/// </summary>
+	/// <remarks>
+	/// C# requires the class or struct constraint first and <c>new()</c> last and rejects any other
+	/// order, which the AST has no reason to know. A caller listing them as they think of them
+	/// should still get a file that compiles.
+	/// </remarks>
+	[TestMethod]
+	public void CSharp_PutsTheConstraintsInTheOrderTheLanguageAccepts()
+	{
+		ClassDeclaration table = new("Table");
+		table.TypeParameters.Add(TypeParameter.Parse("T : new(), IComparable<T>, class"));
+
+		StringAssert.Contains(
+			Generate(new CSharpGenerator(), table),
+			"where T : class, IComparable<T>, new()");
+	}
+
+	/// <summary>
+	/// A generic method carries its own parameters, which are not its type's.
+	/// </summary>
+	[TestMethod]
+	public void CSharp_WritesAMethodsOwnTypeParameters()
+	{
+		FunctionDeclaration pick = new("Pick") { ReturnType = "T", IsStatic = true };
+		pick.TypeParameters.Add(TypeParameter.Parse("T : IComparable<T>"));
+		pick.Parameters.Add(new Parameter("first", "T"));
+
+		string code = Generate(new CSharpGenerator(), pick);
+
+		StringAssert.Contains(code, "Pick<T>(");
+		StringAssert.Contains(code, "where T : IComparable<T>");
+	}
+
+	/// <summary>
+	/// C++ writes the parameters as a template and the requirements as a note.
+	/// </summary>
+	/// <remarks>
+	/// A concept is a predicate over a type and can ask anything at all, so there is nothing shared
+	/// underneath <c>struct</c> and <c>std::floating_point</c> to translate between — and the
+	/// standard ones need an include the AST does not carry, which is the same reason Python does
+	/// not get its <c>@dataclass</c>.
+	/// </remarks>
+	[TestMethod]
+	public void Cpp_WritesATemplateAndNotesWhatItCannotRequire()
+	{
+		string code = Generate(new CppGenerator(), Mass());
+
+		StringAssert.Contains(code, "template <typename T>");
+		StringAssert.Contains(code, "requires that T is a value type, and that T is INumber<T>");
+	}
+
+	/// <summary>
+	/// Rust puts the bounds it has beside the parameter, and notes the one it does not.
+	/// </summary>
+	/// <remarks>
+	/// A trait bound is exactly what <c>Implements</c> means, and <c>Default</c> is exactly what
+	/// <c>new()</c> means. "Value type" is not a thing Rust says about a parameter at all — every
+	/// type is one — so that is the one written down.
+	/// </remarks>
+	[TestMethod]
+	public void Rust_BoundsWhatItCanAndNotesWhatItCannot()
+	{
+		string code = Generate(new RustGenerator(), Mass());
+
+		StringAssert.Contains(code, "struct Mass<T: INumber<T>>");
+		StringAssert.Contains(code, "requires that T is a value type");
+		Assert.DoesNotContain("INumber<T>,", code, "the trait bound should not also be written down.");
+	}
+
+	/// <summary>
+	/// Rust repeats the parameters on the impl block, where the methods need them.
+	/// </summary>
+	/// <remarks>
+	/// The bounds go on the impl and the bare names on the type it is for —
+	/// <c>impl&lt;T: Bound&gt; Mass&lt;T&gt;</c> — which is the one shape that compiles.
+	/// </remarks>
+	[TestMethod]
+	public void Rust_CarriesTheParametersOntoTheImplBlock()
+	{
+		ClassDeclaration mass = Mass();
+		mass.Members.Add(new FunctionDeclaration("value") { ReturnType = "T", IsReadOnly = true });
+
+		StringAssert.Contains(Generate(new RustGenerator(), mass), "impl<T: INumber<T>> Mass<T>");
+	}
+
+	/// <summary>
+	/// Go writes a generic free function, and writes a generic type's parameters down.
+	/// </summary>
+	/// <remarks>
+	/// A Go method on a generic type needs the parameters in three places and spelled two ways —
+	/// <c>NewPoint</c> for the constructor's name but <c>Point[T]</c> for its receiver and its
+	/// result — so making a type generic is a change to how this generator writes a whole type
+	/// rather than to how it writes one line. A free function has none of that.
+	/// </remarks>
+	[TestMethod]
+	public void Go_WritesAGenericFunctionAndNotesAGenericType()
+	{
+		FunctionDeclaration first = new("First") { ReturnType = "T" };
+		first.TypeParameters.Add(TypeParameter.Parse("T : Ordered"));
+
+		StringAssert.Contains(Generate(new GoGenerator(), first), "First[T Ordered](");
+		StringAssert.Contains(Generate(new GoGenerator(), Mass()), "over T : struct, INumber<T>");
+	}
+
+	/// <summary>
+	/// A target with no generics at all writes the whole parameter down, constraints and all.
+	/// </summary>
+	/// <param name="language">The generator to ask.</param>
+	[TestMethod]
+	[DataRow("c")]
+	[DataRow("python")]
+	[DataRow("javascript")]
+	public void TargetsWithNoGenerics_WriteTheWholeParameterDown(string language)
+	{
+		ILanguageGenerator generator = language switch
+		{
+			"c" => new CGenerator(),
+			"python" => new PythonGenerator(),
+			_ => new JavaScriptGenerator(),
+		};
+
+		StringAssert.Contains(Generate(generator, Mass()), "over T : struct, INumber<T>");
+	}
+
+	/// <summary>
+	/// Parsing a written parameter and writing it back gives the same text.
+	/// </summary>
+	/// <remarks>
+	/// Which is what lets a document carry a whole parameter on one line. The comma inside
+	/// <c>IComparer&lt;T, U&gt;</c> belongs to it rather than separating two constraints, so the
+	/// split has to respect the brackets.
+	/// </remarks>
+	[TestMethod]
+	public void TypeParameter_ParseAndToStringAreInverses()
+	{
+		const string written = "T : class, IComparer<T, U>, new()";
+
+		Assert.AreEqual(written, TypeParameter.Parse(written).ToString());
+		Assert.AreEqual(3, TypeParameter.Parse(written).Constraints.Count);
+		Assert.AreEqual("U", TypeParameter.Parse("U").ToString());
+	}
+
 	// ------------------------------------------------------------------ Round trip
 
 	/// <summary>

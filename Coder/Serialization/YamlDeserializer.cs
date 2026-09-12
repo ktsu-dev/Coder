@@ -179,6 +179,7 @@ public partial class YamlDeserializer
 
 		DeserializeVisibility(funcDecl, dict);
 		ReadStrings(dict, DocumentationKey, funcDecl.Documentation);
+		DeserializeTypeParameters(dict, funcDecl.TypeParameters);
 	}
 
 	/// <summary>
@@ -783,6 +784,7 @@ public partial class YamlDeserializer
 
 		DeserializeVisibility(classDecl, dict);
 		ReadStrings(dict, DocumentationKey, classDecl.Documentation);
+		DeserializeTypeParameters(dict, classDecl.TypeParameters);
 		DeserializeTypeList(dict, "interfaces", classDecl.Interfaces);
 		DeserializeTypeList(dict, "specialisationArguments", classDecl.SpecialisationArguments);
 
@@ -790,6 +792,33 @@ public partial class YamlDeserializer
 		DeserializeMetadata(classDecl, dict);
 
 		return classDecl;
+	}
+
+	/// <summary>
+	/// Reads a sequence of written type parameters into a collection.
+	/// </summary>
+	/// <param name="dict">The mapping to read from.</param>
+	/// <param name="parameters">The collection to fill.</param>
+	/// <remarks>
+	/// One entry per parameter, carrying its constraints with it, because
+	/// <see cref="TypeParameter.Parse"/> and <see cref="TypeParameter.ToString"/> are inverses and
+	/// a parameter written on one line is a parameter a person can read.
+	/// </remarks>
+	private static void DeserializeTypeParameters(Dictionary<object, object> dict, Collection<TypeParameter> parameters)
+	{
+		if (!dict.TryGetValue("typeParameters", out object? writtenObj) || writtenObj is not List<object> written)
+		{
+			return;
+		}
+
+		IEnumerable<string> spelled = written
+			.Select(parameter => parameter?.ToString() ?? string.Empty)
+			.Where(text => text.Length > 0);
+
+		foreach (string text in spelled)
+		{
+			parameters.Add(TypeParameter.Parse(text));
+		}
 	}
 
 	/// <summary>
