@@ -45,7 +45,7 @@ This makes it ideal for code generation tools, transpilers, and any application 
 -   **LiteralExpression<T>**: Typed literals (string, int, bool, double)
 -   **AstLeafNode<T>**: Generic leaf nodes for literals (strings, numbers, booleans)
 
-Every operator in `UnaryOperator` and `BinaryOperator` exists in all five target languages, so no
+Every operator in `UnaryOperator` and `BinaryOperator` exists in all six target languages, so no
 AST built from them is untranslatable. Only the spelling varies — Python's `not`/`and`/`or`,
 JavaScript's strict `===`/`!==` — and each generator overrides just the operators it spells
 differently.
@@ -66,6 +66,7 @@ rather than the modifier's text because no two languages spell visibility the sa
 | C# | The keyword, in front of the declaration; a class or function with none is `public` |
 | C++ | An access label (`public:`, `protected:`, `private:`) the members are grouped under; `Internal` becomes `public:` |
 | C | Nothing inside a struct, which has no access control; a `Private` declaration at file scope is `static`, which is the internal linkage C has instead |
+| Rust | `pub`, or `pub(crate)` for `Internal` and `Protected`; `Private` writes nothing, which is already Rust's default. `Unspecified` is `pub`, since a generated type nothing outside the module can read is not what saying nothing asked for |
 | JavaScript | A private class member takes the `#` prefix, which is JavaScript's own private syntax; nothing for the rest |
 | Python | Nothing — Python has no access modifiers, and its leading-underscore convention renames the declaration rather than modifying it |
 
@@ -78,11 +79,18 @@ header declaring one and included twice would not link — JavaScript writes `co
 `static` for a class member, and Python writes a plain assignment, having no constant declaration to
 spell.
 
+Rust is the one target where the flag decides more than a keyword. A `let` binds immutably there, so
+a declaration that is *not* constant is written `let mut` — the warning an unneeded `mut` earns is a
+better outcome than the error a missing one causes. At module scope the flag picks between a `const`,
+which is substituted wherever it is named, and a `static`, which is one object with an address.
+
 An `EntryPoint` holds the statements a program runs. Each generator writes the spelling its language
 looks for: C#'s `static Main`, C++'s free `int main`, C's `int main(void)` — an empty parameter list
 in C declares a function whose parameters are unspecified rather than one that takes none — Python's
 `main` with the `__main__` guard that calls it (and the `import sys` its arguments and exit code
-need), and JavaScript's `main` with the call that runs it.
+need), JavaScript's `main` with the call that runs it, and Rust's `fn main`, which takes no arguments
+and returns nothing, so a program wanting either reaches for `std::env::args` and
+`std::process::exit`.
 
 ### Visual graph editor
 
@@ -175,6 +183,7 @@ directly.
 | `javascript` | `JavaScriptGenerator` | `js` | Untyped; `const`/`let`; strict `===` and `!==`; method, `static` and `#private` syntax inside a class |
 | `cpp` | `CppGenerator` | `cpp` | Mapped type spellings (`str` → `std::string`); `auto` for inferred declarations; access labels, `static constexpr` members and a terminating `;` on a class |
 | `c` | `CGenerator` | `c` | `typedef struct` for every kind of type; a member function is a free `Type_name(Type* self, …)`; an interface is a struct of function pointers; a base type is the first member; enumeration members are qualified by their enumeration; `_Static_assert`, `main(void)`, and `static const` for a constant |
+| `rust` | `RustGenerator` | `rs` | A `struct` for the data and an `impl` block for the behaviour; an interface is a `trait` and a base type on one is a supertrait; a destructor is `impl Drop`, an operator is its `std::ops` trait, a conversion is `impl From`, and a specialisation is `impl Trait for Type`; `#[repr]`, `#[must_use]`, `const fn`, and `const _: () = assert!(…)` |
 
 ## Installation
 

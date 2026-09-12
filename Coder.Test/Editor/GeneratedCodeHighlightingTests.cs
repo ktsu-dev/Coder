@@ -3,6 +3,7 @@
 namespace ktsu.Coder.Test.Editor;
 
 using ktsu.Coder.Ast;
+using ktsu.Coder.Editor;
 using ktsu.Coder.Languages;
 using ktsu.ImGui.SyntaxHighlighting;
 using ktsu.SyntaxHighlighting;
@@ -35,8 +36,21 @@ public class GeneratedCodeHighlightingTests
 		return function;
 	}
 
+	/// <summary>
+	/// Teaches the highlighter what the editor teaches it.
+	/// </summary>
+	/// <remarks>
+	/// The highlighter ships fifteen languages and Rust is not one of them, so the editor registers a
+	/// definition for it at startup. This is that same registration: without it the assertion below
+	/// would be checking a language nothing had told the highlighter about, and with it the
+	/// assertion checks the definition as well as the id.
+	/// </remarks>
+	/// <param name="context">The test context, which this does not read.</param>
+	[ClassInitialize]
+	public static void RegisterEditorLanguages(TestContext context) => RustSyntax.Register();
+
 	private static ILanguageGenerator[] Generators() =>
-		[new CSharpGenerator(), new PythonGenerator(), new CppGenerator(), new CGenerator(), new JavaScriptGenerator()];
+		[new CSharpGenerator(), new PythonGenerator(), new CppGenerator(), new CGenerator(), new RustGenerator(), new JavaScriptGenerator()];
 
 	/// <summary>
 	/// Tests that every generator's language id is one the highlighter recognises, by generating real

@@ -501,6 +501,13 @@ public class CGenerator : CFamilyGenerator
 		string name = classDecl.Name ?? "UnnamedStruct";
 		bool isInterface = classDecl.Kind == TypeDeclarationKind.Interface;
 
+		// C has no templates, so it has nothing a declaration for one type rather than of one could
+		// be. Said rather than dropped, the same as every other target that cannot spell it.
+		if (classDecl.IsSpecialisation)
+		{
+			WriteInexpressible(code, $"specialised for {string.Join(", ", classDecl.SpecialisationArguments)}");
+		}
+
 		List<AstNode> nestedTypes = [.. classDecl.Members.Where(IsTypeDeclaration)];
 		List<FunctionDeclaration> functions = isInterface
 			? []

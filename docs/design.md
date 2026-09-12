@@ -62,7 +62,7 @@ functionDeclaration:
    * Base implementation (`LanguageGeneratorBase`) provides common functionality.
    * Four generators, each with proper indentation and language-appropriate type handling:
      Python (type hints), C#, JavaScript (untyped, strict equality), and C++ (mapped type spellings).
-   * Dependency injection configuration (`ServiceCollectionExtensions`) registers all five.
+   * Dependency injection configuration (`ServiceCollectionExtensions`) registers all six.
 
 4. **Applications** ✅ **IMPLEMENTED**:
 
@@ -228,7 +228,7 @@ string pythonCode = pythonGenerator.Generate(astLoaded);
 3. **Expression system** — function calls (binary operators are implemented)
 
 ### Medium Priority
-4. **Further language generators** beyond the five that exist
+4. **Further language generators** beyond the six that exist
 5. **Error handling and validation** improvements
 6. **Performance optimization** and benchmarking
 
@@ -239,6 +239,6 @@ string pythonCode = pythonGenerator.Generate(astLoaded);
 
 ## Conclusion
 
-This .NET-based design has successfully implemented a robust, flexible foundation for AST-based code generation. The core infrastructure adheres to SOLID principles and provides working serialization and code generation for five target languages. The CLI and TUI applications demonstrate practical usage. 
+This .NET-based design has successfully implemented a robust, flexible foundation for AST-based code generation. The core infrastructure adheres to SOLID principles and provides working serialization and code generation for six target languages. The CLI and TUI applications demonstrate practical usage. 
 
 The next development phase should focus on completing the dependency injection infrastructure and expanding the AST node types to support more complex code structures.
