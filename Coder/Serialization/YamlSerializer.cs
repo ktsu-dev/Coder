@@ -3,6 +3,7 @@
 namespace ktsu.Coder.Serialization;
 
 using System.Collections.Generic;
+using System.Linq;
 using ktsu.Coder.Ast;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
@@ -533,6 +534,14 @@ public class YamlSerializer
 		if (classDecl.BaseType != null)
 		{
 			nodeData["baseType"] = classDecl.BaseType.ToString();
+		}
+
+		if (classDecl.SpecialisationArguments.Count > 0)
+		{
+			// Each argument on its own, rather than joined: a type argument can itself have type
+			// arguments, so a comma is part of one of them as often as it is a separator.
+			nodeData["specialisationArguments"] =
+				classDecl.SpecialisationArguments.Select(argument => argument.ToString()).ToList();
 		}
 
 		SerializeVisibility(classDecl, nodeData);

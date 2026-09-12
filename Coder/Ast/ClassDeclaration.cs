@@ -50,6 +50,37 @@ public class ClassDeclaration : AstCompositeNode, IHasVisibility, IHasDocumentat
 	public TypeReference? BaseType { get; set; }
 
 	/// <summary>
+	/// Gets the type arguments this declaration is the specialisation for, or nothing when it is
+	/// an ordinary declaration.
+	/// </summary>
+	/// <remarks>
+	/// An explicit specialisation is C++ and only C++, which is why this is a property on the
+	/// ordinary declaration rather than a node of its own: the thing being declared is still a
+	/// class, with the same members, the same visibility and the same documentation. What changes
+	/// is which type it is the declaration <em>for</em>.
+	/// <para>
+	/// It exists because a generated table has to be reachable from the type it describes.
+	/// <c>template&lt;&gt; struct Describe&lt;RigidBody&gt;</c> is how C++ attaches a fact to a type
+	/// without touching the type, and a generator that could not say it would have to fall back on
+	/// naming — a <c>DescribeRigidBody</c> that every consumer has to spell for itself, which is
+	/// the thing a lookup by type exists to avoid.
+	/// </para>
+	/// <para>
+	/// The precedent is <see cref="CompileTimeAssertion"/> and <see cref="SourceFile.Imports"/>:
+	/// one generator honours it and the others write a comment, because a generated file that
+	/// quietly drops what it was for looks like one that still means it. The arguments are
+	/// <see cref="TypeReference"/> rather than text, though, which those two are not — a
+	/// specialisation argument is a type, and the AST already knows how to be a type.
+	/// </para>
+	/// </remarks>
+	public Collection<TypeReference> SpecialisationArguments { get; init; } = [];
+
+	/// <summary>
+	/// Gets a value indicating whether this declares a specialisation rather than a type.
+	/// </summary>
+	public bool IsSpecialisation => SpecialisationArguments.Count > 0;
+
+	/// <summary>
 	/// Gets or sets how widely the class is visible.
 	/// </summary>
 	public Visibility Visibility { get; set; }
@@ -78,6 +109,11 @@ public class ClassDeclaration : AstCompositeNode, IHasVisibility, IHasDocumentat
 			BaseType = BaseType?.Clone(),
 			Visibility = Visibility
 		};
+
+		foreach (TypeReference argument in SpecialisationArguments)
+		{
+			clone.SpecialisationArguments.Add(argument.Clone());
+		}
 
 		foreach ((string key, object? value) in Metadata)
 		{
