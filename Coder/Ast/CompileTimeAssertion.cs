@@ -18,8 +18,10 @@ namespace ktsu.Coder.Ast;
 /// written for the language the file is for.
 /// </para>
 /// <para>
-/// Only C++ has this. Every other target here writes a comment saying what was asserted, because a
-/// generated file that silently drops a guarantee looks like one that still makes it.
+/// Only C++ and C have this — <c>static_assert</c> and <c>_Static_assert</c>, which differ in
+/// spelling and in whether the message may be left out. Every other target here writes a comment
+/// saying what was asserted, because a generated file that silently drops a guarantee looks like one
+/// that still makes it.
 /// </para>
 /// </remarks>
 public class CompileTimeAssertion : AstNode

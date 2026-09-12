@@ -58,8 +58,9 @@ public class ServiceCollectionExtensionsTests
 		Assert.IsInstanceOfType<CSharpGenerator>(generators.FirstOrDefault(g => g.LanguageId == "csharp"));
 		Assert.IsInstanceOfType<JavaScriptGenerator>(generators.FirstOrDefault(g => g.LanguageId == "javascript"));
 		Assert.IsInstanceOfType<CppGenerator>(generators.FirstOrDefault(g => g.LanguageId == "cpp"));
+		Assert.IsInstanceOfType<CGenerator>(generators.FirstOrDefault(g => g.LanguageId == "c"));
 
-		Assert.AreEqual(4, generators.Count, "A new generator needs a registration and an entry here");
+		Assert.AreEqual(5, generators.Count, "A new generator needs a registration and an entry here");
 	}
 
 	/// <summary>

@@ -61,7 +61,7 @@ public sealed class CoderEditorAppTests
 	private string PathIn(string name) => Path.Combine(root, name + DocumentStore.Extension);
 
 	private static CoderEditorApp NewApp(DocumentStore store, EditorSettings? settings = null) =>
-		new(store, [new CSharpGenerator(), new PythonGenerator(), new CppGenerator(), new JavaScriptGenerator()],
+		new(store, [new CSharpGenerator(), new PythonGenerator(), new CppGenerator(), new CGenerator(), new JavaScriptGenerator()],
 			settings ?? new EditorSettings());
 
 	/// <summary>

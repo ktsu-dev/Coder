@@ -13,9 +13,9 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 /// cannot say.
 /// </summary>
 /// <remarks>
-/// Only C++ has anything checked before the program runs, so this is the clearest case of the rule
-/// the whole AST follows — say what is true, and let each language say as much of it as it can. The
-/// other three write a comment rather than dropping it, because a file that quietly loses a
+/// Only C++ and C have anything checked before the program runs, so this is the clearest case of the
+/// rule the whole AST follows — say what is true, and let each language say as much of it as it can.
+/// The other three write a comment rather than dropping it, because a file that quietly loses a
 /// guarantee looks exactly like one that still makes it.
 /// </remarks>
 [TestClass]
@@ -57,6 +57,19 @@ public class CompileTimeAssertionTests
 		CompileTimeAssertion assertion = new("sizeof(T) == 8", "a \"T\" is eight bytes");
 
 		Assert.Contains("\\\"T\\\"", new CppGenerator().Generate(assertion), StringComparison.Ordinal);
+	}
+
+	/// <summary>
+	/// C writes it too, under C11's own spelling — and always with a message, which C11 requires and
+	/// which an assertion that carries none is given from its own condition.
+	/// </summary>
+	[TestMethod]
+	public void C_WritesTheAssertionWithAMessageEitherWay()
+	{
+		Assert.AreEqual(
+			"_Static_assert(sizeof(Handle) == 8,\n"
+			+ "    \"sizeof(Handle) == 8\");\n",
+			new CGenerator().Generate(new CompileTimeAssertion("sizeof(Handle) == 8")).ReplaceLineEndings("\n"));
 	}
 
 	/// <summary>

@@ -17,7 +17,7 @@ using ktsu.CodeBlocker;
 /// verbatim on the assumption the caller meant a C++ type. A declaration with no type, or one marked
 /// type-inferred, becomes <c>auto</c>.
 /// </remarks>
-public class CppGenerator : StandardLanguageGenerator
+public class CppGenerator : CFamilyGenerator
 {
 	/// <summary>
 	/// Maps the AST's language-neutral type names onto C++ spellings.
@@ -74,27 +74,18 @@ public class CppGenerator : StandardLanguageGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
-	/// A pure function is written <c>[[nodiscard]]</c>: discarding the result of a call that does
-	/// nothing else is always a mistake, and that is the whole of what the standard can say. The
-	/// compiler-specific <c>__attribute__((pure))</c> asserts to the optimiser that the call may be
-	/// elided or duplicated, which is a stronger promise than the AST is in a position to make.
-	/// </remarks>
-	protected override void GenerateFunctionDeclaration(FunctionDeclaration funcDecl, CodeBlocker code) =>
-		GenerateFunction(funcDecl, code, null);
-
-	/// <summary>
-	/// Emits a function, which may be a member of a type.
-	/// </summary>
-	/// <param name="funcDecl">The declaration to emit.</param>
-	/// <param name="code">The writer to emit into.</param>
-	/// <param name="enclosingType">The name of the type it belongs to, when it belongs to one.</param>
-	/// <remarks>
 	/// A constructor and a destructor are named after the type rather than after themselves, so the
 	/// name comes from the class emitter rather than from the declaration. That is what stops the two
 	/// desynchronising when the type is renamed — the alternative is holding the type's name twice
 	/// and hoping.
+	/// <para>
+	/// A pure function is written <c>[[nodiscard]]</c>: discarding the result of a call that does
+	/// nothing else is always a mistake, and that is the whole of what the standard can say. The
+	/// compiler-specific <c>__attribute__((pure))</c> asserts to the optimiser that the call may be
+	/// elided or duplicated, which is a stronger promise than the AST is in a position to make.
+	/// </para>
 	/// </remarks>
-	private void GenerateFunction(FunctionDeclaration funcDecl, CodeBlocker code, string? enclosingType)
+	protected override void GenerateFunction(FunctionDeclaration funcDecl, CodeBlocker code, string? enclosingType)
 	{
 		Ensure.NotNull(funcDecl);
 		Ensure.NotNull(code);
@@ -252,43 +243,6 @@ public class CppGenerator : StandardLanguageGenerator
 				$"operator {MapToCppType(funcDecl.ReturnType ?? new TypeReference("void"))}",
 			_ => funcDecl.Name ?? "unnamedFunction",
 		};
-	}
-
-	/// <inheritdoc/>
-	/// <remarks>
-	/// <c>#pragma once</c> rather than an include guard. Every compiler this targets supports it, and
-	/// a guard needs a macro name unique across the whole program — which the file cannot know it
-	/// has, and which a generator picking one would eventually collide on.
-	/// </remarks>
-	protected override bool WriteFileDirectives(SourceFile file, CodeBlocker code)
-	{
-		Ensure.NotNull(file);
-		Ensure.NotNull(code);
-
-		if (!file.IsHeader)
-		{
-			return false;
-		}
-
-		code.WriteLine("#pragma once");
-		return true;
-	}
-
-	/// <inheritdoc/>
-	/// <remarks>
-	/// An import that already carries its own delimiters is written as it stands, because the choice
-	/// between <c>&lt;&gt;</c> and <c>""</c> says where the compiler should look and only whoever
-	/// wrote the file knows that. One that carries neither is quoted, which is right for a path
-	/// within the project being generated.
-	/// </remarks>
-	protected override string? SpellImport(string import)
-	{
-		Ensure.NotNull(import);
-
-		bool delimited = (import.StartsWith('<') && import.EndsWith('>'))
-			|| (import.StartsWith('"') && import.EndsWith('"'));
-
-		return delimited ? $"#include {import}" : $"#include \"{import}\"";
 	}
 
 	/// <inheritdoc/>
@@ -500,87 +454,8 @@ public class CppGenerator : StandardLanguageGenerator
 			code.Write(MapToCppType(construction.Type));
 		}
 
-		if (construction.Arguments.Count == 0)
-		{
-			code.Write("{}");
-			return;
-		}
-
-		if (SpansLines(construction))
-		{
-			WriteStacked(construction, code);
-			return;
-		}
-
-		code.Write("{ ");
-		for (int index = 0; index < construction.Arguments.Count; index++)
-		{
-			if (index > 0)
-			{
-				code.Write(", ");
-			}
-
-			WriteArgument(construction.Arguments[index], code);
-		}
-
-		code.Write(" }");
+		WriteBracedList(construction, code, "{}");
 	}
-
-	/// <summary>
-	/// Writes a braced list one element per line.
-	/// </summary>
-	/// <param name="construction">The expression whose arguments to write.</param>
-	/// <param name="code">The writer to emit into.</param>
-	/// <remarks>
-	/// A trailing comma after the last element, which C++ allows in a braced list and which keeps
-	/// adding a row to a generated table from touching the row above it in the diff.
-	/// </remarks>
-	private void WriteStacked(ConstructionExpression construction, CodeBlocker code)
-	{
-		code.WriteLine("{");
-		code.Indent();
-
-		foreach (AstNode argument in construction.Arguments)
-		{
-			WriteArgument(argument, code);
-			code.WriteLine(",");
-		}
-
-		code.Outdent();
-		code.Write("}");
-	}
-
-	/// <summary>
-	/// Writes one element of a braced list, which may name the member it is for.
-	/// </summary>
-	/// <param name="argument">The element to write.</param>
-	/// <param name="code">The writer to emit into.</param>
-	private void WriteArgument(AstNode argument, CodeBlocker code)
-	{
-		if (argument is MemberInitialiser designated)
-		{
-			code.Write($".{designated.Name} = ");
-			GenerateInternal(designated.Value ?? new VariableReference(string.Empty), code);
-			return;
-		}
-
-		GenerateInternal(argument, code);
-	}
-
-	/// <summary>
-	/// Reports whether a braced list is worth breaking across lines.
-	/// </summary>
-	/// <param name="construction">The expression to judge.</param>
-	/// <returns><see langword="true"/> when it should be written one element per line.</returns>
-	/// <remarks>
-	/// A list of values is a value and belongs on one line; a list whose elements are themselves
-	/// lists is a table, and a table written on one line is a row of a diff nobody can read. The
-	/// test is the shape of the data rather than a column count, because a generated file has no
-	/// idea how wide anyone's editor is and a rule about that would have to be guessed.
-	/// </remarks>
-	private static bool SpansLines(ConstructionExpression construction) =>
-		construction.Arguments.Any(argument =>
-			argument is ConstructionExpression or MemberInitialiser { Value: ConstructionExpression });
 
 	/// <inheritdoc/>
 	/// <remarks>
@@ -660,34 +535,6 @@ public class CppGenerator : StandardLanguageGenerator
 		Visibility.Private => Visibility.Private,
 		_ => Visibility.Public,
 	};
-
-	/// <summary>
-	/// Reports whether two adjacent members want a blank line between them.
-	/// </summary>
-	/// <param name="previous">The member already written.</param>
-	/// <param name="member">The member about to be written.</param>
-	/// <returns>True when a blank line belongs between them.</returns>
-	/// <remarks>
-	/// Two of a kind that say nothing about themselves stay together, which is what keeps a run of
-	/// aliases, of defaulted declarations, or of assertions about one type reading as one block.
-	/// </remarks>
-	protected override bool NeedsSeparation(AstNode previous, AstNode member)
-	{
-		Ensure.NotNull(previous);
-		Ensure.NotNull(member);
-
-		return previous.GetType() != member.GetType()
-			|| IsDocumented(previous)
-			|| IsDocumented(member);
-	}
-
-	/// <summary>
-	/// Reports whether a member carries documentation.
-	/// </summary>
-	/// <param name="member">The member to test.</param>
-	/// <returns>True when it does.</returns>
-	private static bool IsDocumented(AstNode member) =>
-		member is IHasDocumentation documented && documented.Documentation.Count > 0;
 
 	/// <summary>
 	/// Emits a variable declaration as a class member.
@@ -852,27 +699,11 @@ public class CppGenerator : StandardLanguageGenerator
 		return $"{(type.IsReadOnly ? "const " : string.Empty)}{name}{arguments}{array}{indirection}";
 	}
 
-	/// <summary>
-	/// Spells a declaration of <paramref name="name"/> with that type.
-	/// </summary>
-	/// <param name="type">The declared type.</param>
-	/// <param name="name">The name being declared.</param>
-	/// <returns>The declaration, without an initialiser or a terminator.</returns>
-	/// <remarks>
-	/// C++ puts an array's brackets on the declarator rather than on the type — <c>T name[]</c>,
-	/// never <c>T[] name</c> — so a declaration cannot be built by writing the type and the name in
-	/// that order, which is what every other language here does. This is the one place that
-	/// difference lives.
-	/// </remarks>
-	private static string SpellDeclarator(TypeReference type, string name)
+	/// <inheritdoc/>
+	protected override string SpellType(TypeReference type)
 	{
-		TypeReference element = type.IsArray ? type.Clone() : type;
-		if (type.IsArray)
-		{
-			element.IsArray = false;
-		}
-
-		return $"{MapToCppType(element)} {name}{(type.IsArray ? "[]" : string.Empty)}";
+		Ensure.NotNull(type);
+		return MapToCppType(type);
 	}
 
 	/// <summary>
