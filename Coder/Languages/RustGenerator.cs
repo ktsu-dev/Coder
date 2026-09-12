@@ -165,13 +165,23 @@ public class RustGenerator : StandardLanguageGenerator
 	private static readonly Dictionary<string, string> ComparisonOperators = new(StringComparer.Ordinal)
 	{
 		{ "!=", "PartialEq, which supplies != from ==" },
-		{ "<", "PartialOrd, which supplies the orderings from partial_cmp" },
-		{ "<=", "PartialOrd, which supplies the orderings from partial_cmp" },
-		{ ">", "PartialOrd, which supplies the orderings from partial_cmp" },
-		{ ">=", "PartialOrd, which supplies the orderings from partial_cmp" },
-		{ "&&", "nothing: a short-circuiting operator is not overloadable" },
-		{ "||", "nothing: a short-circuiting operator is not overloadable" },
+		{ "<", Ordering },
+		{ "<=", Ordering },
+		{ ">", Ordering },
+		{ ">=", Ordering },
+		{ "&&", ShortCircuit },
+		{ "||", ShortCircuit },
 	};
+
+	/// <summary>
+	/// What to implement instead of one of the orderings, which are four spellings of one decision.
+	/// </summary>
+	private const string Ordering = "PartialOrd, which supplies the orderings from partial_cmp";
+
+	/// <summary>
+	/// What to implement instead of a short-circuiting operator, which is nothing.
+	/// </summary>
+	private const string ShortCircuit = "nothing: a short-circuiting operator is not overloadable";
 
 	/// <summary>
 	/// A trait an operator is spelled through.
