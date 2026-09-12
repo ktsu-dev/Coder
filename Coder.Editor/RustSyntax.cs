@@ -1,17 +1,17 @@
-// Copyright (c) 2023-2026 ktsu-dev contributors
+﻿// Copyright (c) 2023-2026 ktsu-dev contributors
 
 namespace ktsu.Coder.Editor;
 
 using ktsu.SyntaxHighlighting;
 
 /// <summary>
-/// Teaches the syntax highlighter to read Rust.
+/// What the syntax highlighter needs in order to read Rust.
 /// </summary>
 /// <remarks>
 /// The highlighter ships definitions for fifteen languages and Rust is not one of them, so the
 /// preview pane would draw generated Rust as plain text — the one failure mode
 /// <c>ImGuiSyntaxHighlighting</c> has, and a silent one. Definitions are plain data and the registry
-/// takes one from an application, which is what this is.
+/// takes one from an application; <see cref="EditorSyntax"/> is where this one is handed over.
 /// <para>
 /// It lives in the editor rather than in the library for the reason the library has no UI
 /// dependency at all: what a language looks like on a screen is the editor's business, and
@@ -31,27 +31,9 @@ internal static class RustSyntax
 	private const string LanguageName = "rust";
 
 	/// <summary>
-	/// Registers the definition, if it is not registered already.
-	/// </summary>
-	/// <remarks>
-	/// Idempotent, and deliberately: the registry is process-global, the editor builds more than one
-	/// application object over a test run, and registering twice would replace a definition with an
-	/// identical one for no reason.
-	/// </remarks>
-	public static void Register()
-	{
-		if (LanguageRegistry.TryGet(LanguageName, out _))
-		{
-			return;
-		}
-
-		LanguageRegistry.Register(Definition);
-	}
-
-	/// <summary>
 	/// Gets what the tokenizer needs in order to read Rust.
 	/// </summary>
-	private static LanguageDefinition Definition => new()
+	public static LanguageDefinition Definition => new()
 	{
 		Name = LanguageName,
 		Aliases = ["rs"],

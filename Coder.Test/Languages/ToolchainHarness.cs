@@ -1,4 +1,4 @@
-// Copyright (c) 2023-2026 ktsu-dev contributors
+﻿// Copyright (c) 2023-2026 ktsu-dev contributors
 
 namespace ktsu.Coder.Test.Languages;
 
@@ -8,25 +8,31 @@ using System.Diagnostics;
 /// Runs a real compiler over generated source.
 /// </summary>
 /// <remarks>
-/// Two of the generators here are checked by compiling what they write, because the rules they have
-/// to obey are not visible in the text: C's about linkage and constant expressions, Rust's about
-/// receivers, associated items and what a trait implementation owes its trait. Everything those two
-/// tests share about *running* a compiler is here, so that what is left in each of them is the
-/// language.
+/// Three of the generators here are checked by compiling what they write, because the rules they
+/// have to obey are not visible in the text: C's about linkage and constant expressions, Rust's
+/// about receivers, associated items and what a trait implementation owes its trait, and Go's about
+/// unused names, which it refuses rather than warns about. Everything those tests share about
+/// *running* a compiler is here, so that what is left in each of them is the language.
 /// </remarks>
 internal static class ToolchainHarness
 {
 	/// <summary>
 	/// Finds the first of several commands that is on the path.
 	/// </summary>
+	/// <param name="askVersion">The argument that makes the command say what it is and stop.</param>
 	/// <param name="commands">The commands to try, in the order a project would.</param>
 	/// <returns>The first one that runs, or null when none does.</returns>
 	/// <remarks>
 	/// Asked by running it rather than by looking for a file, because what matters is whether it
 	/// starts — a name on the path that cannot be executed is not a compiler.
+	/// <para>
+	/// The argument is the caller's because it is not the same everywhere: a compiler takes
+	/// <c>--version</c> and the Go toolchain takes a subcommand, and <c>go --version</c> exits
+	/// non-zero, which would read as "not installed".
+	/// </para>
 	/// </remarks>
-	public static string? FindOnPath(params string[] commands) =>
-		commands.FirstOrDefault(command => Run(command, "--version", Path.GetTempPath()).ExitCode == 0);
+	public static string? FindOnPath(string askVersion, params string[] commands) =>
+		commands.FirstOrDefault(command => Run(command, askVersion, Path.GetTempPath()).ExitCode == 0);
 
 	/// <summary>
 	/// Runs a command in a directory of its own, and deletes the directory afterwards.

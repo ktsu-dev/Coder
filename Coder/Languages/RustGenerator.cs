@@ -1,4 +1,4 @@
-// Copyright (c) 2023-2026 ktsu-dev contributors
+﻿// Copyright (c) 2023-2026 ktsu-dev contributors
 
 namespace ktsu.Coder.Languages;
 
@@ -257,48 +257,12 @@ public class RustGenerator : StandardLanguageGenerator
 		WriteModule([.. path.Skip(1)], members, code);
 	}
 
-	/// <summary>
-	/// Writes a run of declarations, separated as this language separates them.
-	/// </summary>
-	/// <param name="members">The declarations to write.</param>
-	/// <param name="code">The writer to emit into.</param>
-	private void WriteMembers(IReadOnlyCollection<AstNode> members, CodeBlocker code)
-	{
-		AstNode? previous = null;
-		foreach (AstNode member in members)
-		{
-			if (previous is not null && NeedsSeparation(previous, member))
-			{
-				code.NewLine();
-			}
-
-			previous = member;
-			GenerateInternal(member, code);
-		}
-	}
-
 	/// <inheritdoc/>
 	/// <remarks>
 	/// Two of a kind that say nothing about themselves stay together, which keeps a run of type
 	/// aliases or of constants reading as one block rather than as a paragraph each.
 	/// </remarks>
-	protected override bool NeedsSeparation(AstNode previous, AstNode member)
-	{
-		Ensure.NotNull(previous);
-		Ensure.NotNull(member);
-
-		return previous.GetType() != member.GetType()
-			|| IsDocumented(previous)
-			|| IsDocumented(member);
-	}
-
-	/// <summary>
-	/// Reports whether a declaration carries documentation.
-	/// </summary>
-	/// <param name="member">The declaration to test.</param>
-	/// <returns>True when it does.</returns>
-	private static bool IsDocumented(AstNode member) =>
-		member is IHasDocumentation documented && documented.Documentation.Count > 0;
+	protected override bool NeedsSeparation(AstNode previous, AstNode member) => !GroupsWith(previous, member);
 
 	/// <inheritdoc/>
 	/// <remarks>

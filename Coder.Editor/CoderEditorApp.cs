@@ -1,4 +1,4 @@
-// Copyright (c) 2023-2026 ktsu-dev contributors
+﻿// Copyright (c) 2023-2026 ktsu-dev contributors
 
 namespace ktsu.Coder.Editor;
 
@@ -419,14 +419,14 @@ public sealed class CoderEditorApp(
 	private static readonly SyntaxHighlightConfig CodeStyle = new() { ShowLineNumbers = true };
 
 	/// <summary>
-	/// Teaches the highlighter the one language it does not already know.
+	/// Teaches the highlighter the languages it does not already know.
 	/// </summary>
 	/// <remarks>
 	/// A static constructor rather than a call from somewhere: the registry is process-global and the
 	/// preview reaches it from a draw call, so the registration has to have happened before any
 	/// instance of this class draws anything, whichever one draws first.
 	/// </remarks>
-	static CoderEditorApp() => RustSyntax.Register();
+	static CoderEditorApp() => EditorSyntax.Register();
 
 	/// <summary>
 	/// Draws the generated source, highlighted for the language it was generated in.

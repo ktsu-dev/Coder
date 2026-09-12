@@ -1,4 +1,4 @@
-// Copyright (c) 2023-2026 ktsu-dev contributors
+﻿// Copyright (c) 2023-2026 ktsu-dev contributors
 
 namespace ktsu.Coder.Languages;
 
@@ -106,48 +106,7 @@ public class CGenerator : CFamilyGenerator
 	/// means.
 	/// </para>
 	/// </remarks>
-	private static readonly Dictionary<string, string> OperatorNames = BuildOperatorNames();
-
-	/// <summary>
-	/// Builds the operator names from the AST's own operator vocabulary.
-	/// </summary>
-	/// <returns>The name for each symbol the AST can spell.</returns>
-	private static Dictionary<string, string> BuildOperatorNames()
-	{
-		Dictionary<string, string> names = new(StringComparer.Ordinal);
-
-		foreach (BinaryOperator op in Enum.GetValues<BinaryOperator>().Where(HasSymbol))
-		{
-			names[OperatorSymbols.GetSymbol(op)] = SnakeCase(op.ToString());
-		}
-
-		// Added second, and without replacing: a symbol both kinds of operator share is named for
-		// the binary one.
-		foreach (UnaryOperator op in Enum.GetValues<UnaryOperator>().Where(HasSymbol))
-		{
-			names.TryAdd(OperatorSymbols.GetSymbol(op), SnakeCase(op.ToString()));
-		}
-
-		return names;
-	}
-
-	/// <summary>
-	/// Reports whether the AST can spell an operator at all.
-	/// </summary>
-	/// <param name="op">The operator to test.</param>
-	/// <returns>True when it has a symbol.</returns>
-	/// <remarks>
-	/// An operator with no spelling is left out rather than named, which is what keeps
-	/// <see cref="OperatorSymbols.GetSymbol(BinaryOperator)"/> safe to call on what survives this —
-	/// and what stops one added to the AST without a symbol from throwing before anything has run.
-	/// </remarks>
-	private static bool HasSymbol(BinaryOperator op) =>
-		OperatorSymbols.TryGetSymbol(op, out string? symbol) && symbol is not null;
-
-	/// <inheritdoc cref="HasSymbol(BinaryOperator)"/>
-	/// <param name="op">The operator to test.</param>
-	private static bool HasSymbol(UnaryOperator op) =>
-		OperatorSymbols.TryGetSymbol(op, out string? symbol) && symbol is not null;
+	private static readonly Dictionary<string, string> OperatorNames = BuildOperatorNames(SnakeCase);
 
 	/// <summary>
 	/// Writes a name the way C names things.

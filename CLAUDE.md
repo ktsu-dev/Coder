@@ -23,7 +23,7 @@ dotnet run --project Coder.Editor
 ## Project Structure
 
 `ktsu.Coder` represents code as a language-agnostic AST, round-trips it through YAML, and generates
-source in six target languages. The solution uses:
+source in seven target languages. The solution uses:
 
 - **ktsu.Sdk** — custom SDK providing shared build configuration
 - **MSTest.Sdk** — test project SDK with Microsoft Testing Platform
@@ -80,15 +80,19 @@ source in six target languages. The solution uses:
   `IsConstant` is the intent rather than the keyword: C++ writes `inline constexpr` at namespace
   scope and `static constexpr` inside a type, C# writes `static readonly`, C writes `static const`
   at file scope and a note inside a struct, having no static data member at all, Rust picks between
-  a `const` and a `static` with it and lets it decide whether a local is `let` or `let mut`, and a
-  language with no spelling for it omits it the way it omits an indirection.
+  a `const` and a `static` with it and lets it decide whether a local is `let` or `let mut`, Go
+  honours it only where the language can — a Go `const` holds a number, a string or a boolean and
+  nothing with a field in it, so a table is a `var` with a note — and a language with no spelling for
+  it omits it the way it omits an indirection.
 - `Coder/Ast/ClassDeclaration.cs`'s `SpecialisationArguments` — what makes a declaration be *for* a
   type rather than *of* one. `template<> struct Describe<RigidBody>` is how C++ attaches a fact to a
   type without touching the type, which is what a generated reflection table needs: the alternative
   is naming, and a `DescribeRigidBody` every consumer has to spell for itself is the thing a lookup
   by type exists to avoid. C++ has it, and Rust answers it exactly — `impl Describe for RigidBody`
   attaches facts to a type without touching the type, which is the whole of what the specialisation
-  is for; the rest write a comment, the same as `CompileTimeAssertion`. The arguments are
+  is for; the rest write a comment, the same as `CompileTimeAssertion` — Go included, and for the one
+  reason worth reading: a method may only be declared in the package that declares its type, so there
+  is nowhere outside it for facts about it to be attached. The arguments are
   `TypeReference` rather than text, though, because a
   specialisation argument is a type and the comma in `Result<Handle, Error>` belongs to one of them
   rather than separating two.
@@ -98,29 +102,36 @@ source in six target languages. The solution uses:
   `std::is_trivially_copyable_v<T>` to model. Only C++ and C have one — `static_assert` and
   `_Static_assert`, the second of which requires a message, so an assertion with none is given its
   own condition — and Rust, whose `const _: () = assert!(…)` needs no macro crate because a constant
-  nobody names still has to be evaluated for the program to build; the others write a comment,
-  because a file that quietly loses a guarantee looks like one that still makes it.
+  nobody names still has to be evaluated for the program to build, and Go, which has no assertion and
+  something that works as one: the keys of a map literal must be distinct and a constant key is
+  checked while compiling, so `map[bool]struct{}{false: {}, cond: {}}` is a compile error exactly when
+  `cond` is false. The rest write a comment, because a file that quietly loses a guarantee looks like
+  one that still makes it.
 - `Coder/Ast/CallExpression.cs`, `ExpressionStatement.cs`, `ConditionalExpression.cs` — what a
   function *body* is made of beyond an operator applied to operands. `CallExpression`'s `Callee` is
   text and written verbatim, for the reason `SourceFile.Imports` and `CompileTimeAssertion.Condition`
   are: a square root is `std::sqrt`, `Math.Sqrt`, `math.sqrt` and `f64::sqrt`, and there is no shared
   idea underneath those to model. Its `Receiver` *is* modelled, because that is the part the
-  languages disagree about — `a.b(c)` in five of them and `b(&a, c)` in C, which is the same lowering
+  languages disagree about — `a.b(c)` in six of them and `b(&a, c)` in C, which is the same lowering
   `CGenerator` already performs on the declaration, so the call site follows the declaration.
   `ExpressionStatement` is where a call made for its effect stands: without it a `void` call has
   nowhere to go, since the AST could say what to do with a value but not that a value is beside the
   point. `ConditionalExpression` is a choice between two values rather than between two statements,
-  which every target can express and each spells differently: `?:` in the four C-family ones,
-  `go if ready else wait` in Python, and `if ready { go } else { wait }` in Rust, which has no
-  ternary operator at all and makes `if` an expression instead.
+  and it is the one node where Go is the language with least to offer: `?:` in the four C-family
+  ones, `go if ready else wait` in Python, `if ready { go } else { wait }` in Rust, which makes `if`
+  an expression — and in Go a closure called where it stands, because `if` there is a statement and
+  yields nothing at all.
 - `Coder/Languages/LanguageGeneratorBase.cs` — the emitters every generator shares.
 - `Coder/Languages/StandardLanguageGenerator.cs` — owns the node dispatch, so a derived
   generator supplies only the syntax its language does not share. `CSharpGenerator` deliberately
-  does not derive from it.
+  does not derive from it. It also owns the three things more than one generator needs and no
+  language owns: the braced list, the rule that two undocumented members of a kind stay in one block,
+  and the operator names built from the AST's own vocabulary for the two targets — C and Go — that
+  cannot overload one and so have to call it something.
 - `Coder/Languages/CFamilyGenerator.cs` — what C and C++ share beyond what every generator shares,
   and all of it is about C: the preprocessor (`#pragma once`, `#include`), the braced list with its
-  designated initialisers, the declarator that puts an array's brackets after the name, and the rule
-  that two undocumented members of a kind stay in one block. The type mappings deliberately stay
+  designated initialisers, and the declarator that puts an array's brackets after the name. The type
+  mappings deliberately stay
   with each generator, because `str` is a `std::string` in one language and a `const char*` in the
   other and the whole of what a mapping is is the spelling.
 - `Coder/Languages/CGenerator.cs` — the target with the least to map onto, and so the one whose
@@ -140,12 +151,29 @@ source in six target languages. The solution uses:
   trait, a conversion is `impl From`, and a specialisation is `impl Trait for Type` — which is the
   one place a target answers C++'s explicit specialisation exactly. What is left over is inheritance,
   which Rust does not have, and the operators it supplies from another one and will not let a type
-  define by itself. `Coder.Editor/RustSyntax.cs` registers the highlighter definition, because the
-  highlighter ships fifteen languages and Rust is not one of them.
-- `Coder.Test/Languages/CompiledExemplar.cs` — one AST, compiled by two real compilers. The C and
-  Rust generators are each checked by compiling what they write, and they are checked against the
-  same declarations, which says more than two parallel fixtures could: the claim being made is that
-  the same AST comes out as valid source in each target.
+  define by itself.
+- `Coder/Languages/GoGenerator.cs` — the target that answers most of the AST with something it
+  already had. A type is a `struct` with its methods beside it, an interface is an `interface` that
+  nothing declares it implements, and a base type is an embedded field, whose members are promoted —
+  as near as Go comes to inheritance and nearer than the other targets without it manage. A member
+  that promises not to modify what it is called on takes a value receiver and one that does takes a
+  pointer receiver, which is the same promise C++ writes as a trailing `const` made by the shape of
+  the declaration. What Go left out it left out on purpose, so an operator is a method named for what
+  it does, a constructor is `New<Type>`, a destructor is the `Close` a caller defers, and a constant
+  table is a `var`. Visibility is the one thing no generator can write: Go exports a name whose first
+  letter is a capital, so a name disagreeing with its declared visibility gets a note rather than a
+  rename the references would not follow. Output is already what `gofmt` would write, tab and aligned
+  columns included, which is why `IndentString` is overridable at all.
+- `Coder.Editor/EditorSyntax.cs` — hands the highlighter the definitions in `RustSyntax.cs` and
+  `GoSyntax.cs`, because it ships fifteen languages and neither of those is one of them. An id it has
+  never heard of is not an error to it, so without this the preview pane would draw generated Rust or
+  Go in one colour and say nothing.
+- `Coder.Test/Languages/CompiledExemplar.cs` — one AST, compiled by three real compilers. The C, Rust
+  and Go generators are each checked by compiling what they write, and they are checked against the
+  same declarations, which says more than three parallel fixtures could: the claim being made is that
+  the same AST comes out as valid source in each target. `GoGeneratedSourceCompilesTests` adds the
+  check no other generator here can have — that the output is what `gofmt` would write — because Go
+  has one formatter and everybody runs it.
 - `Coder.Graph/AstSchema.cs` — the uniform view of the AST's parent/child structure, hand-written
   rather than reflective. Adding a node type means adding it here.
 - `Coder.Graph/AstFields.cs` — a node's editable properties as named fields of a kind, which is what

@@ -21,13 +21,18 @@ using ktsu.CodeBlocker;
 public abstract class LanguageGeneratorBase : ILanguageGenerator
 {
 	/// <summary>
-	/// The indentation one level of nesting adds.
+	/// Gets the indentation one level of nesting adds.
 	/// </summary>
 	/// <remarks>
 	/// Four spaces rather than <see cref="CodeBlocker.DefaultIndentString"/>'s tab: Python's
 	/// indentation is syntax, and four spaces is what PEP 8 asks for.
+	/// <para>
+	/// Overridable because one target does not get a say. Go is formatted by <c>gofmt</c> rather
+	/// than by whoever wrote the file, and <c>gofmt</c> indents with a tab — so a generated Go file
+	/// indented any other way is a diff against itself the first time anybody saves it.
+	/// </para>
 	/// </remarks>
-	protected const string IndentString = "    ";
+	protected virtual string IndentString => "    ";
 
 	/// <summary>
 	/// Gets the unique identifier for this language generator.
@@ -230,13 +235,44 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 			code.NewLine();
 		}
 
-		bool wroteImport = false;
-		foreach (string import in file.Imports)
+		WriteImports(file, code);
+
+		AstNode? previous = null;
+		foreach (AstNode member in file.Members)
 		{
-			// An empty import is a group separator rather than an import of nothing.
-			if (import.Length == 0)
+			if (previous is not null && NeedsSeparation(previous, member))
 			{
 				code.NewLine();
+			}
+
+			previous = member;
+			GenerateInternal(member, code);
+		}
+	}
+
+	/// <summary>
+	/// Emits what a file depends on, and the blank line after it.
+	/// </summary>
+	/// <param name="file">The file being emitted.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// A language with no import statement writes nothing at all here, including no blank lines: an
+	/// empty import is a group separator, and a separator between groups separates nothing until a
+	/// group has been written.
+	/// </remarks>
+	private void WriteImports(SourceFile file, CodeBlocker code)
+	{
+		bool wroteImport = false;
+
+		foreach (string import in file.Imports)
+		{
+			if (import.Length == 0)
+			{
+				if (wroteImport)
+				{
+					code.NewLine();
+				}
+
 				continue;
 			}
 
@@ -250,18 +286,6 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 		if (wroteImport)
 		{
 			code.NewLine();
-		}
-
-		AstNode? previous = null;
-		foreach (AstNode member in file.Members)
-		{
-			if (previous is not null && NeedsSeparation(previous, member))
-			{
-				code.NewLine();
-			}
-
-			previous = member;
-			GenerateInternal(member, code);
 		}
 	}
 
@@ -314,7 +338,12 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// </summary>
 	/// <param name="returnStmt">The statement to emit.</param>
 	/// <param name="code">The writer to emit into.</param>
-	protected void GenerateReturnStatement(ReturnStatement returnStmt, CodeBlocker code)
+	/// <remarks>
+	/// Overridable for the one target whose conditional is not an expression. Go's <c>if</c> yields
+	/// nothing, so a choice between two values has to be lowered to the statement around it — and
+	/// this is that statement.
+	/// </remarks>
+	protected virtual void GenerateReturnStatement(ReturnStatement returnStmt, CodeBlocker code)
 	{
 		Ensure.NotNull(returnStmt);
 		Ensure.NotNull(code);
@@ -335,7 +364,8 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// </summary>
 	/// <param name="assignment">The statement to emit.</param>
 	/// <param name="code">The writer to emit into.</param>
-	protected void GenerateAssignmentStatement(AssignmentStatement assignment, CodeBlocker code)
+	/// <inheritdoc cref="GenerateReturnStatement" path="/remarks"/>
+	protected virtual void GenerateAssignmentStatement(AssignmentStatement assignment, CodeBlocker code)
 	{
 		Ensure.NotNull(assignment);
 		Ensure.NotNull(code);

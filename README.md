@@ -42,16 +42,16 @@ This makes it ideal for code generation tools, transpilers, and any application 
 -   **AssignmentStatement**: Assignments, including the compound operators (`+=`, `<<=`, …)
 -   **BinaryExpression**: Two operands and an operator (`a + b`, `x == y`, `p && q`)
 -   **UnaryExpression**: One operator applied to one operand (`-x`, `!ready`, `~mask`)
--   **ConditionalExpression**: A choice between two values (`ready ? go : wait`; `if ready { go } else { wait }` in Rust)
+-   **ConditionalExpression**: A choice between two values (`ready ? go : wait`; `if ready { go } else { wait }` in Rust; an `if` statement in Go, which has no expression form at all)
 -   **CallExpression**: Calling something, with an optional receiver (`sqrt(x)`, `point.translate(dx, dy)`)
 -   **VariableReference**: A reference to a variable by name
 -   **LiteralExpression<T>**: Typed literals (string, int, bool, double)
 -   **AstLeafNode<T>**: Generic leaf nodes for literals (strings, numbers, booleans)
 
-Every operator in `UnaryOperator` and `BinaryOperator` exists in all six target languages, so no
+Every operator in `UnaryOperator` and `BinaryOperator` exists in all seven target languages, so no
 AST built from them is untranslatable. Only the spelling varies — Python's `not`/`and`/`or`,
-JavaScript's strict `===`/`!==` — and each generator overrides just the operators it spells
-differently.
+JavaScript's strict `===`/`!==`, Go's `^` for bitwise complement — and each generator overrides just
+the operators it spells differently.
 
 Increment and decrement are deliberately absent from `UnaryOperator`: Python has no spelling for
 them, and an `AssignmentStatement` with `AssignmentOperator.AddAssign` expresses the same effect in
@@ -62,13 +62,20 @@ gap. A square root is `std::sqrt`, `Math.Sqrt`, `math.sqrt` and `f64::sqrt` acro
 there is no shared idea underneath those spellings for the AST to hold — the way there is
 underneath a type, which is why `TypeReference` is structure. What the AST does carry is the shape
 of the call, and the shape is what the languages disagree about: `Receiver` is modelled separately
-so that `a.b(c)` in five of the targets becomes `b(&a, c)` in C, which has no member functions and
+so that `a.b(c)` in six of the targets becomes `b(&a, c)` in C, which has no member functions and
 lowers one to a free function taking the instance.
 
 A `ConditionalExpression` is the same idea for a different disagreement. The four C-family targets
 write `?:`, Python reorders the operands into `go if ready else wait`, and Rust has no ternary
 operator at all — it makes `if` an expression instead. That last one is why this is a node rather
 than text: the C-family spelling is not merely unidiomatic in Rust, it does not parse.
+
+Go goes further and has no expression that chooses at all, since its `if` is a statement and yields
+nothing. There it is **lowered to the statement around it** — `if cond { return a }` then
+`return b`, which is what a Go programmer writes and which needs nobody to name the branches' type.
+Where the surrounding statement cannot take that (nested inside another expression, or passed as an
+argument), what is left is a function literal called where it stands, whose result type is read off
+whichever branch says what it is.
 
 ### Visibility
 
@@ -83,6 +90,7 @@ rather than the modifier's text because no two languages spell visibility the sa
 | C++ | An access label (`public:`, `protected:`, `private:`) the members are grouped under; `Internal` becomes `public:` |
 | C | Nothing inside a struct, which has no access control; a `Private` declaration at file scope is `static`, which is the internal linkage C has instead |
 | Rust | `pub`, or `pub(crate)` for `Internal` and `Protected`; `Private` writes nothing, which is already Rust's default. `Unspecified` is `pub`, since a generated type nothing outside the module can read is not what saying nothing asked for |
+| Go | Nothing. Go exports a name whose first letter is a capital and has no keyword at all, so a declaration whose name disagrees with what it asked for gets a note — renaming it would not rename the references to it. `Internal` is exactly Go's unexported, and `Private` and `Protected` are as near as there is |
 | JavaScript | A private class member takes the `#` prefix, which is JavaScript's own private syntax; nothing for the rest |
 | Python | Nothing — Python has no access modifiers, and its leading-underscore convention renames the declaration rather than modifying it |
 
@@ -100,13 +108,20 @@ a declaration that is *not* constant is written `let mut` — the warning an unn
 better outcome than the error a missing one causes. At module scope the flag picks between a `const`,
 which is substituted wherever it is named, and a `static`, which is one object with an address.
 
+Go is the one target that cannot always honour it. A Go `const` holds a number, a string or a boolean
+the compiler worked out and nothing else — never a struct, never a slice — so a declaration starting
+at one of those is written `var` with a note saying why. That is the language's meaning of constant
+rather than a gap in it, and it is why a generated table there is a `var`.
+
 An `EntryPoint` holds the statements a program runs. Each generator writes the spelling its language
 looks for: C#'s `static Main`, C++'s free `int main`, C's `int main(void)` — an empty parameter list
 in C declares a function whose parameters are unspecified rather than one that takes none — Python's
 `main` with the `__main__` guard that calls it (and the `import sys` its arguments and exit code
 need), JavaScript's `main` with the call that runs it, and Rust's `fn main`, which takes no arguments
 and returns nothing, so a program wanting either reaches for `std::env::args` and
-`std::process::exit`.
+`std::process::exit`. Go's `main` is the same shape as Rust's and reaches `os.Args` and `os.Exit` —
+and because Go has no way to name a package without importing it, and no way to leave an import
+unused, the generator adds `"os"` to the file's import block exactly when it is about to be used.
 
 ### Visual graph editor
 
@@ -200,6 +215,7 @@ directly.
 | `cpp` | `CppGenerator` | `cpp` | Mapped type spellings (`str` → `std::string`); `auto` for inferred declarations; access labels, `static constexpr` members and a terminating `;` on a class |
 | `c` | `CGenerator` | `c` | `typedef struct` for every kind of type; a member function is a free `Type_name(Type* self, …)`; an interface is a struct of function pointers; a base type is the first member; enumeration members are qualified by their enumeration; `_Static_assert`, `main(void)`, and `static const` for a constant |
 | `rust` | `RustGenerator` | `rs` | A `struct` for the data and an `impl` block for the behaviour; an interface is a `trait` and a base type on one is a supertrait; a destructor is `impl Drop`, an operator is its `std::ops` trait, a conversion is `impl From`, and a specialisation is `impl Trait for Type`; `#[repr]`, `#[must_use]`, `const fn`, and `const _: () = assert!(…)` |
+| `go` | `GoGenerator` | `go` | A `struct` and its methods beside it; a base type is an embedded field and an interface is an `interface` nothing declares it implements; a value receiver where a member promises not to modify and a pointer receiver where it does; a constructor is `NewType`, a destructor is `Close`, an operator is a method named for what it does; `iota` constants for an enumeration, and a duplicate map key for a compile-time assertion. Output is already what `gofmt` would write |
 
 ## Installation
 

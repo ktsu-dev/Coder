@@ -1,4 +1,4 @@
-// Copyright (c) 2023-2026 ktsu-dev contributors
+﻿// Copyright (c) 2023-2026 ktsu-dev contributors
 
 namespace ktsu.Coder.Test.Languages;
 
@@ -79,7 +79,7 @@ public class CGeneratedSourceCompilesTests
 	[TestMethod]
 	public void GeneratedHeader_Compiles()
 	{
-		string? compiler = ToolchainHarness.FindOnPath(Compilers);
+		string? compiler = ToolchainHarness.FindOnPath("--version", Compilers);
 		if (compiler is null)
 		{
 			Assert.Inconclusive("No C compiler on the path, so nothing was compiled.");
@@ -129,7 +129,7 @@ public class CGeneratedSourceCompilesTests
 	[TestMethod]
 	public void ACallWithAReceiver_ReachesTheFunctionItLowersTo()
 	{
-		string? compiler = ToolchainHarness.FindOnPath(Compilers);
+		string? compiler = ToolchainHarness.FindOnPath("--version", Compilers);
 		if (compiler is null)
 		{
 			Assert.Inconclusive("No C compiler on the path, so nothing was compiled.");
