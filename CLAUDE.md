@@ -178,6 +178,13 @@ source in seven target languages. The solution uses:
   rather than reflective. Adding a node type means adding it here.
 - `Coder.Graph/AstFields.cs` — a node's editable properties as named fields of a kind, which is what
   the editor's inspector draws and what makes those edits testable without a GPU.
+- `Coder.Test/Graph/AstNodeCoverageTests.cs` — the reflective walk the two files above deliberately
+  are not. Both end in a silent default, so a node type left out of either draws an empty inspector
+  rather than failing anything; this reflects over every concrete `AstNode` subclass and asserts
+  that the schema has a decision about its children, that the inspector offers a field for
+  everything about it that is not a child, and that each field reads back what it is written. A
+  node with no children says so in the test's `Childless` list, so the exemption is a line somebody
+  wrote rather than an omission nobody noticed.
 - `Coder.Graph/AstGraph.cs` — the AST is the document, the graph is a view: every edit is applied to
   the AST and the engine graph rebuilt from it, preserving positions by node identity.
 

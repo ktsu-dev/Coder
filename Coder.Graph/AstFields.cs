@@ -108,6 +108,9 @@ public static class AstFields
 	/// <summary>The name of the field a call exposes its callee through.</summary>
 	private const string CalleeField = "Callee";
 
+	/// <summary>The name of the field a node holding one type exposes.</summary>
+	private const string TypeField = "Type";
+
 	private static readonly IReadOnlyList<AstFieldChoice> FunctionKinds =
 	[
 		.. Enum.GetValues<FunctionKind>().Select(kind => new AstFieldChoice(kind.ToString(), kind.ToString())),
@@ -166,6 +169,11 @@ public static class AstFields
 			[
 				new("Name", AstFieldKind.Text, enumMember.Name ?? string.Empty),
 				new(ValueField, AstFieldKind.Text, enumMember.Value ?? string.Empty),
+			],
+
+			MemberInitialiser initialiser =>
+			[
+				new("Name", AstFieldKind.Text, initialiser.Name ?? string.Empty),
 			],
 
 			CompileTimeAssertion assertion =>
@@ -280,6 +288,14 @@ public static class AstFields
 				new(CalleeField, AstFieldKind.Text, callExpr.Callee),
 			],
 
+			// The one expression that names a type rather than a name, which is why it could not
+			// exist before TypeReference did. With no type it is a braced list, so the field is
+			// allowed to be empty.
+			ConstructionExpression construction =>
+			[
+				new(TypeField, AstFieldKind.Text, construction.Type?.ToString() ?? string.Empty),
+			],
+
 			BinaryExpression binary =>
 			[
 				new("Operator", AstFieldKind.Choice, binary.Operator.ToString(), OperatorChoices<BinaryOperator>()),
@@ -377,6 +393,8 @@ public static class AstFields
 			(EnumMember enumMember, "Name") => Assign(() => enumMember.Name = OrNull(value)),
 			(EnumMember enumMember, ValueField) => Assign(() => enumMember.Value = OrNull(value)),
 
+			(MemberInitialiser initialiser, "Name") => Assign(() => initialiser.Name = OrNull(value)),
+
 			(CompileTimeAssertion assertion, "Condition") => Assign(() => assertion.Condition = OrNull(value)),
 			(CompileTimeAssertion assertion, "Message") => Assign(() => assertion.Message = OrNull(value)),
 
@@ -472,6 +490,8 @@ public static class AstFields
 			(VariableReference varRef, "Name") => value.Length > 0 && Assign(() => varRef.Name = value),
 
 			(CallExpression callExpr, CalleeField) => value.Length > 0 && Assign(() => callExpr.Callee = value),
+
+			(ConstructionExpression construction, TypeField) => Assign(() => construction.Type = OrNull(value)),
 
 			(BinaryExpression binary, "Operator") =>
 				Enum.TryParse(value, out BinaryOperator binaryOp) && Assign(() => binary.Operator = binaryOp),
