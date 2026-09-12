@@ -111,6 +111,14 @@ public static class AstFields
 	/// <summary>The name of the field a node holding one type exposes.</summary>
 	private const string TypeField = "Type";
 
+	/// <summary>The name of the field a declaration promising not to modify something exposes.</summary>
+	/// <remarks>
+	/// One name for two different promises, which is why it is shared rather than repeated: on a
+	/// function it says the call does not modify the receiver, and on a type that none of its
+	/// members does. A reader of the inspector sees the same word for the same idea.
+	/// </remarks>
+	private const string ReadOnlyField = "ReadOnly";
+
 	private static readonly IReadOnlyList<AstFieldChoice> FunctionKinds =
 	[
 		.. Enum.GetValues<FunctionKind>().Select(kind => new AstFieldChoice(kind.ToString(), kind.ToString())),
@@ -217,7 +225,7 @@ public static class AstFields
 				new(VisibilityField, AstFieldKind.Choice, classDecl.Visibility.ToString(), Visibilities),
 				new("Record", AstFieldKind.Flag, Spell(classDecl.IsRecord)),
 				new("Partial", AstFieldKind.Flag, Spell(classDecl.IsPartial)),
-				new("ReadOnly", AstFieldKind.Flag, Spell(classDecl.IsReadOnly)),
+				new(ReadOnlyField, AstFieldKind.Flag, Spell(classDecl.IsReadOnly)),
 			],
 
 			_ => OfCallable(node),
@@ -248,7 +256,7 @@ public static class AstFields
 				new("Definition", AstFieldKind.Choice, function.Definition.ToString(), FunctionDefinitions),
 				new("Virtual", AstFieldKind.Flag, Spell(function.IsVirtual)),
 				new("Abstract", AstFieldKind.Flag, Spell(function.IsAbstract)),
-				new("ReadOnly", AstFieldKind.Flag, Spell(function.IsReadOnly)),
+				new(ReadOnlyField, AstFieldKind.Flag, Spell(function.IsReadOnly)),
 				new("MustUseResult", AstFieldKind.Flag, Spell(function.MustUseResult)),
 			],
 
@@ -449,7 +457,7 @@ public static class AstFields
 				TryParseBool(value, out bool isRecord) && Assign(() => classDecl.IsRecord = isRecord),
 			(ClassDeclaration classDecl, "Partial") =>
 				TryParseBool(value, out bool isPartial) && Assign(() => classDecl.IsPartial = isPartial),
-			(ClassDeclaration classDecl, "ReadOnly") =>
+			(ClassDeclaration classDecl, ReadOnlyField) =>
 				TryParseBool(value, out bool isClassReadOnly) && Assign(() => classDecl.IsReadOnly = isClassReadOnly),
 
 			(FunctionDeclaration function, "Name") => Assign(() => function.Name = OrNull(value)),
@@ -483,7 +491,7 @@ public static class AstFields
 				TryParseBool(value, out bool isVirtual) && Assign(() => function.IsVirtual = isVirtual),
 			(FunctionDeclaration function, "Abstract") =>
 				TryParseBool(value, out bool isAbstract) && Assign(() => function.IsAbstract = isAbstract),
-			(FunctionDeclaration function, "ReadOnly") =>
+			(FunctionDeclaration function, ReadOnlyField) =>
 				TryParseBool(value, out bool isReadOnly) && Assign(() => function.IsReadOnly = isReadOnly),
 			(FunctionDeclaration function, "MustUseResult") =>
 				TryParseBool(value, out bool mustUse) && Assign(() => function.MustUseResult = mustUse),

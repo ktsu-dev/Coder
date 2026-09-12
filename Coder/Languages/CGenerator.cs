@@ -392,6 +392,47 @@ public class CGenerator : CFamilyGenerator
 		};
 
 	/// <summary>
+	/// Writes the bases and interfaces a type embeds, as the members they are.
+	/// </summary>
+	/// <param name="classDecl">The declaration being emitted.</param>
+	/// <param name="fieldCount">How many ordinary members follow, so the blank line is written only when one is wanted.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// A base and an interface are the same thing here: a struct embedded as a member, whose own
+	/// members are reached through it. What the first position buys is that a pointer to the whole
+	/// is a pointer to that member, so the two are interchangeable without a cast — and C has
+	/// exactly one first position to give, so the base takes it and an interface after it is
+	/// reached by taking its address instead.
+	/// </remarks>
+	private void WriteEmbeddedBases(ClassDeclaration classDecl, int fieldCount, CodeBlocker code)
+	{
+		List<(TypeReference Type, string Member)> embedded =
+		[
+			.. classDecl.BaseType is TypeReference baseType ? (List<(TypeReference, string)>)[(baseType, BaseMemberName)] : [],
+			.. classDecl.Interfaces.Select(contract => (contract, MemberNameOf(contract))),
+		];
+
+		if (embedded.Count == 0)
+		{
+			return;
+		}
+
+		WriteInexpressible(code, embedded.Count == 1
+			? $"{embedded[0].Member} is first, so that a pointer to this is a pointer to it"
+			: $"{embedded[0].Member} is first, so that a pointer to this is a pointer to it; the rest are reached by taking their address");
+
+		foreach ((TypeReference embeddedType, string member) in embedded)
+		{
+			code.WriteLine($"{SpellDeclarator(embeddedType, member)};");
+		}
+
+		if (fieldCount > 0)
+		{
+			code.NewLine();
+		}
+	}
+
+	/// <summary>
 	/// Writes a parenthesised parameter list, saying <c>void</c> where there are none.
 	/// </summary>
 	/// <param name="parameters">The parameters to write.</param>
@@ -523,33 +564,7 @@ public class CGenerator : CFamilyGenerator
 
 		insideType++;
 
-		// A base and an interface are the same thing here: a struct embedded as a member, whose
-		// own members are reached through it. What the first position buys is that a pointer to the
-		// whole is a pointer to that member, so the two are interchangeable without a cast -- and C
-		// has exactly one first position to give, so the base takes it and an interface after it is
-		// reached by taking its address instead.
-		List<(TypeReference Type, string Member)> embedded =
-		[
-			.. classDecl.BaseType is TypeReference baseType ? (List<(TypeReference, string)>)[(baseType, BaseMemberName)] : [],
-			.. classDecl.Interfaces.Select(contract => (contract, MemberNameOf(contract))),
-		];
-
-		if (embedded.Count > 0)
-		{
-			WriteInexpressible(code, embedded.Count == 1
-				? $"{embedded[0].Member} is first, so that a pointer to this is a pointer to it"
-				: $"{embedded[0].Member} is first, so that a pointer to this is a pointer to it; the rest are reached by taking their address");
-
-			foreach ((TypeReference embeddedType, string member) in embedded)
-			{
-				code.WriteLine($"{SpellDeclarator(embeddedType, member)};");
-			}
-
-			if (fields.Count > 0)
-			{
-				code.NewLine();
-			}
-		}
+		WriteEmbeddedBases(classDecl, fields.Count, code);
 
 		AstNode? previous = null;
 		foreach (AstNode member in fields)

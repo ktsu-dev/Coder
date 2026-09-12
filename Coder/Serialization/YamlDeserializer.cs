@@ -906,13 +906,13 @@ public partial class YamlDeserializer
 
 		Annotation annotation = new(written[..opened].Trim());
 
-		foreach (string argument in SplitArguments(written[(opened + 1)..^1]))
+		IEnumerable<string> arguments = SplitArguments(written[(opened + 1)..^1])
+			.Select(argument => argument.Trim())
+			.Where(argument => argument.Length > 0);
+
+		foreach (string argument in arguments)
 		{
-			string trimmed = argument.Trim();
-			if (trimmed.Length > 0)
-			{
-				annotation.Arguments.Add(trimmed);
-			}
+			annotation.Arguments.Add(argument);
 		}
 
 		return annotation;

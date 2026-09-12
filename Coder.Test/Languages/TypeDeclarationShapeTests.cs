@@ -471,7 +471,7 @@ public class TypeDeclarationShapeTests
 		const string written = "T : class, IComparer<T, U>, new()";
 
 		Assert.AreEqual(written, TypeParameter.Parse(written).ToString());
-		Assert.AreEqual(3, TypeParameter.Parse(written).Constraints.Count);
+		Assert.HasCount(3, TypeParameter.Parse(written).Constraints);
 		Assert.AreEqual("U", TypeParameter.Parse("U").ToString());
 	}
 
@@ -581,7 +581,7 @@ public class TypeDeclarationShapeTests
 
 		FunctionDeclaration restored = (FunctionDeclaration)deserializer.Deserialize(serializer.Serialize(original))!;
 
-		Assert.AreEqual(2, restored.Annotations.Count);
+		Assert.HasCount(2, restored.Annotations);
 		Assert.AreEqual("SuppressMessage", restored.Annotations[0].Name);
 		Assert.AreSequenceEqual(
 			(string[])["\"Usage\"", "\"CA2225:Operator overloads have named alternates\""],
