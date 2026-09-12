@@ -320,6 +320,9 @@ public class YamlSerializer
 	/// <summary>The key a node's single value is written under.</summary>
 	private const string ValueKey = "value";
 
+	/// <summary>The key an expression's expected type is written under.</summary>
+	private const string ExpectedTypeKey = "expectedType";
+
 	/// <summary>The key a node's members are written under.</summary>
 	private const string MembersKey = "members";
 
@@ -398,7 +401,7 @@ public class YamlSerializer
 
 		if (callExpr.ExpectedType != null)
 		{
-			nodeData["expectedType"] = callExpr.ExpectedType;
+			nodeData[ExpectedTypeKey] = callExpr.ExpectedType;
 		}
 	}
 
@@ -418,7 +421,7 @@ public class YamlSerializer
 
 		if (conditional.ExpectedType != null)
 		{
-			nodeData["expectedType"] = conditional.ExpectedType;
+			nodeData[ExpectedTypeKey] = conditional.ExpectedType;
 		}
 	}
 
@@ -698,7 +701,7 @@ public class YamlSerializer
 
 		if (binaryExpr.ExpectedType != null)
 		{
-			nodeData["expectedType"] = binaryExpr.ExpectedType;
+			nodeData[ExpectedTypeKey] = binaryExpr.ExpectedType;
 		}
 	}
 
@@ -712,7 +715,7 @@ public class YamlSerializer
 
 		if (unaryExpr.ExpectedType != null)
 		{
-			nodeData["expectedType"] = unaryExpr.ExpectedType;
+			nodeData[ExpectedTypeKey] = unaryExpr.ExpectedType;
 		}
 	}
 
@@ -725,7 +728,7 @@ public class YamlSerializer
 
 		if (literal.ExpectedType != null)
 		{
-			nodeData["expectedType"] = literal.ExpectedType;
+			nodeData[ExpectedTypeKey] = literal.ExpectedType;
 		}
 	}
 
@@ -735,7 +738,7 @@ public class YamlSerializer
 
 		if (varRef.ExpectedType != null)
 		{
-			nodeData["expectedType"] = varRef.ExpectedType;
+			nodeData[ExpectedTypeKey] = varRef.ExpectedType;
 		}
 	}
 

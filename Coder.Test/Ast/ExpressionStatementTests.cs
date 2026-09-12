@@ -99,8 +99,8 @@ public class ExpressionStatementTests
 
 		string generated = new CSharpGenerator().Generate(function);
 
-		StringAssert.Contains(generated, "assert(ready);");
-		StringAssert.Contains(generated, "items.clear();");
+		StringAssert.Contains(generated, "assert(ready);", StringComparison.Ordinal);
+		StringAssert.Contains(generated, "items.clear();", StringComparison.Ordinal);
 	}
 
 	/// <summary>

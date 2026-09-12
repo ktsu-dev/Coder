@@ -38,12 +38,27 @@ public static class AstSchema
 	/// <summary>The name of the slot an expression's arguments sit in.</summary>
 	private const string ArgumentsSlotName = "Arguments";
 
+	/// <summary>The name of the slot a call's receiver sits in.</summary>
+	private const string ReceiverSlotName = "Receiver";
+
+	/// <summary>The name of the slot a conditional's condition sits in.</summary>
+	private const string ConditionSlotName = "Condition";
+
+	/// <summary>The name of the slot a conditional's chosen-when-true value sits in.</summary>
+	private const string WhenTrueSlotName = "WhenTrue";
+
+	/// <summary>The name of the slot a conditional's chosen-when-false value sits in.</summary>
+	private const string WhenFalseSlotName = "WhenFalse";
+
+	/// <summary>What a caption calls a declaration that has not been named yet.</summary>
+	private const string Unnamed = "<unnamed>";
+
 	private static readonly AstSlot ArgumentsSlot = new(ArgumentsSlotName, AstSlotCardinality.Many, AstSlotKind.Expression);
 	private static readonly AstSlot EnumMembersSlot = new("Members", AstSlotCardinality.Many, AstSlotKind.EnumMember);
-	private static readonly AstSlot ReceiverSlot = new("Receiver", AstSlotCardinality.One, AstSlotKind.Expression);
-	private static readonly AstSlot ConditionSlot = new("Condition", AstSlotCardinality.One, AstSlotKind.Expression);
-	private static readonly AstSlot WhenTrueSlot = new("WhenTrue", AstSlotCardinality.One, AstSlotKind.Expression);
-	private static readonly AstSlot WhenFalseSlot = new("WhenFalse", AstSlotCardinality.One, AstSlotKind.Expression);
+	private static readonly AstSlot ReceiverSlot = new(ReceiverSlotName, AstSlotCardinality.One, AstSlotKind.Expression);
+	private static readonly AstSlot ConditionSlot = new(ConditionSlotName, AstSlotCardinality.One, AstSlotKind.Expression);
+	private static readonly AstSlot WhenTrueSlot = new(WhenTrueSlotName, AstSlotCardinality.One, AstSlotKind.Expression);
+	private static readonly AstSlot WhenFalseSlot = new(WhenFalseSlotName, AstSlotCardinality.One, AstSlotKind.Expression);
 
 	/// <summary>
 	/// Lists the slots a node exposes, in the order the editor should draw them.
@@ -95,10 +110,10 @@ public static class AstSchema
 			(MemberInitialiser initialiser, "Value") => initialiser.Value,
 			(AssignmentStatement assignment, "Target") => assignment.Target,
 			(AssignmentStatement assignment, "Value") => assignment.Value,
-			(CallExpression callExpr, "Receiver") => callExpr.Receiver,
-			(ConditionalExpression conditional, "Condition") => conditional.Condition,
-			(ConditionalExpression conditional, "WhenTrue") => conditional.WhenTrue,
-			(ConditionalExpression conditional, "WhenFalse") => conditional.WhenFalse,
+			(CallExpression callExpr, ReceiverSlotName) => callExpr.Receiver,
+			(ConditionalExpression conditional, ConditionSlotName) => conditional.Condition,
+			(ConditionalExpression conditional, WhenTrueSlotName) => conditional.WhenTrue,
+			(ConditionalExpression conditional, WhenFalseSlotName) => conditional.WhenFalse,
 			(ExpressionStatement statement, "Expression") => statement.Expression,
 			_ => null,
 		};
@@ -188,19 +203,19 @@ public static class AstSchema
 				unary.Operand = operandExpr;
 				return true;
 
-			case (CallExpression callExpr, "Receiver") when child is Expression receiverExpr:
+			case (CallExpression callExpr, ReceiverSlotName) when child is Expression receiverExpr:
 				callExpr.Receiver = receiverExpr;
 				return true;
 
-			case (ConditionalExpression conditional, "Condition") when child is Expression conditionExpr:
+			case (ConditionalExpression conditional, ConditionSlotName) when child is Expression conditionExpr:
 				conditional.Condition = conditionExpr;
 				return true;
 
-			case (ConditionalExpression conditional, "WhenTrue") when child is Expression whenTrueExpr:
+			case (ConditionalExpression conditional, WhenTrueSlotName) when child is Expression whenTrueExpr:
 				conditional.WhenTrue = whenTrueExpr;
 				return true;
 
-			case (ConditionalExpression conditional, "WhenFalse") when child is Expression whenFalseExpr:
+			case (ConditionalExpression conditional, WhenFalseSlotName) when child is Expression whenFalseExpr:
 				conditional.WhenFalse = whenFalseExpr;
 				return true;
 
@@ -467,20 +482,20 @@ public static class AstSchema
 
 			// A receiver is genuinely optional -- a call with none is a free function rather than an
 			// unfinished member call -- so detaching one clears it instead of leaving a placeholder.
-			case (CallExpression callExpr, "Receiver"):
+			case (CallExpression callExpr, ReceiverSlotName):
 				bool hadReceiver = callExpr.Receiver is not null;
 				callExpr.Receiver = null;
 				return hadReceiver;
 
-			case (ConditionalExpression conditional, "Condition"):
+			case (ConditionalExpression conditional, ConditionSlotName):
 				conditional.Condition = Unfilled();
 				return true;
 
-			case (ConditionalExpression conditional, "WhenTrue"):
+			case (ConditionalExpression conditional, WhenTrueSlotName):
 				conditional.WhenTrue = Unfilled();
 				return true;
 
-			case (ConditionalExpression conditional, "WhenFalse"):
+			case (ConditionalExpression conditional, WhenFalseSlotName):
 				conditional.WhenFalse = Unfilled();
 				return true;
 
@@ -589,12 +604,12 @@ public static class AstSchema
 
 		return node switch
 		{
-			ClassDeclaration classDecl => $"class {classDecl.Name ?? "<unnamed>"}",
-			FunctionDeclaration function => $"function {function.Name ?? "<unnamed>"}",
+			ClassDeclaration classDecl => $"class {classDecl.Name ?? Unnamed}",
+			FunctionDeclaration function => $"function {function.Name ?? Unnamed}",
 			EntryPoint => "entry point",
-			Parameter parameter => $"param {parameter.Name ?? "<unnamed>"}",
+			Parameter parameter => $"param {parameter.Name ?? Unnamed}",
 			ReturnStatement => "return",
-			CallExpression callExpr => $"call {(callExpr.Callee.Length == 0 ? "<unnamed>" : callExpr.Callee)}",
+			CallExpression callExpr => $"call {(callExpr.Callee.Length == 0 ? Unnamed : callExpr.Callee)}",
 			ConditionalExpression => "conditional",
 			ExpressionStatement => "expression",
 			BinaryExpression binary => $"binary {SpellOrName(binary.Operator)}",
