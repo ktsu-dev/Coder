@@ -304,7 +304,23 @@ public class CppGenerator : CFamilyGenerator
 		// no keyword in C++ and is a class whose members are all public.
 		bool isStruct = classDecl.Kind == TypeDeclarationKind.Struct;
 
+		// An explicit specialisation says up front that what follows declares nothing new: the
+		// template it specialises is already declared somewhere, and this fills it in for one set
+		// of arguments. The empty list is what distinguishes a full specialisation from a partial
+		// one, and the generator only writes full ones -- a partial specialisation would need
+		// parameters of its own, which is a different thing and not one the AST models.
+		if (classDecl.IsSpecialisation)
+		{
+			code.WriteLine("template <>");
+		}
+
 		code.Write($"{(isStruct ? "struct" : "class")} {classDecl.Name ?? "UnnamedClass"}");
+
+		if (classDecl.IsSpecialisation)
+		{
+			IEnumerable<string> arguments = classDecl.SpecialisationArguments.Select(MapToCppType);
+			code.Write($"<{string.Join(", ", arguments)}>");
+		}
 
 		if (classDecl.BaseType is TypeReference baseType)
 		{

@@ -658,11 +658,32 @@ public partial class YamlDeserializer
 
 		DeserializeVisibility(classDecl, dict);
 		ReadStrings(dict, DocumentationKey, classDecl.Documentation);
+		DeserializeSpecialisationArguments(classDecl, dict);
 
 		DeserializeClassMembers(classDecl, dict);
 		DeserializeMetadata(classDecl, dict);
 
 		return classDecl;
+	}
+
+	private static void DeserializeSpecialisationArguments(ClassDeclaration classDecl, Dictionary<object, object> dict)
+	{
+		if (!dict.TryGetValue("specialisationArguments", out object? argumentsObj) ||
+			argumentsObj is not List<object> argumentList)
+		{
+			return;
+		}
+
+		// A null or empty entry is not an argument. Filtering before the loop rather than inside it
+		// so that what the loop takes is what the loop does.
+		IEnumerable<string> written = argumentList
+			.Select(argument => argument?.ToString() ?? string.Empty)
+			.Where(text => text.Length > 0);
+
+		foreach (string text in written)
+		{
+			classDecl.SpecialisationArguments.Add(TypeReference.Parse(text));
+		}
 	}
 
 	private void DeserializeClassMembers(ClassDeclaration classDecl, Dictionary<object, object> dict)

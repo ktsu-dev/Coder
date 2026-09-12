@@ -1,7 +1,4 @@
-## v3.6.0 (minor)
+## v3.6.0
 
-Changes since v3.5.0:
-
-- Say what a constant table is, so a reflection table can be one ([@Claude](https://github.com/Claude))
-- Follow the exemplar's rename ([@Claude](https://github.com/Claude))
+No significant changes detected since v3.6.0.
 

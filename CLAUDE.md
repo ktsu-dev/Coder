@@ -79,9 +79,17 @@ source in five target languages. The solution uses:
   C++ is the one language here that puts them on the declarator rather than the type.
   `IsConstant` is the intent rather than the keyword: C++ writes `inline constexpr` at namespace
   scope and `static constexpr` inside a type, C# writes `static readonly`, C writes `static const`
-  at file scope and a note inside a struct, having no static data member at all, and a language with
-  no spelling for it omits it the way it omits an indirection.
-- `Coder/Ast/CompileTimeAssertion.cs` — what a generated type promises that the type itself cannot
+  at file scope and a note inside a struct, having no static data member at all, and a language with no
+  spelling for it omits it the way it omits an indirection.
+- `Coder/Ast/ClassDeclaration.cs`'s `SpecialisationArguments` — what makes a declaration be *for* a
+  type rather than *of* one. `template<> struct Describe<RigidBody>` is how C++ attaches a fact to a
+  type without touching the type, which is what a generated reflection table needs: the alternative
+  is naming, and a `DescribeRigidBody` every consumer has to spell for itself is the thing a lookup
+  by type exists to avoid. Only C++ has it and the other three write a comment, the same as
+  `CompileTimeAssertion`; the arguments are `TypeReference` rather than text, though, because a
+  specialisation argument is a type and the comma in `Result<Handle, Error>` belongs to one of them
+  rather than separating two.
+ - `Coder/Ast/CompileTimeAssertion.cs` — what a generated type promises that the type itself cannot
   say. Its `Condition` is text for the same reason `SourceFile.Imports` are: a compile-time predicate
   is language-specific in a way most of the AST is not, and there is no shared idea underneath
   `std::is_trivially_copyable_v<T>` to model. Only C++ and C have one — `static_assert` and
