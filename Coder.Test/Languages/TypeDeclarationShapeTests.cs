@@ -590,6 +590,216 @@ public class TypeDeclarationShapeTests
 		Assert.IsEmpty(restored.Annotations[1].Arguments);
 	}
 
+	// ------------------------------------------------------------------ Properties
+
+	/// <summary>
+	/// A type with one property of each kind: the language supplies the storage for one, and the
+	/// other has a body.
+	/// </summary>
+	/// <returns>The declaration.</returns>
+	private static ClassDeclaration Box()
+	{
+		ClassDeclaration box = new("Box");
+		box.Members.Add(new PropertyDeclaration("Value", "int")
+		{
+			HasSetter = true,
+			Visibility = Visibility.Public,
+		});
+
+		PropertyDeclaration doubled = new("Doubled", "int") { Visibility = Visibility.Public };
+		doubled.GetterBody.Add(new ReturnStatement(
+			new BinaryExpression(new VariableReference("Value"), BinaryOperator.Multiply, Literal.Number(2))));
+		box.Members.Add(doubled);
+
+		return box;
+	}
+
+	/// <summary>
+	/// The three targets that have properties write them as properties.
+	/// </summary>
+	/// <param name="language">The generator to ask.</param>
+	/// <param name="automatic">What the property with no body should look like.</param>
+	/// <param name="computed">What the property with a body should start with.</param>
+	[TestMethod]
+	[DataRow("csharp", "public int Value { get; set; }", "public int Doubled")]
+	[DataRow("python", "Value: int = None", "def Doubled(self) -> int:")]
+	[DataRow("javascript", "Value;", "get Doubled() ")]
+	public void TargetsWithProperties_WriteThemAsProperties(string language, string automatic, string computed)
+	{
+		ILanguageGenerator generator = language switch
+		{
+			"csharp" => new CSharpGenerator(),
+			"python" => new PythonGenerator(),
+			_ => new JavaScriptGenerator(),
+		};
+
+		string code = Generate(generator, Box());
+
+		StringAssert.Contains(code, automatic);
+		StringAssert.Contains(code, computed);
+	}
+
+	/// <summary>
+	/// A property with no body is a field, in every target that has no properties.
+	/// </summary>
+	/// <param name="language">The generator to ask.</param>
+	/// <param name="expected">The field as that target writes one.</param>
+	/// <remarks>
+	/// Not an approximation of a property: a property whose accessors have no bodies <em>is</em> a
+	/// field with a storage location the compiler supplies, and this is what a person would have
+	/// written.
+	/// </remarks>
+	[TestMethod]
+	[DataRow("rust", "pub Value: i32,")]
+	[DataRow("go", "Value int")]
+	[DataRow("cpp", "int Value{};")]
+	[DataRow("c", "int Value;")]
+	public void TargetsWithoutProperties_WriteAnAutomaticOneAsAField(string language, string expected)
+	{
+		ILanguageGenerator generator = language switch
+		{
+			"rust" => new RustGenerator(),
+			"go" => new GoGenerator(),
+			"cpp" => new CppGenerator(),
+			_ => new CGenerator(),
+		};
+
+		StringAssert.Contains(Generate(generator, Box()), expected);
+	}
+
+	/// <summary>
+	/// A property with a body is a function, and lands where that target puts its functions.
+	/// </summary>
+	/// <param name="language">The generator to ask.</param>
+	/// <param name="expected">The function as that target writes one.</param>
+	/// <remarks>
+	/// The landing is the point. Rust puts data in a <c>struct</c> and behaviour in an <c>impl</c>,
+	/// Go writes fields in the type and methods beside it, and C lowers a method to a free function
+	/// taking the instance — so a property separated at the point it is written would arrive after
+	/// the routing that decides all of that and come out wherever it happened to be standing. It is
+	/// separated from the member list first, and each generator's own routing then sees an ordinary
+	/// field or an ordinary function.
+	/// </remarks>
+	[TestMethod]
+	[DataRow("rust", "pub fn doubled(&self) -> i32")]
+	[DataRow("go", "func (self Box) Doubled() int")]
+	[DataRow("cpp", "int doubled() const")]
+	[DataRow("c", "int Box_doubled(const Box* self)")]
+	public void TargetsWithoutProperties_WriteAComputedOneAsAFunction(string language, string expected)
+	{
+		ILanguageGenerator generator = language switch
+		{
+			"rust" => new RustGenerator(),
+			"go" => new GoGenerator(),
+			"cpp" => new CppGenerator(),
+			_ => new CGenerator(),
+		};
+
+		StringAssert.Contains(Generate(generator, Box()), expected);
+	}
+
+	/// <summary>
+	/// A setter a target has to invent a name for gets one in that target's own convention.
+	/// </summary>
+	/// <param name="language">The generator to ask.</param>
+	/// <param name="expected">The name it should invent.</param>
+	/// <remarks>
+	/// The AST renames nothing it was given — a generator that changed a declaration's name would
+	/// break every reference to it — but a setter separated out of a property has no name until
+	/// somebody makes one up, and making one up in the wrong convention is how generated code
+	/// announces itself. rustc warns on a member name that is not snake case, and an unexported Go
+	/// name cannot be called from outside its package, so two of these are more than taste.
+	/// </remarks>
+	[TestMethod]
+	[DataRow("rust", "set_value")]
+	[DataRow("go", "SetValue")]
+	[DataRow("cpp", "set_value")]
+	[DataRow("c", "set_value")]
+	public void AnInventedSetterName_FollowsTheTargetsOwnConvention(string language, string expected)
+	{
+		ClassDeclaration box = new("Box");
+		PropertyDeclaration guarded = new("Value", "int") { HasSetter = true, Visibility = Visibility.Public };
+		guarded.GetterBody.Add(new ReturnStatement(new VariableReference("Value")));
+		guarded.SetterBody.Add(new ReturnStatement());
+		box.Members.Add(guarded);
+
+		ILanguageGenerator generator = language switch
+		{
+			"rust" => new RustGenerator(),
+			"go" => new GoGenerator(),
+			"cpp" => new CppGenerator(),
+			_ => new CGenerator(),
+		};
+
+		StringAssert.Contains(Generate(generator, box), expected);
+	}
+
+	/// <summary>
+	/// The one thing a field cannot carry is said rather than dropped.
+	/// </summary>
+	/// <remarks>
+	/// A property may be readable and not writable, and a field is neither or both. Said in the
+	/// field's own documentation rather than in a note beside it, so it travels with the
+	/// declaration to wherever the target puts it.
+	/// </remarks>
+	[TestMethod]
+	public void AReadOnlyAutomaticProperty_SaysSoWhereItBecomesAField()
+	{
+		ClassDeclaration box = new("Box");
+		box.Members.Add(new PropertyDeclaration("Value", "int") { Visibility = Visibility.Public });
+
+		StringAssert.Contains(
+			Generate(new RustGenerator(), box),
+			"Value is read-only, which a field is not.");
+	}
+
+	/// <summary>
+	/// C# writes <c>init</c> where the declaration asked for it.
+	/// </summary>
+	[TestMethod]
+	public void CSharp_WritesAnInitOnlySetter()
+	{
+		ClassDeclaration box = new("Box");
+		box.Members.Add(new PropertyDeclaration("Value", "int")
+		{
+			HasSetter = true,
+			SetterIsInitOnly = true,
+			Visibility = Visibility.Public,
+		});
+
+		StringAssert.Contains(Generate(new CSharpGenerator(), box), "public int Value { get; init; }");
+	}
+
+	/// <summary>
+	/// A property survives a trip through YAML, accessor bodies and all.
+	/// </summary>
+	[TestMethod]
+	public void Yaml_CarriesAProperty()
+	{
+		PropertyDeclaration original = new("Doubled", "int")
+		{
+			HasGetter = true,
+			HasSetter = true,
+			SetterIsInitOnly = true,
+			Visibility = Visibility.Public,
+		};
+		original.GetterBody.Add(new ReturnStatement(Literal.Number(4)));
+
+		ktsu.Coder.Serialization.YamlSerializer serializer = new();
+		ktsu.Coder.Serialization.YamlDeserializer deserializer = new();
+
+		PropertyDeclaration restored = (PropertyDeclaration)deserializer.Deserialize(serializer.Serialize(original))!;
+
+		Assert.AreEqual("Doubled", restored.Name);
+		Assert.AreEqual("int", restored.Type?.ToString());
+		Assert.IsTrue(restored.HasSetter);
+		Assert.IsTrue(restored.SetterIsInitOnly);
+		Assert.AreEqual(Visibility.Public, restored.Visibility);
+		Assert.HasCount(1, restored.GetterBody);
+		Assert.IsEmpty(restored.SetterBody);
+		Assert.IsFalse(restored.IsAutomatic);
+	}
+
 	// ------------------------------------------------------------------ Round trip
 
 	/// <summary>

@@ -92,6 +92,10 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 				GenerateEnumDeclaration(enumDecl, code);
 				break;
 
+			case PropertyDeclaration property:
+				GeneratePropertyDeclaration(property, code);
+				break;
+
 			case FieldDeclaration field:
 				GenerateFieldDeclaration(field, code);
 				break;
@@ -262,6 +266,158 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	/// <param name="field">The declaration to emit.</param>
 	/// <param name="code">The writer to emit into.</param>
 	protected abstract void GenerateFieldDeclaration(FieldDeclaration field, CodeBlocker code);
+
+	/// <summary>
+	/// Emits a property, as whichever of the two things it is in this language.
+	/// </summary>
+	/// <param name="declaration">The declaration to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// The default is for the four targets that have no properties, and it does not approximate
+	/// one: it separates the property into the declarations it is made of and emits those through
+	/// the emitters that already exist. A property whose accessors have no bodies is a field with a
+	/// storage location the compiler supplies, so it comes out as a field; one with bodies is a
+	/// pair of functions, so it comes out as the pair. Both are what a person would have written.
+	/// <para>
+	/// The one thing the field form loses is that a property may be readable and not writable,
+	/// which a plain field cannot be. That is said rather than dropped.
+	/// </para>
+	/// </remarks>
+	protected virtual void GeneratePropertyDeclaration(PropertyDeclaration declaration, CodeBlocker code)
+	{
+		Ensure.NotNull(declaration);
+		Ensure.NotNull(code);
+
+		bool first = true;
+		foreach (AstNode lowered in Separate(declaration))
+		{
+			if (!first)
+			{
+				code.NewLine();
+			}
+
+			first = false;
+			GenerateInternal(lowered, code);
+		}
+	}
+
+	/// <summary>
+	/// Gets the convention this target spells an invented member name in.
+	/// </summary>
+	/// <remarks>
+	/// For the names a generator has to make up rather than the ones it was given. A property
+	/// becoming a pair of functions has no name for its setter until somebody invents one, and
+	/// inventing it in the wrong convention is how generated code announces itself.
+	/// </remarks>
+	protected virtual NamingStyle MemberNaming => NamingStyle.Camel;
+
+	/// <summary>
+	/// A type's members, with every property separated into the declarations it is made of.
+	/// </summary>
+	/// <param name="classDecl">The type being emitted.</param>
+	/// <returns>The declaration itself when it holds no properties; otherwise a copy of it whose
+	/// members are fields and functions.</returns>
+	/// <remarks>
+	/// Done to the member list rather than at the point each member is written, and that is the
+	/// whole of why it works. Three of these generators route a type's members by what they are —
+	/// Rust puts the data in a <c>struct</c> and the behaviour in an <c>impl</c>, Go writes the
+	/// fields in the type and the methods beside it, C lowers a method to a free function taking
+	/// the instance — and every one of those routes reads the member list before anything is
+	/// written. A property separated afterwards arrives too late to be routed and comes out
+	/// wherever it happened to be standing.
+	/// <para>
+	/// So it is separated first, and each generator's existing routing then sees an ordinary field
+	/// or an ordinary function and needs to know nothing about properties at all.
+	/// </para>
+	/// </remarks>
+	protected ClassDeclaration Separated(ClassDeclaration classDecl)
+	{
+		Ensure.NotNull(classDecl);
+
+		if (!classDecl.Members.OfType<PropertyDeclaration>().Any())
+		{
+			return classDecl;
+		}
+
+		ClassDeclaration separated = (ClassDeclaration)classDecl.Clone();
+		separated.Members.Clear();
+
+		foreach (AstNode member in classDecl.Members)
+		{
+			if (member is PropertyDeclaration property)
+			{
+				foreach (AstNode part in Separate(property))
+				{
+					separated.Members.Add(part);
+				}
+
+				continue;
+			}
+
+			separated.Members.Add(member);
+		}
+
+		return separated;
+	}
+
+	/// <summary>
+	/// Separates a property into the declarations it is made of.
+	/// </summary>
+	/// <param name="property">The property to separate.</param>
+	/// <returns>A field, or the accessors, in the order they should be written.</returns>
+	private IEnumerable<AstNode> Separate(PropertyDeclaration property)
+	{
+		if (property.IsAutomatic)
+		{
+			// The one thing the field form cannot carry: a property may be readable and not
+			// writable, and a field is neither or both. Said in the field's own documentation
+			// rather than in a note beside it, so it travels with the declaration to wherever this
+			// target puts it.
+			IEnumerable<string> documentation = property.CanWrite
+				? property.Documentation
+				: [.. property.Documentation, $"{property.Name} is read-only, which a field is not."];
+
+			yield return new FieldDeclaration(property.Name ?? "value", property.Type)
+			{
+				Visibility = property.Visibility,
+				IsStatic = property.IsStatic,
+				Documentation = [.. documentation],
+				Annotations = [.. property.Annotations.Select(annotation => annotation.Clone())],
+			};
+
+			yield break;
+		}
+
+		if (property.CanRead)
+		{
+			FunctionDeclaration getter = new(property.GetterName(MemberNaming))
+			{
+				ReturnType = property.Type,
+				Visibility = property.Visibility,
+				IsStatic = property.IsStatic,
+				IsReadOnly = true,
+				Documentation = [.. property.Documentation],
+				Annotations = [.. property.Annotations.Select(annotation => annotation.Clone())],
+				Body = [.. property.GetterBody.Select(statement => statement.Clone())],
+			};
+
+			yield return getter;
+		}
+
+		if (property.CanWrite)
+		{
+			FunctionDeclaration setter = new(property.SetterName(MemberNaming))
+			{
+				ReturnType = new TypeReference("void"),
+				Visibility = property.Visibility,
+				IsStatic = property.IsStatic,
+				Body = [.. property.SetterBody.Select(statement => statement.Clone())],
+			};
+
+			setter.Parameters.Add(new Parameter("value") { Type = property.Type ?? new TypeReference("object") });
+			yield return setter;
+		}
+	}
 
 	/// <summary>
 	/// Emits the program's entry point, and whatever else the language needs in order to run it.

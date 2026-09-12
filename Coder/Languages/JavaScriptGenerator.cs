@@ -2,6 +2,7 @@
 
 namespace ktsu.Coder.Languages;
 
+using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Linq;
 using ktsu.Coder.Ast;
@@ -33,6 +34,61 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	/// Gets the file extension (without the dot) used for this language.
 	/// </summary>
 	public override string FileExtension => "js";
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// JavaScript has the thing itself, in a class body. An automatic property is a public class
+	/// field, which is what it is — there is no type to declare and nothing else to say. One with
+	/// bodies is <c>get name()</c> and <c>set name(value)</c>, which is the language's own
+	/// spelling.
+	/// <para>
+	/// Visibility is not written. A JavaScript member is private only if its name begins with a
+	/// <c>#</c>, which is a rename rather than a modifier, and this generator renames nothing.
+	/// </para>
+	/// </remarks>
+	protected override void GeneratePropertyDeclaration(PropertyDeclaration declaration, CodeBlocker code)
+	{
+		Ensure.NotNull(declaration);
+		Ensure.NotNull(code);
+
+		string name = declaration.Name ?? "value";
+
+		GenerateDocumentation(declaration, code);
+		WriteAnnotations(declaration.Annotations, code);
+
+		if (declaration.IsAutomatic)
+		{
+			code.WriteLine($"{(declaration.IsStatic ? "static " : string.Empty)}{name};");
+			return;
+		}
+
+		if (declaration.CanRead)
+		{
+			code.Write($"{(declaration.IsStatic ? "static " : string.Empty)}get {name}() ");
+			WriteAccessorBody(declaration.GetterBody, code);
+		}
+
+		if (declaration.CanWrite)
+		{
+			code.Write($"{(declaration.IsStatic ? "static " : string.Empty)}set {name}(value) ");
+			WriteAccessorBody(declaration.SetterBody, code);
+		}
+	}
+
+	/// <summary>
+	/// Writes an accessor's statements, in a brace scope that hangs off the line it is on.
+	/// </summary>
+	/// <param name="body">The statements to write.</param>
+	/// <param name="code">The writer to emit into.</param>
+	private void WriteAccessorBody(Collection<AstNode> body, CodeBlocker code)
+	{
+		using Scope statements = new(code);
+
+		foreach (AstNode statement in body)
+		{
+			GenerateInternal(statement, code);
+		}
+	}
 
 	/// <inheritdoc/>
 	/// <remarks>

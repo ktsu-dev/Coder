@@ -276,6 +276,12 @@ public class RustGenerator : StandardLanguageGenerator
 	public override string FileExtension => "rs";
 
 	/// <inheritdoc/>
+	/// <remarks>
+	/// Enforced rather than conventional: rustc warns on a member name that is not snake case, so an invented one in any other convention makes the generated file noisy to build.
+	/// </remarks>
+	protected override NamingStyle MemberNaming => NamingStyle.Snake;
+
+	/// <inheritdoc/>
 	protected override string? SpellAnnotation(Annotation annotation) => $"#[{annotation}]";
 	/// <inheritdoc/>
 	/// <remarks>
@@ -358,6 +364,8 @@ public class RustGenerator : StandardLanguageGenerator
 	{
 		Ensure.NotNull(classDecl);
 		Ensure.NotNull(code);
+
+		classDecl = Separated(classDecl);
 
 		string name = classDecl.Name ?? "UnnamedStruct";
 

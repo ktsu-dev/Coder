@@ -75,6 +75,8 @@ public partial class YamlDeserializer
 			"EnumDeclaration" => DeserializeEnumDeclaration(nodeData),
 			"enumMember" => DeserializeEnumMember(nodeData),
 			"EnumMember" => DeserializeEnumMember(nodeData),
+			"propertyDeclaration" => DeserializePropertyDeclaration(nodeData),
+			"PropertyDeclaration" => DeserializePropertyDeclaration(nodeData),
 			"fieldDeclaration" => DeserializeFieldDeclaration(nodeData),
 			"FieldDeclaration" => DeserializeFieldDeclaration(nodeData),
 			"classDeclaration" => DeserializeClassDeclaration(nodeData),
@@ -656,6 +658,69 @@ public partial class YamlDeserializer
 
 		DeserializeMetadata(member, dict);
 		return member;
+	}
+
+	private PropertyDeclaration DeserializePropertyDeclaration(object? nodeData)
+	{
+		PropertyDeclaration property = new();
+		if (nodeData is not Dictionary<object, object> dict)
+		{
+			return property;
+		}
+
+		if (dict.TryGetValue("name", out object? nameObj))
+		{
+			property.Name = nameObj?.ToString();
+		}
+
+		if (dict.TryGetValue("type", out object? typeObj))
+		{
+			property.Type = typeObj?.ToString();
+		}
+
+		property.HasGetter = ReadFlag(dict, "readable", property.HasGetter);
+		property.HasSetter = ReadFlag(dict, "writable", property.HasSetter);
+		property.SetterIsInitOnly = ReadFlag(dict, "initOnly", property.SetterIsInitOnly);
+		property.IsStatic = ReadFlag(dict, "isStatic", property.IsStatic);
+
+		DeserializeVisibility(property, dict);
+		ReadStrings(dict, DocumentationKey, property.Documentation);
+		DeserializeAnnotations(dict, property.Annotations);
+		ReadStatements(dict, "get", property.GetterBody);
+		ReadStatements(dict, "set", property.SetterBody);
+
+		DeserializeMetadata(property, dict);
+		return property;
+	}
+
+	/// <summary>
+	/// Reads a sequence of statements into a collection.
+	/// </summary>
+	/// <param name="dict">The mapping to read from.</param>
+	/// <param name="key">The key the statements are written under.</param>
+	/// <param name="statements">The collection to fill.</param>
+	private void ReadStatements(Dictionary<object, object> dict, string key, Collection<AstNode> statements)
+	{
+		if (!dict.TryGetValue(key, out object? bodyObj) || bodyObj is not List<object> bodyList)
+		{
+			return;
+		}
+
+		foreach (object statementObj in bodyList)
+		{
+			if (statementObj is not Dictionary<object, object> statementDict)
+			{
+				continue;
+			}
+
+			foreach ((object statementType, object statementData) in statementDict)
+			{
+				if (DeserializeNode(statementType.ToString() ?? string.Empty, statementData) is AstNode statement)
+				{
+					statements.Add(statement);
+				}
+			}
+		}
 	}
 
 	private FieldDeclaration DeserializeFieldDeclaration(object? nodeData)

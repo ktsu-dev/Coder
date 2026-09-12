@@ -3,6 +3,7 @@
 namespace ktsu.Coder.Languages;
 
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Linq;
 using ktsu.Coder.Ast;
@@ -121,6 +122,9 @@ public class CSharpGenerator : LanguageGeneratorBase
 				break;
 			case EnumDeclaration enumDecl:
 				GenerateEnum(enumDecl, code);
+				break;
+			case PropertyDeclaration property:
+				GenerateProperty(property, code);
 				break;
 			case FieldDeclaration field:
 				GenerateField(field, code);
@@ -484,6 +488,71 @@ public class CSharpGenerator : LanguageGeneratorBase
 			}
 
 			code.WriteLine(",");
+		}
+	}
+
+	/// <summary>
+	/// Emits a property, which C# has a word for.
+	/// </summary>
+	/// <param name="property">The declaration to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// The accessors go on one line when the language supplies them and in a block when they have
+	/// bodies, which is how a person writes the two and how every C# formatter will put them back
+	/// if a generator chooses otherwise.
+	/// </remarks>
+	private void GenerateProperty(PropertyDeclaration property, CodeBlocker code)
+	{
+		GenerateDocumentation(property, code);
+		WriteAnnotations(property.Annotations, code);
+
+		string type = property.Type is TypeReference declared ? MapToCSType(declared) : "object";
+		string modifiers = property.IsStatic ? " static" : string.Empty;
+
+		code.Write($"{SpellVisibility(property.Visibility) ?? DefaultVisibility}{modifiers} {type} {property.Name ?? "Value"}");
+
+		// init rather than set where the declaration asked for it: the two differ only in when the
+		// call is legal, and nothing else here has a word for the difference.
+		string setter = property.SetterIsInitOnly ? "init" : "set";
+
+		if (property.IsAutomatic)
+		{
+			string accessors = property.CanWrite ? $"get; {setter};" : "get;";
+			code.WriteLine($" {{ {accessors} }}");
+			return;
+		}
+
+		code.WriteLine();
+
+		using Scope accessorBlock = new(code);
+
+		if (property.CanRead)
+		{
+			code.Write("get");
+			WriteAccessorBody(property.GetterBody, code);
+		}
+
+		if (property.CanWrite)
+		{
+			code.Write(setter);
+			WriteAccessorBody(property.SetterBody, code);
+		}
+	}
+
+	/// <summary>
+	/// Writes an accessor's statements, in a brace scope.
+	/// </summary>
+	/// <param name="body">The statements to write.</param>
+	/// <param name="code">The writer to emit into.</param>
+	private void WriteAccessorBody(Collection<AstNode> body, CodeBlocker code)
+	{
+		code.WriteLine();
+
+		using Scope statements = new(code);
+
+		foreach (AstNode statement in body)
+		{
+			GenerateInternal(statement, code);
 		}
 	}
 

@@ -198,6 +198,17 @@ public static class AstFields
 				new("Constant", AstFieldKind.Flag, Spell(fieldDecl.IsConstant)),
 			],
 
+			PropertyDeclaration property =>
+			[
+				new("Name", AstFieldKind.Text, property.Name ?? string.Empty),
+				new(TypeField, AstFieldKind.Text, property.Type?.ToString() ?? string.Empty),
+				new(VisibilityField, AstFieldKind.Choice, property.Visibility.ToString(), Visibilities),
+				new("Static", AstFieldKind.Flag, Spell(property.IsStatic)),
+				new("Readable", AstFieldKind.Flag, Spell(property.HasGetter)),
+				new("Writable", AstFieldKind.Flag, Spell(property.HasSetter)),
+				new("InitOnly", AstFieldKind.Flag, Spell(property.SetterIsInitOnly)),
+			],
+
 			ClassDeclaration classDecl =>
 			[
 				new("Name", AstFieldKind.Text, classDecl.Name ?? string.Empty),
@@ -414,6 +425,19 @@ public static class AstFields
 				TryParseBool(value, out bool fieldIsStatic) && Assign(() => fieldDecl.IsStatic = fieldIsStatic),
 			(FieldDeclaration fieldDecl, "Constant") =>
 				TryParseBool(value, out bool fieldIsConstant) && Assign(() => fieldDecl.IsConstant = fieldIsConstant),
+
+			(PropertyDeclaration property, "Name") => Assign(() => property.Name = OrNull(value)),
+			(PropertyDeclaration property, TypeField) => Assign(() => property.Type = OrNull(value)),
+			(PropertyDeclaration property, VisibilityField) =>
+				TryParseVisibility(value, out Visibility propertyVisibility) && Assign(() => property.Visibility = propertyVisibility),
+			(PropertyDeclaration property, "Static") =>
+				TryParseBool(value, out bool propertyIsStatic) && Assign(() => property.IsStatic = propertyIsStatic),
+			(PropertyDeclaration property, "Readable") =>
+				TryParseBool(value, out bool readable) && Assign(() => property.HasGetter = readable),
+			(PropertyDeclaration property, "Writable") =>
+				TryParseBool(value, out bool writable) && Assign(() => property.HasSetter = writable),
+			(PropertyDeclaration property, "InitOnly") =>
+				TryParseBool(value, out bool initOnly) && Assign(() => property.SetterIsInitOnly = initOnly),
 
 			(ClassDeclaration classDecl, "Name") => Assign(() => classDecl.Name = OrNull(value)),
 			(ClassDeclaration classDecl, "Kind") =>

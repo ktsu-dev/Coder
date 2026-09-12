@@ -95,6 +95,12 @@ public class CppGenerator : CFamilyGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
+	/// The standard library spells an invented accessor <c>set_value</c>, and that is the convention a reader of any C++ header already has.
+	/// </remarks>
+	protected override NamingStyle MemberNaming => NamingStyle.Snake;
+
+	/// <inheritdoc/>
+	/// <remarks>
 	/// Doubled brackets, which is the standard syntax rather than a compiler's own. An attribute
 	/// the compiler does not know is ignored with a warning rather than refused, which is what
 	/// makes writing a caller's attribute through safe here.
@@ -328,6 +334,8 @@ public class CppGenerator : CFamilyGenerator
 	{
 		Ensure.NotNull(classDecl);
 		Ensure.NotNull(code);
+
+		classDecl = Separated(classDecl);
 
 		GenerateDocumentation(classDecl, code);
 

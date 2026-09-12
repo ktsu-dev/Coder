@@ -95,6 +95,9 @@ public class YamlSerializer
 			case EnumMember enumMember:
 				SerializeEnumMember(enumMember, nodeData);
 				break;
+			case PropertyDeclaration property:
+				SerializePropertyDeclaration(property, nodeData);
+				break;
 			case FieldDeclaration field:
 				SerializeFieldDeclaration(field, nodeData);
 				break;
@@ -471,6 +474,63 @@ public class YamlSerializer
 		if (member.Value != null)
 		{
 			nodeData[ValueKey] = member.Value;
+		}
+	}
+
+	/// <summary>
+	/// Writes a property, omitting whatever it did not ask for.
+	/// </summary>
+	/// <param name="property">The declaration being serialized.</param>
+	/// <param name="nodeData">The mapping to write into.</param>
+	/// <remarks>
+	/// <c>readable</c> is written when it is false rather than when it is true, unlike every other
+	/// flag here, because it is the one that defaults to true: a property nobody can read is the
+	/// unusual thing and so is the one worth saying.
+	/// </remarks>
+	private static void SerializePropertyDeclaration(PropertyDeclaration property, Dictionary<string, object> nodeData)
+	{
+		if (property.Name != null)
+		{
+			nodeData["name"] = property.Name;
+		}
+
+		if (property.Type != null)
+		{
+			nodeData["type"] = property.Type.ToString();
+		}
+
+		if (!property.HasGetter)
+		{
+			nodeData["readable"] = false;
+		}
+
+		if (property.HasSetter)
+		{
+			nodeData["writable"] = true;
+		}
+
+		if (property.SetterIsInitOnly)
+		{
+			nodeData["initOnly"] = true;
+		}
+
+		if (property.IsStatic)
+		{
+			nodeData["isStatic"] = true;
+		}
+
+		SerializeVisibility(property, nodeData);
+		SerializeDocumentation(property, nodeData);
+		SerializeAnnotations(property.Annotations, nodeData);
+
+		if (property.GetterBody.Count > 0)
+		{
+			nodeData["get"] = SerializeBodyStatements(property.GetterBody);
+		}
+
+		if (property.SetterBody.Count > 0)
+		{
+			nodeData["set"] = SerializeBodyStatements(property.SetterBody);
 		}
 	}
 

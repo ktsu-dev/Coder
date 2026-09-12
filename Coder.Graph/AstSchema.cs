@@ -35,6 +35,15 @@ public static class AstSchema
 	private static readonly AstSlot ParametersSlot = new("Parameters", AstSlotCardinality.Many, AstSlotKind.Parameter);
 	private static readonly AstSlot BodySlot = new("Body", AstSlotCardinality.Many, AstSlotKind.Statement);
 	private static readonly AstSlot MembersSlot = new("Members", AstSlotCardinality.Many, AstSlotKind.Member);
+
+	/// <summary>The name of the slot a property's read accessor keeps its statements in.</summary>
+	private const string GetterSlotName = "Get";
+
+	/// <summary>The name of the slot a property's write accessor keeps its statements in.</summary>
+	private const string SetterSlotName = "Set";
+
+	private static readonly AstSlot GetterSlot = new(GetterSlotName, AstSlotCardinality.Many, AstSlotKind.Statement);
+	private static readonly AstSlot SetterSlot = new(SetterSlotName, AstSlotCardinality.Many, AstSlotKind.Statement);
 	/// <summary>The name of the slot an expression's arguments sit in.</summary>
 	private const string ArgumentsSlotName = "Arguments";
 
@@ -72,6 +81,7 @@ public static class AstSchema
 		ClassDeclaration => [MembersSlot],
 		EnumDeclaration => [EnumMembersSlot],
 		FieldDeclaration => [InitialValueSlot],
+		PropertyDeclaration => [GetterSlot, SetterSlot],
 		MemberInitialiser => [ValueSlot],
 		ConstructionExpression => [ArgumentsSlot],
 		CallExpression => [ReceiverSlot, ArgumentsSlot],
@@ -133,6 +143,8 @@ public static class AstSchema
 			(CallExpression callExpr, ArgumentsSlotName) => [.. callExpr.Arguments],
 			(FunctionDeclaration function, "Parameters") => [.. function.Parameters],
 			(FunctionDeclaration function, "Body") => [.. function.Body],
+			(PropertyDeclaration property, GetterSlotName) => [.. property.GetterBody],
+			(PropertyDeclaration property, SetterSlotName) => [.. property.SetterBody],
 			(EntryPoint entryPoint, "Body") => [.. entryPoint.Body],
 			_ when SlotsOf(node).Contains(slot) => [],
 			_ => throw new ArgumentException($"{node.GetNodeTypeName()} has no slot named '{slot.Name}'.", nameof(slot)),
@@ -297,6 +309,14 @@ public static class AstSchema
 				function.Body.Add(child);
 				return true;
 
+			case (PropertyDeclaration property, GetterSlotName):
+				property.GetterBody.Add(child);
+				return true;
+
+			case (PropertyDeclaration property, SetterSlotName):
+				property.SetterBody.Add(child);
+				return true;
+
 			case (EntryPoint entryPoint, "Body"):
 				entryPoint.Body.Add(child);
 				return true;
@@ -340,6 +360,14 @@ public static class AstSchema
 
 			case (FunctionDeclaration function, "Body"):
 				function.Body[index] = child;
+				return true;
+
+			case (PropertyDeclaration property, GetterSlotName):
+				property.GetterBody[index] = child;
+				return true;
+
+			case (PropertyDeclaration property, SetterSlotName):
+				property.SetterBody[index] = child;
 				return true;
 
 			case (EntryPoint entryPoint, "Body"):
@@ -444,12 +472,66 @@ public static class AstSchema
 				assignment.Value = Unfilled();
 				return true;
 
+			// A receiver is genuinely optional -- a call with none is a free function rather than an
+			// unfinished member call -- so detaching one clears it instead of leaving a placeholder.
+			case (CallExpression callExpr, ReceiverSlotName):
+				bool hadReceiver = callExpr.Receiver is not null;
+				callExpr.Receiver = null;
+				return hadReceiver;
+
+			case (ConditionalExpression conditional, ConditionSlotName):
+				conditional.Condition = Unfilled();
+				return true;
+
+			case (ConditionalExpression conditional, WhenTrueSlotName):
+				conditional.WhenTrue = Unfilled();
+				return true;
+
+			case (ConditionalExpression conditional, WhenFalseSlotName):
+				conditional.WhenFalse = Unfilled();
+				return true;
+
+			case (ExpressionStatement statement, "Expression"):
+				statement.Expression = Unfilled();
+				return true;
+
+			default:
+				return TryDetachFromSequence(parent, slot, index);
+		}
+	}
+
+	/// <summary>
+	/// Removes a child from one of the sequences a node owns.
+	/// </summary>
+	/// <param name="parent">The parent node.</param>
+	/// <param name="slot">The slot to remove from.</param>
+	/// <param name="index">The position to remove.</param>
+	/// <returns>True if a child was removed; false if this is not one of these slots, or the
+	/// position is past the end of it.</returns>
+	/// <remarks>
+	/// Split from the single-valued slots for the reason the three attach methods already are: one
+	/// switch over every slot the AST has is more branches than the analyzer accepts. The line is
+	/// the same one the cardinality draws — a sequence loses an entry and keeps its order, and a
+	/// single-valued slot goes back to whatever standing empty means for it.
+	/// </remarks>
+	private static bool TryDetachFromSequence(AstNode parent, AstSlot slot, int index)
+	{
+		switch (parent, slot.Name)
+		{
 			case (FunctionDeclaration function, "Parameters") when index < function.Parameters.Count:
 				function.Parameters.RemoveAt(index);
 				return true;
 
 			case (FunctionDeclaration function, "Body") when index < function.Body.Count:
 				function.Body.RemoveAt(index);
+				return true;
+
+			case (PropertyDeclaration property, GetterSlotName) when index < property.GetterBody.Count:
+				property.GetterBody.RemoveAt(index);
+				return true;
+
+			case (PropertyDeclaration property, SetterSlotName) when index < property.SetterBody.Count:
+				property.SetterBody.RemoveAt(index);
 				return true;
 
 			case (EntryPoint entryPoint, "Body") when index < entryPoint.Body.Count:
@@ -478,29 +560,6 @@ public static class AstSchema
 
 			case (CallExpression callExpr, ArgumentsSlotName) when index < callExpr.Arguments.Count:
 				callExpr.Arguments.RemoveAt(index);
-				return true;
-
-			// A receiver is genuinely optional -- a call with none is a free function rather than an
-			// unfinished member call -- so detaching one clears it instead of leaving a placeholder.
-			case (CallExpression callExpr, ReceiverSlotName):
-				bool hadReceiver = callExpr.Receiver is not null;
-				callExpr.Receiver = null;
-				return hadReceiver;
-
-			case (ConditionalExpression conditional, ConditionSlotName):
-				conditional.Condition = Unfilled();
-				return true;
-
-			case (ConditionalExpression conditional, WhenTrueSlotName):
-				conditional.WhenTrue = Unfilled();
-				return true;
-
-			case (ConditionalExpression conditional, WhenFalseSlotName):
-				conditional.WhenFalse = Unfilled();
-				return true;
-
-			case (ExpressionStatement statement, "Expression"):
-				statement.Expression = Unfilled();
 				return true;
 
 			default:
@@ -605,6 +664,7 @@ public static class AstSchema
 		return node switch
 		{
 			ClassDeclaration classDecl => $"class {classDecl.Name ?? Unnamed}",
+			PropertyDeclaration property => $"property {property.Name ?? Unnamed}",
 			FunctionDeclaration function => $"function {function.Name ?? Unnamed}",
 			EntryPoint => "entry point",
 			Parameter parameter => $"param {parameter.Name ?? Unnamed}",

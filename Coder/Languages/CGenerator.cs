@@ -157,6 +157,12 @@ public class CGenerator : CFamilyGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
+	/// C writes an invented name in lower case with underscores, and a header that did otherwise would stand out beside every other one in the project.
+	/// </remarks>
+	protected override NamingStyle MemberNaming => NamingStyle.Snake;
+
+	/// <inheritdoc/>
+	/// <remarks>
 	/// C has no member functions, so a member becomes a free function named for the type it belongs
 	/// to and taking the instance as its first parameter — <c>Point_translate(Point* self, …)</c>.
 	/// That is what C code written by hand does.
@@ -477,6 +483,8 @@ public class CGenerator : CFamilyGenerator
 	{
 		Ensure.NotNull(classDecl);
 		Ensure.NotNull(code);
+
+		classDecl = Separated(classDecl);
 
 		string name = classDecl.Name ?? "UnnamedStruct";
 		bool isInterface = classDecl.Kind == TypeDeclarationKind.Interface;

@@ -181,6 +181,12 @@ public class GoGenerator : StandardLanguageGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
+	/// An exported Go name is capitalised, and the invented setter of an exported property has to be exported too or nothing outside the package can call it.
+	/// </remarks>
+	protected override NamingStyle MemberNaming => NamingStyle.Pascal;
+
+	/// <inheritdoc/>
+	/// <remarks>
 	/// A tab, because <c>gofmt</c> writes a tab. This is the one target where the indentation is not
 	/// the generator's to pick.
 	/// </remarks>
@@ -477,6 +483,8 @@ public class GoGenerator : StandardLanguageGenerator
 	{
 		Ensure.NotNull(classDecl);
 		Ensure.NotNull(code);
+
+		classDecl = Separated(classDecl);
 
 		string name = classDecl.Name ?? UnnamedType;
 

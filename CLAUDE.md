@@ -84,6 +84,21 @@ source in seven target languages. The solution uses:
   honours it only where the language can — a Go `const` holds a number, a string or a boolean and
   nothing with a field in it, so a table is a `var` with a note — and a language with no spelling for
   it omits it the way it omits an indirection.
+- `Coder/Ast/PropertyDeclaration.cs` — a member read and written through code rather than stored.
+  Three targets have the thing itself (C# `T Name { get; set; }`, Python `@property`, JavaScript
+  `get name()`); the other four have the two halves of what it is and no word joining them, which
+  makes the decision here not the syntax but **where a property lands**. A property whose accessors
+  have no bodies *is* a field with a storage location the compiler supplies, so it comes out as a
+  field; one with bodies *is* a pair of functions, so it comes out as the pair. Neither is an
+  approximation. The separation happens to the member list, in `StandardLanguageGenerator.Separated`,
+  rather than at the point each member is written — Rust puts data in a `struct` and behaviour in an
+  `impl`, Go writes fields in the type and methods beside it, C lowers a method to a free function
+  taking the instance, and every one of those routes reads the member list before anything is
+  written, so a property separated afterwards arrives too late to be routed. Separated first, each
+  generator's existing routing sees an ordinary field or function and needs to know nothing about
+  properties. `NamingStyle` is for the setter's name, which is the one name a generator has to
+  *invent* rather than repeat: rustc warns on a member name that is not snake case and an unexported
+  Go name cannot be called from outside its package, so the convention is more than taste.
 - `Coder/Ast/Annotation.cs` — metadata attached to a declaration: an attribute in C# and C++, an
   attribute macro in Rust, a decorator in Python. The name here is the one that is nobody's keyword.
   Its `Name` and `Arguments` are **text, written verbatim**, for the reason `CallExpression.Callee`
