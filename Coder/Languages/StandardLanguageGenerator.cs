@@ -151,19 +151,70 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 		Ensure.NotNull(code);
 
 		GenerateDocumentation(namespaceDecl, code);
+		WriteMembers(namespaceDecl.Members, code);
+	}
 
-		bool first = true;
-		foreach (AstNode member in namespaceDecl.Members)
+	/// <summary>
+	/// Writes a run of declarations, separated as this language separates them.
+	/// </summary>
+	/// <param name="members">The declarations to write.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// The same walk <see cref="LanguageGeneratorBase.GenerateSourceFile"/> does over a file's
+	/// members, for the emitters that have a run of declarations to write and no file around them.
+	/// </remarks>
+	protected void WriteMembers(IEnumerable<AstNode> members, CodeBlocker code)
+	{
+		Ensure.NotNull(members);
+		Ensure.NotNull(code);
+
+		AstNode? previous = null;
+		foreach (AstNode member in members)
 		{
-			if (!first)
+			if (previous is not null && NeedsSeparation(previous, member))
 			{
 				code.NewLine();
 			}
 
-			first = false;
+			previous = member;
 			GenerateInternal(member, code);
 		}
 	}
+
+	/// <summary>
+	/// Reports whether two adjacent declarations belong in one block.
+	/// </summary>
+	/// <param name="previous">The declaration already written.</param>
+	/// <param name="member">The declaration about to be written.</param>
+	/// <returns>True when no blank line belongs between them.</returns>
+	/// <remarks>
+	/// Two of a kind that say nothing about themselves stay together, which is what keeps a run of
+	/// aliases, of constants or of assertions about one type reading as one block rather than as a
+	/// paragraph each. A documented member needs air above it or its first comment line butts against
+	/// the member before it and reads as belonging to that one.
+	/// <para>
+	/// The rule rather than the override, because <see cref="LanguageGeneratorBase.NeedsSeparation"/> is
+	/// the question and this is one answer to it: the C family, Rust and Go all give this one, while Python and
+	/// JavaScript keep the default of a blank line between everything.
+	/// </para>
+	/// </remarks>
+	protected static bool GroupsWith(AstNode previous, AstNode member)
+	{
+		Ensure.NotNull(previous);
+		Ensure.NotNull(member);
+
+		return previous.GetType() == member.GetType()
+			&& !IsDocumented(previous)
+			&& !IsDocumented(member);
+	}
+
+	/// <summary>
+	/// Reports whether a declaration carries documentation.
+	/// </summary>
+	/// <param name="member">The declaration to test.</param>
+	/// <returns>True when it does.</returns>
+	protected static bool IsDocumented(AstNode member) =>
+		member is IHasDocumentation documented && documented.Documentation.Count > 0;
 
 	/// <summary>
 	/// Emits something that must be true when the program is built.
@@ -324,7 +375,7 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 			return;
 		}
 
-		code.Write($"{open} ");
+		code.Write($"{open}{ListPadding}");
 		for (int index = 0; index < construction.Arguments.Count; index++)
 		{
 			if (index > 0)
@@ -335,8 +386,18 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 			WriteListElement(construction.Arguments[index], code);
 		}
 
-		code.Write($" {close}");
+		code.Write($"{ListPadding}{close}");
 	}
+
+	/// <summary>
+	/// Gets what stands between a list's delimiters and its elements when it is written on one line.
+	/// </summary>
+	/// <remarks>
+	/// A space everywhere but Go, which writes <c>Point{X: 1}</c>. That is not a preference there:
+	/// <c>gofmt</c> writes it that way and nobody gets a say, which makes the padding part of the
+	/// language's spelling of a list rather than of anyone's taste in them.
+	/// </remarks>
+	protected virtual string ListPadding => " ";
 
 	/// <summary>
 	/// Writes a list one element per line.
@@ -419,6 +480,80 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	private static bool SpansLines(ConstructionExpression construction) =>
 		construction.Arguments.Any(argument =>
 			argument is ConstructionExpression or MemberInitialiser { Value: ConstructionExpression });
+
+	/// <summary>
+	/// Names every operator the AST can spell, for a language that cannot overload one and so has to
+	/// call it something.
+	/// </summary>
+	/// <param name="spell">How the language writes a name made of words.</param>
+	/// <returns>The name for each symbol the AST can spell.</returns>
+	/// <remarks>
+	/// The names come from the AST's own operator vocabulary rather than from a table written beside
+	/// it, so an operator added to <see cref="BinaryOperator"/> is named without anyone remembering
+	/// to name it — and one added without a spelling is left out rather than throwing before anything
+	/// has run.
+	/// <para>
+	/// A symbol both kinds of operator share is named for the binary one, which is what a reader of
+	/// <c>a - b</c> means; the unary declaration of it is told apart by taking no operand beside the
+	/// instance, which is the caller's to notice.
+	/// </para>
+	/// </remarks>
+	protected static Dictionary<string, string> BuildOperatorNames(Func<string, string> spell)
+	{
+		Ensure.NotNull(spell);
+
+		Dictionary<string, string> names = new(StringComparer.Ordinal);
+
+		foreach (BinaryOperator op in Enum.GetValues<BinaryOperator>().Where(HasSymbol))
+		{
+			names[OperatorSymbols.GetSymbol(op)] = spell(op.ToString());
+		}
+
+		foreach (UnaryOperator op in Enum.GetValues<UnaryOperator>().Where(HasSymbol))
+		{
+			names.TryAdd(OperatorSymbols.GetSymbol(op), spell(op.ToString()));
+		}
+
+		return names;
+	}
+
+	/// <summary>
+	/// Names the unary operators alone.
+	/// </summary>
+	/// <param name="spell">How the language writes a name made of words.</param>
+	/// <returns>The name for each symbol a unary operator can be spelled with.</returns>
+	/// <remarks>
+	/// For a language that tells a unary declaration apart by its arity and so must not name it after
+	/// the binary operator sharing its symbol. <c>-</c> is the whole of the problem: a type declaring
+	/// both would otherwise declare the same name twice, which is the one outcome worse than an odd
+	/// name.
+	/// </remarks>
+	protected static Dictionary<string, string> BuildUnaryOperatorNames(Func<string, string> spell)
+	{
+		Ensure.NotNull(spell);
+
+		Dictionary<string, string> names = new(StringComparer.Ordinal);
+
+		foreach (UnaryOperator op in Enum.GetValues<UnaryOperator>().Where(HasSymbol))
+		{
+			names[OperatorSymbols.GetSymbol(op)] = spell(op.ToString());
+		}
+
+		return names;
+	}
+
+	/// <summary>
+	/// Reports whether the AST can spell an operator at all.
+	/// </summary>
+	/// <param name="op">The operator to test.</param>
+	/// <returns>True when it has a symbol.</returns>
+	private static bool HasSymbol(BinaryOperator op) =>
+		OperatorSymbols.TryGetSymbol(op, out string? symbol) && symbol is not null;
+
+	/// <inheritdoc cref="HasSymbol(BinaryOperator)"/>
+	/// <param name="op">The operator to test.</param>
+	private static bool HasSymbol(UnaryOperator op) =>
+		OperatorSymbols.TryGetSymbol(op, out string? symbol) && symbol is not null;
 
 	/// <summary>
 	/// Spells a binary operator in the target language.

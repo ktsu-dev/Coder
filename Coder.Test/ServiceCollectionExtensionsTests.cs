@@ -60,8 +60,9 @@ public class ServiceCollectionExtensionsTests
 		Assert.IsInstanceOfType<CppGenerator>(generators.FirstOrDefault(g => g.LanguageId == "cpp"));
 		Assert.IsInstanceOfType<CGenerator>(generators.FirstOrDefault(g => g.LanguageId == "c"));
 		Assert.IsInstanceOfType<RustGenerator>(generators.FirstOrDefault(g => g.LanguageId == "rust"));
+		Assert.IsInstanceOfType<GoGenerator>(generators.FirstOrDefault(g => g.LanguageId == "go"));
 
-		Assert.AreEqual(6, generators.Count, "A new generator needs a registration and an entry here");
+		Assert.AreEqual(7, generators.Count, "A new generator needs a registration and an entry here");
 	}
 
 	/// <summary>

@@ -1,4 +1,4 @@
-// Copyright (c) 2023-2026 ktsu-dev contributors
+﻿// Copyright (c) 2023-2026 ktsu-dev contributors
 
 namespace ktsu.Coder.Test.Editor;
 
@@ -61,7 +61,7 @@ public sealed class CoderEditorAppTests
 	private string PathIn(string name) => Path.Combine(root, name + DocumentStore.Extension);
 
 	private static CoderEditorApp NewApp(DocumentStore store, EditorSettings? settings = null) =>
-		new(store, [new CSharpGenerator(), new PythonGenerator(), new CppGenerator(), new CGenerator(), new RustGenerator(), new JavaScriptGenerator()],
+		new(store, [new CSharpGenerator(), new PythonGenerator(), new CppGenerator(), new CGenerator(), new RustGenerator(), new GoGenerator(), new JavaScriptGenerator()],
 			settings ?? new EditorSettings());
 
 	/// <summary>

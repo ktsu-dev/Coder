@@ -20,13 +20,18 @@ using ktsu.CodeBlocker;
 public abstract class LanguageGeneratorBase : ILanguageGenerator
 {
 	/// <summary>
-	/// The indentation one level of nesting adds.
+	/// Gets the indentation one level of nesting adds.
 	/// </summary>
 	/// <remarks>
 	/// Four spaces rather than <see cref="CodeBlocker.DefaultIndentString"/>'s tab: Python's
 	/// indentation is syntax, and four spaces is what PEP 8 asks for.
+	/// <para>
+	/// Overridable because one target does not get a say. Go is formatted by <c>gofmt</c> rather
+	/// than by whoever wrote the file, and <c>gofmt</c> indents with a tab — so a generated Go file
+	/// indented any other way is a diff against itself the first time anybody saves it.
+	/// </para>
 	/// </remarks>
-	protected const string IndentString = "    ";
+	protected virtual string IndentString => "    ";
 
 	/// <summary>
 	/// Gets the unique identifier for this language generator.
@@ -232,10 +237,16 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 		bool wroteImport = false;
 		foreach (string import in file.Imports)
 		{
-			// An empty import is a group separator rather than an import of nothing.
+			// An empty import is a group separator rather than an import of nothing, and separates
+			// nothing until a group has been written — which is also what keeps a language whose
+			// imports are written elsewhere from getting a blank line for each of them here.
 			if (import.Length == 0)
 			{
-				code.NewLine();
+				if (wroteImport)
+				{
+					code.NewLine();
+				}
+
 				continue;
 			}
 

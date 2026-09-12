@@ -47,6 +47,7 @@ public class GeneratedLineEndingTests
 	[DataRow("cpp")]
 	[DataRow("c")]
 	[DataRow("rust")]
+	[DataRow("go")]
 	[DataRow("javascript")]
 	public void Generators_EmitLineFeedsOnly(string languageId)
 	{
@@ -57,6 +58,7 @@ public class GeneratedLineEndingTests
 			"cpp" => new CppGenerator(),
 			"c" => new CGenerator(),
 			"rust" => new RustGenerator(),
+			"go" => new GoGenerator(),
 			"javascript" => new JavaScriptGenerator(),
 			_ => throw new ArgumentOutOfRangeException(nameof(languageId))
 		};

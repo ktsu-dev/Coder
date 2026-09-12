@@ -1,4 +1,4 @@
-// Copyright (c) 2023-2026 ktsu-dev contributors
+﻿// Copyright (c) 2023-2026 ktsu-dev contributors
 
 namespace ktsu.Coder.Languages;
 
@@ -105,26 +105,9 @@ public abstract class CFamilyGenerator : StandardLanguageGenerator
 	/// <remarks>
 	/// Two of a kind that say nothing about themselves stay together, which is what keeps a run of
 	/// aliases, of defaulted declarations, or of assertions about one type reading as one block
-	/// rather than as four paragraphs. A documented member needs air above it or its first comment
-	/// line butts against the member before it and reads as belonging to that one.
+	/// rather than as four paragraphs.
 	/// </remarks>
-	protected override bool NeedsSeparation(AstNode previous, AstNode member)
-	{
-		Ensure.NotNull(previous);
-		Ensure.NotNull(member);
-
-		return previous.GetType() != member.GetType()
-			|| IsDocumented(previous)
-			|| IsDocumented(member);
-	}
-
-	/// <summary>
-	/// Reports whether a member carries documentation.
-	/// </summary>
-	/// <param name="member">The member to test.</param>
-	/// <returns>True when it does.</returns>
-	protected static bool IsDocumented(AstNode member) =>
-		member is IHasDocumentation documented && documented.Documentation.Count > 0;
+	protected override bool NeedsSeparation(AstNode previous, AstNode member) => !GroupsWith(previous, member);
 
 	/// <summary>
 	/// Spells a declaration of <paramref name="name"/> with that type.
