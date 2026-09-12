@@ -3,6 +3,7 @@
 namespace ktsu.Coder.Languages;
 
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using ktsu.Coder.Ast;
 using ktsu.CodeBlocker;
@@ -346,6 +347,99 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	}
 
 	/// <summary>
+	/// Emits an expression evaluated for its effect, ending it as a statement.
+	/// </summary>
+	/// <param name="statement">The statement to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	protected void GenerateExpressionStatement(ExpressionStatement statement, CodeBlocker code)
+	{
+		Ensure.NotNull(statement);
+		Ensure.NotNull(code);
+
+		GenerateInternal(statement.Expression, code);
+		EndStatement(code);
+	}
+
+	/// <summary>
+	/// Emits a call, recursing into its receiver and arguments.
+	/// </summary>
+	/// <param name="callExpr">The call to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// A receiver is written in front of the callee, separated by a dot, which is how four of the
+	/// five targets spell a member call. C is the exception and overrides this: it has no member
+	/// functions, so the receiver becomes the first argument.
+	/// <para>
+	/// <see cref="CallExpression.Callee"/> is written verbatim. Nothing here maps a function's name
+	/// between languages, and nothing pretends to — see the node's own remarks for why.
+	/// </para>
+	/// </remarks>
+	protected virtual void GenerateCallExpression(CallExpression callExpr, CodeBlocker code)
+	{
+		Ensure.NotNull(callExpr);
+		Ensure.NotNull(code);
+
+		if (callExpr.Receiver is not null)
+		{
+			GenerateInternal(callExpr.Receiver, code);
+			code.Write(".");
+		}
+
+		code.Write(callExpr.Callee);
+		code.Write("(");
+		GenerateArgumentList(callExpr.Arguments, code);
+		code.Write(")");
+	}
+
+	/// <summary>
+	/// Emits a parenthesised choice between two values.
+	/// </summary>
+	/// <param name="conditional">The expression to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// Defaults to the C-family <c>?:</c>. Python spells the same thing with its operands in a
+	/// different order and overrides this.
+	/// <para>
+	/// Parenthesised for the reason a binary expression is: the AST carries no precedence, so nesting
+	/// one of these inside another would otherwise be ambiguous.
+	/// </para>
+	/// </remarks>
+	protected virtual void GenerateConditionalExpression(ConditionalExpression conditional, CodeBlocker code)
+	{
+		Ensure.NotNull(conditional);
+		Ensure.NotNull(code);
+
+		code.Write("(");
+		GenerateInternal(conditional.Condition, code);
+		code.Write(" ? ");
+		GenerateInternal(conditional.WhenTrue, code);
+		code.Write(" : ");
+		GenerateInternal(conditional.WhenFalse, code);
+		code.Write(")");
+	}
+
+	/// <summary>
+	/// Emits a comma-separated argument list, without the surrounding parentheses.
+	/// </summary>
+	/// <param name="arguments">The arguments to emit, in order.</param>
+	/// <param name="code">The writer to emit into.</param>
+	protected void GenerateArgumentList(IReadOnlyList<AstNode> arguments, CodeBlocker code)
+	{
+		Ensure.NotNull(arguments);
+		Ensure.NotNull(code);
+
+		for (int index = 0; index < arguments.Count; index++)
+		{
+			if (index > 0)
+			{
+				code.Write(", ");
+			}
+
+			GenerateInternal(arguments[index], code);
+		}
+	}
+
+	/// <summary>
 	/// Emits a parenthesised binary expression, recursing into both operands.
 	/// </summary>
 	/// <param name="binaryExpr">The expression to emit.</param>
@@ -410,6 +504,9 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 			or UsingAlias
 			or MemberInitialiser
 			or ConstructionExpression
+			or CallExpression
+			or ConditionalExpression
+			or ExpressionStatement
 			or SourceFile
 			or NamespaceDeclaration
 			or ClassDeclaration

@@ -713,6 +713,51 @@ public class CGenerator : CFamilyGenerator
 	protected override void GenerateConstructionExpression(ConstructionExpression construction, CodeBlocker code) =>
 		WriteList(construction, code, asExpression: true);
 
+	/// <inheritdoc/>
+	/// <remarks>
+	/// C has no member functions, so a receiver is not written in front of the callee: it becomes the
+	/// first argument, which is the same lowering <see cref="GenerateFunction"/> already performs on
+	/// the declaration — <c>Point_translate(Point* self, …)</c>. A call site that kept the dot would
+	/// not reach the function this generator emitted for it.
+	/// <para>
+	/// Its address is taken, because that <c>self</c> parameter is a pointer. That assumes the
+	/// receiver is an instance rather than already a pointer to one, which is an assumption rather
+	/// than a deduction: a <see cref="CallExpression"/> knows the receiver's spelling and not its
+	/// type. It is the assumption worth making, because taking the address is the only one of the two
+	/// a caller cannot write for itself — the AST has no address-of operator — and because what this
+	/// generator emits elsewhere is instances. A caller holding a pointer spells the call as a free
+	/// function and passes the pointer as an ordinary argument.
+	/// </para>
+	/// <para>
+	/// What is not done is mangling the name: the declaration's is built from the type it belongs to,
+	/// and the receiver's type is exactly what is not known here, so
+	/// <see cref="CallExpression.Callee"/> is written verbatim and choosing it stays the caller's —
+	/// which is what the node says it is everywhere else too.
+	/// </para>
+	/// </remarks>
+	protected override void GenerateCallExpression(CallExpression callExpr, CodeBlocker code)
+	{
+		Ensure.NotNull(callExpr);
+		Ensure.NotNull(code);
+
+		code.Write(callExpr.Callee);
+		code.Write("(");
+
+		if (callExpr.Receiver is not null)
+		{
+			code.Write("&");
+			GenerateInternal(callExpr.Receiver, code);
+
+			if (callExpr.Arguments.Count > 0)
+			{
+				code.Write(", ");
+			}
+		}
+
+		GenerateArgumentList(callExpr.Arguments, code);
+		code.Write(")");
+	}
+
 	/// <summary>
 	/// Writes what a declaration starts at.
 	/// </summary>

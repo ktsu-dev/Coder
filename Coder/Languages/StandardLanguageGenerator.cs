@@ -75,6 +75,18 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 				GenerateConstructionExpression(construction, code);
 				break;
 
+			case CallExpression call:
+				GenerateCallExpression(call, code);
+				break;
+
+			case ConditionalExpression conditional:
+				GenerateConditionalExpression(conditional, code);
+				break;
+
+			case ExpressionStatement statement:
+				GenerateExpressionStatement(statement, code);
+				break;
+
 			case EnumDeclaration enumDecl:
 				GenerateEnumDeclaration(enumDecl, code);
 				break;

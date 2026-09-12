@@ -96,6 +96,17 @@ source in five target languages. The solution uses:
   `_Static_assert`, the second of which requires a message, so an assertion with none is given its
   own condition; the others write a comment, because a file that quietly loses a guarantee looks
   like one that still makes it.
+- `Coder/Ast/CallExpression.cs`, `ExpressionStatement.cs`, `ConditionalExpression.cs` — what a
+  function *body* is made of beyond an operator applied to operands. `CallExpression`'s `Callee` is
+  text and written verbatim, for the reason `SourceFile.Imports` and `CompileTimeAssertion.Condition`
+  are: a square root is `std::sqrt`, `Math.Sqrt`, `math.sqrt` and `Math.sqrt`, and there is no shared
+  idea underneath those to model. Its `Receiver` *is* modelled, because that is the part the
+  languages disagree about — `a.b(c)` in four of them and `b(&a, c)` in C, which is the same lowering
+  `CGenerator` already performs on the declaration, so the call site follows the declaration.
+  `ExpressionStatement` is where a call made for its effect stands: without it a `void` call has
+  nowhere to go, since the AST could say what to do with a value but not that a value is beside the
+  point. `ConditionalExpression` is one node rather than a branch and a temporary because four
+  targets spell it as an expression and the fifth, Python, only reorders the operands.
 - `Coder/Languages/LanguageGeneratorBase.cs` — the emitters every generator shares.
 - `Coder/Languages/StandardLanguageGenerator.cs` — owns the node dispatch, so a derived
   generator supplies only the syntax its language does not share. `CSharpGenerator` deliberately

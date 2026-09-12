@@ -53,6 +53,27 @@ public class PythonGenerator : StandardLanguageGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
+	/// Python puts the chosen values around the condition rather than after it, so the same node
+	/// comes out as <c>go if ready else wait</c> where the others write <c>ready ? go : wait</c>.
+	/// This is the whole of the difference: the operands are the same three and only their order
+	/// changes, which is why the node is worth having rather than the text.
+	/// </remarks>
+	protected override void GenerateConditionalExpression(ConditionalExpression conditional, CodeBlocker code)
+	{
+		Ensure.NotNull(conditional);
+		Ensure.NotNull(code);
+
+		code.Write("(");
+		GenerateInternal(conditional.WhenTrue, code);
+		code.Write(" if ");
+		GenerateInternal(conditional.Condition, code);
+		code.Write(" else ");
+		GenerateInternal(conditional.WhenFalse, code);
+		code.Write(")");
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
 	/// Python's documentation is a docstring rather than a comment, and a docstring belongs inside
 	/// the construct it documents — which is a different shape from every other language here. Rather
 	/// than move the lines somewhere the other three cannot follow, they are emitted as ordinary

@@ -52,6 +52,7 @@ public static class AstNodeCatalog
 		new("Declarations", "Entry point", () => new EntryPoint()),
 
 		new("Statements", "Return", () => new ReturnStatement()),
+		new("Statements", "Expression", () => new ExpressionStatement()),
 		.. Enum.GetValues<AssignmentOperator>().Select(op => new AstNodeTemplate(
 			"Statements",
 			Spell(op),
@@ -69,6 +70,11 @@ public static class AstNodeCatalog
 			() => new UnaryExpression(op, AstSchema.Unfilled()),
 			"Unary")),
 		new("Expressions", "Variable reference", () => new VariableReference("value")),
+		new("Expressions", "Call", () => new CallExpression("function")),
+		new("Expressions", "Conditional", () => new ConditionalExpression(
+			AstSchema.Unfilled(),
+			AstSchema.Unfilled(),
+			AstSchema.Unfilled())),
 
 		new("Literals", "Text", () => Literal.Text("text")),
 		new("Literals", "Number", () => Literal.Number(0)),

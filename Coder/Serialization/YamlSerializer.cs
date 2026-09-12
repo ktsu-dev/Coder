@@ -140,6 +140,15 @@ public class YamlSerializer
 			case ConstructionExpression construction:
 				SerializeConstructionExpression(construction, nodeData);
 				break;
+			case CallExpression callExpr:
+				SerializeCallExpression(callExpr, nodeData);
+				break;
+			case ConditionalExpression conditional:
+				SerializeConditionalExpression(conditional, nodeData);
+				break;
+			case ExpressionStatement statement:
+				SerializeExpressionStatement(statement, nodeData);
+				break;
 			case ReturnStatement returnStmt:
 				SerializeReturnStatement(returnStmt, nodeData);
 				break;
@@ -369,6 +378,55 @@ public class YamlSerializer
 		{
 			nodeData["arguments"] = SerializeBodyStatements(construction.Arguments);
 		}
+	}
+
+	private static void SerializeCallExpression(CallExpression callExpr, Dictionary<string, object> nodeData)
+	{
+		nodeData["callee"] = callExpr.Callee;
+
+		if (callExpr.Receiver is not null)
+		{
+			Dictionary<string, object> receiverData = [];
+			SerializeNode(callExpr.Receiver, receiverData);
+			nodeData["receiver"] = receiverData;
+		}
+
+		if (callExpr.Arguments.Count > 0)
+		{
+			nodeData["arguments"] = SerializeBodyStatements(callExpr.Arguments);
+		}
+
+		if (callExpr.ExpectedType != null)
+		{
+			nodeData["expectedType"] = callExpr.ExpectedType;
+		}
+	}
+
+	private static void SerializeConditionalExpression(ConditionalExpression conditional, Dictionary<string, object> nodeData)
+	{
+		Dictionary<string, object> conditionData = [];
+		SerializeNode(conditional.Condition, conditionData);
+		nodeData["condition"] = conditionData;
+
+		Dictionary<string, object> whenTrueData = [];
+		SerializeNode(conditional.WhenTrue, whenTrueData);
+		nodeData["whenTrue"] = whenTrueData;
+
+		Dictionary<string, object> whenFalseData = [];
+		SerializeNode(conditional.WhenFalse, whenFalseData);
+		nodeData["whenFalse"] = whenFalseData;
+
+		if (conditional.ExpectedType != null)
+		{
+			nodeData["expectedType"] = conditional.ExpectedType;
+		}
+	}
+
+	private static void SerializeExpressionStatement(ExpressionStatement statement, Dictionary<string, object> nodeData)
+	{
+		Dictionary<string, object> expressionData = [];
+		SerializeNode(statement.Expression, expressionData);
+		nodeData["expression"] = expressionData;
 	}
 
 	private static void SerializeEnumDeclaration(EnumDeclaration enumDecl, Dictionary<string, object> nodeData)
