@@ -189,6 +189,42 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	protected virtual string CommentPrefix => "//";
 
 	/// <summary>
+	/// Writes the promises a type declaration makes that this language has no word for.
+	/// </summary>
+	/// <param name="classDecl">The declaration being emitted.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <param name="recordIsSpelled">
+	/// Whether this target has already asked for the record's members some other way, such as
+	/// Rust's <c>#[derive]</c>.
+	/// </param>
+	/// <remarks>
+	/// <see cref="ClassDeclaration.IsRecord"/> and <see cref="ClassDeclaration.IsReadOnly"/> are
+	/// claims about the type rather than about any one member of it — it compares by value, and no
+	/// member of it modifies it — so a target that drops either in silence writes a file that looks
+	/// like it still makes the claim.
+	/// <para>
+	/// <see cref="ClassDeclaration.IsPartial"/> is deliberately not among them, and is dropped
+	/// without a note. It claims nothing about the type: it is permission to declare the rest of it
+	/// in another file, and a generator that has written the whole declaration has not used the
+	/// permission for anything a reader of this file could be missing.
+	/// </para>
+	/// </remarks>
+	protected void WriteTypePromises(ClassDeclaration classDecl, CodeBlocker code, bool recordIsSpelled = false)
+	{
+		Ensure.NotNull(classDecl);
+
+		if (classDecl.IsRecord && !recordIsSpelled)
+		{
+			WriteInexpressible(code, "record: compares by value, and copies and prints itself");
+		}
+
+		if (classDecl.IsReadOnly)
+		{
+			WriteInexpressible(code, "readonly: no member of this type modifies it");
+		}
+	}
+
+	/// <summary>
 	/// Spells one of a file's imports, or reports that the language has nothing to write for it.
 	/// </summary>
 	/// <param name="import">The import as the file carries it.</param>

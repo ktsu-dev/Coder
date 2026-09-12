@@ -3,6 +3,7 @@
 namespace ktsu.Coder.Languages;
 
 using System.Globalization;
+using System.Linq;
 using ktsu.Coder.Ast;
 using ktsu.CodeBlocker;
 
@@ -270,6 +271,16 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		if (classDecl.IsSpecialisation)
 		{
 			WriteInexpressible(code, $"specialised for {string.Join(", ", classDecl.SpecialisationArguments)}");
+		}
+
+		WriteTypePromises(classDecl, code);
+
+		// JavaScript extends one thing and has no interfaces at all, so anything the declaration
+		// implements is written down rather than lost: a duck-typed object is expected to have the
+		// members, and nothing in the file would otherwise say which ones.
+		if (classDecl.Interfaces.Count > 0)
+		{
+			WriteInexpressible(code, $"implements {string.Join(", ", classDecl.Interfaces.Select(contract => contract.Name))}");
 		}
 
 		code.Write($"class {classDecl.Name ?? "UnnamedClass"}");

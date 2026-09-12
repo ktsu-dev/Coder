@@ -501,6 +501,7 @@ public class GoGenerator : StandardLanguageGenerator
 		}
 
 		GenerateStruct(classDecl, name, code);
+		WriteInterfaceAssertions(classDecl, name, code);
 
 		foreach (FieldDeclaration field in classDecl.Members.OfType<FieldDeclaration>().Where(field => field.IsStatic))
 		{
@@ -512,6 +513,39 @@ public class GoGenerator : StandardLanguageGenerator
 		{
 			code.NewLine();
 			GenerateFunction(function, code, name);
+		}
+	}
+
+	/// <summary>
+	/// Asserts, at compile time, that a type implements what it said it implements.
+	/// </summary>
+	/// <param name="classDecl">The declaration to emit the assertions for.</param>
+	/// <param name="name">The name the type is written under.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// Go satisfies an interface structurally: a type implements one by having its methods, and
+	/// never says so. That leaves a declaration that meant to implement something with nothing in
+	/// the file to show for it, and nothing to fail when a method is renamed out from under it.
+	/// <para>
+	/// <c>var _ Contract = (*Type)(nil)</c> is the language's own answer, and it is a check rather
+	/// than a comment: the file stops compiling when the type stops implementing the interface,
+	/// which is the same trade the C++ projection of a relationship makes. The pointer form is the
+	/// one that always holds -- a method declared on the pointer receiver is not in the value's
+	/// method set, and one declared on the value is in both.
+	/// </para>
+	/// </remarks>
+	private static void WriteInterfaceAssertions(ClassDeclaration classDecl, string name, CodeBlocker code)
+	{
+		if (classDecl.Interfaces.Count == 0)
+		{
+			return;
+		}
+
+		code.NewLine();
+
+		foreach (TypeReference contract in classDecl.Interfaces)
+		{
+			code.WriteLine($"var _ {SpellType(contract)} = (*{name})(nil)");
 		}
 	}
 
@@ -543,6 +577,7 @@ public class GoGenerator : StandardLanguageGenerator
 	private void GenerateStruct(ClassDeclaration classDecl, string name, CodeBlocker code)
 	{
 		GenerateDocumentation(classDecl, code);
+		WriteTypePromises(classDecl, code);
 		WriteExportNote(name, classDecl.Visibility, code);
 
 		List<AlignedLine> fields = [.. StructFields(classDecl)];
@@ -627,11 +662,22 @@ public class GoGenerator : StandardLanguageGenerator
 	private void GenerateInterface(ClassDeclaration classDecl, string name, CodeBlocker code)
 	{
 		GenerateDocumentation(classDecl, code);
+		WriteTypePromises(classDecl, code);
 		WriteExportNote(name, classDecl.Visibility, code);
 
 		List<AstNode> members = [.. classDecl.Members.Where(member => member is FunctionDeclaration or FieldDeclaration)];
 
-		if (classDecl.BaseType is null && members.Count == 0)
+		// An interface embedded in another is written as its bare name among the members, and means
+		// every method of it. A base and an interface are the same thing at this end -- it is the
+		// struct below where they part, Go having no inheritance for one and structural
+		// satisfaction for the other.
+		string[] embedded =
+		[
+			.. classDecl.BaseType is TypeReference baseType ? (string[])[SpellType(baseType)] : [],
+			.. classDecl.Interfaces.Select(SpellType),
+		];
+
+		if (embedded.Length == 0 && members.Count == 0)
 		{
 			code.WriteLine($"type {name} interface{{}}");
 			return;
@@ -641,9 +687,9 @@ public class GoGenerator : StandardLanguageGenerator
 
 		using Scope body = new(code);
 
-		if (classDecl.BaseType is TypeReference baseType)
+		foreach (string contract in embedded)
 		{
-			code.WriteLine(SpellType(baseType));
+			code.WriteLine(contract);
 		}
 
 		insideInterface = true;

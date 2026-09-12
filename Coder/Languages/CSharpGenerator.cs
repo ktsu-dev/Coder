@@ -178,11 +178,32 @@ public class CSharpGenerator : LanguageGeneratorBase
 			_ => "class",
 		};
 
-		code.Write($"{SpellVisibility(classDecl.Visibility) ?? DefaultVisibility} {keyword} {classDecl.Name ?? "UnnamedClass"}");
+		// In the order C# takes them: access, then the promise the type makes about itself, then
+		// the permission to declare the rest of it elsewhere, then what kind of type it is. A
+		// record is written before the keyword rather than instead of it, which is what makes
+		// `record struct` reachable.
+		string[] modifiers =
+		[
+			SpellVisibility(classDecl.Visibility) ?? DefaultVisibility,
+			.. classDecl.IsReadOnly ? (string[])["readonly"] : [],
+			.. classDecl.IsPartial ? (string[])["partial"] : [],
+			.. classDecl.IsRecord ? (string[])["record"] : [],
+			keyword,
+		];
 
-		if (classDecl.BaseType is TypeReference baseType)
+		code.Write($"{string.Join(" ", modifiers)} {classDecl.Name ?? "UnnamedClass"}");
+
+		// One list, base first. C# takes at most one class in it and puts it first, which is why
+		// the AST keeps the two apart: the order is not something a generator could recover.
+		string[] inherited =
+		[
+			.. classDecl.BaseType is TypeReference baseType ? (string[])[MapToCSType(baseType)] : [],
+			.. classDecl.Interfaces.Select(MapToCSType),
+		];
+
+		if (inherited.Length > 0)
 		{
-			code.Write($" : {MapToCSType(baseType)}");
+			code.Write($" : {string.Join(", ", inherited)}");
 		}
 
 		// The line is ended before the scope opens, so C#'s brace lands on its own line.

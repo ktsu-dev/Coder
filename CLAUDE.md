@@ -84,6 +84,25 @@ source in seven target languages. The solution uses:
   honours it only where the language can — a Go `const` holds a number, a string or a boolean and
   nothing with a field in it, so a table is a `var` with a note — and a language with no spelling for
   it omits it the way it omits an indirection.
+- `Coder/Ast/ClassDeclaration.cs`'s `Interfaces`, `IsRecord`, `IsPartial` and `IsReadOnly` — what a
+  type declaration says about itself beyond its name. `Interfaces` is separate from `BaseType`
+  rather than folded into one list, because what a target does with the two differs: C# writes them
+  in one list but takes at most one class in it and puts it first, C++ writes `public` before each
+  and does not distinguish them at all, Rust makes both supertraits of a trait and has no answer for
+  a struct's at all, C can give the first-member position — the one that makes a pointer to the
+  whole a pointer to the member — to exactly one of them, and Go satisfies an interface structurally
+  and so writes `var _ Contract = (*Type)(nil)`, an assertion the compiler checks rather than a
+  declaration. A generator handed one list would be guessing which entry was the class.
+  The three modifiers split along a line worth stating once: `IsRecord` and `IsReadOnly` are claims
+  about the type — it compares by value, no member of it modifies it — so a target with no word for
+  one writes it down, the same as `CompileTimeAssertion`, while Rust's `#[derive(Clone, Debug,
+  PartialEq)]` is a word for the first and is used. `IsPartial` claims nothing about the type; it is
+  permission to declare the rest of it elsewhere, and a generator that has written the whole
+  declaration has not used the permission for anything a reader could miss, so it is dropped in
+  silence. Python's `@dataclass` is the obvious answer for a record and is *not* taken: the
+  decorator needs an import, and a class is generated on its own as readily as inside a file whose
+  imports the AST carries, so emitting one would change how that generator writes a file rather than
+  how it writes a class.
 - `Coder/Ast/ClassDeclaration.cs`'s `SpecialisationArguments` — what makes a declaration be *for* a
   type rather than *of* one. `template<> struct Describe<RigidBody>` is how C++ attaches a fact to a
   type without touching the type, which is what a generated reflection table needs: the alternative

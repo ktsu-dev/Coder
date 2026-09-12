@@ -409,6 +409,28 @@ public class RustGenerator : StandardLanguageGenerator
 	private void GenerateStruct(ClassDeclaration classDecl, string name, CodeBlocker code)
 	{
 		GenerateDocumentation(classDecl, code);
+
+		// A trait a struct implements needs an impl block, and an impl block needs the bodies of
+		// the methods it supplies, which the declaration does not have: the members here belong to
+		// the struct rather than to any one of the traits. So it is written down instead.
+		if (classDecl.Interfaces.Count > 0)
+		{
+			WriteInexpressible(
+				code,
+				$"implements {string.Join(", ", classDecl.Interfaces.Select(SpellType))}: "
+					+ "each needs an impl block of its own, which this declaration does not say how to fill");
+		}
+
+		// What a record asks for is exactly what derive supplies, which makes this the one target
+		// besides C# that has a word for it rather than a comment about it. Clone is the copy,
+		// PartialEq the comparison, Debug the readable form.
+		if (classDecl.IsRecord)
+		{
+			code.WriteLine("#[derive(Clone, Debug, PartialEq)]");
+		}
+
+		WriteTypePromises(classDecl, code, recordIsSpelled: true);
+
 		code.Write($"{SpellVisibilityOf(classDecl)}struct {name} ");
 
 		using Scope body = new(code);
@@ -466,12 +488,22 @@ public class RustGenerator : StandardLanguageGenerator
 	private void GenerateTrait(ClassDeclaration classDecl, string name, CodeBlocker code)
 	{
 		GenerateDocumentation(classDecl, code);
+		WriteTypePromises(classDecl, code);
 		code.Write($"{SpellVisibilityOf(classDecl)}trait {name}");
 
-		// A base type is a supertrait: something every implementation of this one must also be.
-		if (classDecl.BaseType is TypeReference baseType)
+		// A supertrait: something every implementation of this one must also be. A base type and an
+		// interface are the same thing to a trait, which is the one place Rust answers the
+		// distinction exactly rather than working around it -- the reason the two are kept apart in
+		// the AST is the struct below, where only one of them has an answer at all.
+		string[] supertraits =
+		[
+			.. classDecl.BaseType is TypeReference baseType ? (string[])[SpellType(baseType)] : [],
+			.. classDecl.Interfaces.Select(SpellType),
+		];
+
+		if (supertraits.Length > 0)
 		{
-			code.Write($": {SpellType(baseType)}");
+			code.Write($": {string.Join(" + ", supertraits)}");
 		}
 
 		code.Write(" ");

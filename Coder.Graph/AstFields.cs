@@ -204,6 +204,9 @@ public static class AstFields
 				new("Kind", AstFieldKind.Choice, classDecl.Kind.ToString(), TypeKinds),
 				new("BaseType", AstFieldKind.Text, classDecl.BaseType?.ToString() ?? string.Empty),
 				new(VisibilityField, AstFieldKind.Choice, classDecl.Visibility.ToString(), Visibilities),
+				new("Record", AstFieldKind.Flag, Spell(classDecl.IsRecord)),
+				new("Partial", AstFieldKind.Flag, Spell(classDecl.IsPartial)),
+				new("ReadOnly", AstFieldKind.Flag, Spell(classDecl.IsReadOnly)),
 			],
 
 			_ => OfCallable(node),
@@ -418,6 +421,12 @@ public static class AstFields
 			(ClassDeclaration classDecl, "BaseType") => Assign(() => classDecl.BaseType = OrNull(value)),
 			(ClassDeclaration classDecl, VisibilityField) =>
 				TryParseVisibility(value, out Visibility classVisibility) && Assign(() => classDecl.Visibility = classVisibility),
+			(ClassDeclaration classDecl, "Record") =>
+				TryParseBool(value, out bool isRecord) && Assign(() => classDecl.IsRecord = isRecord),
+			(ClassDeclaration classDecl, "Partial") =>
+				TryParseBool(value, out bool isPartial) && Assign(() => classDecl.IsPartial = isPartial),
+			(ClassDeclaration classDecl, "ReadOnly") =>
+				TryParseBool(value, out bool isClassReadOnly) && Assign(() => classDecl.IsReadOnly = isClassReadOnly),
 
 			(FunctionDeclaration function, "Name") => Assign(() => function.Name = OrNull(value)),
 			(FunctionDeclaration function, "ReturnType") => Assign(() => function.ReturnType = OrNull(value)),

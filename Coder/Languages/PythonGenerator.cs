@@ -3,6 +3,7 @@
 namespace ktsu.Coder.Languages;
 
 using System.Globalization;
+using System.Linq;
 using ktsu.Coder.Ast;
 using ktsu.CodeBlocker;
 
@@ -311,11 +312,26 @@ public class PythonGenerator : StandardLanguageGenerator
 			WriteInexpressible(code, $"specialised for {string.Join(", ", classDecl.SpecialisationArguments)}");
 		}
 
+		// Python's @dataclass is what a record asks for, and it is not written here: the decorator
+		// needs an import, and a class is generated on its own as readily as inside a file whose
+		// imports the AST carries. Emitting one would be a change to how this generator writes a
+		// file rather than to how it writes a class.
+		WriteTypePromises(classDecl, code);
+
 		code.Write($"class {classDecl.Name ?? "UnnamedClass"}");
 
-		if (classDecl.BaseType is TypeReference baseType)
+		// Python inherits from as many things as it is given and has no separate notion of an
+		// interface, so the base and the interfaces are one list of bases -- which is what the
+		// abstract base classes in the standard library already are.
+		string[] bases =
+		[
+			.. classDecl.BaseType is TypeReference baseType ? (string[])[PythonTypeFromGenericType(baseType)] : [],
+			.. classDecl.Interfaces.Select(PythonTypeFromGenericType),
+		];
+
+		if (bases.Length > 0)
 		{
-			code.Write($"({PythonTypeFromGenericType(baseType)})");
+			code.Write($"({string.Join(", ", bases)})");
 		}
 
 		code.WriteLine(":");

@@ -597,12 +597,36 @@ public class YamlSerializer
 			nodeData["baseType"] = classDecl.BaseType.ToString();
 		}
 
+		if (classDecl.Interfaces.Count > 0)
+		{
+			// Each on its own for the same reason the specialisation arguments are: an interface
+			// can have type arguments, so a comma inside one is not a separator between two.
+			nodeData["interfaces"] = classDecl.Interfaces.Select(contract => contract.ToString()).ToList();
+		}
+
 		if (classDecl.SpecialisationArguments.Count > 0)
 		{
 			// Each argument on its own, rather than joined: a type argument can itself have type
 			// arguments, so a comma is part of one of them as often as it is a separator.
 			nodeData["specialisationArguments"] =
 				classDecl.SpecialisationArguments.Select(argument => argument.ToString()).ToList();
+		}
+
+		// Written only when set, the way every other flag in this file is: a document says what a
+		// declaration is rather than what it is not, and the reader's default is the same false.
+		if (classDecl.IsRecord)
+		{
+			nodeData["record"] = true;
+		}
+
+		if (classDecl.IsPartial)
+		{
+			nodeData["partial"] = true;
+		}
+
+		if (classDecl.IsReadOnly)
+		{
+			nodeData["readOnly"] = true;
 		}
 
 		SerializeVisibility(classDecl, nodeData);

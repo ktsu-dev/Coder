@@ -777,9 +777,14 @@ public partial class YamlDeserializer
 			classDecl.Kind = kind;
 		}
 
+		classDecl.IsRecord = ReadFlag(dict, "record", classDecl.IsRecord);
+		classDecl.IsPartial = ReadFlag(dict, "partial", classDecl.IsPartial);
+		classDecl.IsReadOnly = ReadFlag(dict, "readOnly", classDecl.IsReadOnly);
+
 		DeserializeVisibility(classDecl, dict);
 		ReadStrings(dict, DocumentationKey, classDecl.Documentation);
-		DeserializeSpecialisationArguments(classDecl, dict);
+		DeserializeTypeList(dict, "interfaces", classDecl.Interfaces);
+		DeserializeTypeList(dict, "specialisationArguments", classDecl.SpecialisationArguments);
 
 		DeserializeClassMembers(classDecl, dict);
 		DeserializeMetadata(classDecl, dict);
@@ -787,23 +792,33 @@ public partial class YamlDeserializer
 		return classDecl;
 	}
 
-	private static void DeserializeSpecialisationArguments(ClassDeclaration classDecl, Dictionary<object, object> dict)
+	/// <summary>
+	/// Reads a sequence of written types into a collection.
+	/// </summary>
+	/// <param name="dict">The mapping to read from.</param>
+	/// <param name="key">The key the sequence is written under.</param>
+	/// <param name="types">The collection to fill.</param>
+	/// <remarks>
+	/// Both of a class declaration's type lists are read this way, and each is written as a
+	/// sequence rather than one joined string for the same reason: a type argument can itself have
+	/// type arguments, so a comma inside one is part of it as often as it separates two.
+	/// </remarks>
+	private static void DeserializeTypeList(Dictionary<object, object> dict, string key, Collection<TypeReference> types)
 	{
-		if (!dict.TryGetValue("specialisationArguments", out object? argumentsObj) ||
-			argumentsObj is not List<object> argumentList)
+		if (!dict.TryGetValue(key, out object? writtenObj) || writtenObj is not List<object> written)
 		{
 			return;
 		}
 
-		// A null or empty entry is not an argument. Filtering before the loop rather than inside it
-		// so that what the loop takes is what the loop does.
-		IEnumerable<string> written = argumentList
-			.Select(argument => argument?.ToString() ?? string.Empty)
+		// A null or empty entry is not a type. Filtering before the loop rather than inside it so
+		// that what the loop takes is what the loop does.
+		IEnumerable<string> spelled = written
+			.Select(type => type?.ToString() ?? string.Empty)
 			.Where(text => text.Length > 0);
 
-		foreach (string text in written)
+		foreach (string text in spelled)
 		{
-			classDecl.SpecialisationArguments.Add(TypeReference.Parse(text));
+			types.Add(TypeReference.Parse(text));
 		}
 	}
 

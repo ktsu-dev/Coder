@@ -29,7 +29,10 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 /// cannot be used fails here rather than passing quietly. It is what proves the two mappings that
 /// are only claims otherwise: that <c>Circle</c> satisfies <c>Shape</c> without saying so, which is
 /// the whole of what a Go interface is, and that an embedded <c>Point</c> answers <c>Sum</c>, which
-/// is the whole of what Go has in place of inheritance.
+/// is the whole of what Go has in place of inheritance. The first of those is now asserted in the
+/// generated file itself — <c>var _ Shape = (*Circle)(nil)</c>, which the compiler checks — so a
+/// declaration saying <c>Circle</c> implements <c>Shape</c> is a claim this test can break rather
+/// than a comment it cannot.
 /// </para>
 /// <para>
 /// The test is inconclusive rather than failing where no toolchain is on the path, which is the
@@ -142,6 +145,11 @@ public class GoGeneratedSourceCompilesTests
 
 		ClassDeclaration circle = new("Circle") { BaseType = "Point" };
 		circle.Documentation.Add("A shape with one radius.");
+
+		// The assertion the generator writes for this is the point of declaring it: Circle satisfies
+		// Shape by having the methods the driver supplies, and Go would otherwise have nothing in the
+		// file that says so and nothing that fails when one of them is renamed.
+		circle.Interfaces.Add(TypeReference.Parse("Shape"));
 		circle.Members.Add(new VariableDeclaration("radius", "double"));
 		circle.Members.Add(Released());
 

@@ -314,6 +314,8 @@ public class CppGenerator : CFamilyGenerator
 			code.WriteLine("template <>");
 		}
 
+		WriteTypePromises(classDecl, code);
+
 		code.Write($"{(isStruct ? "struct" : "class")} {classDecl.Name ?? "UnnamedClass"}");
 
 		if (classDecl.IsSpecialisation)
@@ -322,9 +324,19 @@ public class CppGenerator : CFamilyGenerator
 			code.Write($"<{string.Join(", ", arguments)}>");
 		}
 
-		if (classDecl.BaseType is TypeReference baseType)
+		// C++ does not distinguish a base class from an interface -- an interface is a class whose
+		// members are all pure virtual -- so the two lists join into one. What it does distinguish
+		// is public from private inheritance, and the default for a class is private, which would
+		// make a base nobody outside could use the base through.
+		string[] inherited =
+		[
+			.. classDecl.BaseType is TypeReference baseType ? (string[])[$"public {MapToCppType(baseType)}"] : [],
+			.. classDecl.Interfaces.Select(contract => $"public {MapToCppType(contract)}"),
+		];
+
+		if (inherited.Length > 0)
 		{
-			code.Write($" : public {MapToCppType(baseType)}");
+			code.Write($" : {string.Join(", ", inherited)}");
 		}
 
 		code.WriteLine();
