@@ -61,6 +61,15 @@ public class CSharpGenerator : LanguageGeneratorBase
 			case UnaryExpression unaryExpr:
 				GenerateUnaryExpression(unaryExpr, code, GetUnaryOperator(unaryExpr.Operator));
 				break;
+			case CallExpression call:
+				GenerateCallExpression(call, code);
+				break;
+			case ConditionalExpression conditional:
+				GenerateConditionalExpression(conditional, code);
+				break;
+			case ExpressionStatement statement:
+				GenerateExpressionStatement(statement, code);
+				break;
 			default:
 				GenerateExpressionOrLeaf(node, code);
 				break;

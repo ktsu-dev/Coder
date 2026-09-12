@@ -78,6 +78,7 @@ public class RustGeneratedSourceCompilesTests
 		point.Members.Add(Plus());
 		point.Members.Add(Negate());
 		point.Members.Add(ToDouble());
+		point.Members.Add(Pick());
 
 		ClassDeclaration circle = new("Circle") { BaseType = "Point" };
 		circle.Documentation.Add("A shape with one radius.");
@@ -130,6 +131,37 @@ public class RustGeneratedSourceCompilesTests
 		shift.Body.Add(new AssignmentStatement(
 			new VariableReference("self.x"), new VariableReference("dx"), AssignmentOperator.AddAssign));
 		return shift;
+	}
+
+	/// <summary>
+	/// Builds a member that calls another for its effect and then chooses between two values.
+	/// </summary>
+	/// <returns>The declaration.</returns>
+	/// <remarks>
+	/// The two nodes Rust cannot take on trust. An <see cref="ExpressionStatement"/> holding a call is
+	/// the only way to say "do this and discard what it answers with", and a
+	/// <see cref="ConditionalExpression"/> has no ternary operator to fall back on here — the
+	/// inherited <c>?:</c> would not be a different spelling, it would not parse. Both are checked by
+	/// compiling rather than by pinning their text.
+	/// </remarks>
+	private static FunctionDeclaration Pick()
+	{
+		// Not read-only, so the receiver is &mut self and it may call the member that shifts it.
+		FunctionDeclaration pick = new("pick") { ReturnType = "int" };
+
+		pick.Body.Add(new ExpressionStatement(
+			new CallExpression(new VariableReference("self"), "shift")
+			{
+				Arguments = { new LiteralExpression<int>(1) },
+			}));
+
+		pick.Body.Add(new ReturnStatement(new ConditionalExpression(
+			new BinaryExpression(
+				new VariableReference("self.x"), BinaryOperator.GreaterThan, new VariableReference("self.y")),
+			new VariableReference("self.x"),
+			new VariableReference("self.y"))));
+
+		return pick;
 	}
 
 	/// <summary>

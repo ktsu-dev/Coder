@@ -40,6 +40,10 @@ public static class AstSchema
 
 	private static readonly AstSlot ArgumentsSlot = new(ArgumentsSlotName, AstSlotCardinality.Many, AstSlotKind.Expression);
 	private static readonly AstSlot EnumMembersSlot = new("Members", AstSlotCardinality.Many, AstSlotKind.EnumMember);
+	private static readonly AstSlot ReceiverSlot = new("Receiver", AstSlotCardinality.One, AstSlotKind.Expression);
+	private static readonly AstSlot ConditionSlot = new("Condition", AstSlotCardinality.One, AstSlotKind.Expression);
+	private static readonly AstSlot WhenTrueSlot = new("WhenTrue", AstSlotCardinality.One, AstSlotKind.Expression);
+	private static readonly AstSlot WhenFalseSlot = new("WhenFalse", AstSlotCardinality.One, AstSlotKind.Expression);
 
 	/// <summary>
 	/// Lists the slots a node exposes, in the order the editor should draw them.
@@ -55,6 +59,9 @@ public static class AstSchema
 		FieldDeclaration => [InitialValueSlot],
 		MemberInitialiser => [ValueSlot],
 		ConstructionExpression => [ArgumentsSlot],
+		CallExpression => [ReceiverSlot, ArgumentsSlot],
+		ConditionalExpression => [ConditionSlot, WhenTrueSlot, WhenFalseSlot],
+		ExpressionStatement => [ExpressionSlot],
 		FunctionDeclaration => [ParametersSlot, BodySlot],
 		EntryPoint => [BodySlot],
 		ReturnStatement => [ExpressionSlot],
@@ -88,6 +95,11 @@ public static class AstSchema
 			(MemberInitialiser initialiser, "Value") => initialiser.Value,
 			(AssignmentStatement assignment, "Target") => assignment.Target,
 			(AssignmentStatement assignment, "Value") => assignment.Value,
+			(CallExpression callExpr, "Receiver") => callExpr.Receiver,
+			(ConditionalExpression conditional, "Condition") => conditional.Condition,
+			(ConditionalExpression conditional, "WhenTrue") => conditional.WhenTrue,
+			(ConditionalExpression conditional, "WhenFalse") => conditional.WhenFalse,
+			(ExpressionStatement statement, "Expression") => statement.Expression,
 			_ => null,
 		};
 
@@ -103,6 +115,7 @@ public static class AstSchema
 			(ClassDeclaration classDecl, "Members") => [.. classDecl.Members],
 			(EnumDeclaration enumDecl, "Members") => [.. enumDecl.Members],
 			(ConstructionExpression construction, ArgumentsSlotName) => [.. construction.Arguments],
+			(CallExpression callExpr, ArgumentsSlotName) => [.. callExpr.Arguments],
 			(FunctionDeclaration function, "Parameters") => [.. function.Parameters],
 			(FunctionDeclaration function, "Body") => [.. function.Body],
 			(EntryPoint entryPoint, "Body") => [.. entryPoint.Body],
@@ -142,12 +155,27 @@ public static class AstSchema
 			return TryReplaceAt(parent, slot, index, child);
 		}
 
+		return TryAttachOperand(parent, slot, child)
+			|| TryAttachStatementOperand(parent, slot, child)
+			|| TryAttachSequence(parent, slot, child);
+	}
+
+	/// <summary>
+	/// Fills one of an expression's own operand slots.
+	/// </summary>
+	/// <param name="parent">The parent node.</param>
+	/// <param name="slot">The slot to fill.</param>
+	/// <param name="child">The node to attach.</param>
+	/// <returns>True if the child was attached; false if this is not one of these slots.</returns>
+	/// <remarks>
+	/// Split from the slots a statement or a declaration owns, and from the sequences, only because
+	/// one switch over every slot the AST has is more branches than the analyzer accepts. The three
+	/// are tried in turn and a slot belongs to exactly one of them.
+	/// </remarks>
+	private static bool TryAttachOperand(AstNode parent, AstSlot slot, AstNode child)
+	{
 		switch (parent, slot.Name)
 		{
-			case (ReturnStatement returnStmt, "Expression"):
-				returnStmt.SetExpression(child);
-				return true;
-
 			case (BinaryExpression binary, "Left") when child is Expression leftExpr:
 				binary.Left = leftExpr;
 				return true;
@@ -158,6 +186,47 @@ public static class AstSchema
 
 			case (UnaryExpression unary, "Operand") when child is Expression operandExpr:
 				unary.Operand = operandExpr;
+				return true;
+
+			case (CallExpression callExpr, "Receiver") when child is Expression receiverExpr:
+				callExpr.Receiver = receiverExpr;
+				return true;
+
+			case (ConditionalExpression conditional, "Condition") when child is Expression conditionExpr:
+				conditional.Condition = conditionExpr;
+				return true;
+
+			case (ConditionalExpression conditional, "WhenTrue") when child is Expression whenTrueExpr:
+				conditional.WhenTrue = whenTrueExpr;
+				return true;
+
+			case (ConditionalExpression conditional, "WhenFalse") when child is Expression whenFalseExpr:
+				conditional.WhenFalse = whenFalseExpr;
+				return true;
+
+			default:
+				return false;
+		}
+	}
+
+	/// <summary>
+	/// Fills the single-valued slot a statement or a declaration holds an expression in.
+	/// </summary>
+	/// <param name="parent">The parent node.</param>
+	/// <param name="slot">The slot to fill.</param>
+	/// <param name="child">The node to attach.</param>
+	/// <returns>True if the child was attached; false if this is not one of these slots.</returns>
+	/// <inheritdoc cref="TryAttachOperand" path="/remarks"/>
+	private static bool TryAttachStatementOperand(AstNode parent, AstSlot slot, AstNode child)
+	{
+		switch (parent, slot.Name)
+		{
+			case (ReturnStatement returnStmt, "Expression"):
+				returnStmt.SetExpression(child);
+				return true;
+
+			case (ExpressionStatement statement, "Expression") when child is Expression statementExpr:
+				statement.Expression = statementExpr;
 				return true;
 
 			case (VariableDeclaration varDecl, "InitialValue") when child is Expression initialExpr:
@@ -172,16 +241,37 @@ public static class AstSchema
 				initialiser.Value = initialiserExpr;
 				return true;
 
-			case (ConstructionExpression construction, ArgumentsSlotName):
-				construction.Arguments.Add(child);
-				return true;
-
 			case (AssignmentStatement assignment, "Target") when child is Expression targetExpr:
 				assignment.Target = targetExpr;
 				return true;
 
 			case (AssignmentStatement assignment, "Value") when child is Expression valueExpr:
 				assignment.Value = valueExpr;
+				return true;
+
+			default:
+				return false;
+		}
+	}
+
+	/// <summary>
+	/// Appends a child to one of the slots that hold several.
+	/// </summary>
+	/// <param name="parent">The parent node.</param>
+	/// <param name="slot">The slot to append to.</param>
+	/// <param name="child">The node to attach.</param>
+	/// <returns>True if the child was attached; false if this is not one of these slots.</returns>
+	/// <inheritdoc cref="TryAttachOperand" path="/remarks"/>
+	private static bool TryAttachSequence(AstNode parent, AstSlot slot, AstNode child)
+	{
+		switch (parent, slot.Name)
+		{
+			case (ConstructionExpression construction, ArgumentsSlotName):
+				construction.Arguments.Add(child);
+				return true;
+
+			case (CallExpression callExpr, ArgumentsSlotName):
+				callExpr.Arguments.Add(child);
 				return true;
 
 			case (FunctionDeclaration function, "Parameters") when child is Parameter parameter:
@@ -259,6 +349,10 @@ public static class AstSchema
 
 			case (ConstructionExpression construction, ArgumentsSlotName):
 				construction.Arguments[index] = child;
+				return true;
+
+			case (CallExpression callExpr, ArgumentsSlotName):
+				callExpr.Arguments[index] = child;
 				return true;
 
 			default:
@@ -367,6 +461,33 @@ public static class AstSchema
 				construction.Arguments.RemoveAt(index);
 				return true;
 
+			case (CallExpression callExpr, ArgumentsSlotName) when index < callExpr.Arguments.Count:
+				callExpr.Arguments.RemoveAt(index);
+				return true;
+
+			// A receiver is genuinely optional -- a call with none is a free function rather than an
+			// unfinished member call -- so detaching one clears it instead of leaving a placeholder.
+			case (CallExpression callExpr, "Receiver"):
+				bool hadReceiver = callExpr.Receiver is not null;
+				callExpr.Receiver = null;
+				return hadReceiver;
+
+			case (ConditionalExpression conditional, "Condition"):
+				conditional.Condition = Unfilled();
+				return true;
+
+			case (ConditionalExpression conditional, "WhenTrue"):
+				conditional.WhenTrue = Unfilled();
+				return true;
+
+			case (ConditionalExpression conditional, "WhenFalse"):
+				conditional.WhenFalse = Unfilled();
+				return true;
+
+			case (ExpressionStatement statement, "Expression"):
+				statement.Expression = Unfilled();
+				return true;
+
 			default:
 				return false;
 		}
@@ -473,6 +594,9 @@ public static class AstSchema
 			EntryPoint => "entry point",
 			Parameter parameter => $"param {parameter.Name ?? "<unnamed>"}",
 			ReturnStatement => "return",
+			CallExpression callExpr => $"call {(callExpr.Callee.Length == 0 ? "<unnamed>" : callExpr.Callee)}",
+			ConditionalExpression => "conditional",
+			ExpressionStatement => "expression",
 			BinaryExpression binary => $"binary {SpellOrName(binary.Operator)}",
 			UnaryExpression unary => $"unary {SpellOrName(unary.Operator)}",
 			AssignmentStatement assignment => $"assign {SpellOrName(assignment.Operator)}",

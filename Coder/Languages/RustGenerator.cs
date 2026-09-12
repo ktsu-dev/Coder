@@ -1069,6 +1069,32 @@ public class RustGenerator : StandardLanguageGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
+	/// Rust has no ternary operator at all, so the inherited <c>?:</c> would not be a different
+	/// spelling of this — it would not compile. What it has instead is an <c>if</c> that is an
+	/// expression rather than a statement, which is the same idea reached from the other side: the
+	/// branches yield the value rather than assigning one.
+	/// <para>
+	/// Parenthesised, for a reason the braces do not already cover. An <c>if</c> at the start of a
+	/// statement is parsed as a statement, so a conditional used for its effect alone would have its
+	/// branches' values silently discarded; wrapping it keeps it an expression wherever it stands.
+	/// </para>
+	/// </remarks>
+	protected override void GenerateConditionalExpression(ConditionalExpression conditional, CodeBlocker code)
+	{
+		Ensure.NotNull(conditional);
+		Ensure.NotNull(code);
+
+		code.Write("(if ");
+		GenerateInternal(conditional.Condition, code);
+		code.Write(" { ");
+		GenerateInternal(conditional.WhenTrue, code);
+		code.Write(" } else { ");
+		GenerateInternal(conditional.WhenFalse, code);
+		code.Write(" })");
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
 	/// Three shapes, and which one is written depends on what the expression is rather than on where
 	/// it stands: a construction naming its members is a struct literal, one that does not is a call,
 	/// and one with no type at all is an array literal — which is what initialises a declaration that

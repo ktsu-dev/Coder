@@ -100,6 +100,19 @@ source in six target languages. The solution uses:
   own condition — and Rust, whose `const _: () = assert!(…)` needs no macro crate because a constant
   nobody names still has to be evaluated for the program to build; the others write a comment,
   because a file that quietly loses a guarantee looks like one that still makes it.
+- `Coder/Ast/CallExpression.cs`, `ExpressionStatement.cs`, `ConditionalExpression.cs` — what a
+  function *body* is made of beyond an operator applied to operands. `CallExpression`'s `Callee` is
+  text and written verbatim, for the reason `SourceFile.Imports` and `CompileTimeAssertion.Condition`
+  are: a square root is `std::sqrt`, `Math.Sqrt`, `math.sqrt` and `f64::sqrt`, and there is no shared
+  idea underneath those to model. Its `Receiver` *is* modelled, because that is the part the
+  languages disagree about — `a.b(c)` in five of them and `b(&a, c)` in C, which is the same lowering
+  `CGenerator` already performs on the declaration, so the call site follows the declaration.
+  `ExpressionStatement` is where a call made for its effect stands: without it a `void` call has
+  nowhere to go, since the AST could say what to do with a value but not that a value is beside the
+  point. `ConditionalExpression` is a choice between two values rather than between two statements,
+  which every target can express and each spells differently: `?:` in the four C-family ones,
+  `go if ready else wait` in Python, and `if ready { go } else { wait }` in Rust, which has no
+  ternary operator at all and makes `if` an expression instead.
 - `Coder/Languages/LanguageGeneratorBase.cs` — the emitters every generator shares.
 - `Coder/Languages/StandardLanguageGenerator.cs` — owns the node dispatch, so a derived
   generator supplies only the syntax its language does not share. `CSharpGenerator` deliberately

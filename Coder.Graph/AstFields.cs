@@ -105,6 +105,9 @@ public static class AstFields
 	/// <summary>The name of the field every node holding one value exposes.</summary>
 	private const string ValueField = "Value";
 
+	/// <summary>The name of the field a call exposes its callee through.</summary>
+	private const string CalleeField = "Callee";
+
 	private static readonly IReadOnlyList<AstFieldChoice> FunctionKinds =
 	[
 		.. Enum.GetValues<FunctionKind>().Select(kind => new AstFieldChoice(kind.ToString(), kind.ToString())),
@@ -270,6 +273,11 @@ public static class AstFields
 			VariableReference varRef =>
 			[
 				new("Name", AstFieldKind.Text, varRef.Name),
+			],
+
+			CallExpression callExpr =>
+			[
+				new(CalleeField, AstFieldKind.Text, callExpr.Callee),
 			],
 
 			BinaryExpression binary =>
@@ -462,6 +470,8 @@ public static class AstFields
 		return (node, fieldName) switch
 		{
 			(VariableReference varRef, "Name") => value.Length > 0 && Assign(() => varRef.Name = value),
+
+			(CallExpression callExpr, CalleeField) => value.Length > 0 && Assign(() => callExpr.Callee = value),
 
 			(BinaryExpression binary, "Operator") =>
 				Enum.TryParse(value, out BinaryOperator binaryOp) && Assign(() => binary.Operator = binaryOp),
