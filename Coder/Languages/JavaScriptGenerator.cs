@@ -21,6 +21,12 @@ using ktsu.CodeBlocker;
 public class JavaScriptGenerator : StandardLanguageGenerator
 {
 	/// <summary>
+	/// The one modifier a class member here can carry, with the space that separates it from what
+	/// it modifies, since every use of it is followed by a name.
+	/// </summary>
+	private const string StaticKeyword = "static ";
+
+	/// <summary>
 	/// Gets the unique identifier for this language generator.
 	/// </summary>
 	public override string LanguageId => "javascript";
@@ -58,19 +64,19 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 
 		if (declaration.IsAutomatic)
 		{
-			code.WriteLine($"{(declaration.IsStatic ? "static " : string.Empty)}{name};");
+			code.WriteLine($"{(declaration.IsStatic ? StaticKeyword : string.Empty)}{name};");
 			return;
 		}
 
 		if (declaration.CanRead)
 		{
-			code.Write($"{(declaration.IsStatic ? "static " : string.Empty)}get {name}() ");
+			code.Write($"{(declaration.IsStatic ? StaticKeyword : string.Empty)}get {name}() ");
 			WriteAccessorBody(declaration.GetterBody, code);
 		}
 
 		if (declaration.CanWrite)
 		{
-			code.Write($"{(declaration.IsStatic ? "static " : string.Empty)}set {name}(value) ");
+			code.Write($"{(declaration.IsStatic ? StaticKeyword : string.Empty)}set {name}(value) ");
 			WriteAccessorBody(declaration.SetterBody, code);
 		}
 	}
@@ -389,7 +395,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		// binding in a scope, and a class body is not one.
 		if (field.IsConstant)
 		{
-			code.Write("static ");
+			code.Write(StaticKeyword);
 		}
 
 		code.Write(MemberName(field.Name, field.Visibility));
@@ -427,7 +433,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 
 		if (method.IsStatic)
 		{
-			code.Write("static ");
+			code.Write(StaticKeyword);
 		}
 
 		code.Write(method.Kind == FunctionKind.Constructor

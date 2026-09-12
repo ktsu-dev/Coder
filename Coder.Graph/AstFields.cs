@@ -403,14 +403,14 @@ public static class AstFields
 		return (node, fieldName) switch
 		{
 			(SourceFile file, "Name") => Assign(() => file.Name = OrNull(value)),
-			(SourceFile file, "Header") => TryParseBool(value, out bool isHeader) && Assign(() => file.IsHeader = isHeader),
+			(SourceFile file, "Header") => AssignFlag(value, isHeader => file.IsHeader = isHeader),
 
 			(NamespaceDeclaration namespaceDecl, "Name") => Assign(() => namespaceDecl.Name = OrNull(value)),
 
 			(EnumDeclaration enumDecl, "Name") => Assign(() => enumDecl.Name = OrNull(value)),
 			(EnumDeclaration enumDecl, "UnderlyingType") => Assign(() => enumDecl.UnderlyingType = OrNull(value)),
 			(EnumDeclaration enumDecl, VisibilityField) =>
-				TryParseVisibility(value, out Visibility enumVisibility) && Assign(() => enumDecl.Visibility = enumVisibility),
+				AssignMember<Visibility>(value, enumVisibility => enumDecl.Visibility = enumVisibility),
 
 			(EnumMember enumMember, "Name") => Assign(() => enumMember.Name = OrNull(value)),
 			(EnumMember enumMember, ValueField) => Assign(() => enumMember.Value = OrNull(value)),
@@ -423,51 +423,51 @@ public static class AstFields
 			(UsingAlias usingAlias, "Name") => Assign(() => usingAlias.Name = OrNull(value)),
 			(UsingAlias usingAlias, "AliasedType") => Assign(() => usingAlias.AliasedType = OrNull(value)),
 			(UsingAlias usingAlias, VisibilityField) =>
-				TryParseVisibility(value, out Visibility aliasVisibility) && Assign(() => usingAlias.Visibility = aliasVisibility),
+				AssignMember<Visibility>(value, aliasVisibility => usingAlias.Visibility = aliasVisibility),
 
 			(FieldDeclaration fieldDecl, "Name") => Assign(() => fieldDecl.Name = OrNull(value)),
 			(FieldDeclaration fieldDecl, "Type") => Assign(() => fieldDecl.Type = OrNull(value)),
 			(FieldDeclaration fieldDecl, VisibilityField) =>
-				TryParseVisibility(value, out Visibility fieldVisibility) && Assign(() => fieldDecl.Visibility = fieldVisibility),
+				AssignMember<Visibility>(value, fieldVisibility => fieldDecl.Visibility = fieldVisibility),
 			(FieldDeclaration fieldDecl, "Static") =>
-				TryParseBool(value, out bool fieldIsStatic) && Assign(() => fieldDecl.IsStatic = fieldIsStatic),
+				AssignFlag(value, fieldIsStatic => fieldDecl.IsStatic = fieldIsStatic),
 			(FieldDeclaration fieldDecl, "Constant") =>
-				TryParseBool(value, out bool fieldIsConstant) && Assign(() => fieldDecl.IsConstant = fieldIsConstant),
+				AssignFlag(value, fieldIsConstant => fieldDecl.IsConstant = fieldIsConstant),
 
 			(PropertyDeclaration property, "Name") => Assign(() => property.Name = OrNull(value)),
 			(PropertyDeclaration property, TypeField) => Assign(() => property.Type = OrNull(value)),
 			(PropertyDeclaration property, VisibilityField) =>
-				TryParseVisibility(value, out Visibility propertyVisibility) && Assign(() => property.Visibility = propertyVisibility),
+				AssignMember<Visibility>(value, propertyVisibility => property.Visibility = propertyVisibility),
 			(PropertyDeclaration property, "Static") =>
-				TryParseBool(value, out bool propertyIsStatic) && Assign(() => property.IsStatic = propertyIsStatic),
+				AssignFlag(value, propertyIsStatic => property.IsStatic = propertyIsStatic),
 			(PropertyDeclaration property, "Readable") =>
-				TryParseBool(value, out bool readable) && Assign(() => property.HasGetter = readable),
+				AssignFlag(value, readable => property.HasGetter = readable),
 			(PropertyDeclaration property, "Writable") =>
-				TryParseBool(value, out bool writable) && Assign(() => property.HasSetter = writable),
+				AssignFlag(value, writable => property.HasSetter = writable),
 			(PropertyDeclaration property, "InitOnly") =>
-				TryParseBool(value, out bool initOnly) && Assign(() => property.SetterIsInitOnly = initOnly),
+				AssignFlag(value, initOnly => property.SetterIsInitOnly = initOnly),
 
 			(ClassDeclaration classDecl, "Name") => Assign(() => classDecl.Name = OrNull(value)),
 			(ClassDeclaration classDecl, "Kind") =>
-				Enum.TryParse(value, out TypeDeclarationKind typeKind) && Assign(() => classDecl.Kind = typeKind),
+				AssignMember<TypeDeclarationKind>(value, typeKind => classDecl.Kind = typeKind),
 			(ClassDeclaration classDecl, "BaseType") => Assign(() => classDecl.BaseType = OrNull(value)),
 			(ClassDeclaration classDecl, VisibilityField) =>
-				TryParseVisibility(value, out Visibility classVisibility) && Assign(() => classDecl.Visibility = classVisibility),
+				AssignMember<Visibility>(value, classVisibility => classDecl.Visibility = classVisibility),
 			(ClassDeclaration classDecl, "Record") =>
-				TryParseBool(value, out bool isRecord) && Assign(() => classDecl.IsRecord = isRecord),
+				AssignFlag(value, isRecord => classDecl.IsRecord = isRecord),
 			(ClassDeclaration classDecl, "Partial") =>
-				TryParseBool(value, out bool isPartial) && Assign(() => classDecl.IsPartial = isPartial),
+				AssignFlag(value, isPartial => classDecl.IsPartial = isPartial),
 			(ClassDeclaration classDecl, ReadOnlyField) =>
-				TryParseBool(value, out bool isClassReadOnly) && Assign(() => classDecl.IsReadOnly = isClassReadOnly),
+				AssignFlag(value, isClassReadOnly => classDecl.IsReadOnly = isClassReadOnly),
 
 			(FunctionDeclaration function, "Name") => Assign(() => function.Name = OrNull(value)),
 			(FunctionDeclaration function, "ReturnType") => Assign(() => function.ReturnType = OrNull(value)),
 			(FunctionDeclaration function, VisibilityField) =>
-				TryParseVisibility(value, out Visibility functionVisibility) && Assign(() => function.Visibility = functionVisibility),
+				AssignMember<Visibility>(value, functionVisibility => function.Visibility = functionVisibility),
 			(FunctionDeclaration function, "Static") =>
-				TryParseBool(value, out bool isStatic) && Assign(() => function.IsStatic = isStatic),
+				AssignFlag(value, isStatic => function.IsStatic = isStatic),
 			(FunctionDeclaration function, "Pure") =>
-				TryParseBool(value, out bool isPure) && Assign(() => function.IsPure = isPure),
+				AssignFlag(value, isPure => function.IsPure = isPure),
 			_ => TryWriteFunctionShape(node, fieldName, value),
 		};
 	}
@@ -484,34 +484,34 @@ public static class AstFields
 		return (node, fieldName) switch
 		{
 			(FunctionDeclaration function, "Kind") =>
-				Enum.TryParse(value, out FunctionKind kind) && Assign(() => function.Kind = kind),
+				AssignMember<FunctionKind>(value, kind => function.Kind = kind),
 			(FunctionDeclaration function, "Definition") =>
-				Enum.TryParse(value, out FunctionDefinition definition) && Assign(() => function.Definition = definition),
+				AssignMember<FunctionDefinition>(value, definition => function.Definition = definition),
 			(FunctionDeclaration function, "Virtual") =>
-				TryParseBool(value, out bool isVirtual) && Assign(() => function.IsVirtual = isVirtual),
+				AssignFlag(value, isVirtual => function.IsVirtual = isVirtual),
 			(FunctionDeclaration function, "Abstract") =>
-				TryParseBool(value, out bool isAbstract) && Assign(() => function.IsAbstract = isAbstract),
+				AssignFlag(value, isAbstract => function.IsAbstract = isAbstract),
 			(FunctionDeclaration function, ReadOnlyField) =>
-				TryParseBool(value, out bool isReadOnly) && Assign(() => function.IsReadOnly = isReadOnly),
+				AssignFlag(value, isReadOnly => function.IsReadOnly = isReadOnly),
 			(FunctionDeclaration function, "MustUseResult") =>
-				TryParseBool(value, out bool mustUse) && Assign(() => function.MustUseResult = mustUse),
+				AssignFlag(value, mustUse => function.MustUseResult = mustUse),
 
 			(EntryPoint entryPoint, "Arguments") =>
-				TryParseBool(value, out bool acceptsArguments) && Assign(() => entryPoint.AcceptsArguments = acceptsArguments),
+				AssignFlag(value, acceptsArguments => entryPoint.AcceptsArguments = acceptsArguments),
 			(EntryPoint entryPoint, "ExitCode") =>
-				TryParseBool(value, out bool returnsExitCode) && Assign(() => entryPoint.ReturnsExitCode = returnsExitCode),
+				AssignFlag(value, returnsExitCode => entryPoint.ReturnsExitCode = returnsExitCode),
 
 			(Parameter parameter, "Name") => Assign(() => parameter.Name = OrNull(value)),
 			(Parameter parameter, "Type") => Assign(() => parameter.Type = OrNull(value)),
-			(Parameter parameter, "Optional") => TryParseBool(value, out bool optional) && Assign(() => parameter.IsOptional = optional),
+			(Parameter parameter, "Optional") => AssignFlag(value, optional => parameter.IsOptional = optional),
 			(Parameter parameter, "Default") => Assign(() => parameter.DefaultValue = OrNull(value)),
 
 			(VariableDeclaration varDecl, "Name") => value.Length > 0 && Assign(() => varDecl.Name = value),
 			(VariableDeclaration varDecl, "Type") => Assign(() => varDecl.Type = OrNull(value)),
-			(VariableDeclaration varDecl, "Constant") => TryParseBool(value, out bool constant) && Assign(() => varDecl.IsConstant = constant),
-			(VariableDeclaration varDecl, "Inferred") => TryParseBool(value, out bool inferred) && Assign(() => varDecl.IsTypeInferred = inferred),
+			(VariableDeclaration varDecl, "Constant") => AssignFlag(value, constant => varDecl.IsConstant = constant),
+			(VariableDeclaration varDecl, "Inferred") => AssignFlag(value, inferred => varDecl.IsTypeInferred = inferred),
 			(VariableDeclaration varDecl, VisibilityField) =>
-				TryParseVisibility(value, out Visibility varVisibility) && Assign(() => varDecl.Visibility = varVisibility),
+				AssignMember<Visibility>(value, varVisibility => varDecl.Visibility = varVisibility),
 
 			_ => false,
 		};
@@ -535,21 +535,21 @@ public static class AstFields
 			(ConstructionExpression construction, TypeField) => Assign(() => construction.Type = OrNull(value)),
 
 			(BinaryExpression binary, "Operator") =>
-				Enum.TryParse(value, out BinaryOperator binaryOp) && Assign(() => binary.Operator = binaryOp),
+				AssignMember<BinaryOperator>(value, binaryOp => binary.Operator = binaryOp),
 			(UnaryExpression unary, "Operator") =>
-				Enum.TryParse(value, out UnaryOperator unaryOp) && Assign(() => unary.Operator = unaryOp),
+				AssignMember<UnaryOperator>(value, unaryOp => unary.Operator = unaryOp),
 			(AssignmentStatement assignment, "Operator") =>
-				Enum.TryParse(value, out AssignmentOperator assignOp) && Assign(() => assignment.Operator = assignOp),
+				AssignMember<AssignmentOperator>(value, assignOp => assignment.Operator = assignOp),
 
 			(LiteralExpression<string> literal, ValueField) => Assign(() => literal.Value = value),
-			(LiteralExpression<int> literal, ValueField) => TryParseInt(value, out int number) && Assign(() => literal.Value = number),
-			(LiteralExpression<double> literal, ValueField) => TryParseDouble(value, out double number) && Assign(() => literal.Value = number),
-			(LiteralExpression<bool> literal, ValueField) => TryParseBool(value, out bool flag) && Assign(() => literal.Value = flag),
+			(LiteralExpression<int> literal, ValueField) => AssignInteger(value, number => literal.Value = number),
+			(LiteralExpression<double> literal, ValueField) => AssignNumber(value, number => literal.Value = number),
+			(LiteralExpression<bool> literal, ValueField) => AssignFlag(value, flag => literal.Value = flag),
 
 			(AstLeafNode<string> leaf, ValueField) => Assign(() => leaf.Value = value),
-			(AstLeafNode<int> leaf, ValueField) => TryParseInt(value, out int number) && Assign(() => leaf.Value = number),
-			(AstLeafNode<double> leaf, ValueField) => TryParseDouble(value, out double number) && Assign(() => leaf.Value = number),
-			(AstLeafNode<bool> leaf, ValueField) => TryParseBool(value, out bool flag) && Assign(() => leaf.Value = flag),
+			(AstLeafNode<int> leaf, ValueField) => AssignInteger(value, number => leaf.Value = number),
+			(AstLeafNode<double> leaf, ValueField) => AssignNumber(value, number => leaf.Value = number),
+			(AstLeafNode<bool> leaf, ValueField) => AssignFlag(value, flag => leaf.Value = flag),
 
 			_ => false,
 		};
@@ -616,19 +616,88 @@ public static class AstFields
 	/// <returns>The text, or null when it is empty.</returns>
 	private static string? OrNull(string value) => value.Length == 0 ? null : value;
 
-	// Culture-invariant throughout: these are source values, not text shown in the user's locale.
-	private static bool TryParseInt(string value, out int result) =>
-		int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out result);
+	/// <summary>
+	/// Parses text into a flag and writes it, reporting whether the node changed.
+	/// </summary>
+	/// <param name="value">The text the user left in the box.</param>
+	/// <param name="assign">The assignment to perform once the text parses.</param>
+	/// <returns>True if the text parsed and the assignment was performed.</returns>
+	/// <remarks>
+	/// Parsing and writing are one call rather than a <c>TryParse(…) &amp;&amp; Assign(…)</c> pair
+	/// because the switches over the AST are long enough that forty such pairs put one of them past
+	/// what an analyzer will accept for one method. Each kind of field has its own name rather than
+	/// an overload, so the lambda's parameter type is inferred from the one candidate.
+	/// </remarks>
+	private static bool AssignFlag(string value, Action<bool> assign)
+	{
+		if (!bool.TryParse(value, out bool parsed))
+		{
+			return false;
+		}
 
-	private static bool TryParseDouble(string value, out double result) =>
-		double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out result);
+		assign(parsed);
+		return true;
+	}
 
-	private static bool TryParseBool(string value, out bool result) => bool.TryParse(value, out result);
+	/// <summary>
+	/// Parses text into a whole number and writes it, reporting whether the node changed.
+	/// </summary>
+	/// <param name="value">The text the user left in the box.</param>
+	/// <param name="assign">The assignment to perform once the text parses.</param>
+	/// <returns>True if the text parsed and the assignment was performed.</returns>
+	/// <remarks>Culture-invariant: this is a source value, not text shown in the user's locale.</remarks>
+	private static bool AssignInteger(string value, Action<int> assign)
+	{
+		if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed))
+		{
+			return false;
+		}
 
-	// Case-insensitively, so a document hand-edited with "public" reads back the same as the
-	// inspector's own "Public".
-	private static bool TryParseVisibility(string value, out Visibility result) =>
-		Enum.TryParse(value, ignoreCase: true, out result);
+		assign(parsed);
+		return true;
+	}
+
+	/// <summary>
+	/// Parses text into a number and writes it, reporting whether the node changed.
+	/// </summary>
+	/// <param name="value">The text the user left in the box.</param>
+	/// <param name="assign">The assignment to perform once the text parses.</param>
+	/// <returns>True if the text parsed and the assignment was performed.</returns>
+	/// <remarks>Culture-invariant: this is a source value, not text shown in the user's locale.</remarks>
+	private static bool AssignNumber(string value, Action<double> assign)
+	{
+		if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed))
+		{
+			return false;
+		}
+
+		assign(parsed);
+		return true;
+	}
+
+	/// <summary>
+	/// Parses text into a member of an enumeration and writes it, reporting whether the node changed.
+	/// </summary>
+	/// <typeparam name="TEnum">The enumeration the field holds.</typeparam>
+	/// <param name="value">The text the user left in the box.</param>
+	/// <param name="assign">The assignment to perform once the text parses.</param>
+	/// <returns>True if the text named a member and the assignment was performed.</returns>
+	/// <remarks>
+	/// Case-insensitively, so a document hand-edited with "public" reads back the same as the
+	/// inspector's own "Public". That was already how visibility was read; it is now how every
+	/// enumeration is, there being no reason for one of them to be the exception.
+	/// </remarks>
+	private static bool AssignMember<TEnum>(string value, Action<TEnum> assign)
+		where TEnum : struct, Enum
+	{
+		if (!Enum.TryParse(value, ignoreCase: true, out TEnum parsed))
+		{
+			return false;
+		}
+
+		assign(parsed);
+		return true;
+	}
 
 	private static string Spell(bool value) => value ? "true" : "false";
 
