@@ -718,9 +718,8 @@ public class GoGeneratorTests
 		ClassDeclaration hidden = new("marker") { Visibility = Visibility.Internal };
 		ClassDeclaration unsaid = new("marker");
 
-		foreach (ClassDeclaration declaration in new[] { shown, hidden, unsaid })
+		foreach (string generated in new[] { shown, hidden, unsaid }.Select(Generator.Generate))
 		{
-			string generated = Generator.Generate(declaration);
 			Assert.IsFalse(generated.Contains("//", StringComparison.Ordinal), generated);
 		}
 	}
