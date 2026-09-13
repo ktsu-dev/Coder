@@ -136,6 +136,56 @@ public class DeclarationSlotsTests
 	}
 
 	/// <summary>
+	/// A construction takes a member initialiser among its arguments, which is what a designated
+	/// initialiser is.
+	/// </summary>
+	/// <remarks>
+	/// The AST, the serializer and all seven generators handle one in this position — it is a
+	/// designated initialiser in C++, an object initialiser in C#, a keyword argument in Python and
+	/// an object literal in JavaScript. The graph is the uniform view of the AST, so a shape every
+	/// other projection can express has to be one it can express too.
+	/// </remarks>
+	[TestMethod]
+	public void ConstructionArguments_TakeAMemberInitialiser()
+	{
+		ConstructionExpression construction = new(new TypeReference("holo::Kilograms"));
+		AstSlot arguments = AstSchema.SlotsOf(construction)[0];
+
+		Assert.IsTrue(AstSchema.Accepts(arguments, new MemberInitialiser("value_")));
+		Assert.IsTrue(AstSchema.TryAttach(
+			construction,
+			arguments,
+			new MemberInitialiser("value_") { Value = new LiteralExpression<double>(1.0) }));
+
+		Assert.HasCount(1, AstSchema.ChildrenOf(construction, arguments));
+		Assert.IsInstanceOfType<MemberInitialiser>(construction.Arguments[0]);
+
+		// And it comes out again, so one loaded from a document can be rewired rather than stranded.
+		Assert.IsTrue(AstSchema.TryDetachAt(construction, arguments, 0));
+		Assert.IsEmpty(construction.Arguments);
+	}
+
+	/// <summary>
+	/// A call does not take one, because no generator has a spelling for it there.
+	/// </summary>
+	/// <remarks>
+	/// The two share a slot name and a collection type, and the difference is the whole reason the
+	/// kinds are separate: every generator reads <c>construction.Arguments</c> for a member
+	/// initialiser and none reads a call's, so one attached to a call would be written as whatever
+	/// fell out rather than as a named argument.
+	/// </remarks>
+	[TestMethod]
+	public void CallArguments_DoNotTakeAMemberInitialiser()
+	{
+		CallExpression call = new("std::sqrt");
+		AstSlot arguments = AstSchema.SlotsOf(call).Single(slot => slot.Name == "Arguments");
+
+		Assert.IsFalse(AstSchema.Accepts(arguments, new MemberInitialiser("value_")));
+		Assert.IsFalse(AstSchema.TryAttach(call, arguments, new MemberInitialiser("value_")));
+		Assert.IsEmpty(call.Arguments);
+	}
+
+	/// <summary>
 	/// A construction's arguments are a sequence, so they are added, swapped and removed in order.
 	/// </summary>
 	[TestMethod]
