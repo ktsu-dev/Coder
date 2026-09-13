@@ -620,7 +620,7 @@ public class CppGenerator : CFamilyGenerator
 			code.Write("const ");
 		}
 
-		code.Write($"{GetDeclaredType(field)} {field.Name}");
+		code.Write(SpellVariableDeclarator(field));
 
 		if (field.InitialValue is not null)
 		{
@@ -665,15 +665,12 @@ public class CppGenerator : CFamilyGenerator
 		Ensure.NotNull(parameter);
 		Ensure.NotNull(code);
 
-		code.Write(MapToCppType(parameter.Type ?? new TypeReference(UnknownTypeName)));
-
 		// An empty name means deliberately unnamed, which C++ allows and a deleted copy constructor
 		// wants: the parameter exists to make the signature, and naming it would only invite someone
 		// to look for where it is used. A null name means nobody said, so one is invented.
-		if (parameter.Name is not "")
-		{
-			code.Write($" {parameter.Name ?? $"param{position}"}");
-		}
+		string name = parameter.Name is "" ? string.Empty : parameter.Name ?? $"param{position}";
+
+		code.Write(SpellDeclarator(parameter.Type ?? new TypeReference(UnknownTypeName), name));
 
 		AppendDefaultValue(parameter, code);
 	}
@@ -689,7 +686,7 @@ public class CppGenerator : CFamilyGenerator
 			code.Write("const ");
 		}
 
-		code.Write($"{GetDeclaredType(varDecl)} {varDecl.Name}");
+		code.Write(SpellVariableDeclarator(varDecl));
 
 		if (varDecl.InitialValue is not null)
 		{
@@ -701,22 +698,26 @@ public class CppGenerator : CFamilyGenerator
 	}
 
 	/// <summary>
-	/// Spells the type a declaration is introduced with.
+	/// Spells a local declaration up to its name.
 	/// </summary>
 	/// <param name="varDecl">The declaration being emitted.</param>
-	/// <returns>The C++ type name, or a deduced placeholder.</returns>
+	/// <returns>The type and the name, with an array's brackets where C++ puts them.</returns>
 	/// <remarks>
+	/// The type and the name are spelled together rather than one after the other, because an array
+	/// separates them: <see cref="CFamilyGenerator.SpellDeclarator"/> is the one place that knows it.
+	/// <para>
 	/// <c>auto</c> needs an initializer to deduce from, so an inferred declaration without one falls
-	/// back to <c>std::any</c>.
+	/// back to <c>std::any</c>. Neither deduces an array, so neither goes through the declarator.
+	/// </para>
 	/// </remarks>
-	private static string GetDeclaredType(VariableDeclaration varDecl)
+	private string SpellVariableDeclarator(VariableDeclaration varDecl)
 	{
 		if (!varDecl.IsTypeInferred && varDecl.Type is TypeReference declared)
 		{
-			return MapToCppType(declared);
+			return SpellDeclarator(declared, varDecl.Name);
 		}
 
-		return varDecl.InitialValue is not null ? "auto" : "std::any";
+		return $"{(varDecl.InitialValue is not null ? "auto" : "std::any")} {varDecl.Name}";
 	}
 
 	/// <summary>
@@ -742,6 +743,14 @@ public class CppGenerator : CFamilyGenerator
 	/// Only the name is mapped; the shape around it — arguments, <c>const</c>, <c>&amp;</c> and
 	/// <c>*</c> — is C++'s own spelling of what the type says, which is what the string form could
 	/// not express.
+	/// <para>
+	/// An array's brackets are not among them, because they belong to the declarator rather than to
+	/// the type. Everything that declares a name goes through
+	/// <see cref="CFamilyGenerator.SpellDeclarator"/> to get them; the positions that spell a type
+	/// with no name to put them after — a return type, a base type, an enumeration's underlying type
+	/// — are ones C++ does not let an array stand in at all, so writing them there would produce a
+	/// compile error wearing the shape of a feature.
+	/// </para>
 	/// </remarks>
 	private static string MapToCppType(TypeReference type)
 	{
@@ -756,9 +765,7 @@ public class CppGenerator : CFamilyGenerator
 			_ => string.Empty,
 		};
 
-		string array = type.IsArray ? "[]" : string.Empty;
-
-		return $"{(type.IsReadOnly ? "const " : string.Empty)}{name}{arguments}{array}{indirection}";
+		return $"{(type.IsReadOnly ? "const " : string.Empty)}{name}{arguments}{indirection}";
 	}
 
 	/// <inheritdoc/>

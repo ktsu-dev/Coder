@@ -195,7 +195,13 @@ source in seven target languages. The solution uses:
   cannot overload one and so have to call it something.
 - `Coder/Languages/CFamilyGenerator.cs` — what C and C++ share beyond what every generator shares,
   and all of it is about C: the preprocessor (`#pragma once`, `#include`), the braced list with its
-  designated initialisers, and the declarator that puts an array's brackets after the name. The type
+  designated initialisers, and the declarator that puts an array's brackets after the name. Every
+  position in either language that declares a name goes through that declarator, which is the whole
+  of why it exists: a type spelled on its own carries no brackets, because the positions that spell
+  one without a name — a return type, a base type, an enumeration's underlying type — are ones
+  neither language lets an array stand in at all. `CppGeneratedSourceCompilesTests` is what holds
+  C++ to it, and is why the rule is checked rather than asserted; before it there was no C++ compile
+  test and an array-typed parameter came out as `int[] steps`. The type
   mappings deliberately stay
   with each generator, because `str` is a `std::string` in one language and a `const char*` in the
   other and the whole of what a mapping is is the spelling.

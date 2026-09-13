@@ -137,6 +137,59 @@ public class CppGeneratorTests
 	}
 
 	/// <summary>
+	/// Tests that an array-typed parameter puts its brackets on the declarator.
+	/// </summary>
+	/// <remarks>
+	/// <c>int steps[]</c> is the parameter; <c>int[] steps</c> is a compile error. C++ has no
+	/// position for an array's brackets other than after the name it declares.
+	/// </remarks>
+	[TestMethod]
+	public void ArrayParameter_PutsTheBracketsOnTheDeclarator()
+	{
+		FunctionDeclaration function = new("walk");
+		function.Parameters.Add(new Parameter("steps") { Type = new TypeReference("int") { IsArray = true } });
+
+		string code = Generator.Generate(function);
+
+		StringAssert.Contains(code, "void walk(int steps[])");
+	}
+
+	/// <summary>
+	/// Tests that an array-typed local puts its brackets on the declarator.
+	/// </summary>
+	[TestMethod]
+	public void ArrayVariable_PutsTheBracketsOnTheDeclarator()
+	{
+		VariableDeclaration local = new("steps") { Type = new TypeReference("int") { IsArray = true } };
+
+		string code = Generator.Generate(local);
+
+		Assert.AreEqual($"int steps[];{CodeBlocker.DefaultNewLineString}", code);
+	}
+
+	/// <summary>
+	/// Tests that a type spelled on its own carries no brackets, there being no declarator to put
+	/// them on.
+	/// </summary>
+	/// <remarks>
+	/// The positions that spell a type without a name — a return type, a base type, an enumeration's
+	/// underlying type — are ones C++ does not let an array stand in at all, so brackets there would
+	/// be a compile error wearing the shape of a feature.
+	/// </remarks>
+	[TestMethod]
+	public void ArrayReturnType_DoesNotSpellBracketsInTypePosition()
+	{
+		FunctionDeclaration function = new("collect")
+		{
+			ReturnType = new TypeReference("int") { IsArray = true },
+		};
+
+		string code = Generator.Generate(function);
+
+		Assert.IsFalse(code.Contains("[]", StringComparison.Ordinal), $"Expected no brackets in type position, got: {code}");
+	}
+
+	/// <summary>
 	/// Tests that a node the generator does not handle is refused rather than silently mis-generated.
 	/// </summary>
 	[TestMethod]
