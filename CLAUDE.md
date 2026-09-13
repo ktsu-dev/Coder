@@ -84,6 +84,71 @@ source in seven target languages. The solution uses:
   honours it only where the language can — a Go `const` holds a number, a string or a boolean and
   nothing with a field in it, so a table is a `var` with a note — and a language with no spelling for
   it omits it the way it omits an indirection.
+- `Coder/Ast/PropertyDeclaration.cs` — a member read and written through code rather than stored.
+  Three targets have the thing itself (C# `T Name { get; set; }`, Python `@property`, JavaScript
+  `get name()`); the other four have the two halves of what it is and no word joining them, which
+  makes the decision here not the syntax but **where a property lands**. A property whose accessors
+  have no bodies *is* a field with a storage location the compiler supplies, so it comes out as a
+  field; one with bodies *is* a pair of functions, so it comes out as the pair. Neither is an
+  approximation. The separation happens to the member list, in `StandardLanguageGenerator.Separated`,
+  rather than at the point each member is written — Rust puts data in a `struct` and behaviour in an
+  `impl`, Go writes fields in the type and methods beside it, C lowers a method to a free function
+  taking the instance, and every one of those routes reads the member list before anything is
+  written, so a property separated afterwards arrives too late to be routed. Separated first, each
+  generator's existing routing sees an ordinary field or function and needs to know nothing about
+  properties. `NamingStyle` is for the setter's name, which is the one name a generator has to
+  *invent* rather than repeat: rustc warns on a member name that is not snake case and an unexported
+  Go name cannot be called from outside its package, so the convention is more than taste.
+- `Coder/Ast/Annotation.cs` — metadata attached to a declaration: an attribute in C# and C++, an
+  attribute macro in Rust, a decorator in Python. The name here is the one that is nobody's keyword.
+  Its `Name` and `Arguments` are **text, written verbatim**, for the reason `CallExpression.Callee`
+  is: `[Obsolete]`, `#[serde(rename = "x")]` and `@staticmethod` have nothing underneath them to
+  hold, and one of them usually means nothing at all in the others. What *is* shared, and is what
+  each generator supplies, is the syntax around them — `[…]`, `[[…]]`, `#[…]`, `@…` — which is
+  exactly the split `SpellImport` already makes. C, JavaScript and Go have no metadata syntax and
+  write the annotation down, because a file that quietly loses its `[Obsolete]` looks like a file
+  that never had one. The arguments are a sequence rather than one string so that a comma inside an
+  argument stays inside it.
+- `Coder/Ast/TypeParameter.cs` and `TypeConstraint.cs` — what a declaration is written *over*, on
+  `ClassDeclaration` and on `FunctionDeclaration`. Values rather than nodes, like
+  `SpecialisationArguments` and for the same reason: a type parameter is part of the thing being
+  declared rather than a member of it, and `Parse`/`ToString` are inverses so a document carries a
+  whole parameter on one line. **The constraints are where the targets part, and that is the
+  decision worth knowing.** A parameter's *name* travels everywhere; what a language can say about
+  that name does not. `TypeConstraintKind` names four intents — implements a type, is a value, is a
+  reference, is constructible — and stops there, because those are the ones with a shared idea
+  underneath; a C++ concept is a predicate that can ask anything at all (`requires (T a) {
+  a.begin(); }`), which is the same reason `CompileTimeAssertion.Condition` is text. Then: C# spells
+  all four, and reorders them, because C# requires the class or struct constraint first and `new()`
+  last and the AST has no reason to know that. Rust spells two — a trait bound is exactly
+  `Implements` and `Default` is exactly `Constructible` — and carries the parameters onto every
+  `impl` block, which is what makes `impl<T: Bound> Mass<T>` compile where `impl Mass` would not.
+  Go spells one, `Implements` being exactly a Go constraint interface, and only for a *function*: a
+  method on a generic type needs the parameters in three places and spelled two ways (`NewPoint` for
+  the constructor's name, `Point[T]` for its receiver and result), so a generic type is written
+  down instead. C++ writes `template <typename T>` and notes every constraint, the standard concepts
+  needing an include the AST does not carry. C, Python and JavaScript write the whole parameter
+  down. `RustGeneratedSourceCompilesTests` compiles a generic struct with a load-bearing bound, so
+  the `impl` repetition is checked rather than asserted.
+- `Coder/Ast/ClassDeclaration.cs`'s `Interfaces`, `IsRecord`, `IsPartial` and `IsReadOnly` — what a
+  type declaration says about itself beyond its name. `Interfaces` is separate from `BaseType`
+  rather than folded into one list, because what a target does with the two differs: C# writes them
+  in one list but takes at most one class in it and puts it first, C++ writes `public` before each
+  and does not distinguish them at all, Rust makes both supertraits of a trait and has no answer for
+  a struct's at all, C can give the first-member position — the one that makes a pointer to the
+  whole a pointer to the member — to exactly one of them, and Go satisfies an interface structurally
+  and so writes `var _ Contract = (*Type)(nil)`, an assertion the compiler checks rather than a
+  declaration. A generator handed one list would be guessing which entry was the class.
+  The three modifiers split along a line worth stating once: `IsRecord` and `IsReadOnly` are claims
+  about the type — it compares by value, no member of it modifies it — so a target with no word for
+  one writes it down, the same as `CompileTimeAssertion`, while Rust's `#[derive(Clone, Debug,
+  PartialEq)]` is a word for the first and is used. `IsPartial` claims nothing about the type; it is
+  permission to declare the rest of it elsewhere, and a generator that has written the whole
+  declaration has not used the permission for anything a reader could miss, so it is dropped in
+  silence. Python's `@dataclass` is the obvious answer for a record and is *not* taken: the
+  decorator needs an import, and a class is generated on its own as readily as inside a file whose
+  imports the AST carries, so emitting one would change how that generator writes a file rather than
+  how it writes a class.
 - `Coder/Ast/ClassDeclaration.cs`'s `SpecialisationArguments` — what makes a declaration be *for* a
   type rather than *of* one. `template<> struct Describe<RigidBody>` is how C++ attaches a fact to a
   type without touching the type, which is what a generated reflection table needs: the alternative
@@ -178,6 +243,13 @@ source in seven target languages. The solution uses:
   rather than reflective. Adding a node type means adding it here.
 - `Coder.Graph/AstFields.cs` — a node's editable properties as named fields of a kind, which is what
   the editor's inspector draws and what makes those edits testable without a GPU.
+- `Coder.Test/Graph/AstNodeCoverageTests.cs` — the reflective walk the two files above deliberately
+  are not. Both end in a silent default, so a node type left out of either draws an empty inspector
+  rather than failing anything; this reflects over every concrete `AstNode` subclass and asserts
+  that the schema has a decision about its children, that the inspector offers a field for
+  everything about it that is not a child, and that each field reads back what it is written. A
+  node with no children says so in the test's `Childless` list, so the exemption is a line somebody
+  wrote rather than an omission nobody noticed.
 - `Coder.Graph/AstGraph.cs` — the AST is the document, the graph is a view: every edit is applied to
   the AST and the engine graph rebuilt from it, preserving positions by node identity.
 

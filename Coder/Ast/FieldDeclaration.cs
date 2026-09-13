@@ -83,6 +83,11 @@ public class FieldDeclaration : AstNode, IHasVisibility, IHasDocumentation
 	public Collection<string> Documentation { get; init; } = [];
 
 	/// <summary>
+	/// Gets the metadata attached to this declaration, which may be none.
+	/// </summary>
+	public Collection<Annotation> Annotations { get; init; } = [];
+
+	/// <summary>
 	/// Gets the type name of this node for serialization purposes.
 	/// </summary>
 	/// <returns>The name of the node type.</returns>
@@ -112,6 +117,11 @@ public class FieldDeclaration : AstNode, IHasVisibility, IHasDocumentation
 		foreach (string line in Documentation)
 		{
 			clone.Documentation.Add(line);
+		}
+
+		foreach (Annotation annotation in Annotations)
+		{
+			clone.Annotations.Add(annotation.Clone());
 		}
 
 		return clone;

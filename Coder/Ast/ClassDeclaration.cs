@@ -12,8 +12,11 @@ using System.Collections.ObjectModel;
 /// <see cref="Members"/> holds <see cref="AstNode"/> rather than a narrower type. Which members a
 /// target language will actually accept is the generator's business, not the AST's.
 /// <para>
-/// Only one base type is carried. Every language the generators target names a single base class in
-/// its declaration syntax, and interfaces are a language feature the AST does not model yet.
+/// A base type and a list of interfaces are separate because the languages separate them: C# writes
+/// them in one list but takes at most one class in it, C++ writes <c>public</c> before each and does
+/// not distinguish them at all, Rust turns the first into a supertrait and has nowhere to put the
+/// rest, and C can make exactly one of them layout-compatible with the whole. Carrying one list
+/// would leave every generator guessing which entry was the class.
 /// </para>
 /// </remarks>
 public class ClassDeclaration : AstCompositeNode, IHasVisibility, IHasDocumentation
@@ -81,6 +84,79 @@ public class ClassDeclaration : AstCompositeNode, IHasVisibility, IHasDocumentat
 	public bool IsSpecialisation => SpecialisationArguments.Count > 0;
 
 	/// <summary>
+	/// Gets the metadata attached to this declaration, which may be none.
+	/// </summary>
+	public Collection<Annotation> Annotations { get; init; } = [];
+
+	/// <summary>
+	/// Gets the types this declaration is written over, which may be none.
+	/// </summary>
+	/// <remarks>
+	/// Separate from <see cref="SpecialisationArguments"/> and the opposite of it: these are the
+	/// parameters a declaration takes, and those are the arguments a specialisation supplies. A
+	/// declaration has one or the other and not both, since a full specialisation by definition
+	/// leaves nothing open.
+	/// </remarks>
+	public Collection<TypeParameter> TypeParameters { get; init; } = [];
+
+	/// <summary>
+	/// Gets the interfaces this type implements, which may be none.
+	/// </summary>
+	/// <remarks>
+	/// Separate from <see cref="BaseType"/> rather than folded into one list, because what a target
+	/// does with the two is different often enough to matter. Rust makes a base type on a trait a
+	/// supertrait and has no answer for a struct's interfaces at all; C embeds the base as the first
+	/// member, which is the position that makes a pointer to the one a pointer to the other, and can
+	/// only give that position to one thing; Go satisfies an interface structurally, so declaring
+	/// one is an assertion rather than a declaration. Every one of those decisions needs to know
+	/// which entry is the class.
+	/// </remarks>
+	public Collection<TypeReference> Interfaces { get; init; } = [];
+
+	/// <summary>
+	/// Gets or sets a value indicating whether the language should supply this type's value
+	/// semantics rather than the declaration spelling them out.
+	/// </summary>
+	/// <remarks>
+	/// Not a fourth <see cref="TypeDeclarationKind"/>, because it is orthogonal to the three: C#
+	/// has a <c>record</c> and a <c>record struct</c>, and an enumeration would have to carry the
+	/// product of the two ideas rather than either of them.
+	/// <para>
+	/// What it asks for is one thing — equality, a readable form and a copy, written by the
+	/// compiler rather than by hand — and three targets have a way to ask for exactly that:
+	/// <c>record</c>, Rust's <c>#[derive(…)]</c> and Python's <c>@dataclass</c>. The rest write a
+	/// comment, because a type that quietly stops comparing by value is a type that still looks
+	/// like it does.
+	/// </para>
+	/// </remarks>
+	public bool IsRecord { get; set; }
+
+	/// <summary>
+	/// Gets or sets a value indicating whether the rest of this type may be declared elsewhere.
+	/// </summary>
+	/// <remarks>
+	/// The one modifier here that is dropped in silence where it cannot be spelled, and the reason
+	/// is what it says. <see cref="IsRecord"/> and <see cref="IsReadOnly"/> are claims about the
+	/// type — it compares by value, it does not mutate — so a file that loses one looks like a file
+	/// that still makes it. <c>partial</c> claims nothing about the type; it is permission to
+	/// declare the rest of it in another file, and a generator that has written the whole
+	/// declaration has not used the permission for anything a reader could miss.
+	/// </remarks>
+	public bool IsPartial { get; set; }
+
+	/// <summary>
+	/// Gets or sets a value indicating whether no member of this type modifies it.
+	/// </summary>
+	/// <remarks>
+	/// A promise about the type rather than about any one member, which is what distinguishes it
+	/// from <see cref="FunctionDeclaration.IsReadOnly"/>: that one says a call does not modify the
+	/// receiver, and this says none of them does. Only C# has a word for it, so the others write a
+	/// comment — marking every member <c>const</c> in C++ would be the same promise made in a
+	/// different place, and would be wrong for a static one.
+	/// </remarks>
+	public bool IsReadOnly { get; set; }
+
+	/// <summary>
 	/// Gets or sets how widely the class is visible.
 	/// </summary>
 	public Visibility Visibility { get; set; }
@@ -107,12 +183,30 @@ public class ClassDeclaration : AstCompositeNode, IHasVisibility, IHasDocumentat
 			Name = Name,
 			Kind = Kind,
 			BaseType = BaseType?.Clone(),
+			IsRecord = IsRecord,
+			IsPartial = IsPartial,
+			IsReadOnly = IsReadOnly,
 			Visibility = Visibility
 		};
 
 		foreach (TypeReference argument in SpecialisationArguments)
 		{
 			clone.SpecialisationArguments.Add(argument.Clone());
+		}
+
+		foreach (TypeReference contract in Interfaces)
+		{
+			clone.Interfaces.Add(contract.Clone());
+		}
+
+		foreach (TypeParameter parameter in TypeParameters)
+		{
+			clone.TypeParameters.Add(parameter.Clone());
+		}
+
+		foreach (Annotation annotation in Annotations)
+		{
+			clone.Annotations.Add(annotation.Clone());
 		}
 
 		foreach ((string key, object? value) in Metadata)

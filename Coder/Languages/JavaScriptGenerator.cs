@@ -2,7 +2,9 @@
 
 namespace ktsu.Coder.Languages;
 
+using System.Collections.ObjectModel;
 using System.Globalization;
+using System.Linq;
 using ktsu.Coder.Ast;
 using ktsu.CodeBlocker;
 
@@ -19,6 +21,12 @@ using ktsu.CodeBlocker;
 public class JavaScriptGenerator : StandardLanguageGenerator
 {
 	/// <summary>
+	/// The one modifier a class member here can carry, with the space that separates it from what
+	/// it modifies, since every use of it is followed by a name.
+	/// </summary>
+	private const string StaticKeyword = "static ";
+
+	/// <summary>
 	/// Gets the unique identifier for this language generator.
 	/// </summary>
 	public override string LanguageId => "javascript";
@@ -32,6 +40,61 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	/// Gets the file extension (without the dot) used for this language.
 	/// </summary>
 	public override string FileExtension => "js";
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// JavaScript has the thing itself, in a class body. An automatic property is a public class
+	/// field, which is what it is — there is no type to declare and nothing else to say. One with
+	/// bodies is <c>get name()</c> and <c>set name(value)</c>, which is the language's own
+	/// spelling.
+	/// <para>
+	/// Visibility is not written. A JavaScript member is private only if its name begins with a
+	/// <c>#</c>, which is a rename rather than a modifier, and this generator renames nothing.
+	/// </para>
+	/// </remarks>
+	protected override void GeneratePropertyDeclaration(PropertyDeclaration declaration, CodeBlocker code)
+	{
+		Ensure.NotNull(declaration);
+		Ensure.NotNull(code);
+
+		string name = declaration.Name ?? "value";
+
+		GenerateDocumentation(declaration, code);
+		WriteAnnotations(declaration.Annotations, code);
+
+		if (declaration.IsAutomatic)
+		{
+			code.WriteLine($"{(declaration.IsStatic ? StaticKeyword : string.Empty)}{name};");
+			return;
+		}
+
+		if (declaration.CanRead)
+		{
+			code.Write($"{(declaration.IsStatic ? StaticKeyword : string.Empty)}get {name}() ");
+			WriteAccessorBody(declaration.GetterBody, code);
+		}
+
+		if (declaration.CanWrite)
+		{
+			code.Write($"{(declaration.IsStatic ? StaticKeyword : string.Empty)}set {name}(value) ");
+			WriteAccessorBody(declaration.SetterBody, code);
+		}
+	}
+
+	/// <summary>
+	/// Writes an accessor's statements, in a brace scope that hangs off the line it is on.
+	/// </summary>
+	/// <param name="body">The statements to write.</param>
+	/// <param name="code">The writer to emit into.</param>
+	private void WriteAccessorBody(Collection<AstNode> body, CodeBlocker code)
+	{
+		using Scope statements = new(code);
+
+		foreach (AstNode statement in body)
+		{
+			GenerateInternal(statement, code);
+		}
+	}
 
 	/// <inheritdoc/>
 	/// <remarks>
@@ -272,6 +335,18 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 			WriteInexpressible(code, $"specialised for {string.Join(", ", classDecl.SpecialisationArguments)}");
 		}
 
+		WriteAnnotations(classDecl.Annotations, code);
+		WriteTypePromises(classDecl, code);
+		WriteTypeParametersDown(classDecl.TypeParameters, code);
+
+		// JavaScript extends one thing and has no interfaces at all, so anything the declaration
+		// implements is written down rather than lost: a duck-typed object is expected to have the
+		// members, and nothing in the file would otherwise say which ones.
+		if (classDecl.Interfaces.Count > 0)
+		{
+			WriteInexpressible(code, $"implements {string.Join(", ", classDecl.Interfaces.Select(contract => contract.Name))}");
+		}
+
 		code.Write($"class {classDecl.Name ?? "UnnamedClass"}");
 
 		if (classDecl.BaseType is TypeReference baseType)
@@ -320,7 +395,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		// binding in a scope, and a class body is not one.
 		if (field.IsConstant)
 		{
-			code.Write("static ");
+			code.Write(StaticKeyword);
 		}
 
 		code.Write(MemberName(field.Name, field.Visibility));
@@ -358,7 +433,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 
 		if (method.IsStatic)
 		{
-			code.Write("static ");
+			code.Write(StaticKeyword);
 		}
 
 		code.Write(method.Kind == FunctionKind.Constructor

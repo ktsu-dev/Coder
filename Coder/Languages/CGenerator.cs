@@ -65,6 +65,27 @@ public class CGenerator : CFamilyGenerator
 	/// </remarks>
 	private const string BaseMemberName = "base";
 
+	/// <summary>
+	/// What an embedded interface is called as a member.
+	/// </summary>
+	/// <param name="contract">The interface being embedded.</param>
+	/// <returns>The member's name.</returns>
+	/// <remarks>
+	/// Its own name with the first letter lowered, which is what the member of a C struct usually
+	/// looks like and, more to the point, is derivable from the type by anyone reading the header:
+	/// a caller passing the object where the interface is wanted has to write
+	/// <c>&amp;object-&gt;drawable</c>, and a name it could not have guessed would send it back to
+	/// the declaration every time.
+	/// </remarks>
+	private static string MemberNameOf(TypeReference contract)
+	{
+		string name = contract.Name;
+
+		return name.Length == 0
+			? "implemented"
+			: char.ToLowerInvariant(name[0]) + name[1..];
+	}
+
 	private static readonly Dictionary<string, string> TypeMappings = new(StringComparer.OrdinalIgnoreCase)
 	{
 		{ "str", "const char*" },
@@ -133,6 +154,12 @@ public class CGenerator : CFamilyGenerator
 	/// Gets the file extension (without the dot) used for this language.
 	/// </summary>
 	public override string FileExtension => "c";
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// C writes an invented name in lower case with underscores, and a header that did otherwise would stand out beside every other one in the project.
+	/// </remarks>
+	protected override NamingStyle MemberNaming => NamingStyle.Snake;
 
 	/// <inheritdoc/>
 	/// <remarks>
@@ -365,6 +392,47 @@ public class CGenerator : CFamilyGenerator
 		};
 
 	/// <summary>
+	/// Writes the bases and interfaces a type embeds, as the members they are.
+	/// </summary>
+	/// <param name="classDecl">The declaration being emitted.</param>
+	/// <param name="fieldCount">How many ordinary members follow, so the blank line is written only when one is wanted.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// A base and an interface are the same thing here: a struct embedded as a member, whose own
+	/// members are reached through it. What the first position buys is that a pointer to the whole
+	/// is a pointer to that member, so the two are interchangeable without a cast — and C has
+	/// exactly one first position to give, so the base takes it and an interface after it is
+	/// reached by taking its address instead.
+	/// </remarks>
+	private void WriteEmbeddedBases(ClassDeclaration classDecl, int fieldCount, CodeBlocker code)
+	{
+		List<(TypeReference Type, string Member)> embedded =
+		[
+			.. classDecl.BaseType is TypeReference baseType ? (List<(TypeReference, string)>)[(baseType, BaseMemberName)] : [],
+			.. classDecl.Interfaces.Select(contract => (contract, MemberNameOf(contract))),
+		];
+
+		if (embedded.Count == 0)
+		{
+			return;
+		}
+
+		WriteInexpressible(code, embedded.Count == 1
+			? $"{embedded[0].Member} is first, so that a pointer to this is a pointer to it"
+			: $"{embedded[0].Member} is first, so that a pointer to this is a pointer to it; the rest are reached by taking their address");
+
+		foreach ((TypeReference embeddedType, string member) in embedded)
+		{
+			code.WriteLine($"{SpellDeclarator(embeddedType, member)};");
+		}
+
+		if (fieldCount > 0)
+		{
+			code.NewLine();
+		}
+	}
+
+	/// <summary>
 	/// Writes a parenthesised parameter list, saying <c>void</c> where there are none.
 	/// </summary>
 	/// <param name="parameters">The parameters to write.</param>
@@ -457,6 +525,8 @@ public class CGenerator : CFamilyGenerator
 		Ensure.NotNull(classDecl);
 		Ensure.NotNull(code);
 
+		classDecl = Separated(classDecl);
+
 		string name = classDecl.Name ?? "UnnamedStruct";
 		bool isInterface = classDecl.Kind == TypeDeclarationKind.Interface;
 
@@ -484,6 +554,9 @@ public class CGenerator : CFamilyGenerator
 		}
 
 		GenerateDocumentation(classDecl, code);
+		WriteAnnotations(classDecl.Annotations, code);
+		WriteTypePromises(classDecl, code);
+		WriteTypeParametersDown(classDecl.TypeParameters, code);
 
 		code.WriteLine($"typedef struct {name}");
 		code.WriteLine("{");
@@ -491,18 +564,7 @@ public class CGenerator : CFamilyGenerator
 
 		insideType++;
 
-		if (classDecl.BaseType is TypeReference baseType)
-		{
-			// First, and said so: the position is what makes the two layout-compatible, and a
-			// reader moving it would have no way to know that from the declaration alone.
-			WriteInexpressible(code, "the base, first so that a pointer to this is a pointer to it");
-			code.WriteLine($"{SpellDeclarator(baseType, BaseMemberName)};");
-
-			if (fields.Count > 0)
-			{
-				code.NewLine();
-			}
-		}
+		WriteEmbeddedBases(classDecl, fields.Count, code);
 
 		AstNode? previous = null;
 		foreach (AstNode member in fields)

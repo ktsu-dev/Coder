@@ -75,6 +75,8 @@ public partial class YamlDeserializer
 			"EnumDeclaration" => DeserializeEnumDeclaration(nodeData),
 			"enumMember" => DeserializeEnumMember(nodeData),
 			"EnumMember" => DeserializeEnumMember(nodeData),
+			"propertyDeclaration" => DeserializePropertyDeclaration(nodeData),
+			"PropertyDeclaration" => DeserializePropertyDeclaration(nodeData),
 			"fieldDeclaration" => DeserializeFieldDeclaration(nodeData),
 			"FieldDeclaration" => DeserializeFieldDeclaration(nodeData),
 			"classDeclaration" => DeserializeClassDeclaration(nodeData),
@@ -179,6 +181,8 @@ public partial class YamlDeserializer
 
 		DeserializeVisibility(funcDecl, dict);
 		ReadStrings(dict, DocumentationKey, funcDecl.Documentation);
+		DeserializeAnnotations(dict, funcDecl.Annotations);
+		DeserializeTypeParameters(dict, funcDecl.TypeParameters);
 	}
 
 	/// <summary>
@@ -656,6 +660,69 @@ public partial class YamlDeserializer
 		return member;
 	}
 
+	private PropertyDeclaration DeserializePropertyDeclaration(object? nodeData)
+	{
+		PropertyDeclaration property = new();
+		if (nodeData is not Dictionary<object, object> dict)
+		{
+			return property;
+		}
+
+		if (dict.TryGetValue("name", out object? nameObj))
+		{
+			property.Name = nameObj?.ToString();
+		}
+
+		if (dict.TryGetValue("type", out object? typeObj))
+		{
+			property.Type = typeObj?.ToString();
+		}
+
+		property.HasGetter = ReadFlag(dict, "readable", property.HasGetter);
+		property.HasSetter = ReadFlag(dict, "writable", property.HasSetter);
+		property.SetterIsInitOnly = ReadFlag(dict, "initOnly", property.SetterIsInitOnly);
+		property.IsStatic = ReadFlag(dict, "isStatic", property.IsStatic);
+
+		DeserializeVisibility(property, dict);
+		ReadStrings(dict, DocumentationKey, property.Documentation);
+		DeserializeAnnotations(dict, property.Annotations);
+		ReadStatements(dict, "get", property.GetterBody);
+		ReadStatements(dict, "set", property.SetterBody);
+
+		DeserializeMetadata(property, dict);
+		return property;
+	}
+
+	/// <summary>
+	/// Reads a sequence of statements into a collection.
+	/// </summary>
+	/// <param name="dict">The mapping to read from.</param>
+	/// <param name="key">The key the statements are written under.</param>
+	/// <param name="statements">The collection to fill.</param>
+	private void ReadStatements(Dictionary<object, object> dict, string key, Collection<AstNode> statements)
+	{
+		if (!dict.TryGetValue(key, out object? bodyObj) || bodyObj is not List<object> bodyList)
+		{
+			return;
+		}
+
+		foreach (object statementObj in bodyList)
+		{
+			if (statementObj is not Dictionary<object, object> statementDict)
+			{
+				continue;
+			}
+
+			foreach ((object statementType, object statementData) in statementDict)
+			{
+				if (DeserializeNode(statementType.ToString() ?? string.Empty, statementData) is AstNode statement)
+				{
+					statements.Add(statement);
+				}
+			}
+		}
+	}
+
 	private FieldDeclaration DeserializeFieldDeclaration(object? nodeData)
 	{
 		FieldDeclaration field = new();
@@ -679,6 +746,7 @@ public partial class YamlDeserializer
 
 		DeserializeVisibility(field, dict);
 		ReadStrings(dict, DocumentationKey, field.Documentation);
+		DeserializeAnnotations(dict, field.Annotations);
 
 		if (dict.TryGetValue("initialValue", out object? initialObj) &&
 			initialObj is Dictionary<object, object> initialDict && initialDict.Count > 0)
@@ -777,9 +845,16 @@ public partial class YamlDeserializer
 			classDecl.Kind = kind;
 		}
 
+		classDecl.IsRecord = ReadFlag(dict, "record", classDecl.IsRecord);
+		classDecl.IsPartial = ReadFlag(dict, "partial", classDecl.IsPartial);
+		classDecl.IsReadOnly = ReadFlag(dict, "readOnly", classDecl.IsReadOnly);
+
 		DeserializeVisibility(classDecl, dict);
 		ReadStrings(dict, DocumentationKey, classDecl.Documentation);
-		DeserializeSpecialisationArguments(classDecl, dict);
+		DeserializeAnnotations(dict, classDecl.Annotations);
+		DeserializeTypeParameters(dict, classDecl.TypeParameters);
+		DeserializeTypeList(dict, "interfaces", classDecl.Interfaces);
+		DeserializeTypeList(dict, "specialisationArguments", classDecl.SpecialisationArguments);
 
 		DeserializeClassMembers(classDecl, dict);
 		DeserializeMetadata(classDecl, dict);
@@ -787,23 +862,170 @@ public partial class YamlDeserializer
 		return classDecl;
 	}
 
-	private static void DeserializeSpecialisationArguments(ClassDeclaration classDecl, Dictionary<object, object> dict)
+	/// <summary>
+	/// Reads a declaration's metadata into a collection.
+	/// </summary>
+	/// <param name="dict">The mapping to read from.</param>
+	/// <param name="annotations">The collection to fill.</param>
+	/// <remarks>
+	/// Each written the way <see cref="Annotation.ToString"/> writes it: a name, and its arguments
+	/// in brackets when it has any. The arguments are split at the commas outside any brackets of
+	/// their own, so an argument holding one keeps it.
+	/// </remarks>
+	private static void DeserializeAnnotations(Dictionary<object, object> dict, Collection<Annotation> annotations)
 	{
-		if (!dict.TryGetValue("specialisationArguments", out object? argumentsObj) ||
-			argumentsObj is not List<object> argumentList)
+		if (!dict.TryGetValue("annotations", out object? writtenObj) || writtenObj is not List<object> written)
 		{
 			return;
 		}
 
-		// A null or empty entry is not an argument. Filtering before the loop rather than inside it
-		// so that what the loop takes is what the loop does.
-		IEnumerable<string> written = argumentList
-			.Select(argument => argument?.ToString() ?? string.Empty)
+		IEnumerable<string> spelled = written
+			.Select(annotation => annotation?.ToString() ?? string.Empty)
 			.Where(text => text.Length > 0);
 
-		foreach (string text in written)
+		foreach (string text in spelled)
 		{
-			classDecl.SpecialisationArguments.Add(TypeReference.Parse(text));
+			annotations.Add(ReadAnnotation(text));
+		}
+	}
+
+	/// <summary>
+	/// Reads one written annotation.
+	/// </summary>
+	/// <param name="text">The annotation as it is written.</param>
+	/// <returns>The annotation.</returns>
+	private static Annotation ReadAnnotation(string text)
+	{
+		string written = text.Trim();
+		int opened = written.IndexOf('(');
+
+		if (opened < 0 || !written.EndsWith(')'))
+		{
+			return new Annotation(written);
+		}
+
+		Annotation annotation = new(written[..opened].Trim());
+
+		IEnumerable<string> arguments = SplitArguments(written[(opened + 1)..^1])
+			.Select(argument => argument.Trim())
+			.Where(argument => argument.Length > 0);
+
+		foreach (string argument in arguments)
+		{
+			annotation.Arguments.Add(argument);
+		}
+
+		return annotation;
+	}
+
+	/// <summary>
+	/// Splits an argument list at the commas that separate its entries.
+	/// </summary>
+	/// <param name="text">The list, without the brackets around it.</param>
+	/// <returns>The entries.</returns>
+	/// <remarks>
+	/// A comma inside a string or inside brackets of an argument's own belongs to it:
+	/// <c>SuppressMessage("Usage", "CA2225:Operator overloads have named alternates")</c> has two
+	/// arguments and three commas.
+	/// </remarks>
+	private static IEnumerable<string> SplitArguments(string text)
+	{
+		int depth = 0;
+		bool quoted = false;
+		int start = 0;
+
+		for (int index = 0; index < text.Length; index++)
+		{
+			char character = text[index];
+
+			if (character == '"')
+			{
+				quoted = !quoted;
+				continue;
+			}
+
+			if (quoted)
+			{
+				continue;
+			}
+
+			switch (character)
+			{
+				case '(' or '[' or '<':
+					depth++;
+					break;
+
+				case ')' or ']' or '>':
+					depth--;
+					break;
+
+				case ',' when depth == 0:
+					yield return text[start..index];
+					start = index + 1;
+					break;
+
+				default:
+					break;
+			}
+		}
+
+		yield return text[start..];
+	}
+
+	/// <summary>
+	/// Reads a sequence of written type parameters into a collection.
+	/// </summary>
+	/// <param name="dict">The mapping to read from.</param>
+	/// <param name="parameters">The collection to fill.</param>
+	/// <remarks>
+	/// One entry per parameter, carrying its constraints with it, because
+	/// <see cref="TypeParameter.Parse"/> and <see cref="TypeParameter.ToString"/> are inverses and
+	/// a parameter written on one line is a parameter a person can read.
+	/// </remarks>
+	private static void DeserializeTypeParameters(Dictionary<object, object> dict, Collection<TypeParameter> parameters)
+	{
+		if (!dict.TryGetValue("typeParameters", out object? writtenObj) || writtenObj is not List<object> written)
+		{
+			return;
+		}
+
+		IEnumerable<string> spelled = written
+			.Select(parameter => parameter?.ToString() ?? string.Empty)
+			.Where(text => text.Length > 0);
+
+		foreach (string text in spelled)
+		{
+			parameters.Add(TypeParameter.Parse(text));
+		}
+	}
+
+	/// <summary>
+	/// Reads a sequence of written types into a collection.
+	/// </summary>
+	/// <param name="dict">The mapping to read from.</param>
+	/// <param name="key">The key the sequence is written under.</param>
+	/// <param name="types">The collection to fill.</param>
+	/// <remarks>
+	/// Both of a class declaration's type lists are read this way, and each is written as a
+	/// sequence rather than one joined string for the same reason: a type argument can itself have
+	/// type arguments, so a comma inside one is part of it as often as it separates two.
+	/// </remarks>
+	private static void DeserializeTypeList(Dictionary<object, object> dict, string key, Collection<TypeReference> types)
+	{
+		if (!dict.TryGetValue(key, out object? writtenObj) || writtenObj is not List<object> written)
+		{
+			return;
+		}
+
+		// A null or empty entry is not a type. Filtering before the loop rather than inside it so
+		// that what the loop takes is what the loop does.
+		IEnumerable<string> spelled = written
+			.Select(type => type?.ToString() ?? string.Empty)
+			.Where(text => text.Length > 0);
+
+		foreach (string text in spelled)
+		{
+			types.Add(TypeReference.Parse(text));
 		}
 	}
 

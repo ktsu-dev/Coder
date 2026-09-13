@@ -70,6 +70,9 @@ public class GoGenerator : StandardLanguageGenerator
 	/// </remarks>
 	private const string ReceiverName = "self";
 
+	/// <summary>The interface that asks nothing of a type parameter.</summary>
+	private const string AnyConstraint = "any";
+
 	/// <summary>
 	/// The package a file with an entry point is in.
 	/// </summary>
@@ -175,6 +178,12 @@ public class GoGenerator : StandardLanguageGenerator
 	/// Gets the file extension (without the dot) used for this language.
 	/// </summary>
 	public override string FileExtension => "go";
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// An exported Go name is capitalised, and the invented setter of an exported property has to be exported too or nothing outside the package can call it.
+	/// </remarks>
+	protected override NamingStyle MemberNaming => NamingStyle.Pascal;
 
 	/// <inheritdoc/>
 	/// <remarks>
@@ -475,6 +484,8 @@ public class GoGenerator : StandardLanguageGenerator
 		Ensure.NotNull(classDecl);
 		Ensure.NotNull(code);
 
+		classDecl = Separated(classDecl);
+
 		string name = classDecl.Name ?? UnnamedType;
 
 		// A type declared inside another is written beside it: Go nests nothing but a function.
@@ -501,6 +512,7 @@ public class GoGenerator : StandardLanguageGenerator
 		}
 
 		GenerateStruct(classDecl, name, code);
+		WriteInterfaceAssertions(classDecl, name, code);
 
 		foreach (FieldDeclaration field in classDecl.Members.OfType<FieldDeclaration>().Where(field => field.IsStatic))
 		{
@@ -512,6 +524,44 @@ public class GoGenerator : StandardLanguageGenerator
 		{
 			code.NewLine();
 			GenerateFunction(function, code, name);
+		}
+	}
+
+	/// <summary>
+	/// Asserts, at compile time, that a type implements what it said it implements.
+	/// </summary>
+	/// <param name="classDecl">The declaration to emit the assertions for.</param>
+	/// <param name="name">The name the type is written under.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// Go satisfies an interface structurally: a type implements one by having its methods, and
+	/// never says so. That leaves a declaration that meant to implement something with nothing in
+	/// the file to show for it, and nothing to fail when a method is renamed out from under it.
+	/// <para>
+	/// <c>var _ Contract = (*Type)(nil)</c> is the language's own answer, and it is a check rather
+	/// than a comment: the file stops compiling when the type stops implementing the interface,
+	/// which is the same trade the C++ projection of a relationship makes. The pointer form is the
+	/// one that always holds -- a method declared on the pointer receiver is not in the value's
+	/// method set, and one declared on the value is in both.
+	/// </para>
+	/// </remarks>
+	private static void WriteInterfaceAssertions(ClassDeclaration classDecl, string name, CodeBlocker code)
+	{
+		// Not for a type this generator wrote down rather than wrote. The assertion names the type,
+		// and the name of a generic type is not the name of a type -- `(*Mass)(nil)` where the
+		// declaration said `Mass[T]` asserts something about nothing. The note above the
+		// declaration already says the whole type is approximate; a second wrong line under it
+		// would not add to that.
+		if (classDecl.Interfaces.Count == 0 || classDecl.TypeParameters.Count > 0)
+		{
+			return;
+		}
+
+		code.NewLine();
+
+		foreach (TypeReference contract in classDecl.Interfaces)
+		{
+			code.WriteLine($"var _ {SpellType(contract)} = (*{name})(nil)");
 		}
 	}
 
@@ -543,6 +593,15 @@ public class GoGenerator : StandardLanguageGenerator
 	private void GenerateStruct(ClassDeclaration classDecl, string name, CodeBlocker code)
 	{
 		GenerateDocumentation(classDecl, code);
+		WriteAnnotations(classDecl.Annotations, code);
+		WriteTypePromises(classDecl, code);
+
+		// Go has generics, and a generic type is still written down here. A method on one needs its
+		// parameters in three places and spelled two ways -- `NewPoint` for the constructor's name
+		// but `Point[T]` for its receiver and for what the constructor answers with -- so making a
+		// type generic is a change to how this generator writes a whole type rather than to how it
+		// writes one line. A function of its own has none of that, and is written as a generic one.
+		WriteTypeParametersDown(classDecl.TypeParameters, code);
 		WriteExportNote(name, classDecl.Visibility, code);
 
 		List<AlignedLine> fields = [.. StructFields(classDecl)];
@@ -627,11 +686,24 @@ public class GoGenerator : StandardLanguageGenerator
 	private void GenerateInterface(ClassDeclaration classDecl, string name, CodeBlocker code)
 	{
 		GenerateDocumentation(classDecl, code);
+		WriteAnnotations(classDecl.Annotations, code);
+		WriteTypePromises(classDecl, code);
+		WriteTypeParametersDown(classDecl.TypeParameters, code);
 		WriteExportNote(name, classDecl.Visibility, code);
 
 		List<AstNode> members = [.. classDecl.Members.Where(member => member is FunctionDeclaration or FieldDeclaration)];
 
-		if (classDecl.BaseType is null && members.Count == 0)
+		// An interface embedded in another is written as its bare name among the members, and means
+		// every method of it. A base and an interface are the same thing at this end -- it is the
+		// struct below where they part, Go having no inheritance for one and structural
+		// satisfaction for the other.
+		string[] embedded =
+		[
+			.. classDecl.BaseType is TypeReference baseType ? (string[])[SpellType(baseType)] : [],
+			.. classDecl.Interfaces.Select(SpellType),
+		];
+
+		if (embedded.Length == 0 && members.Count == 0)
 		{
 			code.WriteLine($"type {name} interface{{}}");
 			return;
@@ -641,9 +713,9 @@ public class GoGenerator : StandardLanguageGenerator
 
 		using Scope body = new(code);
 
-		if (classDecl.BaseType is TypeReference baseType)
+		foreach (string contract in embedded)
 		{
-			code.WriteLine(SpellType(baseType));
+			code.WriteLine(contract);
 		}
 
 		insideInterface = true;
@@ -731,6 +803,7 @@ public class GoGenerator : StandardLanguageGenerator
 			return;
 		}
 
+		WriteAnnotations(funcDecl.Annotations, code);
 		WriteExportNote(name, funcDecl.Visibility, code);
 
 		code.Write("func ");
@@ -761,7 +834,7 @@ public class GoGenerator : StandardLanguageGenerator
 	/// <param name="enclosingType">The name of the type it belongs to, when it belongs to one.</param>
 	private void WriteSignature(FunctionDeclaration funcDecl, string name, CodeBlocker code, string? enclosingType)
 	{
-		code.Write($"{name}(");
+		code.Write($"{name}{SpellTypeParameters(funcDecl.TypeParameters)}(");
 		GenerateParameterList(funcDecl.Parameters, code);
 		code.Write(")");
 
@@ -769,6 +842,48 @@ public class GoGenerator : StandardLanguageGenerator
 		{
 			code.Write($" {result}");
 		}
+	}
+
+	/// <summary>
+	/// Spells a function's own type parameters, or nothing when it has none.
+	/// </summary>
+	/// <param name="parameters">The function's type parameters.</param>
+	/// <returns>Something like <c>[T Ordered]</c>, or an empty string.</returns>
+	/// <remarks>
+	/// A Go type parameter is constrained by an interface, and every one of them is constrained by
+	/// something: <c>any</c> is the interface that asks for nothing, and is what a parameter with
+	/// no requirement gets. Several requirements become an interface written in place, which is
+	/// Go's own way of combining them.
+	/// <para>
+	/// Only <see cref="TypeConstraintKind.Implements"/> maps, and it maps exactly. The other three
+	/// are not things Go says about a type parameter at all, so they are written down beside the
+	/// declaration instead.
+	/// </para>
+	/// </remarks>
+	private static string SpellTypeParameters(IEnumerable<TypeParameter> parameters)
+	{
+		string[] declared = [.. parameters.Select(SpellOneTypeParameter)];
+
+		return declared.Length == 0 ? string.Empty : $"[{string.Join(", ", declared)}]";
+	}
+
+	private static string SpellOneTypeParameter(TypeParameter parameter)
+	{
+		string[] required =
+		[
+			.. parameter.Constraints
+				.Where(constraint => constraint.Kind == TypeConstraintKind.Implements)
+				.Select(constraint => SpellType(constraint.Type ?? new TypeReference(AnyConstraint))),
+		];
+
+		string constraint = required.Length switch
+		{
+			0 => AnyConstraint,
+			1 => required[0],
+			_ => $"interface{{ {string.Join("; ", required)} }}",
+		};
+
+		return $"{parameter.Name} {constraint}";
 	}
 
 	/// <summary>

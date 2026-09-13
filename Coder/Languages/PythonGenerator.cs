@@ -2,7 +2,9 @@
 
 namespace ktsu.Coder.Languages;
 
+using System.Collections.ObjectModel;
 using System.Globalization;
+using System.Linq;
 using ktsu.Coder.Ast;
 using ktsu.CodeBlocker;
 
@@ -84,6 +86,85 @@ public class PythonGenerator : StandardLanguageGenerator
 
 	/// <inheritdoc/>
 	protected override string CommentPrefix => "#";
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// A decorator, which is the one of these that is an ordinary runtime value: <c>@name</c> looks
+	/// the name up and calls it on what follows. That makes it the closest of the four to being a
+	/// caller's own, and the least likely to be something the language itself reads.
+	/// </remarks>
+	protected override string? SpellAnnotation(Annotation annotation) => $"@{annotation}";
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// Python has the thing itself. An automatic property is a plain attribute — Python stores
+	/// whatever is assigned to one and there is nothing to declare — so it comes out as the
+	/// annotated name, which is what a reader and a type checker both want. One with bodies is a
+	/// <c>@property</c> and its <c>@name.setter</c>, which is the language's own spelling and needs
+	/// no import.
+	/// </remarks>
+	protected override void GeneratePropertyDeclaration(PropertyDeclaration declaration, CodeBlocker code)
+	{
+		Ensure.NotNull(declaration);
+		Ensure.NotNull(code);
+
+		string name = declaration.Name ?? "value";
+		// The two spellings of a type: an annotation on a name is a colon, and on a function it is
+		// an arrow. Same type, and Python is particular about which goes where.
+		string annotation = declaration.Type is TypeReference type ? $": {PythonTypeFromGenericType(type)}" : string.Empty;
+		string result = declaration.Type is TypeReference answered ? $" -> {PythonTypeFromGenericType(answered)}" : string.Empty;
+
+		GenerateDocumentation(declaration, code);
+		WriteAnnotations(declaration.Annotations, code);
+
+		if (declaration.IsAutomatic)
+		{
+			code.WriteLine($"{name}{annotation} = None");
+			return;
+		}
+
+		if (declaration.CanRead)
+		{
+			code.WriteLine("@property");
+			code.Write($"def {name}(self){result}:");
+			WriteAccessorBody(declaration.GetterBody, code);
+		}
+
+		if (declaration.CanWrite)
+		{
+			code.WriteLine($"@{name}.setter");
+			code.Write($"def {name}(self, value{annotation}) -> None:");
+			WriteAccessorBody(declaration.SetterBody, code);
+		}
+	}
+
+	/// <summary>
+	/// Writes an accessor's statements, indented under it.
+	/// </summary>
+	/// <param name="body">The statements to write.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// An empty one is <c>pass</c>, for the reason an empty class is: Python's body is delimited by
+	/// indentation, so there is nothing to write that is nothing.
+	/// </remarks>
+	private void WriteAccessorBody(Collection<AstNode> body, CodeBlocker code)
+	{
+		code.WriteLine();
+
+		using IndentScope statements = new(code);
+
+		if (body.Count == 0)
+		{
+			code.WriteLine("pass");
+			return;
+		}
+
+		foreach (AstNode statement in body)
+		{
+			GenerateInternal(statement, code);
+			code.WriteLine();
+		}
+	}
 
 	/// <inheritdoc/>
 	protected override string? SpellImport(string import) => $"import {import}";
@@ -311,11 +392,31 @@ public class PythonGenerator : StandardLanguageGenerator
 			WriteInexpressible(code, $"specialised for {string.Join(", ", classDecl.SpecialisationArguments)}");
 		}
 
+		// Python's @dataclass is what a record asks for, and it is not written here: the decorator
+		// needs an import, and a class is generated on its own as readily as inside a file whose
+		// imports the AST carries. Emitting one would be a change to how this generator writes a
+		// file rather than to how it writes a class.
+		WriteAnnotations(classDecl.Annotations, code);
+		WriteTypePromises(classDecl, code);
+
+		// Python has TypeVar and Generic, and both need an import the AST does not carry for a
+		// class generated on its own -- the same reason @dataclass is not written above.
+		WriteTypeParametersDown(classDecl.TypeParameters, code);
+
 		code.Write($"class {classDecl.Name ?? "UnnamedClass"}");
 
-		if (classDecl.BaseType is TypeReference baseType)
+		// Python inherits from as many things as it is given and has no separate notion of an
+		// interface, so the base and the interfaces are one list of bases -- which is what the
+		// abstract base classes in the standard library already are.
+		string[] bases =
+		[
+			.. classDecl.BaseType is TypeReference baseType ? (string[])[PythonTypeFromGenericType(baseType)] : [],
+			.. classDecl.Interfaces.Select(PythonTypeFromGenericType),
+		];
+
+		if (bases.Length > 0)
 		{
-			code.Write($"({PythonTypeFromGenericType(baseType)})");
+			code.Write($"({string.Join(", ", bases)})");
 		}
 
 		code.WriteLine(":");

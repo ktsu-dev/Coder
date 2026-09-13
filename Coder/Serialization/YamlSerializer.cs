@@ -2,6 +2,7 @@
 
 namespace ktsu.Coder.Serialization;
 
+using System.Collections.ObjectModel;
 using System.Collections.Generic;
 using System.Linq;
 using ktsu.Coder.Ast;
@@ -93,6 +94,9 @@ public class YamlSerializer
 				break;
 			case EnumMember enumMember:
 				SerializeEnumMember(enumMember, nodeData);
+				break;
+			case PropertyDeclaration property:
+				SerializePropertyDeclaration(property, nodeData);
 				break;
 			case FieldDeclaration field:
 				SerializeFieldDeclaration(field, nodeData);
@@ -224,7 +228,14 @@ public class YamlSerializer
 			nodeData["isPure"] = funcDecl.IsPure;
 		}
 
+		SerializeAnnotations(funcDecl.Annotations, nodeData);
 		SerializeFunctionShape(funcDecl, nodeData);
+
+		if (funcDecl.TypeParameters.Count > 0)
+		{
+			nodeData["typeParameters"] =
+				funcDecl.TypeParameters.Select(parameter => parameter.ToString()).ToList();
+		}
 
 		if (funcDecl.Parameters.Count > 0)
 		{
@@ -466,6 +477,63 @@ public class YamlSerializer
 		}
 	}
 
+	/// <summary>
+	/// Writes a property, omitting whatever it did not ask for.
+	/// </summary>
+	/// <param name="property">The declaration being serialized.</param>
+	/// <param name="nodeData">The mapping to write into.</param>
+	/// <remarks>
+	/// <c>readable</c> is written when it is false rather than when it is true, unlike every other
+	/// flag here, because it is the one that defaults to true: a property nobody can read is the
+	/// unusual thing and so is the one worth saying.
+	/// </remarks>
+	private static void SerializePropertyDeclaration(PropertyDeclaration property, Dictionary<string, object> nodeData)
+	{
+		if (property.Name != null)
+		{
+			nodeData["name"] = property.Name;
+		}
+
+		if (property.Type != null)
+		{
+			nodeData["type"] = property.Type.ToString();
+		}
+
+		if (!property.HasGetter)
+		{
+			nodeData["readable"] = false;
+		}
+
+		if (property.HasSetter)
+		{
+			nodeData["writable"] = true;
+		}
+
+		if (property.SetterIsInitOnly)
+		{
+			nodeData["initOnly"] = true;
+		}
+
+		if (property.IsStatic)
+		{
+			nodeData["isStatic"] = true;
+		}
+
+		SerializeVisibility(property, nodeData);
+		SerializeDocumentation(property, nodeData);
+		SerializeAnnotations(property.Annotations, nodeData);
+
+		if (property.GetterBody.Count > 0)
+		{
+			nodeData["get"] = SerializeBodyStatements(property.GetterBody);
+		}
+
+		if (property.SetterBody.Count > 0)
+		{
+			nodeData["set"] = SerializeBodyStatements(property.SetterBody);
+		}
+	}
+
 	private static void SerializeFieldDeclaration(FieldDeclaration field, Dictionary<string, object> nodeData)
 	{
 		if (field.Name != null)
@@ -490,6 +558,7 @@ public class YamlSerializer
 
 		SerializeVisibility(field, nodeData);
 		SerializeDocumentation(field, nodeData);
+		SerializeAnnotations(field.Annotations, nodeData);
 
 		if (field.InitialValue != null)
 		{
@@ -580,6 +649,24 @@ public class YamlSerializer
 		}
 	}
 
+	/// <summary>
+	/// Writes a declaration's metadata, when it has any.
+	/// </summary>
+	/// <param name="annotations">The annotations the declaration carries.</param>
+	/// <param name="nodeData">The mapping to write into.</param>
+	/// <remarks>
+	/// One line per annotation, name and arguments together, because
+	/// <see cref="Annotation.ToString"/> writes what a person would and the syntax around it is the
+	/// generator's rather than the document's.
+	/// </remarks>
+	private static void SerializeAnnotations(Collection<Annotation> annotations, Dictionary<string, object> nodeData)
+	{
+		if (annotations.Count > 0)
+		{
+			nodeData["annotations"] = annotations.Select(annotation => annotation.ToString()).ToList();
+		}
+	}
+
 	private static void SerializeClassDeclaration(ClassDeclaration classDecl, Dictionary<string, object> nodeData)
 	{
 		if (classDecl.Name != null)
@@ -597,6 +684,21 @@ public class YamlSerializer
 			nodeData["baseType"] = classDecl.BaseType.ToString();
 		}
 
+		if (classDecl.TypeParameters.Count > 0)
+		{
+			// One line per parameter, constraints and all: TypeParameter.Parse and ToString are
+			// inverses, so what is written is what a person would write.
+			nodeData["typeParameters"] =
+				classDecl.TypeParameters.Select(parameter => parameter.ToString()).ToList();
+		}
+
+		if (classDecl.Interfaces.Count > 0)
+		{
+			// Each on its own for the same reason the specialisation arguments are: an interface
+			// can have type arguments, so a comma inside one is not a separator between two.
+			nodeData["interfaces"] = classDecl.Interfaces.Select(contract => contract.ToString()).ToList();
+		}
+
 		if (classDecl.SpecialisationArguments.Count > 0)
 		{
 			// Each argument on its own, rather than joined: a type argument can itself have type
@@ -605,8 +707,26 @@ public class YamlSerializer
 				classDecl.SpecialisationArguments.Select(argument => argument.ToString()).ToList();
 		}
 
+		// Written only when set, the way every other flag in this file is: a document says what a
+		// declaration is rather than what it is not, and the reader's default is the same false.
+		if (classDecl.IsRecord)
+		{
+			nodeData["record"] = true;
+		}
+
+		if (classDecl.IsPartial)
+		{
+			nodeData["partial"] = true;
+		}
+
+		if (classDecl.IsReadOnly)
+		{
+			nodeData["readOnly"] = true;
+		}
+
 		SerializeVisibility(classDecl, nodeData);
 		SerializeDocumentation(classDecl, nodeData);
+		SerializeAnnotations(classDecl.Annotations, nodeData);
 
 		if (classDecl.Members.Count > 0)
 		{

@@ -72,6 +72,40 @@ public class CppGenerator : CFamilyGenerator
 	/// </summary>
 	public override string FileExtension => "cpp";
 
+	/// <summary>
+	/// Writes the template head a declaration written over types needs.
+	/// </summary>
+	/// <param name="parameters">The declaration's type parameters.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// Names only, and <c>typename</c> for each: C++ takes non-type parameters as well, and the AST
+	/// models only the ones that are types. What each has to be goes in a note beside the
+	/// declaration rather than in a <c>requires</c> clause, for the reason
+	/// <see cref="LanguageGeneratorBase.WriteUnaskedConstraints"/> gives.
+	/// </remarks>
+	private static void WriteTemplateHead(IEnumerable<TypeParameter> parameters, CodeBlocker code)
+	{
+		string[] names = [.. parameters.Select(parameter => $"typename {parameter.Name}")];
+
+		if (names.Length > 0)
+		{
+			code.WriteLine($"template <{string.Join(", ", names)}>");
+		}
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// The standard library spells an invented accessor <c>set_value</c>, and that is the convention a reader of any C++ header already has.
+	/// </remarks>
+	protected override NamingStyle MemberNaming => NamingStyle.Snake;
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// Doubled brackets, which is the standard syntax rather than a compiler's own. An attribute
+	/// the compiler does not know is ignored with a warning rather than refused, which is what
+	/// makes writing a caller's attribute through safe here.
+	/// </remarks>
+	protected override string? SpellAnnotation(Annotation annotation) => $"[[{annotation}]]";
 	/// <inheritdoc/>
 	/// <remarks>
 	/// A constructor and a destructor are named after the type rather than after themselves, so the
@@ -91,6 +125,9 @@ public class CppGenerator : CFamilyGenerator
 		Ensure.NotNull(code);
 
 		GenerateDocumentation(funcDecl, code);
+		WriteAnnotations(funcDecl.Annotations, code);
+		WriteUnaskedConstraints(funcDecl.TypeParameters, code);
+		WriteTemplateHead(funcDecl.TypeParameters, code);
 
 		// Purity earns [[nodiscard]] on its own: a call that does nothing else and whose result is
 		// thrown away did nothing at all.
@@ -298,6 +335,8 @@ public class CppGenerator : CFamilyGenerator
 		Ensure.NotNull(classDecl);
 		Ensure.NotNull(code);
 
+		classDecl = Separated(classDecl);
+
 		GenerateDocumentation(classDecl, code);
 
 		// A struct's members are public already, so labelling them would be noise. An interface has
@@ -314,6 +353,18 @@ public class CppGenerator : CFamilyGenerator
 			code.WriteLine("template <>");
 		}
 
+		WriteTemplateHead(classDecl.TypeParameters, code);
+
+		WriteAnnotations(classDecl.Annotations, code);
+		WriteTypePromises(classDecl, code);
+
+		// Every constraint. A concept is a predicate over a type and can ask anything at all, so
+		// there is no shared idea underneath `struct` and `std::floating_point` to translate
+		// between -- the same reason CompileTimeAssertion.Condition is text. The standard ones
+		// would also need <concepts> included, which the AST does not carry for a declaration
+		// generated on its own.
+		WriteUnaskedConstraints(classDecl.TypeParameters, code);
+
 		code.Write($"{(isStruct ? "struct" : "class")} {classDecl.Name ?? "UnnamedClass"}");
 
 		if (classDecl.IsSpecialisation)
@@ -322,9 +373,19 @@ public class CppGenerator : CFamilyGenerator
 			code.Write($"<{string.Join(", ", arguments)}>");
 		}
 
-		if (classDecl.BaseType is TypeReference baseType)
+		// C++ does not distinguish a base class from an interface -- an interface is a class whose
+		// members are all pure virtual -- so the two lists join into one. What it does distinguish
+		// is public from private inheritance, and the default for a class is private, which would
+		// make a base nobody outside could use the base through.
+		string[] inherited =
+		[
+			.. classDecl.BaseType is TypeReference baseType ? (string[])[$"public {MapToCppType(baseType)}"] : [],
+			.. classDecl.Interfaces.Select(contract => $"public {MapToCppType(contract)}"),
+		];
+
+		if (inherited.Length > 0)
 		{
-			code.Write($" : public {MapToCppType(baseType)}");
+			code.Write($" : {string.Join(", ", inherited)}");
 		}
 
 		code.WriteLine();
@@ -507,6 +568,7 @@ public class CppGenerator : CFamilyGenerator
 		Ensure.NotNull(code);
 
 		GenerateDocumentation(field, code);
+		WriteAnnotations(field.Annotations, code);
 
 		code.Write(SpellStorage(field));
 		code.Write(SpellDeclarator(field.Type ?? new TypeReference(UnknownTypeName), field.Name ?? string.Empty));

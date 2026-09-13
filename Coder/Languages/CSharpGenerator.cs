@@ -3,6 +3,7 @@
 namespace ktsu.Coder.Languages;
 
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Linq;
 using ktsu.Coder.Ast;
@@ -122,6 +123,9 @@ public class CSharpGenerator : LanguageGeneratorBase
 			case EnumDeclaration enumDecl:
 				GenerateEnum(enumDecl, code);
 				break;
+			case PropertyDeclaration property:
+				GenerateProperty(property, code);
+				break;
 			case FieldDeclaration field:
 				GenerateField(field, code);
 				break;
@@ -162,6 +166,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 	private void GenerateClass(ClassDeclaration classDecl, CodeBlocker code)
 	{
 		GenerateDocumentation(classDecl, code);
+		WriteAnnotations(classDecl.Annotations, code);
 
 		// C++ can attach a declaration to a type it does not own, by specialising a template on it.
 		// Nothing here can, so the fact is written down rather than lost: what follows is an
@@ -178,15 +183,37 @@ public class CSharpGenerator : LanguageGeneratorBase
 			_ => "class",
 		};
 
-		code.Write($"{SpellVisibility(classDecl.Visibility) ?? DefaultVisibility} {keyword} {classDecl.Name ?? "UnnamedClass"}");
+		// In the order C# takes them: access, then the promise the type makes about itself, then
+		// the permission to declare the rest of it elsewhere, then what kind of type it is. A
+		// record is written before the keyword rather than instead of it, which is what makes
+		// `record struct` reachable.
+		string[] modifiers =
+		[
+			SpellVisibility(classDecl.Visibility) ?? DefaultVisibility,
+			.. classDecl.IsReadOnly ? (string[])["readonly"] : [],
+			.. classDecl.IsPartial ? (string[])["partial"] : [],
+			.. classDecl.IsRecord ? (string[])["record"] : [],
+			keyword,
+		];
 
-		if (classDecl.BaseType is TypeReference baseType)
+		code.Write($"{string.Join(" ", modifiers)} {classDecl.Name ?? "UnnamedClass"}{SpellTypeParameters(classDecl.TypeParameters)}");
+
+		// One list, base first. C# takes at most one class in it and puts it first, which is why
+		// the AST keeps the two apart: the order is not something a generator could recover.
+		string[] inherited =
+		[
+			.. classDecl.BaseType is TypeReference baseType ? (string[])[MapToCSType(baseType)] : [],
+			.. classDecl.Interfaces.Select(MapToCSType),
+		];
+
+		if (inherited.Length > 0)
 		{
-			code.Write($" : {MapToCSType(baseType)}");
+			code.Write($" : {string.Join(", ", inherited)}");
 		}
 
 		// The line is ended before the scope opens, so C#'s brace lands on its own line.
 		code.WriteLine();
+		WriteConstraintClauses(classDecl.TypeParameters, code);
 
 		using Scope members = new(code);
 		foreach (AstNode member in classDecl.Members)
@@ -201,6 +228,66 @@ public class CSharpGenerator : LanguageGeneratorBase
 			}
 		}
 	}
+
+	/// <summary>
+	/// Spells a declaration's type parameters, or nothing when it has none.
+	/// </summary>
+	/// <param name="parameters">The declaration's type parameters.</param>
+	/// <returns>The list, angle brackets and all, or an empty string.</returns>
+	/// <remarks>
+	/// Names only. C# writes the requirements in a <c>where</c> clause of their own rather than
+	/// beside the name, which is what <see cref="WriteConstraintClauses"/> is for.
+	/// </remarks>
+	private static string SpellTypeParameters(IEnumerable<TypeParameter> parameters)
+	{
+		string[] names = [.. parameters.Select(parameter => parameter.Name)];
+
+		return names.Length == 0 ? string.Empty : $"<{string.Join(", ", names)}>";
+	}
+
+	/// <summary>
+	/// Writes one <c>where</c> clause per constrained parameter, indented under the declaration.
+	/// </summary>
+	/// <param name="parameters">The declaration's type parameters.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// The order within a clause is the language's rather than the declaration's, and putting it
+	/// right is this generator's job: C# requires the class or struct constraint first and
+	/// <c>new()</c> last, and rejects any other order. The AST has no reason to know that, and a
+	/// caller listing them as they think of them should still get a file that compiles.
+	/// </remarks>
+	private static void WriteConstraintClauses(IEnumerable<TypeParameter> parameters, CodeBlocker code)
+	{
+		using IndentScope clauses = new(code);
+
+		foreach (TypeParameter parameter in parameters.Where(parameter => parameter.Constraints.Count > 0))
+		{
+			IEnumerable<string> written = InDeclarationOrder(parameter.Constraints)
+				.Select(constraint => constraint.ToString());
+
+			code.WriteLine($"where {parameter.Name} : {string.Join(", ", written)}");
+		}
+	}
+
+	/// <summary>
+	/// Puts a parameter's constraints into the order C# accepts them in.
+	/// </summary>
+	/// <param name="constraints">The constraints as the declaration lists them.</param>
+	/// <returns>The constraints, reordered.</returns>
+	private static IEnumerable<TypeConstraint> InDeclarationOrder(IEnumerable<TypeConstraint> constraints) =>
+		constraints.OrderBy(constraint => constraint.Kind switch
+		{
+			TypeConstraintKind.ValueType or TypeConstraintKind.ReferenceType => 0,
+			TypeConstraintKind.Constructible => 2,
+			_ => 1,
+		});
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// Square brackets, and one attribute per line rather than several in one pair of them: a
+	/// declaration with four of them reads down the page, and a diff that adds one touches one line.
+	/// </remarks>
+	protected override string? SpellAnnotation(Annotation annotation) => $"[{annotation}]";
 
 	/// <inheritdoc/>
 	protected override string? SpellImport(string import) => $"using {import};";
@@ -405,6 +492,71 @@ public class CSharpGenerator : LanguageGeneratorBase
 	}
 
 	/// <summary>
+	/// Emits a property, which C# has a word for.
+	/// </summary>
+	/// <param name="property">The declaration to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// The accessors go on one line when the language supplies them and in a block when they have
+	/// bodies, which is how a person writes the two and how every C# formatter will put them back
+	/// if a generator chooses otherwise.
+	/// </remarks>
+	private void GenerateProperty(PropertyDeclaration property, CodeBlocker code)
+	{
+		GenerateDocumentation(property, code);
+		WriteAnnotations(property.Annotations, code);
+
+		string type = property.Type is TypeReference declared ? MapToCSType(declared) : "object";
+		string modifiers = property.IsStatic ? " static" : string.Empty;
+
+		code.Write($"{SpellVisibility(property.Visibility) ?? DefaultVisibility}{modifiers} {type} {property.Name ?? "Value"}");
+
+		// init rather than set where the declaration asked for it: the two differ only in when the
+		// call is legal, and nothing else here has a word for the difference.
+		string setter = property.SetterIsInitOnly ? "init" : "set";
+
+		if (property.IsAutomatic)
+		{
+			string accessors = property.CanWrite ? $"get; {setter};" : "get;";
+			code.WriteLine($" {{ {accessors} }}");
+			return;
+		}
+
+		code.WriteLine();
+
+		using Scope accessorBlock = new(code);
+
+		if (property.CanRead)
+		{
+			code.Write("get");
+			WriteAccessorBody(property.GetterBody, code);
+		}
+
+		if (property.CanWrite)
+		{
+			code.Write(setter);
+			WriteAccessorBody(property.SetterBody, code);
+		}
+	}
+
+	/// <summary>
+	/// Writes an accessor's statements, in a brace scope.
+	/// </summary>
+	/// <param name="body">The statements to write.</param>
+	/// <param name="code">The writer to emit into.</param>
+	private void WriteAccessorBody(Collection<AstNode> body, CodeBlocker code)
+	{
+		code.WriteLine();
+
+		using Scope statements = new(code);
+
+		foreach (AstNode statement in body)
+		{
+			GenerateInternal(statement, code);
+		}
+	}
+
+	/// <summary>
 	/// Emits a field of a type.
 	/// </summary>
 	/// <param name="field">The declaration to emit.</param>
@@ -417,6 +569,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 	private void GenerateField(FieldDeclaration field, CodeBlocker code)
 	{
 		GenerateDocumentation(field, code);
+		WriteAnnotations(field.Annotations, code);
 
 		code.Write($"{SpellVisibility(field.Visibility) ?? DefaultVisibility} ");
 
@@ -485,10 +638,12 @@ public class CSharpGenerator : LanguageGeneratorBase
 			return;
 		}
 
+		WriteAnnotations(function.Annotations, code);
 		WriteFunctionAttributes(function, code);
 		WriteFunctionModifiers(function, code);
 
 		code.Write(SpellFunctionName(function, enclosingType));
+		code.Write(SpellTypeParameters(function.TypeParameters));
 		code.Write("(");
 
 		for (int i = 0; i < function.Parameters.Count; i++)
@@ -506,11 +661,13 @@ public class CSharpGenerator : LanguageGeneratorBase
 		if (function.IsAbstract)
 		{
 			code.WriteLine(";");
+			WriteConstraintClauses(function.TypeParameters, code);
 			return;
 		}
 
 		// The line is ended before the scope opens, so C#'s brace lands on its own line.
 		code.WriteLine();
+		WriteConstraintClauses(function.TypeParameters, code);
 
 		using Scope body = new(code);
 
