@@ -1,6 +1,6 @@
-## v3.12.0 (minor)
+## v3.13.0 (minor)
 
-Changes since v3.11.0:
+Changes since v3.12.0:
 
-- Put an array's brackets where C++ puts them, everywhere (closes #51) ([@Claude](https://github.com/Claude))
+- Let a construction hold a designated initialiser in the graph (closes #52) ([@Claude](https://github.com/Claude))
 
