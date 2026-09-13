@@ -1,6 +1,7 @@
-## v3.13.0 (minor)
+## v3.14.0 (minor)
 
-Changes since v3.12.0:
+Changes since v3.13.0:
 
-- Let a construction hold a designated initialiser in the graph (closes #52) ([@Claude](https://github.com/Claude))
+- Preserve fraction literal precision in inspector edits ([@copilot-swe-agent[bot]](https://github.com/copilot-swe-agent[bot]))
+- Initial plan ([@copilot-swe-agent[bot]](https://github.com/copilot-swe-agent[bot]))
 
