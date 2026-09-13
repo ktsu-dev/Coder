@@ -50,7 +50,7 @@ public sealed class AstGraphEditor(AstNode root)
 	/// sits beside the graph, and the names it draws — <c>Visibility</c>, <c>Parameters</c> — are
 	/// longer than most of the values beside them. It stays the user's to drag either way.
 	/// <para>
-	/// Fractions are spelled to fifteen significant digits rather than the widget's six decimal
+	/// Fractions are spelled to seventeen significant digits rather than the widget's six decimal
 	/// places. A literal is a value the generated source will carry, so the row has to show what the
 	/// document holds: 3.14 has to read as 3.14 rather than as 3.140000, and a value with more digits
 	/// than that has to keep them when the user opens the box to change something else about it.
@@ -59,7 +59,7 @@ public sealed class AstGraphEditor(AstNode root)
 	private static readonly ImGuiWidgets.PropertyGridOptions InspectorGridOptions = new()
 	{
 		LabelColumnWeight = 0.95f,
-		DoubleFormat = "%.15g",
+		DoubleFormat = "%.17g",
 	};
 
 	private string statusMessage = string.Empty;
