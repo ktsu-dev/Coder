@@ -2,6 +2,8 @@
 
 namespace ktsu.Coder.Test.Graph;
 
+using System.Globalization;
+using System.Reflection;
 using System.Numerics;
 
 using Hexa.NET.ImGui;
@@ -40,6 +42,14 @@ public sealed class AstGraphEditorInspectorPanelTests
 		function.Body.Add(new ReturnStatement(
 			new BinaryExpression(new VariableReference("a"), BinaryOperator.Add, Literal.Number(1))));
 		return function;
+	}
+
+	private static (FunctionDeclaration Function, LiteralExpression<double> Literal) SampleFunctionWithSmallFractionLiteral()
+	{
+		LiteralExpression<double> literal = Literal.DecimalValue(1e-9);
+		FunctionDeclaration function = new("tiny") { ReturnType = "double" };
+		function.Body.Add(new ReturnStatement(literal));
+		return (function, literal);
 	}
 
 	/// <summary>
@@ -206,5 +216,41 @@ public sealed class AstGraphEditorInspectorPanelTests
 		harness.Step(2);
 
 		Assert.HasCount(1, function.Parameters);
+	}
+
+	/// <summary>
+	/// Tests that a tiny floating-point literal keeps its value through inspector draws and edit
+	/// commits, rather than being collapsed to zero by the row's display format.
+	/// </summary>
+	[TestMethod]
+	public void Inspector_PreservesASmallFractionLiteralAcrossDrawAndEdit()
+	{
+		FieldInfo optionsField = typeof(AstGraphEditor).GetField("InspectorGridOptions", BindingFlags.NonPublic | BindingFlags.Static)
+			?? throw new AssertFailedException("Inspector grid options should exist.");
+
+		ktsu.ImGui.Widgets.ImGuiWidgets.PropertyGridOptions options =
+			(ktsu.ImGui.Widgets.ImGuiWidgets.PropertyGridOptions)optionsField.GetValue(null)!;
+		Assert.AreEqual("%.17g", options.DoubleFormat);
+
+		(FunctionDeclaration function, LiteralExpression<double> literal) = SampleFunctionWithSmallFractionLiteral();
+		AstGraphEditor editor = new(function);
+		double expected = literal.Value;
+
+		using ImGuiAppHarness harness = Inspecting(editor, literal);
+
+		// Rendering and selecting the node must leave the document value untouched.
+		Assert.AreEqual(expected, literal.Value);
+
+		harness.Click("Value");
+		harness.Step(2);
+
+		harness.Keyboard.Press(ImGuiKey.A, ctrl: true);
+		harness.Keyboard.Type(expected.ToString("G17", CultureInfo.InvariantCulture));
+		harness.Step(2);
+
+		harness.Keyboard.Press(ImGuiKey.Enter);
+		harness.Step(2);
+
+		Assert.AreEqual(expected, literal.Value);
 	}
 }
