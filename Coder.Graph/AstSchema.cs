@@ -63,6 +63,16 @@ public static class AstSchema
 	private const string Unnamed = "<unnamed>";
 
 	private static readonly AstSlot ArgumentsSlot = new(ArgumentsSlotName, AstSlotCardinality.Many, AstSlotKind.Expression);
+
+	/// <summary>
+	/// A construction's arguments, which take a member initialiser where a call's do not.
+	/// </summary>
+	/// <remarks>
+	/// The same name as <see cref="ArgumentsSlot"/>, because the editor labels the pin the same way
+	/// and the attach cases switch on the name; a different kind, because what may stand in it
+	/// differs.
+	/// </remarks>
+	private static readonly AstSlot ElementsSlot = new(ArgumentsSlotName, AstSlotCardinality.Many, AstSlotKind.Element);
 	private static readonly AstSlot EnumMembersSlot = new("Members", AstSlotCardinality.Many, AstSlotKind.EnumMember);
 	private static readonly AstSlot ReceiverSlot = new(ReceiverSlotName, AstSlotCardinality.One, AstSlotKind.Expression);
 	private static readonly AstSlot ConditionSlot = new(ConditionSlotName, AstSlotCardinality.One, AstSlotKind.Expression);
@@ -83,7 +93,7 @@ public static class AstSchema
 		FieldDeclaration => [InitialValueSlot],
 		PropertyDeclaration => [GetterSlot, SetterSlot],
 		MemberInitialiser => [ValueSlot],
-		ConstructionExpression => [ArgumentsSlot],
+		ConstructionExpression => [ElementsSlot],
 		CallExpression => [ReceiverSlot, ArgumentsSlot],
 		ConditionalExpression => [ConditionSlot, WhenTrueSlot, WhenFalseSlot],
 		ExpressionStatement => [ExpressionSlot],
@@ -625,6 +635,9 @@ public static class AstSchema
 		{
 			AstSlotKind.Parameter => candidate is Parameter,
 			AstSlotKind.Expression => IsExpression(candidate),
+			// A member initialiser is an element and not an expression: it names the member a value
+			// is for rather than evaluating to one.
+			AstSlotKind.Element => IsExpression(candidate) || candidate is MemberInitialiser,
 			// A parameter is not a statement, and neither is an entry point: a program starts
 			// running at one, so it belongs to a class or to the document rather than inside a body.
 			AstSlotKind.Statement => candidate is not (Parameter or EntryPoint),

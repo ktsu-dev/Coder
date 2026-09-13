@@ -380,6 +380,32 @@ public class AstGraphTests
 	}
 
 	/// <summary>
+	/// Tests that a designated initialiser can be wired into a construction from the editor.
+	/// </summary>
+	/// <remarks>
+	/// The whole chain, not just the schema's answer: the editor drags a link, the graph validates
+	/// it against the slot, and the AST ends up holding the node. Every generator writes one in this
+	/// position, and until the slot kind existed this was the one shape the graph could hold, the
+	/// serializer could persist and the editor could not build.
+	/// </remarks>
+	[TestMethod]
+	public void Connect_PutsAMemberInitialiserIntoAConstruction()
+	{
+		ConstructionExpression construction = new(new TypeReference("Point"));
+		AstGraph graph = new(construction);
+
+		MemberInitialiser initialiser = new("x") { Value = new LiteralExpression<int>(1) };
+		graph.AddDetached(initialiser, Vector2.Zero);
+
+		AstConnectResult result = Connect(graph, initialiser, construction, "Arguments", 0);
+
+		Assert.IsTrue(result.Success, result.Message);
+		Assert.HasCount(1, construction.Arguments);
+		Assert.AreSame(initialiser, construction.Arguments[0]);
+		Assert.IsEmpty(graph.Detached);
+	}
+
+	/// <summary>
 	/// Connects a node to a named slot of a parent, looking the pins up the way the editor does.
 	/// </summary>
 	/// <param name="graph">The graph under test.</param>
