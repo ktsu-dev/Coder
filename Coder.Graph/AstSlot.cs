@@ -36,6 +36,19 @@ public enum AstSlotKind
 	/// <summary>Anything that evaluates to a value, including the legacy leaf nodes.</summary>
 	Expression,
 
+	/// <summary>
+	/// One element of a braced list: an expression, or a
+	/// <see cref="ktsu.Coder.Ast.MemberInitialiser"/> naming the member it is for.
+	/// </summary>
+	/// <remarks>
+	/// Separate from <see cref="Expression"/> because a member initialiser does not evaluate to a
+	/// value — it says which member a value is for — and separate from a call's arguments because
+	/// only a construction has a spelling for one. Every generator reads a construction's arguments
+	/// for a member initialiser and none reads a call's, so the kinds part exactly where the
+	/// generators do.
+	/// </remarks>
+	Element,
+
 	/// <summary>Anything that can stand as a statement in a body.</summary>
 	Statement,
 
