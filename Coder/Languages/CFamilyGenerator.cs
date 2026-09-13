@@ -120,10 +120,16 @@ public abstract class CFamilyGenerator : StandardLanguageGenerator
 	/// <c>T name[]</c>, never <c>T[] name</c> — so a declaration cannot be built by writing the type
 	/// and the name in that order, which is what every other language here does. This is the one
 	/// place that difference lives.
+	/// <para>
+	/// An empty name is a declarator with nothing to declare, which is what an unnamed parameter is:
+	/// the brackets still belong after it, so <c>T[]</c> comes out with no space in front of the
+	/// nothing.
+	/// </para>
 	/// </remarks>
 	protected string SpellDeclarator(TypeReference type, string name)
 	{
 		Ensure.NotNull(type);
+		Ensure.NotNull(name);
 
 		TypeReference element = type.IsArray ? type.Clone() : type;
 		if (type.IsArray)
@@ -131,7 +137,9 @@ public abstract class CFamilyGenerator : StandardLanguageGenerator
 			element.IsArray = false;
 		}
 
-		return $"{SpellType(element)} {name}{(type.IsArray ? "[]" : string.Empty)}";
+		string declared = name.Length == 0 ? string.Empty : $" {name}";
+
+		return $"{SpellType(element)}{declared}{(type.IsArray ? "[]" : string.Empty)}";
 	}
 
 	/// <inheritdoc/>
