@@ -642,6 +642,31 @@ public class GoGeneratorTests
 	}
 
 	/// <summary>
+	/// Tests that a construction is written as a conversion only where Go has one — a type and
+	/// exactly one operand — and as a composite literal everywhere else. A conversion taking two
+	/// arguments is not a longer conversion but a compile error, so the argument count is what parts
+	/// the two shapes rather than whether any argument names a member.
+	/// </summary>
+	[TestMethod]
+	public void Construction_IsAConversionOnlyWhereItTakesOneValue()
+	{
+		ConstructionExpression named = new(new TypeReference("Point"));
+		named.Arguments.Add(new MemberInitialiser("X") { Value = Literal.Number(1) });
+
+		ConstructionExpression converted = new(new TypeReference("int64"));
+		converted.Arguments.Add(new VariableReference("n"));
+
+		ConstructionExpression positional = new(new TypeReference("Wrapper"));
+		positional.Arguments.Add(Literal.Number(1));
+		positional.Arguments.Add(Literal.Number(2));
+
+		Assert.AreEqual("Point{X: 1}", Generator.Generate(named));
+		Assert.AreEqual("int64(n)", Generator.Generate(converted));
+		Assert.AreEqual("Wrapper{1, 2}", Generator.Generate(positional));
+		Assert.AreEqual("Point{}", Generator.Generate(new ConstructionExpression(new TypeReference("Point"))));
+	}
+
+	/// <summary>
 	/// Tests that a list whose elements are themselves lists is written one per line, so that adding
 	/// a row to a generated table touches one line.
 	/// </summary>

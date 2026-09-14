@@ -1583,9 +1583,16 @@ public class GoGenerator : StandardLanguageGenerator
 	/// <remarks>
 	/// Three shapes, and which one is written depends on what the expression is rather than on where
 	/// it stands: a construction naming its members is a composite literal, one with no type at all
-	/// is a composite literal whose type the declaration around it supplies, and one that names
-	/// neither is a call — which in Go is a conversion when it takes one argument, since that is
-	/// what <c>int64(n)</c> is.
+	/// is a composite literal whose type the declaration around it supplies, and one naming a type
+	/// and handing it exactly one value is a call — which in Go is a conversion, since that is what
+	/// <c>int64(n)</c> is.
+	/// <para>
+	/// The argument count is what parts the last two, and it has to be: a conversion takes one
+	/// operand and nothing else, so <c>Wrapper(1, 2)</c> is not a longer conversion but a compile
+	/// error — <c>too many arguments in conversion to Wrapper</c>. A type handed two values
+	/// positionally is the other kind of composite literal, the one that lists a struct's fields in
+	/// declaration order, so anything but one argument is written in braces.
+	/// </para>
 	/// </remarks>
 	protected override void GenerateConstructionExpression(ConstructionExpression construction, CodeBlocker code)
 	{
@@ -1600,7 +1607,7 @@ public class GoGenerator : StandardLanguageGenerator
 
 		string type = SpellType(construction.Type);
 
-		if (construction.Arguments.Count == 0 || construction.Arguments.Any(argument => argument is MemberInitialiser))
+		if (construction.Arguments.Count != 1 || construction.Arguments.Any(argument => argument is MemberInitialiser))
 		{
 			code.Write(type);
 			WriteElementList(construction, code, "{", "}", "{}");
@@ -1608,17 +1615,7 @@ public class GoGenerator : StandardLanguageGenerator
 		}
 
 		code.Write($"{type}(");
-
-		for (int index = 0; index < construction.Arguments.Count; index++)
-		{
-			if (index > 0)
-			{
-				code.Write(", ");
-			}
-
-			GenerateInternal(construction.Arguments[index], code);
-		}
-
+		GenerateInternal(construction.Arguments[0], code);
 		code.Write(")");
 	}
 

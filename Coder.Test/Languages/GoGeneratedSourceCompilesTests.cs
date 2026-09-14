@@ -83,7 +83,7 @@ public class GoGeneratedSourceCompilesTests
 
 			// circle.Sum is Point's, reached through the embedded field rather than inherited.
 			return built.Sum() + zeroed.y + first.x + named.x + circle.Sum() + built.Pick() +
-				built.Add(zeroed).x + built.Negate().x +
+				built.Add(zeroed).x + built.Negate().x + Corner.y +
 				int(built.ToFloat64()) + int(shape.area()) + int(ColourGreen) + measure("a", []int{1})
 		}
 
@@ -160,6 +160,7 @@ public class GoGeneratedSourceCompilesTests
 		file.Members.Add(DescribesPoint());
 		file.Members.Add(CompiledExemplar.OriginAlias());
 		file.Members.Add(CompiledExemplar.OriginTable());
+		file.Members.Add(Corner());
 		file.Members.Add(CompiledExemplar.Measure());
 		file.Members.Add(new CompileTimeAssertion
 		{
@@ -168,6 +169,35 @@ public class GoGeneratedSourceCompilesTests
 		});
 
 		return file;
+	}
+
+	/// <summary>
+	/// Builds a value constructed from a type and two plain arguments, which is the shape neither of
+	/// the other two composite literals here has.
+	/// </summary>
+	/// <returns>The declaration.</returns>
+	/// <remarks>
+	/// This is here because it is the one construction Go cannot write as a call: a conversion takes
+	/// one operand, so <c>Point(1, 2)</c> is <c>too many arguments in conversion to Point</c> rather
+	/// than a longer conversion, and only a compiler says so. The table above lists its members by
+	/// name and the assertion below constructs nothing at all, so without this the positional
+	/// literal is the one shape nothing compiles.
+	/// </remarks>
+	private static FieldDeclaration Corner()
+	{
+		ConstructionExpression built = new(new TypeReference("Point"));
+		built.Arguments.Add(new LiteralExpression<int>(1));
+		built.Arguments.Add(new LiteralExpression<int>(2));
+
+		FieldDeclaration corner = new()
+		{
+			Name = "Corner",
+			Type = new TypeReference("Point"),
+			InitialValue = built,
+		};
+		corner.Documentation.Add("The far corner, built from its members in order.");
+
+		return corner;
 	}
 
 	/// <summary>
