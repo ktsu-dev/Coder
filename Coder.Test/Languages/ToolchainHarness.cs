@@ -5,7 +5,7 @@ namespace ktsu.Coder.Test.Languages;
 using System.Diagnostics;
 
 /// <summary>
-/// Runs a real compiler over generated source.
+/// Runs a real toolchain over generated source.
 /// </summary>
 /// <remarks>
 /// Three of the generators here are checked by compiling what they write, because the rules they
@@ -13,6 +13,11 @@ using System.Diagnostics;
 /// about receivers, associated items and what a trait implementation owes its trait, and Go's about
 /// unused names, which it refuses rather than warns about. Everything those tests share about
 /// *running* a compiler is here, so that what is left in each of them is the language.
+/// <para>
+/// Python is asked the same question by an interpreter rather than a compiler, having no compiler to
+/// ask: a Python file builds its own declarations as it is loaded, so a declaration the language
+/// refuses raises on import rather than failing to build.
+/// </para>
 /// </remarks>
 internal static class ToolchainHarness
 {
