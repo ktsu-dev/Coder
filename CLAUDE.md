@@ -139,6 +139,14 @@ source in seven target languages. The solution uses:
   whole a pointer to the member — to exactly one of them, and Go satisfies an interface structurally
   and so writes `var _ Contract = (*Type)(nil)`, an assertion the compiler checks rather than a
   declaration. A generator handed one list would be guessing which entry was the class.
+  Python folds the two back into the one list it has, and is the one target that has to do more than
+  spell them: a base list is an expression evaluated as the `class` statement runs, so a base naming
+  the class being declared — the self-type idiom, an interface written over its own implementer —
+  names something that does not exist yet and raises `NameError` on import. The argument is quoted,
+  which is what `typing` takes as a forward reference and resolves once something asks;
+  `from __future__ import annotations` is the other half of the idea and does not reach a base, which
+  is an expression rather than an annotation. `PythonGeneratedSourceImportsTests` loads what the
+  generator writes, because that is a class of error no test pinning the text can see.
   The three modifiers split along a line worth stating once: `IsRecord` and `IsReadOnly` are claims
   about the type — it compares by value, no member of it modifies it — so a target with no word for
   one writes it down, the same as `CompileTimeAssertion`, while Rust's `#[derive(Clone, Debug,

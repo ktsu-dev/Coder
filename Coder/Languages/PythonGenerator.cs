@@ -408,10 +408,11 @@ public class PythonGenerator : StandardLanguageGenerator
 		// Python inherits from as many things as it is given and has no separate notion of an
 		// interface, so the base and the interfaces are one list of bases -- which is what the
 		// abstract base classes in the standard library already are.
+		string? declaring = classDecl.Name;
 		string[] bases =
 		[
-			.. classDecl.BaseType is TypeReference baseType ? (string[])[PythonTypeFromGenericType(baseType)] : [],
-			.. classDecl.Interfaces.Select(PythonTypeFromGenericType),
+			.. classDecl.BaseType is TypeReference baseType ? (string[])[PythonBaseFromGenericType(baseType, declaring)] : [],
+			.. classDecl.Interfaces.Select(implemented => PythonBaseFromGenericType(implemented, declaring)),
 		];
 
 		if (bases.Length > 0)
@@ -678,16 +679,7 @@ public class PythonGenerator : StandardLanguageGenerator
 	/// </remarks>
 	private static string PythonTypeFromGenericType(TypeReference type)
 	{
-		string name = type.Name.ToLowerInvariant() switch
-		{
-			"int" => "int",
-			"string" => "str",
-			"bool" => "bool",
-			"float" => "float",
-			"double" => "float",
-			"void" => "None",
-			_ => type.Name
-		};
+		string name = PythonTypeName(type);
 
 		string spelled = type.TypeArguments.Count == 0
 			? name
@@ -697,6 +689,88 @@ public class PythonGenerator : StandardLanguageGenerator
 		// name is a subscript rather than a declarator here.
 		return type.IsArray ? $"list[{spelled}]" : spelled;
 	}
+
+	/// <summary>
+	/// Maps a type's name to the Python spelling of it.
+	/// </summary>
+	/// <param name="type">The type whose name to map.</param>
+	/// <returns>The name Python knows it by.</returns>
+	private static string PythonTypeName(TypeReference type) => type.Name.ToLowerInvariant() switch
+	{
+		"int" => "int",
+		"string" => "str",
+		"bool" => "bool",
+		"float" => "float",
+		"double" => "float",
+		"void" => "None",
+		_ => type.Name
+	};
+
+	/// <summary>
+	/// Spells a base of a class, quoting any argument that names the class being declared.
+	/// </summary>
+	/// <param name="type">The base to spell.</param>
+	/// <param name="declaring">The name of the class the base list belongs to.</param>
+	/// <returns>The Python source for it.</returns>
+	/// <remarks>
+	/// A base list is an expression and Python evaluates it as the <c>class</c> statement is run, so a
+	/// base naming the class being declared is a name that does not exist yet: the self-type idiom —
+	/// <c>IVector0&lt;TSelf, T&gt;</c>, the interface that hands a method the implementing type — makes
+	/// the module raise <c>NameError</c> on import rather than misbehave later. Nothing about the
+	/// declaration is wrong; Python is the one target that reads a base eagerly.
+	/// <para>
+	/// A quoted argument is the language's own answer, and the one <c>typing</c> consumers write for
+	/// exactly this case: <c>typing</c> takes a string as a forward reference and resolves it when
+	/// something asks, by which time the class exists. <c>from __future__ import annotations</c> is
+	/// the other half of the idea and does not reach here — it defers *annotations*, and a base is an
+	/// expression.
+	/// </para>
+	/// <para>
+	/// Only the arguments are quoted, never the base itself. A class may inherit from a subscripted
+	/// generic holding a forward reference and may not inherit from a string, and quoting is at the
+	/// outermost argument alone for the same reason: one quoted argument carries every name inside it,
+	/// and a second pair of quotes within the first would end the string rather than nest.
+	/// </para>
+	/// </remarks>
+	private static string PythonBaseFromGenericType(TypeReference type, string? declaring)
+	{
+		if (declaring is null || type.TypeArguments.Count == 0 || !NamesType(type.TypeArguments, declaring))
+		{
+			return PythonTypeFromGenericType(type);
+		}
+
+		IEnumerable<string> arguments = type.TypeArguments.Select(argument =>
+			NamesType(argument, declaring)
+				? $"\"{PythonTypeFromGenericType(argument)}\""
+				: PythonTypeFromGenericType(argument));
+
+		string spelled = $"{PythonTypeName(type)}[{string.Join(", ", arguments)}]";
+
+		return type.IsArray ? $"list[{spelled}]" : spelled;
+	}
+
+	/// <summary>
+	/// Asks whether a type names another anywhere in it.
+	/// </summary>
+	/// <param name="type">The type to look through.</param>
+	/// <param name="name">The name being looked for.</param>
+	/// <returns>True when the name is the type's own or any of its arguments'.</returns>
+	/// <remarks>
+	/// Through the arguments rather than at the top alone, because a base is as readily written over a
+	/// type holding the class — <c>IVector0&lt;Wrapper&lt;Length&lt;T&gt;&gt;, T&gt;</c> — as over the
+	/// class itself, and Python evaluates all of it at once either way.
+	/// </remarks>
+	private static bool NamesType(TypeReference type, string name) =>
+		string.Equals(type.Name, name, StringComparison.Ordinal) || NamesType(type.TypeArguments, name);
+
+	/// <summary>
+	/// Asks whether any of several types names another anywhere in it.
+	/// </summary>
+	/// <param name="types">The types to look through.</param>
+	/// <param name="name">The name being looked for.</param>
+	/// <returns>True when any of them names it.</returns>
+	private static bool NamesType(IEnumerable<TypeReference> types, string name) =>
+		types.Any(type => NamesType(type, name));
 
 	/// <inheritdoc/>
 	/// <remarks>

@@ -55,6 +55,19 @@ public class TypeDeclarationShapeTests
 			IsReadOnly = true,
 		};
 
+	/// <summary>
+	/// A type implementing an interface written over the type itself, which is how an interface gives
+	/// a method the implementing type as its result — <c>TSelf Create(T value)</c> rather than
+	/// <c>IVector0 Create(T value)</c>.
+	/// </summary>
+	/// <returns>The declaration.</returns>
+	private static ClassDeclaration SelfTyped()
+	{
+		ClassDeclaration length = new("Length");
+		length.Interfaces.Add(TypeReference.Parse("IVector0<Length<T>, T>"));
+		return length;
+	}
+
 	private static string Generate(ILanguageGenerator generator, AstNode node) => generator.Generate(node);
 
 	// ------------------------------------------------------------------ Interfaces
@@ -136,6 +149,82 @@ public class TypeDeclarationShapeTests
 		string code = Generate(new PythonGenerator(), Widget());
 
 		StringAssert.Contains(code, "class Widget(Control, Drawable, Clickable):");
+	}
+
+	/// <summary>
+	/// Python quotes the argument of a base that names the class being declared, because a base list
+	/// is an expression Python evaluates before the name exists.
+	/// </summary>
+	/// <remarks>
+	/// The self-type idiom, which is how an interface hands a method the implementing type — every one
+	/// of the 212 generated quantities in <c>ktsu.Semantics</c> is declared this way. Unquoted, the
+	/// module raises <c>NameError</c> on import rather than misbehaving later, so this is the
+	/// difference between a file that can be loaded and one that cannot.
+	/// </remarks>
+	[TestMethod]
+	public void Python_QuotesABaseArgumentNamingTheClassBeingDeclared()
+	{
+		string code = Generate(new PythonGenerator(), SelfTyped());
+
+		StringAssert.Contains(code, "class Length(IVector0[\"Length[T]\", T]):");
+	}
+
+	/// <summary>
+	/// The same for a pair that refer to each other, which needs no generics of its own.
+	/// </summary>
+	[TestMethod]
+	public void Python_QuotesABaseArgumentThatIsTheClassItself()
+	{
+		ClassDeclaration node = new("Node");
+		node.Interfaces.Add(TypeReference.Parse("Visitor<Node>"));
+
+		string code = Generate(new PythonGenerator(), node);
+
+		StringAssert.Contains(code, "class Node(Visitor[\"Node\"]):");
+	}
+
+	/// <summary>
+	/// An argument holding the class further down is quoted whole, which is the one place the quote
+	/// can go: a second pair inside the first would end the string rather than nest.
+	/// </summary>
+	[TestMethod]
+	public void Python_QuotesTheWholeArgumentWhenTheClassIsNestedInIt()
+	{
+		ClassDeclaration length = new("Length");
+		length.Interfaces.Add(TypeReference.Parse("IVector0<Wrapper<Length<T>>, T>"));
+
+		string code = Generate(new PythonGenerator(), length);
+
+		StringAssert.Contains(code, "class Length(IVector0[\"Wrapper[Length[T]]\", T]):");
+	}
+
+	/// <summary>
+	/// An argument naming anything else is left alone: a forward reference is what a name that does
+	/// not exist yet needs, and every other name is one Python can already resolve.
+	/// </summary>
+	[TestMethod]
+	public void Python_LeavesABaseArgumentNamingSomethingElseUnquoted()
+	{
+		ClassDeclaration button = new("Button");
+		button.Interfaces.Add(TypeReference.Parse("Handler<Event>"));
+
+		string code = Generate(new PythonGenerator(), button);
+
+		StringAssert.Contains(code, "class Button(Handler[Event]):");
+		Assert.DoesNotContain("\"", code, "Python quoted a base that names nothing being declared.");
+	}
+
+	/// <summary>
+	/// The other targets write the same declaration verbatim, because the declaration is not what is
+	/// wrong with it: Python is the one target that reads a base list eagerly.
+	/// </summary>
+	[TestMethod]
+	public void OtherTargets_WriteASelfTypedInterfaceVerbatim()
+	{
+		StringAssert.Contains(
+			Generate(new CSharpGenerator(), SelfTyped()), "class Length : IVector0<Length<T>, T>");
+		StringAssert.Contains(
+			Generate(new CppGenerator(), SelfTyped()), "class Length : public IVector0<Length<T>, T>");
 	}
 
 	/// <summary>
