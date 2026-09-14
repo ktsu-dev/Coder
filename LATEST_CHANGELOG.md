@@ -1,7 +1,6 @@
-## v3.14.2 (patch)
+## v3.14.3 (patch)
 
-Changes since v3.14.1:
+Changes since v3.14.2:
 
-- Take the assertion Sonar names for the tests this PR adds [patch] ([@Claude](https://github.com/Claude))
-- Quote a Python base that names the class being declared (closes #64) [patch] ([@Claude](https://github.com/Claude))
+- Write a positional construction as a Go composite literal (closes #68) [patch] ([@Claude](https://github.com/Claude))
 
