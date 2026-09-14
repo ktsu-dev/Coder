@@ -166,7 +166,7 @@ public class TypeDeclarationShapeTests
 	{
 		string code = Generate(new PythonGenerator(), SelfTyped());
 
-		StringAssert.Contains(code, "class Length(IVector0[\"Length[T]\", T]):");
+		Assert.Contains("class Length(IVector0[\"Length[T]\", T]):", code);
 	}
 
 	/// <summary>
@@ -180,7 +180,7 @@ public class TypeDeclarationShapeTests
 
 		string code = Generate(new PythonGenerator(), node);
 
-		StringAssert.Contains(code, "class Node(Visitor[\"Node\"]):");
+		Assert.Contains("class Node(Visitor[\"Node\"]):", code);
 	}
 
 	/// <summary>
@@ -195,7 +195,7 @@ public class TypeDeclarationShapeTests
 
 		string code = Generate(new PythonGenerator(), length);
 
-		StringAssert.Contains(code, "class Length(IVector0[\"Wrapper[Length[T]]\", T]):");
+		Assert.Contains("class Length(IVector0[\"Wrapper[Length[T]]\", T]):", code);
 	}
 
 	/// <summary>
@@ -210,7 +210,7 @@ public class TypeDeclarationShapeTests
 
 		string code = Generate(new PythonGenerator(), button);
 
-		StringAssert.Contains(code, "class Button(Handler[Event]):");
+		Assert.Contains("class Button(Handler[Event]):", code);
 		Assert.DoesNotContain("\"", code, "Python quoted a base that names nothing being declared.");
 	}
 
@@ -221,10 +221,10 @@ public class TypeDeclarationShapeTests
 	[TestMethod]
 	public void OtherTargets_WriteASelfTypedInterfaceVerbatim()
 	{
-		StringAssert.Contains(
-			Generate(new CSharpGenerator(), SelfTyped()), "class Length : IVector0<Length<T>, T>");
-		StringAssert.Contains(
-			Generate(new CppGenerator(), SelfTyped()), "class Length : public IVector0<Length<T>, T>");
+		Assert.Contains(
+			"class Length : IVector0<Length<T>, T>", Generate(new CSharpGenerator(), SelfTyped()));
+		Assert.Contains(
+			"class Length : public IVector0<Length<T>, T>", Generate(new CppGenerator(), SelfTyped()));
 	}
 
 	/// <summary>
