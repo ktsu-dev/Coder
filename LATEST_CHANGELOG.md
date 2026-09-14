@@ -1,6 +1,4 @@
-## v3.14.3 (patch)
+## v3.14.3
 
-Changes since v3.14.2:
-
-- Write a positional construction as a Go composite literal (closes #68) [patch] ([@Claude](https://github.com/Claude))
+No significant changes detected since v3.14.3.
 
