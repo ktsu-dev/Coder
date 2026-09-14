@@ -1,6 +1,7 @@
-## v3.14.1 (patch)
+## v3.14.2 (patch)
 
-Changes since v3.14.0:
+Changes since v3.14.1:
 
-- ci: adopt the consolidated .NET workflow [patch] ([@Claude](https://github.com/Claude))
+- Take the assertion Sonar names for the tests this PR adds [patch] ([@Claude](https://github.com/Claude))
+- Quote a Python base that names the class being declared (closes #64) [patch] ([@Claude](https://github.com/Claude))
 
