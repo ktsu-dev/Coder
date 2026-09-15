@@ -139,18 +139,20 @@ public class FunctionModifierTests
 	}
 
 	/// <summary>
-	/// A static private member keeps both spellings, which are separate parts of the same declaration.
+	/// A static private member keeps the one spelling JavaScript has for it. <c>static</c> is a
+	/// modifier in front of the name and survives; privacy is a <c>#</c> on the name itself, so
+	/// writing it would rename the method and leave every call to it naming the old one.
 	/// </summary>
 	[TestMethod]
-	public void JavaScript_WritesStaticAlongsideThePrivatePrefix()
+	public void JavaScript_WritesStaticOnAPrivateMethodWithoutRenamingIt()
 	{
 		ClassDeclaration declaration = SampleClass();
 		((FunctionDeclaration)declaration.Members[0]).Visibility = Visibility.Private;
 
-		Assert.Contains(
-			"static #distance(scale)",
-			new JavaScriptGenerator().Generate(declaration),
-			StringComparison.Ordinal);
+		string code = new JavaScriptGenerator().Generate(declaration);
+
+		Assert.Contains("static distance(scale)", code, StringComparison.Ordinal);
+		Assert.DoesNotContain("#distance", code, StringComparison.Ordinal);
 	}
 
 	/// <summary>
