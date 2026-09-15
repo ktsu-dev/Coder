@@ -1,6 +1,7 @@
-## v3.14.5 (patch)
+## v3.14.6 (patch)
 
-Changes since v3.14.4:
+Changes since v3.14.5:
 
-- Write a Go type down over the whole declaration, not its first line (closes #63) [patch] ([@Claude](https://github.com/Claude))
+- style: use Assert.Contains over StringAssert.Contains [patch] ([@Claude](https://github.com/Claude))
+- fix: parse YAML numeric literals invariantly [patch] ([@Claude](https://github.com/Claude))
 
