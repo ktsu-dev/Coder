@@ -1,7 +1,6 @@
-## v3.14.4 (patch)
+## v3.14.5 (patch)
 
-Changes since v3.14.3:
+Changes since v3.14.4:
 
-- style(test): use Assert.Contains over StringAssert.Contains on the changed lines ([@Claude](https://github.com/Claude))
-- fix: stop JavaScript renaming a private member its references still name [patch] ([@Claude](https://github.com/Claude))
+- Write a Go type down over the whole declaration, not its first line (closes #63) [patch] ([@Claude](https://github.com/Claude))
 
