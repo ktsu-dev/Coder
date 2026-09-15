@@ -1,7 +1,4 @@
-## v3.14.6 (patch)
+## v3.14.6
 
-Changes since v3.14.5:
-
-- style: use Assert.Contains over StringAssert.Contains [patch] ([@Claude](https://github.com/Claude))
-- fix: parse YAML numeric literals invariantly [patch] ([@Claude](https://github.com/Claude))
+No significant changes detected since v3.14.6.
 
