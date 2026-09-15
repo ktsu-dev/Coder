@@ -142,6 +142,62 @@ public class GoGeneratorTests
 	}
 
 	/// <summary>
+	/// Tests that a type written over parameters has them written down everywhere rather than on its
+	/// first line only.
+	/// </summary>
+	/// <remarks>
+	/// The decision is that a generic <em>type</em> is written down, and it only holds if the rest of
+	/// the declaration agrees with it: a file declaring <c>Boxed</c> and then spelling a member
+	/// <c>T</c> and a result <c>Boxed[T]</c> is <c>undefined: T</c> and <c>Boxed is not a generic
+	/// type</c>, neither of which the text shows.
+	/// <see cref="GoGeneratedSourceCompilesTests"/> compiles the same shape; this is here so the
+	/// answer is still pinned where no Go toolchain is on the path.
+	/// </remarks>
+	[TestMethod]
+	public void TypeParametersOfAType_AreWrittenDownEverywhere()
+	{
+		ClassDeclaration boxed = new("Boxed") { Kind = TypeDeclarationKind.Struct };
+		boxed.TypeParameters.Add(TypeParameter.Parse("T : Stringer"));
+		boxed.Members.Add(new FieldDeclaration("held", "T"));
+
+		FunctionDeclaration hold = new("Hold")
+		{
+			ReturnType = TypeReference.Parse("Boxed<T>"),
+			IsStatic = true,
+		};
+		hold.Parameters.Add(new Parameter("value", "T"));
+		boxed.Members.Add(hold);
+
+		string written = Generator.Generate(boxed);
+
+		Assert.Contains("// over T : Stringer", written, StringComparison.Ordinal);
+		Assert.Contains("type Boxed struct", written, StringComparison.Ordinal);
+		Assert.Contains("held any", written, StringComparison.Ordinal);
+		Assert.Contains("func BoxedHold(value any) Boxed", written, StringComparison.Ordinal);
+		Assert.DoesNotContain(
+			"Boxed[",
+			written,
+			"Boxed was declared without parameters, so nothing in the file may subscript it.");
+	}
+
+	/// <summary>
+	/// Tests that a type parameter on a function stays a real one, which is the half of the decision
+	/// that is not a write-down.
+	/// </summary>
+	[TestMethod]
+	public void TypeParametersOfAFunction_AreWrittenAsGenerics()
+	{
+		FunctionDeclaration first = new("first") { ReturnType = "T" };
+		first.TypeParameters.Add(TypeParameter.Parse("T : any"));
+		first.Parameters.Add(new Parameter("values") { Type = new TypeReference("T") { IsArray = true } });
+
+		Assert.Contains(
+			"func first[T any](values []T) T",
+			Generator.Generate(first),
+			StringComparison.Ordinal);
+	}
+
+	/// <summary>
 	/// Tests that both of the AST's indirections become the one Go has.
 	/// </summary>
 	[TestMethod]

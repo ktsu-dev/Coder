@@ -126,7 +126,13 @@ source in seven target languages. The solution uses:
   Go spells one, `Implements` being exactly a Go constraint interface, and only for a *function*: a
   method on a generic type needs the parameters in three places and spelled two ways (`NewPoint` for
   the constructor's name, `Point[T]` for its receiver and result), so a generic type is written
-  down instead. C++ writes `template <typename T>` and notes every constraint, the standard concepts
+  down instead — **and so is everything written over it**, which is the half that makes the decision
+  hold: a member typed for a parameter is typed `any`, and a mention of the type carries no
+  arguments, because a type declared without parameters takes none. Writing the type down and then
+  spelling `Point[T]` anyway is neither decision, only `undefined: T` and `Point is not a generic
+  type` — errors nothing in the text shows, which is why `GoGeneratedSourceCompilesTests` compiles a
+  type parameter on a `ClassDeclaration` rather than asserting one. C++ writes `template <typename
+  T>` and notes every constraint, the standard concepts
   needing an include the AST does not carry. C, Python and JavaScript write the whole parameter
   down. `RustGeneratedSourceCompilesTests` compiles a generic struct with a load-bearing bound, so
   the `impl` repetition is checked rather than asserted.
