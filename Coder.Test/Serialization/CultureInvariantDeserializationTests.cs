@@ -85,7 +85,7 @@ public class CultureInvariantDeserializationTests
 		// this pins the half of the contract the fix depends on.
 		string yaml = UnderCulture(DotGroupingCulture(), () => new YamlSerializer().Serialize(Literal.DecimalValue(3.14)));
 
-		StringAssert.Contains(yaml, "3.14");
+		Assert.Contains("3.14", yaml);
 	}
 
 	[TestMethod]
