@@ -81,10 +81,15 @@ public class GoGeneratedSourceCompilesTests
 			circle := Circle{Point: built, radius: 1.0}
 			circle.Close()
 
+			// Boxed was written down rather than written, so nothing about it is spelled over a
+			// parameter: it is held as the most general thing there is and read back as one.
+			boxed := BoxedHold(3)
+
 			// circle.Sum is Point's, reached through the embedded field rather than inherited.
 			return built.Sum() + zeroed.y + first.x + named.x + circle.Sum() + built.Pick() +
 				built.Add(zeroed).x + built.Negate().x + Corner.y +
-				int(built.ToFloat64()) + int(shape.area()) + int(ColourGreen) + measure("a", []int{1})
+				int(built.ToFloat64()) + int(shape.area()) + int(ColourGreen) + measure("a", []int{1}) +
+				boxed.Held().(int)
 		}
 
 		""";
@@ -162,6 +167,7 @@ public class GoGeneratedSourceCompilesTests
 		file.Members.Add(CompiledExemplar.OriginTable());
 		file.Members.Add(Corner());
 		file.Members.Add(CompiledExemplar.Measure());
+		file.Members.Add(Boxed());
 		file.Members.Add(new CompileTimeAssertion
 		{
 			Condition = "unsafe.Sizeof(Point{}) == 2*unsafe.Sizeof(0)",
@@ -169,6 +175,45 @@ public class GoGeneratedSourceCompilesTests
 		});
 
 		return file;
+	}
+
+	/// <summary>
+	/// Builds a type written over a parameter, which Go writes down rather than writes.
+	/// </summary>
+	/// <returns>The declaration.</returns>
+	/// <remarks>
+	/// The one shape no other case here has, and the one a compiler is needed for: a type parameter
+	/// on a <see cref="ClassDeclaration"/> is written down — the decision <c>CLAUDE.md</c> states —
+	/// so the file holds a <c>Boxed</c> that takes no parameters, and every place the declaration
+	/// spelled one has to agree with that. A field typed <c>T</c>, a result typed <c>Boxed&lt;T&gt;</c>
+	/// and a value built as one are the three positions that can disagree, and all three are here:
+	/// a file naming a parameter the type never declared is <c>undefined: T</c>, and one subscripting
+	/// a type that takes none is <c>Boxed is not a generic type</c>. Neither is visible in the text.
+	/// </remarks>
+	private static ClassDeclaration Boxed()
+	{
+		ClassDeclaration boxed = new("Boxed") { Kind = TypeDeclarationKind.Struct };
+		boxed.Documentation.Add("Holds one of whatever it was given.");
+		boxed.TypeParameters.Add(TypeParameter.Parse("T : Stringer"));
+		boxed.Members.Add(new FieldDeclaration("held", "T"));
+
+		ConstructionExpression built = new(TypeReference.Parse("Boxed<T>"));
+		built.Arguments.Add(new MemberInitialiser("held", new VariableReference("value")));
+
+		FunctionDeclaration hold = new("Hold")
+		{
+			ReturnType = TypeReference.Parse("Boxed<T>"),
+			IsStatic = true,
+		};
+		hold.Parameters.Add(new Parameter("value", "T"));
+		hold.Body.Add(new ReturnStatement(built));
+		boxed.Members.Add(hold);
+
+		FunctionDeclaration held = new("Held") { ReturnType = "T", IsReadOnly = true };
+		held.Body.Add(new ReturnStatement(new VariableReference("self.held")));
+		boxed.Members.Add(held);
+
+		return boxed;
 	}
 
 	/// <summary>

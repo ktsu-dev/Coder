@@ -32,6 +32,16 @@ using ktsu.CodeBlocker;
 /// <c>var</c> — which is what the language means by constant, rather than a gap in it.
 /// </para>
 /// <para>
+/// A type parameter is the one place Go has the feature and this generator declines it, and the
+/// decline reaches the whole declaration rather than its first line. A method on a generic type needs
+/// the parameters in three places and spelled two ways, so a generic <i>type</i> is written down —
+/// and then so is everything written over it: a member typed for a parameter is typed <c>any</c>, and
+/// a mention of the type carries no arguments, because a type declared without parameters takes none.
+/// Writing the type down and then spelling <c>Type[T]</c> anyway would be neither decision, only a
+/// file that reads correctly and does not build. A parameter on a <i>function</i> is a real one and is
+/// written as one.
+/// </para>
+/// <para>
 /// Visibility is the one thing Go says in a way no generator can write: a name is exported when its
 /// first letter is a capital, and there is no keyword. Renaming a declaration to match what it asked
 /// for would not rename the references to it, which is the rule every generator here keeps, so a
@@ -163,6 +173,26 @@ public class GoGenerator : StandardLanguageGenerator
 	/// missing.
 	/// </remarks>
 	private bool insideInterface;
+
+	/// <summary>
+	/// The names the type being written was written <em>down</em> over.
+	/// </summary>
+	/// <remarks>
+	/// A type parameter on a type declaration is written down rather than written, so the file holds
+	/// no declaration of the name — which makes every later mention of it a name nothing declares.
+	/// These are the names that have to be answered with something the file does hold.
+	/// </remarks>
+	private HashSet<string> writtenDownParameters = [];
+
+	/// <summary>
+	/// The name of the type those parameters were written down from, when there is one.
+	/// </summary>
+	/// <remarks>
+	/// Held beside the names because a type written without parameters is a type that takes none, so
+	/// a mention of it carries none either. Knowing which name that is, is the whole of the
+	/// difference between <c>Boxed</c> and a generic type the file really does declare.
+	/// </remarks>
+	private string? writtenDownType;
 
 	/// <summary>
 	/// Gets the unique identifier for this language generator.
@@ -478,6 +508,14 @@ public class GoGenerator : StandardLanguageGenerator
 	/// becomes a package-level <c>var</c>, because Go has no static data member and a note in place
 	/// of the table would lose it.
 	/// </para>
+	/// <para>
+	/// A type written over parameters is written down, and that decision reaches the whole
+	/// declaration rather than its first line: while its members are being written, the parameters
+	/// are names the file does not hold, so <see cref="writtenDownParameters"/> stands for the
+	/// duration and <see cref="SpellTypeName"/> answers them. A type declared inside this one is
+	/// written beside it and is not written over these parameters, which is why it is emitted before
+	/// the scope opens.
+	/// </para>
 	/// </remarks>
 	protected override void GenerateClassDeclaration(ClassDeclaration classDecl, CodeBlocker code)
 	{
@@ -495,6 +533,31 @@ public class GoGenerator : StandardLanguageGenerator
 			code.NewLine();
 		}
 
+		HashSet<string> enclosingParameters = writtenDownParameters;
+		string? enclosingType = writtenDownType;
+
+		writtenDownParameters = [.. classDecl.TypeParameters.Select(parameter => parameter.Name)];
+		writtenDownType = writtenDownParameters.Count > 0 ? name : null;
+
+		try
+		{
+			GenerateTypeDeclaration(classDecl, name, code);
+		}
+		finally
+		{
+			writtenDownParameters = enclosingParameters;
+			writtenDownType = enclosingType;
+		}
+	}
+
+	/// <summary>
+	/// Writes a type declaration, with whatever it was written over already written down.
+	/// </summary>
+	/// <param name="classDecl">The declaration to emit.</param>
+	/// <param name="name">The name it is written under.</param>
+	/// <param name="code">The writer to emit into.</param>
+	private void GenerateTypeDeclaration(ClassDeclaration classDecl, string name, CodeBlocker code)
+	{
 		if (classDecl.IsSpecialisation)
 		{
 			GenerateDocumentation(classDecl, code);
@@ -545,7 +608,7 @@ public class GoGenerator : StandardLanguageGenerator
 	/// method set, and one declared on the value is in both.
 	/// </para>
 	/// </remarks>
-	private static void WriteInterfaceAssertions(ClassDeclaration classDecl, string name, CodeBlocker code)
+	private void WriteInterfaceAssertions(ClassDeclaration classDecl, string name, CodeBlocker code)
 	{
 		// Not for a type this generator wrote down rather than wrote. The assertion names the type,
 		// and the name of a generic type is not the name of a type -- `(*Mass)(nil)` where the
@@ -562,6 +625,36 @@ public class GoGenerator : StandardLanguageGenerator
 		foreach (TypeReference contract in classDecl.Interfaces)
 		{
 			code.WriteLine($"var _ {SpellType(contract)} = (*{name})(nil)");
+		}
+	}
+
+	/// <summary>
+	/// Writes down what a type declaration is written over, and what became of it.
+	/// </summary>
+	/// <param name="classDecl">The declaration being emitted.</param>
+	/// <param name="name">The name it is written under.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// Go has generics, and a generic type is still written down here. A method on one needs its
+	/// parameters in three places and spelled two ways — <c>NewPoint</c> for the constructor's name
+	/// but <c>Point[T]</c> for its receiver and for what the constructor answers with — so making a
+	/// type generic is a change to how this generator writes a whole type rather than to how it
+	/// writes one line. A function of its own has none of that, and is written as a generic one.
+	/// <para>
+	/// The second line is the half that was missing, and it is what makes the note true of the file
+	/// under it. Writing a type down and then referring to it as generic anyway is neither decision:
+	/// it is <c>undefined: T</c>, which is why the parameters stop being names here and say so.
+	/// </para>
+	/// </remarks>
+	private void WriteWrittenDownParameters(ClassDeclaration classDecl, string name, CodeBlocker code)
+	{
+		WriteTypeParametersDown(classDecl.TypeParameters, code);
+
+		if (classDecl.TypeParameters.Count > 0)
+		{
+			WriteInexpressible(
+				code,
+				$"each of those is {TypeMappings[UnknownTypeName]} below, and {name} itself takes none");
 		}
 	}
 
@@ -596,12 +689,7 @@ public class GoGenerator : StandardLanguageGenerator
 		WriteAnnotations(classDecl.Annotations, code);
 		WriteTypePromises(classDecl, code);
 
-		// Go has generics, and a generic type is still written down here. A method on one needs its
-		// parameters in three places and spelled two ways -- `NewPoint` for the constructor's name
-		// but `Point[T]` for its receiver and for what the constructor answers with -- so making a
-		// type generic is a change to how this generator writes a whole type rather than to how it
-		// writes one line. A function of its own has none of that, and is written as a generic one.
-		WriteTypeParametersDown(classDecl.TypeParameters, code);
+		WriteWrittenDownParameters(classDecl, name, code);
 		WriteExportNote(name, classDecl.Visibility, code);
 
 		List<AlignedLine> fields = [.. StructFields(classDecl)];
@@ -688,7 +776,7 @@ public class GoGenerator : StandardLanguageGenerator
 		GenerateDocumentation(classDecl, code);
 		WriteAnnotations(classDecl.Annotations, code);
 		WriteTypePromises(classDecl, code);
-		WriteTypeParametersDown(classDecl.TypeParameters, code);
+		WriteWrittenDownParameters(classDecl, name, code);
 		WriteExportNote(name, classDecl.Visibility, code);
 
 		List<AstNode> members = [.. classDecl.Members.Where(member => member is FunctionDeclaration or FieldDeclaration)];
@@ -860,14 +948,14 @@ public class GoGenerator : StandardLanguageGenerator
 	/// declaration instead.
 	/// </para>
 	/// </remarks>
-	private static string SpellTypeParameters(IEnumerable<TypeParameter> parameters)
+	private string SpellTypeParameters(IEnumerable<TypeParameter> parameters)
 	{
 		string[] declared = [.. parameters.Select(SpellOneTypeParameter)];
 
 		return declared.Length == 0 ? string.Empty : $"[{string.Join(", ", declared)}]";
 	}
 
-	private static string SpellOneTypeParameter(TypeParameter parameter)
+	private string SpellOneTypeParameter(TypeParameter parameter)
 	{
 		string[] required =
 		[
@@ -896,7 +984,7 @@ public class GoGenerator : StandardLanguageGenerator
 	/// A constructor answers the type it builds, which the declaration does not carry — it is named
 	/// after the type rather than typed by it, the same as everywhere else in the AST.
 	/// </remarks>
-	private static string SpellResult(FunctionDeclaration funcDecl, string? enclosingType) =>
+	private string SpellResult(FunctionDeclaration funcDecl, string? enclosingType) =>
 		funcDecl.Kind == FunctionKind.Constructor && enclosingType is not null
 			? enclosingType
 			: SpellType(funcDecl.ReturnType ?? new TypeReference("void"));
@@ -941,7 +1029,7 @@ public class GoGenerator : StandardLanguageGenerator
 	/// no <c>Point.zero</c> in Go for a reference to have named in the first place.
 	/// </para>
 	/// </remarks>
-	private static string SpellFunctionName(FunctionDeclaration funcDecl, string? enclosingType)
+	private string SpellFunctionName(FunctionDeclaration funcDecl, string? enclosingType)
 	{
 		string bare = funcDecl.Kind switch
 		{
@@ -991,7 +1079,7 @@ public class GoGenerator : StandardLanguageGenerator
 	/// standard library that prints anything. Every other conversion is <c>To<i>Type</i></c>, which
 	/// is only a name.
 	/// </remarks>
-	private static string ConversionName(TypeReference? target)
+	private string ConversionName(TypeReference? target)
 	{
 		string spelled = SpellType(target ?? new TypeReference(UnknownTypeName));
 		return string.Equals(spelled, StringTypeName, StringComparison.Ordinal)
@@ -1559,7 +1647,7 @@ public class GoGenerator : StandardLanguageGenerator
 	/// </summary>
 	/// <param name="conditional">The expression being written.</param>
 	/// <returns>The type as Go writes it.</returns>
-	private static string BranchType(ConditionalExpression conditional) =>
+	private string BranchType(ConditionalExpression conditional) =>
 		TypeOfValue(conditional.WhenTrue)
 			?? TypeOfValue(conditional.WhenFalse)
 			?? TypeMappings[UnknownTypeName];
@@ -1569,7 +1657,7 @@ public class GoGenerator : StandardLanguageGenerator
 	/// </summary>
 	/// <param name="value">The value to read.</param>
 	/// <returns>The type as Go writes it, or null where the value does not say.</returns>
-	private static string? TypeOfValue(AstNode value) => value switch
+	private string? TypeOfValue(AstNode value) => value switch
 	{
 		LiteralExpression<string> or AstLeafNode<string> => StringTypeName,
 		LiteralExpression<int> or AstLeafNode<int> => "int",
@@ -1775,7 +1863,7 @@ public class GoGenerator : StandardLanguageGenerator
 	/// a map each hold a pointer already, so a pointer to one is a pointer to a pointer and nobody
 	/// means that.
 	/// </remarks>
-	private static string SpellType(TypeReference type)
+	private string SpellType(TypeReference type)
 	{
 		string core = SpellCoreType(type);
 
@@ -1802,7 +1890,7 @@ public class GoGenerator : StandardLanguageGenerator
 	/// </summary>
 	/// <param name="type">The type to spell.</param>
 	/// <returns>The value form.</returns>
-	private static string SpellCoreType(TypeReference type)
+	private string SpellCoreType(TypeReference type)
 	{
 		string core = SpellTypeName(type);
 		return type.IsArray ? $"[]{core}" : core;
@@ -1822,8 +1910,17 @@ public class GoGenerator : StandardLanguageGenerator
 	/// A type with arguments is written with square brackets, which is where Go put its generics and
 	/// the one place its spelling of a familiar thing surprises a reader of the others.
 	/// </para>
+	/// <para>
+	/// The exception is the type this generator wrote <em>down</em>, and it is the whole of what
+	/// writing one down costs. A parameter of a type declaration names nothing in the file, so what
+	/// was written over it is written as the most general type there is; and a type declared without
+	/// parameters takes none, so a mention of it carries none. Spelling either the way the
+	/// declaration did would produce a file that reads correctly and does not build —
+	/// <c>undefined: T</c>, and <c>Boxed is not a generic type</c>. A type parameter on a
+	/// <em>function</em> is a real one and reaches none of this.
+	/// </para>
 	/// </remarks>
-	private static string SpellTypeName(TypeReference type)
+	private string SpellTypeName(TypeReference type)
 	{
 		string unknown = TypeMappings[UnknownTypeName];
 
@@ -1839,9 +1936,14 @@ public class GoGenerator : StandardLanguageGenerator
 				: $"map[{StringTypeName}]{unknown}";
 		}
 
+		if (writtenDownParameters.Contains(type.Name))
+		{
+			return unknown;
+		}
+
 		string name = TypeMappings.TryGetValue(type.Name, out string? mapped) ? mapped : type.Name;
 
-		return type.TypeArguments.Count == 0
+		return type.TypeArguments.Count == 0 || string.Equals(name, writtenDownType, StringComparison.Ordinal)
 			? name
 			: $"{name}[{string.Join(", ", type.TypeArguments.Select(SpellType))}]";
 	}
