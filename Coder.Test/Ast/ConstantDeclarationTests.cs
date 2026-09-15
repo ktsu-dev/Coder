@@ -100,10 +100,12 @@ public class ConstantDeclarationTests
 	}
 
 	/// <summary>
-	/// Tests that a private constant member is spelled with both, since the two are independent.
+	/// Tests that a private constant member is still spelled <c>static</c>, and under the name it was
+	/// declared with: constancy is a modifier JavaScript has, and visibility is one it does not, so
+	/// asking for the second leaves the first alone rather than renaming what it modifies.
 	/// </summary>
 	[TestMethod]
-	public void JavaScript_CombinesStaticWithAPrivateName()
+	public void JavaScript_WritesStaticOnAPrivateConstantWithoutRenamingIt()
 	{
 		ClassDeclaration declaration = new("Limits");
 		declaration.Members.Add(new VariableDeclaration("MAX", "int", Literal.Number(10))
@@ -112,7 +114,10 @@ public class ConstantDeclarationTests
 			Visibility = Visibility.Private,
 		});
 
-		StringAssert.Contains(new JavaScriptGenerator().Generate(declaration), "static #MAX = 10;", StringComparison.Ordinal);
+		string code = new JavaScriptGenerator().Generate(declaration);
+
+		StringAssert.Contains(code, "static MAX = 10;", StringComparison.Ordinal);
+		Assert.IsFalse(code.Contains("#MAX", StringComparison.Ordinal));
 	}
 
 	/// <summary>

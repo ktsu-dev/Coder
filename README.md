@@ -91,7 +91,7 @@ rather than the modifier's text because no two languages spell visibility the sa
 | C | Nothing inside a struct, which has no access control; a `Private` declaration at file scope is `static`, which is the internal linkage C has instead |
 | Rust | `pub`, or `pub(crate)` for `Internal` and `Protected`; `Private` writes nothing, which is already Rust's default. `Unspecified` is `pub`, since a generated type nothing outside the module can read is not what saying nothing asked for |
 | Go | Nothing. Go exports a name whose first letter is a capital and has no keyword at all, so a declaration whose name disagrees with what it asked for gets a note — renaming it would not rename the references to it. `Internal` is exactly Go's unexported, and `Private` and `Protected` are as near as there is |
-| JavaScript | A private class member takes the `#` prefix, which is JavaScript's own private syntax; nothing for the rest |
+| JavaScript | Nothing — the `#` that makes a class member private is a part of the name rather than a modifier in front of it, so writing one renames the declaration and leaves every reference to it naming something the class no longer declares |
 | Python | Nothing — Python has no access modifiers, and its leading-underscore convention renames the declaration rather than modifying it |
 
 ### Constants and entry points
@@ -211,7 +211,7 @@ directly.
 |---|---|---|---|
 | `python` | `PythonGenerator` | `py` | Type hints, `None` for void, `pass` for an empty body or class; `self` on methods; `main` with its `__main__` guard |
 | `csharp` | `CSharpGenerator` | `cs` | Mapped type names, `var` for inferred declarations, visibility keywords, `const`, `static Main` |
-| `javascript` | `JavaScriptGenerator` | `js` | Untyped; `const`/`let`; strict `===` and `!==`; method, `static` and `#private` syntax inside a class |
+| `javascript` | `JavaScriptGenerator` | `js` | Untyped; `const`/`let`; strict `===` and `!==`; method and `static` syntax inside a class |
 | `cpp` | `CppGenerator` | `cpp` | Mapped type spellings (`str` → `std::string`); `auto` for inferred declarations; access labels, `static constexpr` members and a terminating `;` on a class |
 | `c` | `CGenerator` | `c` | `typedef struct` for every kind of type; a member function is a free `Type_name(Type* self, …)`; an interface is a struct of function pointers; a base type is the first member; enumeration members are qualified by their enumeration; `_Static_assert`, `main(void)`, and `static const` for a constant |
 | `rust` | `RustGenerator` | `rs` | A `struct` for the data and an `impl` block for the behaviour; an interface is a `trait` and a base type on one is a supertrait; a destructor is `impl Drop`, an operator is its `std::ops` trait, a conversion is `impl From`, and a specialisation is `impl Trait for Type`; `#[repr]`, `#[must_use]`, `const fn`, and `const _: () = assert!(…)` |

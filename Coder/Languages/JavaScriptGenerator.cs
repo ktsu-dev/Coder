@@ -279,7 +279,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		Ensure.NotNull(code);
 
 		GenerateDocumentation(field, code);
-		code.Write(MemberName(field.Name ?? "unnamed", field.Visibility));
+		code.Write(field.Name ?? "unnamed");
 
 		if (field.InitialValue is not null)
 		{
@@ -317,9 +317,12 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	/// JavaScript's <c>function</c> keyword is a syntax error there. That is why the members are
 	/// emitted here rather than through <see cref="StandardLanguageGenerator.GenerateClassMembers"/>.
 	/// <para>
-	/// A private member is spelled with the <c>#</c> prefix, which is JavaScript's own private syntax
-	/// and enforced by the runtime. The other three visibilities have no spelling: JavaScript draws
-	/// the line at private, and a <c>protected</c> or <c>internal</c> member is an ordinary one.
+	/// No visibility is spelled, private included. JavaScript's <c>#</c> is a part of the name rather
+	/// than a modifier in front of it, so writing it renames the declaration, and nothing renames the
+	/// references: a <see cref="VariableReference"/> is emitted verbatim by the shared path, leaving
+	/// a body that names an identifier the class no longer declares. That is the reason
+	/// <see cref="PythonGenerator"/> drops its leading underscore and <see cref="GoGenerator"/> notes
+	/// the case of a name rather than changing it, and it is the same reason here.
 	/// </para>
 	/// </remarks>
 	protected override void GenerateClassDeclaration(ClassDeclaration classDecl, CodeBlocker code)
@@ -398,7 +401,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 			code.Write(StaticKeyword);
 		}
 
-		code.Write(MemberName(field.Name, field.Visibility));
+		code.Write(field.Name);
 
 		if (field.InitialValue is not null)
 		{
@@ -438,7 +441,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 
 		code.Write(method.Kind == FunctionKind.Constructor
 			? "constructor"
-			: MemberName(method.Name ?? "unnamedMethod", method.Visibility));
+			: method.Name ?? "unnamedMethod");
 
 		code.Write("(");
 		GenerateParameterList(method.Parameters, code);
@@ -502,19 +505,6 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 
 		EndStatement(code);
 	}
-
-	/// <summary>
-	/// Spells a class member's name for its visibility.
-	/// </summary>
-	/// <param name="name">The member's name in the AST.</param>
-	/// <param name="visibility">The visibility it was declared with.</param>
-	/// <returns>The name as the class body should spell it.</returns>
-	/// <remarks>
-	/// <c>#</c> is a part of the name in JavaScript rather than a modifier in front of it, so private
-	/// members are spelled here rather than by writing a keyword before the declaration.
-	/// </remarks>
-	private static string MemberName(string name, Visibility visibility) =>
-		visibility == Visibility.Private ? $"#{name}" : name;
 
 	/// <inheritdoc/>
 	/// <remarks>

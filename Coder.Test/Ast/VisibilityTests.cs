@@ -14,8 +14,9 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 /// </summary>
 /// <remarks>
 /// Visibility is the first thing the AST models that no two languages spell the same way — a C#
-/// keyword, a C++ access label, a JavaScript name prefix, and nothing at all in Python — so these
-/// cover each spelling rather than asserting one shape four times.
+/// keyword, a C++ access label, and nothing at all in Python or JavaScript, both of whose only
+/// convention is a spelling of the name itself and so would rename a declaration out from under
+/// every reference to it — so these cover each spelling rather than asserting one shape four times.
 /// </remarks>
 [TestClass]
 public class VisibilityTests
@@ -144,32 +145,68 @@ public class VisibilityTests
 	}
 
 	/// <summary>
-	/// Tests that JavaScript spells a private member with the <c>#</c> prefix its own private syntax
-	/// uses, and leaves the others as ordinary members.
+	/// Tests that JavaScript drops visibility rather than renaming the declaration, since its private
+	/// syntax is a <c>#</c> on the name rather than a modifier in front of it.
 	/// </summary>
 	[TestMethod]
-	public void JavaScript_SpellsAPrivateMemberWithAHash()
+	public void JavaScript_DropsVisibilityRatherThanRenaming()
 	{
 		string code = new JavaScriptGenerator().Generate(SampleClass());
 
-		StringAssert.Contains(code, "#x = 0;", StringComparison.Ordinal);
+		StringAssert.Contains(code, "x = 0;", StringComparison.Ordinal);
 		StringAssert.Contains(code, "origin = 0;", StringComparison.Ordinal);
 
-		// protected has no JavaScript spelling, so the method is an ordinary one.
+		// protected has no JavaScript spelling either, so the method is an ordinary one.
 		StringAssert.Contains(code, "area() {", StringComparison.Ordinal);
+
+		Assert.IsFalse(code.Contains('#', StringComparison.Ordinal));
+		Assert.IsFalse(code.Contains("private", StringComparison.Ordinal));
 	}
 
 	/// <summary>
-	/// Tests that a private method is spelled with the prefix too, since JavaScript's <c>#</c> applies
-	/// to any class member rather than to fields alone.
+	/// Tests that a private method is left alone too, since the prefix applies to any class member
+	/// rather than to fields alone and so would strand a call to one just as it strands a read.
 	/// </summary>
 	[TestMethod]
-	public void JavaScript_SpellsAPrivateMethodWithAHash()
+	public void JavaScript_DropsVisibilityOnAMethodToo()
 	{
 		ClassDeclaration declaration = new("Point");
 		declaration.Members.Add(new FunctionDeclaration("recompute") { ReturnType = "void", Visibility = Visibility.Private });
 
-		StringAssert.Contains(new JavaScriptGenerator().Generate(declaration), "#recompute() {", StringComparison.Ordinal);
+		string code = new JavaScriptGenerator().Generate(declaration);
+
+		StringAssert.Contains(code, "recompute() {", StringComparison.Ordinal);
+		Assert.IsFalse(code.Contains('#', StringComparison.Ordinal));
+	}
+
+	/// <summary>
+	/// Tests that a private member and the body that reads it come out naming the same identifier.
+	/// </summary>
+	/// <remarks>
+	/// This is the half the declaration tests above cannot see. <c>#</c> is a part of the name, so
+	/// prefixing a declaration renames it, and nothing prefixes a <see cref="VariableReference"/> —
+	/// the shared path writes one verbatim. A class whose method reads a private field would then
+	/// declare <c>#x</c> and read <c>x</c>, which resolves to nothing and throws a
+	/// <c>ReferenceError</c> under a module's implicit strict mode. Every name the body mentions has
+	/// to be one the class body declares, whichever way the generator spells it.
+	/// </remarks>
+	[TestMethod]
+	public void JavaScript_ReferencesThePrivateMemberItDeclared()
+	{
+		ClassDeclaration declaration = new("Counter");
+		declaration.Members.Add(new VariableDeclaration("count", "int", Literal.Number(0)) { Visibility = Visibility.Private });
+
+		FunctionDeclaration increment = new("increment") { ReturnType = "void" };
+		increment.Body.Add(new ReturnStatement(new VariableReference("count")));
+		declaration.Members.Add(increment);
+
+		string code = new JavaScriptGenerator().Generate(declaration);
+
+		// The declared name and the referenced name are the same one, so the body reads what the
+		// class holds rather than an identifier nothing declares.
+		StringAssert.Contains(code, "count = 0;", StringComparison.Ordinal);
+		StringAssert.Contains(code, "return count;", StringComparison.Ordinal);
+		Assert.IsFalse(code.Contains("#count", StringComparison.Ordinal));
 	}
 
 	/// <summary>
