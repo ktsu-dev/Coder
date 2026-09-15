@@ -153,14 +153,14 @@ public class VisibilityTests
 	{
 		string code = new JavaScriptGenerator().Generate(SampleClass());
 
-		StringAssert.Contains(code, "x = 0;", StringComparison.Ordinal);
-		StringAssert.Contains(code, "origin = 0;", StringComparison.Ordinal);
+		Assert.Contains("x = 0;", code, StringComparison.Ordinal);
+		Assert.Contains("origin = 0;", code, StringComparison.Ordinal);
 
 		// protected has no JavaScript spelling either, so the method is an ordinary one.
-		StringAssert.Contains(code, "area() {", StringComparison.Ordinal);
+		Assert.Contains("area() {", code, StringComparison.Ordinal);
 
-		Assert.IsFalse(code.Contains('#', StringComparison.Ordinal));
-		Assert.IsFalse(code.Contains("private", StringComparison.Ordinal));
+		Assert.DoesNotContain("#", code, StringComparison.Ordinal);
+		Assert.DoesNotContain("private", code, StringComparison.Ordinal);
 	}
 
 	/// <summary>
@@ -175,8 +175,8 @@ public class VisibilityTests
 
 		string code = new JavaScriptGenerator().Generate(declaration);
 
-		StringAssert.Contains(code, "recompute() {", StringComparison.Ordinal);
-		Assert.IsFalse(code.Contains('#', StringComparison.Ordinal));
+		Assert.Contains("recompute() {", code, StringComparison.Ordinal);
+		Assert.DoesNotContain("#", code, StringComparison.Ordinal);
 	}
 
 	/// <summary>
@@ -204,9 +204,9 @@ public class VisibilityTests
 
 		// The declared name and the referenced name are the same one, so the body reads what the
 		// class holds rather than an identifier nothing declares.
-		StringAssert.Contains(code, "count = 0;", StringComparison.Ordinal);
-		StringAssert.Contains(code, "return count;", StringComparison.Ordinal);
-		Assert.IsFalse(code.Contains("#count", StringComparison.Ordinal));
+		Assert.Contains("count = 0;", code, StringComparison.Ordinal);
+		Assert.Contains("return count;", code, StringComparison.Ordinal);
+		Assert.DoesNotContain("#count", code, StringComparison.Ordinal);
 	}
 
 	/// <summary>

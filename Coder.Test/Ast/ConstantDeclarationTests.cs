@@ -116,8 +116,8 @@ public class ConstantDeclarationTests
 
 		string code = new JavaScriptGenerator().Generate(declaration);
 
-		StringAssert.Contains(code, "static MAX = 10;", StringComparison.Ordinal);
-		Assert.IsFalse(code.Contains("#MAX", StringComparison.Ordinal));
+		Assert.Contains("static MAX = 10;", code, StringComparison.Ordinal);
+		Assert.DoesNotContain("#MAX", code, StringComparison.Ordinal);
 	}
 
 	/// <summary>
