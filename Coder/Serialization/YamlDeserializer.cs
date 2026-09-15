@@ -5,6 +5,7 @@ namespace ktsu.Coder.Serialization;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Linq;
 using System.Text.RegularExpressions;
 using ktsu.Coder.Ast;
@@ -118,7 +119,7 @@ public partial class YamlDeserializer
 		return valueType switch
 		{
 			"String" => new AstLeafNode<string>(nodeData?.ToString() ?? string.Empty),
-			"Int32" when int.TryParse(nodeData?.ToString(), out int intValue) => new AstLeafNode<int>(intValue),
+			"Int32" when int.TryParse(nodeData?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int intValue) => new AstLeafNode<int>(intValue),
 			"Boolean" when bool.TryParse(nodeData?.ToString(), out bool boolValue) => new AstLeafNode<bool>(boolValue),
 			_ => null,
 		};
@@ -1258,9 +1259,9 @@ public partial class YamlDeserializer
 		Expression? result = valueType switch
 		{
 			"String" => new LiteralExpression<string>(value?.ToString() ?? string.Empty),
-			"Int32" when int.TryParse(value?.ToString(), out int intValue) => new LiteralExpression<int>(intValue),
+			"Int32" when int.TryParse(value?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int intValue) => new LiteralExpression<int>(intValue),
 			"Boolean" when bool.TryParse(value?.ToString(), out bool boolValue) => new LiteralExpression<bool>(boolValue),
-			"Double" when double.TryParse(value?.ToString(), out double doubleValue) => new LiteralExpression<double>(doubleValue),
+			"Double" when double.TryParse(value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double doubleValue) => new LiteralExpression<double>(doubleValue),
 			_ => null,
 		};
 
