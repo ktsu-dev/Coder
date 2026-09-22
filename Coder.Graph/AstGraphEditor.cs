@@ -67,6 +67,11 @@ public sealed class AstGraphEditor(AstNode root)
 	/// </summary>
 	private const string LinkDropPopup = "ast-graph-link-drop";
 
+	/// <summary>
+	/// The popup offering a node's own actions, opened by right-clicking it.
+	/// </summary>
+	private const string NodeMenuPopup = "ast-graph-node-menu";
+
 	private string statusMessage = string.Empty;
 
 	private string fieldBuffer = string.Empty;
@@ -93,6 +98,26 @@ public sealed class AstGraphEditor(AstNode root)
 	/// a frame, and the request to offer the menu can arrive from outside one.
 	/// </remarks>
 	private bool linkDropOpening;
+
+	/// <summary>
+	/// The node whose own menu is open, while it is. Null when none is.
+	/// </summary>
+	/// <remarks>
+	/// Held as the AST node rather than the editor's identifier for it, for the reason
+	/// <see cref="SelectedNode"/> is: adding a child rebuilds the engine graph and reassigns those
+	/// identifiers, so a menu remembered by number would go on to grow whichever node inherited it.
+	/// </remarks>
+	private AstNode? nodeMenuNode;
+
+	/// <summary>
+	/// Whether the menu for <see cref="nodeMenuNode"/> still has to be opened.
+	/// </summary>
+	/// <remarks>
+	/// Separate from the node for the reason <see cref="linkDropOpening"/> is separate from the pin:
+	/// <see cref="ImGui.OpenPopup(string)"/> only means anything inside a frame, and the request to
+	/// offer the menu can arrive from outside one.
+	/// </remarks>
+	private bool nodeMenuOpening;
 
 	/// <summary>
 	/// Gets the graph being edited.
@@ -221,6 +246,7 @@ public sealed class AstGraphEditor(AstNode root)
 		TrackSelection();
 		ApplyDeletions();
 		DrawPalette();
+		DrawNodeMenu();
 		DrawLinkDropMenu();
 
 		if (ShowDebugOverlays)
@@ -1114,6 +1140,95 @@ public sealed class AstGraphEditor(AstNode root)
 	}
 
 	/// <summary>
+	/// Offers a node's own menu, the way right-clicking the node does.
+	/// </summary>
+	/// <param name="nodeId">The node to offer the menu for.</param>
+	/// <returns>True if the node is one this graph knows, so the menu will open.</returns>
+	/// <remarks>
+	/// Separate from the gesture that usually triggers it, for the reason
+	/// <see cref="RequestCreateFrom"/> is: a host binding the menu to a key wants the same menu, and it
+	/// can be driven in a test without the node happening to be under the pointer.
+	/// </remarks>
+	public bool RequestNodeMenu(int nodeId)
+	{
+		AstNode? node = Graph.AstNodeFor(nodeId);
+		if (node is null)
+		{
+			statusMessage = "That node is not in this graph.";
+			return false;
+		}
+
+		nodeMenuNode = node;
+		nodeMenuOpening = true;
+		return true;
+	}
+
+	/// <summary>
+	/// Draws a node's own menu, and adds to whichever slot the user picks.
+	/// </summary>
+	/// <remarks>
+	/// What the menu offers is one entry per slot that can hold another child, which is the same edit
+	/// the inspector's <c>+</c> makes — reachable at the node itself rather than only for the node the
+	/// inspector has selected. A node with no such slot says so rather than opening empty, the same way
+	/// the dropped-link menu does.
+	/// <para>
+	/// Removing a pin is deliberately not here: the slot is an ordered sequence, so which child a user
+	/// means is a question the node's own menu cannot ask, and disconnecting the child says it already.
+	/// </para>
+	/// </remarks>
+	private void DrawNodeMenu()
+	{
+		if (nodeMenuNode is not AstNode node)
+		{
+			return;
+		}
+
+		if (nodeMenuOpening)
+		{
+			ImGui.OpenPopup(NodeMenuPopup);
+			nodeMenuOpening = false;
+		}
+
+		if (!ImGui.BeginPopup(NodeMenuPopup))
+		{
+			// Remembered exactly as long as the popup is open: once it has gone the user either picked
+			// something or dismissed it, and either way the node is no longer the menu's subject.
+			nodeMenuNode = null;
+			return;
+		}
+
+		IReadOnlyList<AstSlot> growable = AstSchema.GrowableSlotsOf(node);
+		if (growable.Count == 0)
+		{
+			ImGui.TextDisabled($"{AstSchema.Describe(node)} has no slot to add to.");
+			ImGuiProbes.MarkItem("Nothing to add");
+			ImGui.EndPopup();
+			return;
+		}
+
+		foreach (AstSlot slot in growable)
+		{
+			bool picked = ImGui.MenuItem($"Add {slot.Name}");
+
+			// Marked under a name of its own rather than the label it reads as, because the inspector
+			// draws a row for the same edit and a test asking for one should not find the other.
+			ImGuiProbes.MarkItem($"Node add {slot.Name}");
+
+			if (!picked)
+			{
+				continue;
+			}
+
+			AddChild(node, slot);
+			nodeMenuNode = null;
+			ImGui.CloseCurrentPopup();
+			break;
+		}
+
+		ImGui.EndPopup();
+	}
+
+	/// <summary>
 	/// Creates a node from a template and connects it to the pin a link was dragged off.
 	/// </summary>
 	/// <param name="template">The kind of node to create.</param>
@@ -1408,7 +1523,18 @@ public sealed class AstGraphEditor(AstNode root)
 	{
 		if (ImGui.IsMouseClicked(ImGuiMouseButton.Right) && ImGui.IsWindowHovered(ImGuiHoveredFlags.RootAndChildWindows))
 		{
-			ImGui.OpenPopup("ast-graph-palette");
+			// A right-click over a node is about that node, so the palette answers only one over empty
+			// canvas. Both gestures are the same click, and which menu it means is decided in one place
+			// rather than by two handlers each opening a popup.
+			int hovered = 0;
+			if (ImNodes.IsNodeHovered(ref hovered))
+			{
+				RequestNodeMenu(hovered);
+			}
+			else
+			{
+				ImGui.OpenPopup("ast-graph-palette");
+			}
 		}
 
 		if (!ImGui.BeginPopup("ast-graph-palette"))

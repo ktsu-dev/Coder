@@ -108,6 +108,20 @@ public static class AstSchema
 	};
 
 	/// <summary>
+	/// Lists the slots of a node that a child can be added to without displacing one already there.
+	/// </summary>
+	/// <param name="node">The node to describe.</param>
+	/// <returns>The node's variadic slots, in the order the editor draws their pins. Empty when it has none.</returns>
+	/// <remarks>
+	/// A slot holding at most one child is left out rather than offered and refused: connecting a
+	/// second child to one replaces the first, so adding to it is not a thing the node can be asked
+	/// for. Which slots these are is a fact about the node's shape, so it is answered here rather than
+	/// by whatever draws the menu.
+	/// </remarks>
+	public static IReadOnlyList<AstSlot> GrowableSlotsOf(AstNode node) =>
+		[.. SlotsOf(node).Where(slot => slot.Cardinality == AstSlotCardinality.Many)];
+
+	/// <summary>
 	/// Reads the children currently sitting in a slot.
 	/// </summary>
 	/// <param name="node">The parent node.</param>
