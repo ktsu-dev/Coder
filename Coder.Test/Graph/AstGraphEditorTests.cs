@@ -471,7 +471,7 @@ public sealed class AstGraphEditorTests
 		harness.Mouse.Drag(500, 300, 950, 560, steps: 8);
 		harness.Step(3);
 
-		Assert.AreEqual(before, editor.Graph.Nodes.Count, "a dropped link must not create anything on its own");
+		Assert.HasCount(before, editor.Graph.Nodes, "a dropped link must not create anything on its own");
 		Assert.IsFalse(editor.History.CanUndo, "nothing was picked, so nothing should be on the undo stack");
 	}
 }

@@ -65,9 +65,9 @@ public class AstGraphEditorLinkDropTests
 				$"'{template.Label}' was offered for Body but the slot would refuse it");
 		}
 
-		CollectionAssert.DoesNotContain(Labels(offered), "Parameter");
-		CollectionAssert.DoesNotContain(Labels(offered), "Entry point");
-		CollectionAssert.Contains(Labels(offered), "Return");
+		Assert.DoesNotContain("Parameter", Labels(offered));
+		Assert.DoesNotContain("Entry point", Labels(offered));
+		Assert.Contains("Return", Labels(offered));
 	}
 
 	/// <summary>
@@ -87,7 +87,7 @@ public class AstGraphEditorLinkDropTests
 
 		AstNodeTemplate[] offered = [.. editor.CreatableFrom(OutputPin(editor.Graph, parameter))];
 
-		CollectionAssert.AreEquivalent(ExpectedForParameter, Labels(offered));
+		Assert.AreSequenceEqual(ExpectedForParameter, Labels(offered));
 	}
 
 	/// <summary>
@@ -210,7 +210,7 @@ public class AstGraphEditorLinkDropTests
 
 		Assert.IsFalse(editor.CreateFrom(Template("Variable"), -1, new Vector2(40, 60)));
 		Assert.IsFalse(editor.History.CanUndo);
-		Assert.AreEqual(before, editor.Graph.Nodes.Count);
+		Assert.HasCount(before, editor.Graph.Nodes);
 		Assert.HasCount(1, function.Body);
 	}
 
@@ -237,7 +237,7 @@ public class AstGraphEditorLinkDropTests
 			new Vector2(40, 60)));
 
 		Assert.IsFalse(editor.History.CanUndo);
-		Assert.AreEqual(before, editor.Graph.Nodes.Count);
+		Assert.HasCount(before, editor.Graph.Nodes);
 		Assert.HasCount(1, function.Parameters);
 	}
 
@@ -260,7 +260,7 @@ public class AstGraphEditorLinkDropTests
 			new Vector2(40, 60)));
 
 		Assert.IsFalse(editor.History.CanUndo);
-		Assert.AreEqual(before, editor.Graph.Nodes.Count);
+		Assert.HasCount(before, editor.Graph.Nodes);
 	}
 
 	/// <summary>

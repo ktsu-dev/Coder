@@ -175,7 +175,7 @@ public sealed class AstGraphEditorLinkDropMenuTests
 		harness.Step(3);
 
 		Assert.IsFalse(IsVisible(harness, "Create Declarations"), "the menu should be gone once dismissed");
-		Assert.AreEqual(before, editor.Graph.Nodes.Count);
+		Assert.HasCount(before, editor.Graph.Nodes);
 		Assert.IsFalse(editor.History.CanUndo, "cancelling should record nothing");
 		Assert.HasCount(1, function.Parameters);
 	}

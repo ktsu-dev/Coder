@@ -1491,46 +1491,84 @@ public sealed class AstGraphEditor(AstNode root)
 
 		foreach (string category in AstNodeCatalog.Categories)
 		{
-			if (!AstNodeCatalog.InCategory(category).Any(creatable.Contains))
-			{
-				continue;
-			}
-
-			bool open = ImGui.BeginMenu(category);
-
-			// Named for the probes the way the palette's rows are, so a test opens a category by the
-			// label the user reads rather than by a coordinate.
-			ImGuiProbes.MarkItem($"Create {category}");
-
-			if (!open)
-			{
-				continue;
-			}
-
-			DrawLinkDropEntries(AstNodeCatalog.InGroup(category, null).Where(creatable.Contains), pinId, dropPosition);
-
-			foreach (string group in AstNodeCatalog.GroupsIn(category))
-			{
-				AstNodeTemplate[] entries = [.. AstNodeCatalog.InGroup(category, group).Where(creatable.Contains)];
-				if (entries.Length == 0)
-				{
-					continue;
-				}
-
-				bool groupOpen = ImGui.BeginMenu(group);
-				ImGuiProbes.MarkItem($"Create {category} {group}");
-
-				if (groupOpen)
-				{
-					DrawLinkDropEntries(entries, pinId, dropPosition);
-					ImGui.EndMenu();
-				}
-			}
-
-			ImGui.EndMenu();
+			DrawLinkDropCategory(category, creatable, pinId, dropPosition);
 		}
 
 		ImGui.EndPopup();
+	}
+
+	/// <summary>
+	/// Draws one category of the dropped-link menu, and the submenus inside it.
+	/// </summary>
+	/// <param name="category">The category to draw.</param>
+	/// <param name="creatable">The entries that would connect to the pin.</param>
+	/// <param name="pinId">The pin the link was dragged off.</param>
+	/// <param name="dropPosition">Where a created node is placed.</param>
+	/// <remarks>
+	/// A category with nothing on offer is left out rather than drawn empty, which is what makes this
+	/// menu a shortlist rather than the whole palette with most of it refusing.
+	/// </remarks>
+	private void DrawLinkDropCategory(
+		string category,
+		HashSet<AstNodeTemplate> creatable,
+		int pinId,
+		Vector2 dropPosition)
+	{
+		if (!AstNodeCatalog.InCategory(category).Any(creatable.Contains))
+		{
+			return;
+		}
+
+		bool open = ImGui.BeginMenu(category);
+
+		// Named for the probes the way the palette's rows are, so a test opens a category by the label
+		// the user reads rather than by a coordinate.
+		ImGuiProbes.MarkItem($"Create {category}");
+
+		if (!open)
+		{
+			return;
+		}
+
+		DrawLinkDropEntries(AstNodeCatalog.InGroup(category, null).Where(creatable.Contains), pinId, dropPosition);
+
+		foreach (string group in AstNodeCatalog.GroupsIn(category))
+		{
+			DrawLinkDropGroup(category, group, creatable, pinId, dropPosition);
+		}
+
+		ImGui.EndMenu();
+	}
+
+	/// <summary>
+	/// Draws one submenu of a category in the dropped-link menu.
+	/// </summary>
+	/// <param name="category">The category the submenu sits under.</param>
+	/// <param name="group">The submenu to draw.</param>
+	/// <param name="creatable">The entries that would connect to the pin.</param>
+	/// <param name="pinId">The pin the link was dragged off.</param>
+	/// <param name="dropPosition">Where a created node is placed.</param>
+	private void DrawLinkDropGroup(
+		string category,
+		string group,
+		HashSet<AstNodeTemplate> creatable,
+		int pinId,
+		Vector2 dropPosition)
+	{
+		AstNodeTemplate[] entries = [.. AstNodeCatalog.InGroup(category, group).Where(creatable.Contains)];
+		if (entries.Length == 0)
+		{
+			return;
+		}
+
+		bool open = ImGui.BeginMenu(group);
+		ImGuiProbes.MarkItem($"Create {category} {group}");
+
+		if (open)
+		{
+			DrawLinkDropEntries(entries, pinId, dropPosition);
+			ImGui.EndMenu();
+		}
 	}
 
 	/// <summary>
