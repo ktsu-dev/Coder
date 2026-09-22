@@ -440,4 +440,38 @@ public sealed class AstGraphEditorTests
 		harness.Step();
 		Assert.AreEqual(before, editor.Graph.Nodes.Count);
 	}
+
+	/// <summary>
+	/// Tests that releasing a link drag over empty canvas runs the dropped-link path without faulting,
+	/// and creates nothing until an entry is picked.
+	/// </summary>
+	/// <remarks>
+	/// Driven with real input, for the same reason the palette's test is: <c>ImNodes.IsLinkDropped</c>
+	/// is a native call reading state the renderer sets during a frame, so nothing short of rendering
+	/// one establishes it is being called correctly.
+	/// <para>
+	/// Where a drag starts is layout-dependent, so this asserts what holds either way — the frame
+	/// renders and the document is untouched — rather than that the menu opened. What the menu offers,
+	/// and what picking an entry attaches, are rules, and they are covered headlessly in
+	/// <see cref="AstGraphEditorLinkDropTests"/>.
+	/// </para>
+	/// </remarks>
+	[TestMethod]
+	public void Editor_HandlesALinkDroppedOnEmptyCanvas()
+	{
+		AstGraphEditor editor = new(SampleFunction());
+
+		using ImGuiAppHarness harness = ImGuiAppHarness.Start(ConfigFor(editor), Options);
+		harness.Step(2);
+
+		int before = editor.Graph.Nodes.Count;
+
+		// Across the canvas and into a corner, so the release lands on empty space wherever the layout
+		// has put the nodes.
+		harness.Mouse.Drag(500, 300, 950, 560, steps: 8);
+		harness.Step(3);
+
+		Assert.AreEqual(before, editor.Graph.Nodes.Count, "a dropped link must not create anything on its own");
+		Assert.IsFalse(editor.History.CanUndo, "nothing was picked, so nothing should be on the undo stack");
+	}
 }
