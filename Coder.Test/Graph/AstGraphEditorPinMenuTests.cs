@@ -127,7 +127,7 @@ public sealed class AstGraphEditorPinMenuTests
 		harness.Step(2);
 
 		Assert.IsEmpty(function.Parameters);
-		CollectionAssert.Contains(editor.Graph.Detached.ToArray(), parameter, "a disconnected node stays in the graph");
+		Assert.Contains(parameter, editor.Graph.Detached, "a disconnected node stays in the graph");
 		Assert.IsTrue(editor.History.CanUndo, "disconnecting through the menu should be undoable");
 
 		editor.Undo();
