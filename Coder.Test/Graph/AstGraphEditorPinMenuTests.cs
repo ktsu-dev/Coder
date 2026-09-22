@@ -151,9 +151,7 @@ public sealed class AstGraphEditorPinMenuTests
 		harness.Step(2);
 
 		Assert.IsEmpty(function.Parameters);
-		Assert.IsFalse(
-			editor.Graph.Nodes.Values.Any(node => ReferenceEquals(node, parameter)),
-			"a deleted node leaves the graph");
+		Assert.DoesNotContain(parameter, editor.Graph.Nodes.Values, "a deleted node leaves the graph");
 		Assert.IsTrue(editor.History.CanUndo, "deleting through the menu should be undoable");
 
 		editor.Undo();
