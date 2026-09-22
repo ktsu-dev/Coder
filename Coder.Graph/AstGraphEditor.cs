@@ -1710,16 +1710,16 @@ public sealed class AstGraphEditor(AstNode root)
 	/// </remarks>
 	private void DrawPalette()
 	{
-		if (ImGui.IsMouseClicked(ImGuiMouseButton.Right) && ImGui.IsWindowHovered(ImGuiHoveredFlags.RootAndChildWindows))
+		// A right-click over a pin is about that pin and one over a node is about that node, so the
+		// palette answers only a click that lands on neither. All three are the same click, and which
+		// menu it means is decided in one place rather than by three handlers racing to open a popup.
+		// OfferOwnMenu is asked last, and only where the click reaches this canvas at all, so a menu is
+		// never offered for a click somewhere else in the window.
+		if (ImGui.IsMouseClicked(ImGuiMouseButton.Right)
+			&& ImGui.IsWindowHovered(ImGuiHoveredFlags.RootAndChildWindows)
+			&& !OfferOwnMenu())
 		{
-			// A right-click over a pin is about that pin and one over a node is about that node, so the
-			// palette answers only a click that lands on neither. All three are the same click, and
-			// which menu it means is decided in one place rather than by three handlers racing to open
-			// a popup.
-			if (!OfferOwnMenu())
-			{
-				ImGui.OpenPopup("ast-graph-palette");
-			}
+			ImGui.OpenPopup("ast-graph-palette");
 		}
 
 		if (!ImGui.BeginPopup("ast-graph-palette"))
