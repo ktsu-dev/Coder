@@ -430,9 +430,9 @@ public class AstSchemaTests
 	/// </summary>
 	[TestMethod]
 	public void GrowableSlotsOf_KeepsOnlyTheSlotsThatHoldASequence() =>
-		CollectionAssert.AreEqual(
+		Assert.AreSequenceEqual(
 			FunctionSlots,
-			AstSchema.GrowableSlotsOf(new FunctionDeclaration("f")).Select(s => s.Name).ToArray());
+			AstSchema.GrowableSlotsOf(new FunctionDeclaration("f")).Select(s => s.Name));
 
 	/// <summary>
 	/// Tests that a node whose every slot holds one child has none to add to, since connecting a second
