@@ -86,6 +86,15 @@ public sealed class AstGraphEditor(AstNode root)
 	private int? linkDropPin;
 
 	/// <summary>
+	/// Whether the menu for <see cref="linkDropPin"/> still has to be opened.
+	/// </summary>
+	/// <remarks>
+	/// Separate from the pin because <see cref="ImGui.OpenPopup(string)"/> only means anything inside
+	/// a frame, and the request to offer the menu can arrive from outside one.
+	/// </remarks>
+	private bool linkDropOpening;
+
+	/// <summary>
 	/// Gets the graph being edited.
 	/// </summary>
 	public AstGraph Graph { get; } = new AstGraph(root);
@@ -800,8 +809,7 @@ public sealed class AstGraphEditor(AstNode root)
 		int droppedFrom = 0;
 		if (ImNodes.IsLinkDropped(ref droppedFrom, includingDetachedLinks: false))
 		{
-			linkDropPin = droppedFrom;
-			ImGui.OpenPopup(LinkDropPopup);
+			RequestCreateFrom(droppedFrom);
 		}
 	}
 
@@ -1076,6 +1084,33 @@ public sealed class AstGraphEditor(AstNode root)
 		return slot is null
 			? []
 			: AstNodeCatalog.Templates.Where(template => AstSchema.Accepts(slot, template.Create()));
+	}
+
+	/// <summary>
+	/// Offers the create-node menu for a pin, the way releasing a link drag over empty canvas does.
+	/// </summary>
+	/// <param name="pinId">The pin to offer nodes for.</param>
+	/// <returns>True if the pin is one this graph can offer nodes for, so the menu will open.</returns>
+	/// <remarks>
+	/// Separate from the gesture that usually triggers it, so the affordance is an operation rather
+	/// than something only a mouse can reach — a host binding it to a key wants the same menu, and it
+	/// can be driven in a test without a drag landing on a pin by luck.
+	/// <para>
+	/// Only remembers the request. The popup itself is opened on the next frame drawn, because
+	/// <see cref="ImGui.OpenPopup(string)"/> only means anything inside one.
+	/// </para>
+	/// </remarks>
+	public bool RequestCreateFrom(int pinId)
+	{
+		if (Graph.OwnerOfOutputPin(pinId) is null && Graph.LocationOfInputPin(pinId)?.Slot is null)
+		{
+			statusMessage = "That pin is not in this graph.";
+			return false;
+		}
+
+		linkDropPin = pinId;
+		linkDropOpening = true;
+		return true;
 	}
 
 	/// <summary>
@@ -1427,6 +1462,14 @@ public sealed class AstGraphEditor(AstNode root)
 			return;
 		}
 
+		// Opened here rather than where the request came from, because ImGui.OpenPopup only means
+		// anything inside a frame and a request can arrive from outside one.
+		if (linkDropOpening)
+		{
+			ImGui.OpenPopup(LinkDropPopup);
+			linkDropOpening = false;
+		}
+
 		if (!ImGui.BeginPopup(LinkDropPopup))
 		{
 			// Open exactly as long as the popup is: once it has gone, the user either picked something
@@ -1441,13 +1484,25 @@ public sealed class AstGraphEditor(AstNode root)
 		if (creatable.Count == 0)
 		{
 			ImGui.TextDisabled(NothingConnects(pinId));
+			ImGuiProbes.MarkItem("Nothing connects");
 			ImGui.EndPopup();
 			return;
 		}
 
 		foreach (string category in AstNodeCatalog.Categories)
 		{
-			if (!AstNodeCatalog.InCategory(category).Any(creatable.Contains) || !ImGui.BeginMenu(category))
+			if (!AstNodeCatalog.InCategory(category).Any(creatable.Contains))
+			{
+				continue;
+			}
+
+			bool open = ImGui.BeginMenu(category);
+
+			// Named for the probes the way the palette's rows are, so a test opens a category by the
+			// label the user reads rather than by a coordinate.
+			ImGuiProbes.MarkItem($"Create {category}");
+
+			if (!open)
 			{
 				continue;
 			}
@@ -1457,7 +1512,15 @@ public sealed class AstGraphEditor(AstNode root)
 			foreach (string group in AstNodeCatalog.GroupsIn(category))
 			{
 				AstNodeTemplate[] entries = [.. AstNodeCatalog.InGroup(category, group).Where(creatable.Contains)];
-				if (entries.Length > 0 && ImGui.BeginMenu(group))
+				if (entries.Length == 0)
+				{
+					continue;
+				}
+
+				bool groupOpen = ImGui.BeginMenu(group);
+				ImGuiProbes.MarkItem($"Create {category} {group}");
+
+				if (groupOpen)
 				{
 					DrawLinkDropEntries(entries, pinId, dropPosition);
 					ImGui.EndMenu();
@@ -1480,7 +1543,10 @@ public sealed class AstGraphEditor(AstNode root)
 	{
 		foreach (AstNodeTemplate template in templates)
 		{
-			if (!ImGui.MenuItem(template.Label))
+			bool picked = ImGui.MenuItem(template.Label);
+			ImGuiProbes.MarkItem($"Create {template.Label}");
+
+			if (!picked)
 			{
 				continue;
 			}

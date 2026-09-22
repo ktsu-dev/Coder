@@ -215,6 +215,55 @@ public class AstGraphEditorLinkDropTests
 	}
 
 	/// <summary>
+	/// Tests that a template the slot would refuse is rejected without recording anything, even
+	/// though the pin itself is in the graph.
+	/// </summary>
+	/// <remarks>
+	/// Not reachable from the menu, which only lists what connects, but <see cref="AstGraphEditor.CreateFrom"/>
+	/// is public and a caller can hand it any pairing — so it refuses rather than attaching something
+	/// the slot would then reject.
+	/// </remarks>
+	[TestMethod]
+	public void CreateFrom_InputPin_RefusesATemplateTheSlotWouldNotTake()
+	{
+		FunctionDeclaration function = SampleFunction();
+		AstGraphEditor editor = new(function);
+		int before = editor.Graph.Nodes.Count;
+
+		// Parameters takes only a parameter, and a number literal is not one.
+		Assert.IsFalse(editor.CreateFrom(
+			Template("Number"),
+			InputPin(editor.Graph, function, "Parameters", 1),
+			new Vector2(40, 60)));
+
+		Assert.IsFalse(editor.History.CanUndo);
+		Assert.AreEqual(before, editor.Graph.Nodes.Count);
+		Assert.HasCount(1, function.Parameters);
+	}
+
+	/// <summary>
+	/// Tests that a template with nowhere to put the dragged node is refused without recording
+	/// anything.
+	/// </summary>
+	[TestMethod]
+	public void CreateFrom_OutputPin_RefusesATemplateWithNoSlotForTheDraggedNode()
+	{
+		FunctionDeclaration function = SampleFunction();
+		AstGraphEditor editor = new(function);
+		Parameter parameter = function.Parameters[0];
+		int before = editor.Graph.Nodes.Count;
+
+		// A number literal has no slots at all, so it cannot take a parameter.
+		Assert.IsFalse(editor.CreateFrom(
+			Template("Number"),
+			OutputPin(editor.Graph, parameter),
+			new Vector2(40, 60)));
+
+		Assert.IsFalse(editor.History.CanUndo);
+		Assert.AreEqual(before, editor.Graph.Nodes.Count);
+	}
+
+	/// <summary>
 	/// Finds the palette entry with a given label.
 	/// </summary>
 	/// <param name="label">The label to look for.</param>
