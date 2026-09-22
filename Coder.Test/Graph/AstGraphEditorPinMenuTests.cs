@@ -228,17 +228,18 @@ public sealed class AstGraphEditorPinMenuTests
 	}
 
 	/// <summary>
-	/// Tests that a right-click that lands on a node but not on one of its pins is not taken for a pin,
-	/// so the create-node palette still answers it.
+	/// Tests that a right-click landing on a node but not on one of its pins is not taken for a pin, so
+	/// the node's own menu answers it.
 	/// </summary>
 	/// <remarks>
-	/// The click lands on the node's title bar, which is the one part of a node with no pin in it. The
-	/// opposite case — a click that does land on a pin — is not covered here: ImNodes publishes no
-	/// screen position for a pin, so a test could only guess at one, and the menu it opens is covered
-	/// through <see cref="AstGraphEditor.RequestPinMenu"/> above.
+	/// The click lands on the node's title bar, which is the one part of a node with no pin in it, so
+	/// this is what says the two menus are told apart rather than one shadowing the other. The opposite
+	/// case — a click that does land on a pin — is not covered here: ImNodes publishes no screen
+	/// position for a pin, so a test could only guess at one, and the menu it opens is covered through
+	/// <see cref="AstGraphEditor.RequestPinMenu"/> above.
 	/// </remarks>
 	[TestMethod]
-	public void RightClickOffAPin_DoesNotOpenThePinMenu()
+	public void RightClickOffAPin_OpensTheNodesMenuInstead()
 	{
 		FunctionDeclaration function = SampleFunction();
 		AstGraphEditor editor = new(function) { LayoutRunning = false };
@@ -279,6 +280,7 @@ public sealed class AstGraphEditorPinMenuTests
 		harness.Step(2);
 
 		Assert.IsFalse(IsVisible(harness, "Pin create"), "no pin is under the title bar, so no pin menu is offered");
+		Assert.IsTrue(IsVisible(harness, "Node add Parameters"), "the node under the pointer answers instead");
 		Assert.IsFalse(editor.History.CanUndo, "a right-click records nothing either way");
 	}
 

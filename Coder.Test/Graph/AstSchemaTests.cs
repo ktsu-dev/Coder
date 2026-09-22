@@ -424,6 +424,34 @@ public class AstSchemaTests
 	public void Describe_HandlesANullLiteralValue() =>
 		Assert.AreEqual("\"\"", AstSchema.Describe(new LiteralExpression<string>()));
 
+	/// <summary>
+	/// Tests that the slots a child can be added to are the variadic ones, in the order the editor
+	/// draws their pins.
+	/// </summary>
+	[TestMethod]
+	public void GrowableSlotsOf_KeepsOnlyTheSlotsThatHoldASequence() =>
+		Assert.AreSequenceEqual(
+			FunctionSlots,
+			AstSchema.GrowableSlotsOf(new FunctionDeclaration("f")).Select(s => s.Name));
+
+	/// <summary>
+	/// Tests that a node whose every slot holds one child has none to add to, since connecting a second
+	/// child to such a slot replaces the first rather than joining it.
+	/// </summary>
+	[TestMethod]
+	public void GrowableSlotsOf_IsEmptyWhenEverySlotHoldsOneChild()
+	{
+		Assert.IsEmpty(AstSchema.GrowableSlotsOf(NewBinary()));
+		Assert.IsEmpty(AstSchema.GrowableSlotsOf(new ReturnStatement()));
+	}
+
+	/// <summary>
+	/// Tests that a leaf, which has no slots at all, has none to add to either.
+	/// </summary>
+	[TestMethod]
+	public void GrowableSlotsOf_IsEmptyForALeaf() =>
+		Assert.IsEmpty(AstSchema.GrowableSlotsOf(new VariableReference("a")));
+
 	private static BinaryExpression NewBinary() =>
 		new(new VariableReference("a"), BinaryOperator.Add, new VariableReference("b"));
 
