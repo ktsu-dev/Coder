@@ -406,6 +406,67 @@ public class AstGraphTests
 	}
 
 	/// <summary>
+	/// Tests that a pin reads back the child sitting in it, for both a variadic slot and a
+	/// single-valued one.
+	/// </summary>
+	[TestMethod]
+	public void ChildInPin_ReadsWhatFillsThePin()
+	{
+		FunctionDeclaration function = SampleFunction();
+		AstGraph graph = new(function);
+
+		Assert.AreSame(function.Parameters[0], graph.ChildInPin(InputPin(graph, function, "Parameters", 0)));
+		Assert.AreSame(function.Body[0], graph.ChildInPin(InputPin(graph, function, "Body", 0)));
+
+		ReturnStatement returnStmt = (ReturnStatement)function.Body[0];
+		Assert.AreSame(returnStmt.Expression, graph.ChildInPin(InputPin(graph, returnStmt, "Expression", 0)));
+	}
+
+	/// <summary>
+	/// Tests that the free pin a variadic slot draws past its last child reads back as empty, since
+	/// nothing is in it yet.
+	/// </summary>
+	[TestMethod]
+	public void ChildInPin_IsNullForAFreePin()
+	{
+		FunctionDeclaration function = SampleFunction();
+		AstGraph graph = new(function);
+
+		Assert.IsNull(graph.ChildInPin(InputPin(graph, function, "Parameters", function.Parameters.Count)));
+	}
+
+	/// <summary>
+	/// Tests that a pin this graph does not have, and a pin that is an output rather than a slot, both
+	/// read back as empty rather than throwing.
+	/// </summary>
+	[TestMethod]
+	public void ChildInPin_IsNullForAPinThatIsNotASlotPin()
+	{
+		FunctionDeclaration function = SampleFunction();
+		AstGraph graph = new(function);
+
+		Node functionNode = graph.Engine.Nodes.Single(n => ReferenceEquals(graph.AstNodeFor(n.Id), function));
+
+		Assert.IsNull(graph.ChildInPin(-1));
+		Assert.IsNull(graph.ChildInPin(functionNode.OutputPins[0].Id));
+	}
+
+	/// <summary>
+	/// Finds the pin standing for one place in a node's slot, the way the editor does.
+	/// </summary>
+	/// <param name="graph">The graph under test.</param>
+	/// <param name="parent">The node whose slot to look at.</param>
+	/// <param name="slotName">The slot's name.</param>
+	/// <param name="index">The position within the slot.</param>
+	/// <returns>The input pin's id.</returns>
+	private static int InputPin(AstGraph graph, AstNode parent, string slotName, int index)
+	{
+		Node parentNode = graph.Engine.Nodes.Single(n => ReferenceEquals(graph.AstNodeFor(n.Id), parent));
+		AstSlot slot = AstSchema.SlotsOf(parent).Single(s => s.Name == slotName);
+		return parentNode.InputPins.Single(p => p.EffectiveDisplayName == AstGraph.PinLabel(slot, index)).Id;
+	}
+
+	/// <summary>
 	/// Connects a node to a named slot of a parent, looking the pins up the way the editor does.
 	/// </summary>
 	/// <param name="graph">The graph under test.</param>

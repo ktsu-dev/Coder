@@ -118,6 +118,27 @@ public sealed class AstGraph
 			: null;
 
 	/// <summary>
+	/// Finds the child currently sitting in an input pin.
+	/// </summary>
+	/// <param name="inputPinId">The pin's id.</param>
+	/// <returns>The child filling the pin, or null when the pin is empty or is not an input pin of this graph.</returns>
+	/// <remarks>
+	/// A variadic slot draws a free pin past its last child, so a pin being in the graph does not mean
+	/// anything is in it. That is what separates this from <see cref="LocationOfInputPin"/>: the
+	/// location says where the pin points, this says whether anything is there.
+	/// </remarks>
+	public AstNode? ChildInPin(int inputPinId)
+	{
+		if (LocationOfInputPin(inputPinId) is not AstLocation place || place.Parent is null || place.Slot is null)
+		{
+			return null;
+		}
+
+		IReadOnlyList<AstNode> children = AstSchema.ChildrenOf(place.Parent, place.Slot);
+		return place.Index < children.Count ? children[place.Index] : null;
+	}
+
+	/// <summary>
 	/// Rebuilds the engine graph from the current AST, preserving on-screen positions.
 	/// </summary>
 	/// <remarks>

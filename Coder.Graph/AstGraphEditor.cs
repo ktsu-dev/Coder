@@ -67,6 +67,11 @@ public sealed class AstGraphEditor(AstNode root)
 	/// </summary>
 	private const string LinkDropPopup = "ast-graph-link-drop";
 
+	/// <summary>
+	/// The popup offering a pin's own actions, opened by right-clicking it.
+	/// </summary>
+	private const string PinMenuPopup = "ast-graph-pin-menu";
+
 	private string statusMessage = string.Empty;
 
 	private string fieldBuffer = string.Empty;
@@ -93,6 +98,22 @@ public sealed class AstGraphEditor(AstNode root)
 	/// a frame, and the request to offer the menu can arrive from outside one.
 	/// </remarks>
 	private bool linkDropOpening;
+
+	/// <summary>
+	/// The pin whose own menu is open, while it is. Null when none is.
+	/// </summary>
+	/// <remarks>
+	/// Held across frames for the reason <see cref="linkDropPin"/> is: the right-click and the choice
+	/// happen in different ones. The pin is held by identifier rather than as the place it points at,
+	/// because every edit offered here closes the menu, so there is no frame in which the menu is open
+	/// and the rebuild that reassigns those identifiers has happened.
+	/// </remarks>
+	private int? pinMenuPin;
+
+	/// <summary>
+	/// Whether the menu for <see cref="pinMenuPin"/> still has to be opened.
+	/// </summary>
+	private bool pinMenuOpening;
 
 	/// <summary>
 	/// Gets the graph being edited.
@@ -221,6 +242,7 @@ public sealed class AstGraphEditor(AstNode root)
 		TrackSelection();
 		ApplyDeletions();
 		DrawPalette();
+		DrawPinMenu();
 		DrawLinkDropMenu();
 
 		if (ShowDebugOverlays)
@@ -843,9 +865,30 @@ public sealed class AstGraphEditor(AstNode root)
 	/// </summary>
 	/// <param name="linkId">The link to cut.</param>
 	/// <returns>True if the link was found and cut.</returns>
-	public bool Disconnect(int linkId)
+	public bool Disconnect(int linkId) => Detach(Graph.ChildOfLink(linkId));
+
+	/// <summary>
+	/// Cuts whatever fills a pin loose from it, as one undoable edit.
+	/// </summary>
+	/// <param name="pinId">The pin to empty.</param>
+	/// <returns>True if the pin held a child, which was cut loose.</returns>
+	/// <remarks>
+	/// The same edit as cutting the link, reached from the pin rather than from the line drawn to it: a
+	/// link is a few pixels wide, and the pin is what the user was already pointing at.
+	/// </remarks>
+	public bool DisconnectPin(int pinId) => Detach(Graph.ChildInPin(pinId));
+
+	/// <summary>
+	/// Cuts a child loose from its parent, as one undoable edit.
+	/// </summary>
+	/// <param name="child">The node to detach, or null when there was nothing to detach.</param>
+	/// <returns>True if there was a node, and it was detached.</returns>
+	/// <remarks>
+	/// The node stays in the graph with no parent rather than leaving it: the user asked for it not to
+	/// be connected there, which is not the same as asking for it to be gone.
+	/// </remarks>
+	private bool Detach(AstNode? child)
 	{
-		AstNode? child = Graph.ChildOfLink(linkId);
 		if (child is null)
 		{
 			return false;
@@ -1114,6 +1157,118 @@ public sealed class AstGraphEditor(AstNode root)
 	}
 
 	/// <summary>
+	/// Offers a pin's own menu, the way right-clicking the pin does.
+	/// </summary>
+	/// <param name="pinId">The pin to offer the menu for.</param>
+	/// <returns>True if the pin is one this graph offers a menu for, so the menu will open.</returns>
+	/// <remarks>
+	/// Separate from the gesture that usually triggers it, for the reason <see cref="RequestCreateFrom"/>
+	/// is: a host binding the menu to a key wants the same menu, and it can be driven in a test without
+	/// a pin happening to be under the pointer.
+	/// <para>
+	/// Only a slot's pin has a menu. A node's output pin stands for the node itself rather than for a
+	/// place in the document, so its actions are the node's and the palette answers a click on it, as
+	/// it did before this menu existed.
+	/// </para>
+	/// </remarks>
+	public bool RequestPinMenu(int pinId)
+	{
+		if (Graph.LocationOfInputPin(pinId) is null)
+		{
+			statusMessage = Graph.OwnerOfOutputPin(pinId) is null
+				? "That pin is not in this graph."
+				: "An output pin stands for the node itself, so it has no menu of its own.";
+			return false;
+		}
+
+		pinMenuPin = pinId;
+		pinMenuOpening = true;
+		return true;
+	}
+
+	/// <summary>
+	/// Draws a pin's own menu, and makes whichever edit the user picks.
+	/// </summary>
+	/// <remarks>
+	/// What a pin offers is what can be done to the place it stands for: fill it, cut loose what fills
+	/// it, or remove that outright. The last two are offered only when something is there, since a
+	/// variadic slot draws a free pin past its last child and that one has nothing to act on.
+	/// <para>
+	/// Renaming is not offered, because a pin has no name of its own to change: it is labelled from the
+	/// slot it fills, which is part of the node's shape rather than of the document. What the pin holds
+	/// is renamed by editing that node's own Name in the inspector, which is where the rest of a node's
+	/// values are edited.
+	/// </para>
+	/// </remarks>
+	private void DrawPinMenu()
+	{
+		if (pinMenuPin is not int pinId)
+		{
+			return;
+		}
+
+		if (pinMenuOpening)
+		{
+			ImGui.OpenPopup(PinMenuPopup);
+			pinMenuOpening = false;
+		}
+
+		if (!ImGui.BeginPopup(PinMenuPopup))
+		{
+			// Remembered exactly as long as the popup is open: once it has gone the user either picked
+			// something or dismissed it, and either way the pin is spent.
+			pinMenuPin = null;
+			return;
+		}
+
+		AstNode? child = Graph.ChildInPin(pinId);
+
+		bool create = Picked("Create node here", "Pin create");
+		bool disconnect = child is not null && Picked("Disconnect", "Pin disconnect");
+		bool remove = child is not null && Picked("Delete", "Pin delete");
+
+		if (create)
+		{
+			// Offered rather than made here: what would fill the pin is a choice, and it is the one the
+			// menu a dropped link opens already asks. This reaches it without the drag.
+			RequestCreateFrom(pinId);
+		}
+		else if (disconnect)
+		{
+			DisconnectPin(pinId);
+		}
+		else if (remove)
+		{
+			RemoveFromPin(pinId);
+		}
+
+		if (create || disconnect || remove)
+		{
+			pinMenuPin = null;
+			ImGui.CloseCurrentPopup();
+		}
+
+		ImGui.EndPopup();
+	}
+
+	/// <summary>
+	/// Draws one entry of a pin's menu, under a name a test can ask for.
+	/// </summary>
+	/// <param name="label">The entry as the user reads it.</param>
+	/// <param name="probe">The name the entry is recorded under.</param>
+	/// <returns>True if the user picked it.</returns>
+	/// <remarks>
+	/// Marked under a name of its own rather than the label it reads as, because a word as ordinary as
+	/// "Delete" will be drawn elsewhere too and a test asking for one should not find the other.
+	/// </remarks>
+	private static bool Picked(string label, string probe)
+	{
+		bool picked = ImGui.MenuItem(label);
+		ImGuiProbes.MarkItem(probe);
+		return picked;
+	}
+
+	/// <summary>
 	/// Creates a node from a template and connects it to the pin a link was dragged off.
 	/// </summary>
 	/// <param name="template">The kind of node to create.</param>
@@ -1297,9 +1452,26 @@ public sealed class AstGraphEditor(AstNode root)
 	/// The removal is checked before it is recorded, so pressing delete over the root — which is
 	/// never removed — leaves the history alone rather than adding a step that does nothing.
 	/// </remarks>
-	public bool Remove(int nodeId)
+	public bool Remove(int nodeId) => RemoveSubtree(Graph.AstNodeFor(nodeId));
+
+	/// <summary>
+	/// Removes whatever fills a pin, and everything under it, as one undoable edit.
+	/// </summary>
+	/// <param name="pinId">The pin to empty.</param>
+	/// <returns>True if the pin held a child, which was removed.</returns>
+	/// <remarks>
+	/// Told apart from <see cref="DisconnectPin"/>, which leaves the child in the graph: this is the
+	/// edit pressing delete over the child makes, reached from the pin holding it.
+	/// </remarks>
+	public bool RemoveFromPin(int pinId) => RemoveSubtree(Graph.ChildInPin(pinId));
+
+	/// <summary>
+	/// Removes a node and everything under it, as one undoable edit.
+	/// </summary>
+	/// <param name="node">The node to remove, or null when there was nothing to remove.</param>
+	/// <returns>True if there was a node that could be removed, and it was.</returns>
+	private bool RemoveSubtree(AstNode? node)
 	{
-		AstNode? node = Graph.AstNodeFor(nodeId);
 		if (node is null || ReferenceEquals(node, Graph.Root))
 		{
 			return false;
@@ -1408,7 +1580,14 @@ public sealed class AstGraphEditor(AstNode root)
 	{
 		if (ImGui.IsMouseClicked(ImGuiMouseButton.Right) && ImGui.IsWindowHovered(ImGuiHoveredFlags.RootAndChildWindows))
 		{
-			ImGui.OpenPopup("ast-graph-palette");
+			// A right-click over a pin is about that pin, so the palette answers only one that lands
+			// elsewhere. Both gestures are the same click, and which menu it means is decided in one
+			// place rather than by two handlers each opening a popup.
+			int hovered = 0;
+			if (!ImNodes.IsPinHovered(ref hovered) || !RequestPinMenu(hovered))
+			{
+				ImGui.OpenPopup("ast-graph-palette");
+			}
 		}
 
 		if (!ImGui.BeginPopup("ast-graph-palette"))
