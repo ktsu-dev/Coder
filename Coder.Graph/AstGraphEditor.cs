@@ -62,6 +62,11 @@ public sealed class AstGraphEditor(AstNode root)
 		DoubleFormat = "%.17g",
 	};
 
+	/// <summary>
+	/// The popup offering to create a node for a link dropped on empty canvas.
+	/// </summary>
+	private const string LinkDropPopup = "ast-graph-link-drop";
+
 	private string statusMessage = string.Empty;
 
 	private string fieldBuffer = string.Empty;
@@ -69,6 +74,25 @@ public sealed class AstGraphEditor(AstNode root)
 	private bool fitted;
 
 	private string? editingField;
+
+	/// <summary>
+	/// The pin a link was dragged off and dropped on empty canvas, while the menu offering to create a
+	/// node for it is open.
+	/// </summary>
+	/// <remarks>
+	/// Held across frames because the drop and the choice happen in different ones: ImNodes reports the
+	/// drop once, and the menu it opens is answered some frames later. Null when no such menu is open.
+	/// </remarks>
+	private int? linkDropPin;
+
+	/// <summary>
+	/// Whether the menu for <see cref="linkDropPin"/> still has to be opened.
+	/// </summary>
+	/// <remarks>
+	/// Separate from the pin because <see cref="ImGui.OpenPopup(string)"/> only means anything inside
+	/// a frame, and the request to offer the menu can arrive from outside one.
+	/// </remarks>
+	private bool linkDropOpening;
 
 	/// <summary>
 	/// Gets the graph being edited.
@@ -197,6 +221,7 @@ public sealed class AstGraphEditor(AstNode root)
 		TrackSelection();
 		ApplyDeletions();
 		DrawPalette();
+		DrawLinkDropMenu();
 
 		if (ShowDebugOverlays)
 		{
@@ -778,6 +803,14 @@ public sealed class AstGraphEditor(AstNode root)
 		{
 			Disconnect(destroyedLink);
 		}
+
+		// A drag released over empty canvas. ImNodes has already thrown the link away, so there is
+		// nothing dangling to clean up if the user then dismisses the menu.
+		int droppedFrom = 0;
+		if (ImNodes.IsLinkDropped(ref droppedFrom, includingDetachedLinks: false))
+		{
+			RequestCreateFrom(droppedFrom);
+		}
 	}
 
 	/// <summary>
@@ -1023,6 +1056,157 @@ public sealed class AstGraphEditor(AstNode root)
 	}
 
 	/// <summary>
+	/// Lists the kinds of node a link dragged off a pin and dropped on empty canvas could create.
+	/// </summary>
+	/// <param name="pinId">The pin the drag started at.</param>
+	/// <returns>The palette entries that would connect to that pin, in palette order.</returns>
+	/// <remarks>
+	/// Which way the pin faces decides what is on offer, because the new node takes the other end of
+	/// the connection. Dropping a drag that began at an input pin asks for something to fill that
+	/// slot, so the entries are the ones the slot accepts. Dropping one that began at an output pin
+	/// asks for somewhere to put that node, so the entries are the ones with a slot that accepts it.
+	/// <para>
+	/// The same <see cref="AstSchema.Accepts"/> the manual drag is checked against decides both, so a
+	/// node offered here cannot be one the connection would then refuse. An empty result is a real
+	/// answer rather than a failure: a statement dragged out of a body has nowhere in the catalogue to
+	/// go, and the menu says so instead of listing entries that would not take it.
+	/// </para>
+	/// </remarks>
+	public IEnumerable<AstNodeTemplate> CreatableFrom(int pinId)
+	{
+		AstNode? dragged = Graph.OwnerOfOutputPin(pinId);
+		if (dragged is not null)
+		{
+			return AstNodeCatalog.Templates.Where(template => SlotAccepting(template.Create(), dragged) is not null);
+		}
+
+		AstSlot? slot = Graph.LocationOfInputPin(pinId)?.Slot;
+		return slot is null
+			? []
+			: AstNodeCatalog.Templates.Where(template => AstSchema.Accepts(slot, template.Create()));
+	}
+
+	/// <summary>
+	/// Offers the create-node menu for a pin, the way releasing a link drag over empty canvas does.
+	/// </summary>
+	/// <param name="pinId">The pin to offer nodes for.</param>
+	/// <returns>True if the pin is one this graph can offer nodes for, so the menu will open.</returns>
+	/// <remarks>
+	/// Separate from the gesture that usually triggers it, so the affordance is an operation rather
+	/// than something only a mouse can reach — a host binding it to a key wants the same menu, and it
+	/// can be driven in a test without a drag landing on a pin by luck.
+	/// <para>
+	/// Only remembers the request. The popup itself is opened on the next frame drawn, because
+	/// <see cref="ImGui.OpenPopup(string)"/> only means anything inside one.
+	/// </para>
+	/// </remarks>
+	public bool RequestCreateFrom(int pinId)
+	{
+		if (Graph.OwnerOfOutputPin(pinId) is null && Graph.LocationOfInputPin(pinId)?.Slot is null)
+		{
+			statusMessage = "That pin is not in this graph.";
+			return false;
+		}
+
+		linkDropPin = pinId;
+		linkDropOpening = true;
+		return true;
+	}
+
+	/// <summary>
+	/// Creates a node from a template and connects it to the pin a link was dragged off.
+	/// </summary>
+	/// <param name="template">The kind of node to create.</param>
+	/// <param name="pinId">The pin the drag started at.</param>
+	/// <param name="position">Where to place the new node.</param>
+	/// <returns>True if the node was created and connected.</returns>
+	/// <remarks>
+	/// Two steps go on the history rather than one, the same way creating a node from the palette and
+	/// wiring it up by hand would: the user did both, and undoing the connection without also undoing
+	/// the node is a state they can reach by hand too.
+	/// <para>
+	/// Refuses rather than creating an orphan if the pin is not in the graph, or if the template turns
+	/// out not to connect after all. Nothing is recorded in that case, so a refusal leaves the history
+	/// alone.
+	/// </para>
+	/// </remarks>
+	public bool CreateFrom(AstNodeTemplate template, int pinId, Vector2 position)
+	{
+		Ensure.NotNull(template);
+
+		AstNode? dragged = Graph.OwnerOfOutputPin(pinId);
+		if (dragged is not null)
+		{
+			// The drag began at a node's output, so the new node is the parent and the dragged node
+			// moves into it.
+			AstNode parent = template.Create();
+			AstSlot? slot = SlotAccepting(parent, dragged);
+			if (slot is null)
+			{
+				statusMessage = $"{AstSchema.Describe(parent)} has nowhere to put {AstSchema.Describe(dragged)}.";
+				return false;
+			}
+
+			AstLocation from = Graph.LocationOf(dragged);
+			Add(parent, position);
+
+			int index = slot.Cardinality == AstSlotCardinality.Many
+				? AstSchema.ChildrenOf(parent, slot).Count
+				: 0;
+
+			RecordMove(
+				$"Connect {AstSchema.Describe(dragged)} to {slot.Name} of {AstSchema.Describe(parent)}",
+				ChangeType.Move,
+				dragged,
+				new AstLocation(parent, slot, index),
+				from);
+
+			statusMessage = $"Created {AstSchema.Describe(parent)} around {AstSchema.Describe(dragged)}.";
+			return true;
+		}
+
+		AstLocation? target = Graph.LocationOfInputPin(pinId);
+		if (target?.Slot is null)
+		{
+			statusMessage = "That pin is not in this graph.";
+			return false;
+		}
+
+		// The drag began at a slot, so the new node is the child that fills it.
+		AstNode child = template.Create();
+		if (!AstSchema.Accepts(target.Value.Slot, child))
+		{
+			statusMessage = $"{AstSchema.Describe(child)} cannot fill {target.Value.Slot.Name}.";
+			return false;
+		}
+
+		Add(child, position);
+		RecordMove(
+			$"Connect {AstSchema.Describe(child)} to {target.Value.Slot.Name}",
+			ChangeType.Move,
+			child,
+			target.Value,
+			Graph.LocationOf(child));
+
+		statusMessage = $"Created {AstSchema.Describe(child)} in {target.Value.Slot.Name}.";
+		return true;
+	}
+
+	/// <summary>
+	/// Finds the first slot of a node that would take a given child.
+	/// </summary>
+	/// <param name="parent">The node to look for a slot on.</param>
+	/// <param name="child">The node that has to fit.</param>
+	/// <returns>The slot, or null if none of them would take it.</returns>
+	/// <remarks>
+	/// First rather than best: a freshly created template node has no real children yet, so every slot
+	/// that accepts the child is equally empty, and the first is the one the palette's own ordering
+	/// puts first.
+	/// </remarks>
+	private static AstSlot? SlotAccepting(AstNode parent, AstNode child) =>
+		AstSchema.SlotsOf(parent).FirstOrDefault(slot => AstSchema.Accepts(slot, child));
+
+	/// <summary>
 	/// Adds one more child to a variadic slot, as one undoable edit.
 	/// </summary>
 	/// <param name="parent">The node whose slot to grow.</param>
@@ -1258,5 +1442,176 @@ public sealed class AstGraphEditor(AstNode root)
 		}
 
 		ImGui.EndPopup();
+	}
+
+	/// <summary>
+	/// Draws the menu a link dropped on empty canvas opens, and creates whatever the user picks.
+	/// </summary>
+	/// <remarks>
+	/// Grouped the same way the palette is, minus the categories and submenus nothing in them would
+	/// connect, so the menu is a shortlist rather than the whole catalogue with most of it refusing.
+	/// <para>
+	/// Dismissing the menu without choosing leaves the graph untouched: ImNodes discards a dropped link
+	/// itself, so there is no half-made connection to undo — only the remembered pin to forget.
+	/// </para>
+	/// </remarks>
+	private void DrawLinkDropMenu()
+	{
+		if (linkDropPin is not int pinId)
+		{
+			return;
+		}
+
+		// Opened here rather than where the request came from, because ImGui.OpenPopup only means
+		// anything inside a frame and a request can arrive from outside one.
+		if (linkDropOpening)
+		{
+			ImGui.OpenPopup(LinkDropPopup);
+			linkDropOpening = false;
+		}
+
+		if (!ImGui.BeginPopup(LinkDropPopup))
+		{
+			// Open exactly as long as the popup is: once it has gone, the user either picked something
+			// or dismissed it, and either way the pin is spent.
+			linkDropPin = null;
+			return;
+		}
+
+		Vector2 dropPosition = ImGui.GetMousePosOnOpeningCurrentPopup();
+		HashSet<AstNodeTemplate> creatable = [.. CreatableFrom(pinId)];
+
+		if (creatable.Count == 0)
+		{
+			ImGui.TextDisabled(NothingConnects(pinId));
+			ImGuiProbes.MarkItem("Nothing connects");
+			ImGui.EndPopup();
+			return;
+		}
+
+		foreach (string category in AstNodeCatalog.Categories)
+		{
+			DrawLinkDropCategory(category, creatable, pinId, dropPosition);
+		}
+
+		ImGui.EndPopup();
+	}
+
+	/// <summary>
+	/// Draws one category of the dropped-link menu, and the submenus inside it.
+	/// </summary>
+	/// <param name="category">The category to draw.</param>
+	/// <param name="creatable">The entries that would connect to the pin.</param>
+	/// <param name="pinId">The pin the link was dragged off.</param>
+	/// <param name="dropPosition">Where a created node is placed.</param>
+	/// <remarks>
+	/// A category with nothing on offer is left out rather than drawn empty, which is what makes this
+	/// menu a shortlist rather than the whole palette with most of it refusing.
+	/// </remarks>
+	private void DrawLinkDropCategory(
+		string category,
+		HashSet<AstNodeTemplate> creatable,
+		int pinId,
+		Vector2 dropPosition)
+	{
+		if (!AstNodeCatalog.InCategory(category).Any(creatable.Contains))
+		{
+			return;
+		}
+
+		bool open = ImGui.BeginMenu(category);
+
+		// Named for the probes the way the palette's rows are, so a test opens a category by the label
+		// the user reads rather than by a coordinate.
+		ImGuiProbes.MarkItem($"Create {category}");
+
+		if (!open)
+		{
+			return;
+		}
+
+		DrawLinkDropEntries(AstNodeCatalog.InGroup(category, null).Where(creatable.Contains), pinId, dropPosition);
+
+		foreach (string group in AstNodeCatalog.GroupsIn(category))
+		{
+			DrawLinkDropGroup(category, group, creatable, pinId, dropPosition);
+		}
+
+		ImGui.EndMenu();
+	}
+
+	/// <summary>
+	/// Draws one submenu of a category in the dropped-link menu.
+	/// </summary>
+	/// <param name="category">The category the submenu sits under.</param>
+	/// <param name="group">The submenu to draw.</param>
+	/// <param name="creatable">The entries that would connect to the pin.</param>
+	/// <param name="pinId">The pin the link was dragged off.</param>
+	/// <param name="dropPosition">Where a created node is placed.</param>
+	private void DrawLinkDropGroup(
+		string category,
+		string group,
+		HashSet<AstNodeTemplate> creatable,
+		int pinId,
+		Vector2 dropPosition)
+	{
+		AstNodeTemplate[] entries = [.. AstNodeCatalog.InGroup(category, group).Where(creatable.Contains)];
+		if (entries.Length == 0)
+		{
+			return;
+		}
+
+		bool open = ImGui.BeginMenu(group);
+		ImGuiProbes.MarkItem($"Create {category} {group}");
+
+		if (open)
+		{
+			DrawLinkDropEntries(entries, pinId, dropPosition);
+			ImGui.EndMenu();
+		}
+	}
+
+	/// <summary>
+	/// Draws one menu's worth of entries for a dropped link, connecting whatever is picked.
+	/// </summary>
+	/// <param name="templates">The entries to list.</param>
+	/// <param name="pinId">The pin the link was dragged off.</param>
+	/// <param name="dropPosition">Where a created node is placed.</param>
+	private void DrawLinkDropEntries(IEnumerable<AstNodeTemplate> templates, int pinId, Vector2 dropPosition)
+	{
+		foreach (AstNodeTemplate template in templates)
+		{
+			bool picked = ImGui.MenuItem(template.Label);
+			ImGuiProbes.MarkItem($"Create {template.Label}");
+
+			if (!picked)
+			{
+				continue;
+			}
+
+			CreateFrom(template, pinId, dropPosition);
+			linkDropPin = null;
+			ImGui.CloseCurrentPopup();
+			return;
+		}
+	}
+
+	/// <summary>
+	/// Says why a dropped link has nothing to offer, in terms of what the user dragged.
+	/// </summary>
+	/// <param name="pinId">The pin the link was dragged off.</param>
+	/// <returns>The message the menu shows in place of entries.</returns>
+	private string NothingConnects(int pinId)
+	{
+		AstNode? dragged = Graph.OwnerOfOutputPin(pinId);
+		if (dragged is not null)
+		{
+			return $"Nothing in the palette takes {AstSchema.Describe(dragged)}.";
+		}
+
+		AstSlot? slot = Graph.LocationOfInputPin(pinId)?.Slot;
+		return slot is null
+			? "That pin is no longer in the graph."
+			: $"Nothing in the palette fills {slot.Name}.";
 	}
 }

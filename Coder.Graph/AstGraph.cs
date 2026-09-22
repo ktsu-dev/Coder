@@ -91,6 +91,33 @@ public sealed class AstGraph
 	public AstNode? AstNodeFor(int nodeId) => nodesById.TryGetValue(nodeId, out AstNode? node) ? node : null;
 
 	/// <summary>
+	/// Finds the node an output pin belongs to.
+	/// </summary>
+	/// <param name="outputPinId">The pin's id.</param>
+	/// <returns>The node the pin hangs off, or null if the id is not an output pin of this graph.</returns>
+	/// <remarks>
+	/// Paired with <see cref="LocationOfInputPin"/> so a caller holding one pin id can tell which end
+	/// of a connection it is, which is what a gesture that started at a pin and ended nowhere needs
+	/// before it can say what a new node would be attached to.
+	/// </remarks>
+	public AstNode? OwnerOfOutputPin(int outputPinId) =>
+		ownerByOutputPin.TryGetValue(outputPinId, out AstNode? owner) ? owner : null;
+
+	/// <summary>
+	/// Finds the place in the document an input pin stands for.
+	/// </summary>
+	/// <param name="inputPinId">The pin's id.</param>
+	/// <returns>The slot the pin fills, or null if the id is not an input pin of this graph.</returns>
+	/// <remarks>
+	/// Returns an <see cref="AstLocation"/> rather than the pin record itself, because a location names
+	/// nodes and outlives the rebuild that reassigns every pin id.
+	/// </remarks>
+	public AstLocation? LocationOfInputPin(int inputPinId) =>
+		slotByInputPin.TryGetValue(inputPinId, out SlotPin? pin)
+			? new AstLocation(pin.Parent, pin.Slot, pin.Index)
+			: null;
+
+	/// <summary>
 	/// Rebuilds the engine graph from the current AST, preserving on-screen positions.
 	/// </summary>
 	/// <remarks>
