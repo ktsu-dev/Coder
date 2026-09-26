@@ -130,7 +130,7 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 				return true;
 
 			case LiteralExpression<double> doubleLit:
-				code.Write(doubleLit.Value.ToString(CultureInfo.InvariantCulture));
+				code.Write(FormatDouble(doubleLit.Value));
 				return true;
 
 			// Legacy support for AstLeafNode types
@@ -771,6 +771,24 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// handles just that operator and defers the rest here.
 	/// </remarks>
 	protected static string GetBinaryOperator(BinaryOperator op) => OperatorSymbols.GetSymbol(op);
+
+	/// <summary>
+	/// Spells a floating-point value so that it reads as one.
+	/// </summary>
+	/// <param name="value">The value to spell.</param>
+	/// <returns>The value's round-trip text, with <c>.0</c> added when it would otherwise be an integer.</returns>
+	/// <remarks>
+	/// Round-trip formatting drops the fraction of a whole number, and <c>2</c> is an integer in every
+	/// target: <c>1.0 / 2.0</c> would become integer division in C, C++ and Go, fail to compile in Rust,
+	/// and type an inferred local as an integer. A value with a point or an exponent already reads as a
+	/// float, and one that is not finite is left as it is — there is no number to add a point to.
+	/// </remarks>
+	protected static string FormatDouble(double value)
+	{
+		string text = value.ToString("R", CultureInfo.InvariantCulture);
+		bool readsAsInteger = double.IsFinite(value) && text.IndexOfAny(['.', 'E', 'e']) < 0;
+		return readsAsInteger ? text + ".0" : text;
+	}
 
 	/// <summary>
 	/// Maps a unary operator to its C-family spelling.
