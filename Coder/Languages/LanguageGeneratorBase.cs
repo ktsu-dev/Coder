@@ -792,4 +792,44 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// <exception cref="NotSupportedException">The operator has no mapping.</exception>
 	/// <remarks>Every language the generators target spells these identically.</remarks>
 	protected static string GetAssignmentOperator(AssignmentOperator op) => OperatorSymbols.GetSymbol(op);
+
+	/// <summary>
+	/// Gives the value each member of an enumeration stands for, for a language that has to write
+	/// every one out.
+	/// </summary>
+	/// <param name="enumDecl">The declaration whose members to number.</param>
+	/// <returns>One value per member, in order.</returns>
+	/// <remarks>
+	/// A member with no value of its own is one more than the member before it, which is what every
+	/// language with real enumerations gives it; numbering it from its position instead would disagree
+	/// with those languages once any member has a value, and could repeat one. When the value being
+	/// counted on from is not a plain integer, it is counted on from as an expression, since the
+	/// generator cannot work out what it comes to.
+	/// </remarks>
+	protected static IEnumerable<string> EnumMemberValues(EnumDeclaration enumDecl)
+	{
+		Ensure.NotNull(enumDecl);
+
+		string? origin = null;
+		long offset = 0;
+
+		foreach (EnumMember member in enumDecl.Members)
+		{
+			if (member.Value is not null)
+			{
+				bool isNumber = long.TryParse(member.Value, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out long number);
+				origin = isNumber ? null : member.Value;
+				offset = isNumber ? number : 0;
+				yield return member.Value;
+			}
+			else
+			{
+				yield return origin is null
+					? offset.ToString(CultureInfo.InvariantCulture)
+					: $"({origin}) + {offset.ToString(CultureInfo.InvariantCulture)}";
+			}
+
+			offset++;
+		}
+	}
 }
