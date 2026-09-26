@@ -37,8 +37,8 @@ public class CppGenerator : CFamilyGenerator
 	/// </summary>
 	/// <remarks>
 	/// A depth rather than a flag, so a type declared inside a type leaves the count right when it
-	/// closes. The one thing it decides is whether a constant field says <c>inline</c> or
-	/// <c>static</c>; see <see cref="SpellStorage"/>.
+	/// closes. What it decides is how a constant or static field spells its storage; see
+	/// <see cref="SpellStorage"/>.
 	/// </remarks>
 	private int insideType;
 
@@ -794,7 +794,14 @@ public class CppGenerator : CFamilyGenerator
 			return insideType > 0 ? "static constexpr " : "inline constexpr ";
 		}
 
-		return field.IsStatic ? "static " : string.Empty;
+		// A non-const static data member may only carry an in-class initialiser when it is inline,
+		// and every field is written with one, so inside a type the plain keyword never compiles.
+		if (field.IsStatic)
+		{
+			return insideType > 0 ? "inline static " : "static ";
+		}
+
+		return string.Empty;
 	}
 
 	/// <summary>
