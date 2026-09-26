@@ -3,7 +3,6 @@
 namespace ktsu.Coder.Languages;
 
 using System.Collections.ObjectModel;
-using System.Globalization;
 using System.Linq;
 using ktsu.Coder.Ast;
 using ktsu.CodeBlocker;
@@ -277,8 +276,8 @@ public class PythonGenerator : StandardLanguageGenerator
 	/// <inheritdoc/>
 	/// <remarks>
 	/// Python has no enumeration syntax; <c>enum.Enum</c> is a class. A member with no value of its
-	/// own is numbered from its position, matching what a language with real enumerations would give
-	/// it. The <c>from enum import Enum</c> this needs belongs to the file rather than to the
+	/// own is one more than the member before it, matching what a language with real enumerations
+	/// would give it; see <see cref="LanguageGeneratorBase.EnumMemberValues"/>. The <c>from enum import Enum</c> this needs belongs to the file rather than to the
 	/// declaration.
 	/// </remarks>
 	protected override void GenerateEnumDeclaration(EnumDeclaration enumDecl, CodeBlocker code)
@@ -296,10 +295,8 @@ public class PythonGenerator : StandardLanguageGenerator
 			return;
 		}
 
-		for (int index = 0; index < enumDecl.Members.Count; index++)
+		foreach ((EnumMember member, string value) in enumDecl.Members.Zip(EnumMemberValues(enumDecl)))
 		{
-			EnumMember member = enumDecl.Members[index];
-			string value = member.Value ?? index.ToString(CultureInfo.InvariantCulture);
 			code.WriteLine($"{member.Name ?? "UNNAMED"} = {value}");
 		}
 	}
