@@ -405,13 +405,21 @@ public class RustGenerator : StandardLanguageGenerator
 			.. functions.Where(member => member.Kind is FunctionKind.Method or FunctionKind.Constructor),
 		];
 
-		if (inherent.Count > 0)
+		List<FieldDeclaration> associated = [.. classDecl.Members.OfType<FieldDeclaration>().Where(IsAssociatedField)];
+
+		if (inherent.Count > 0 || associated.Count > 0)
 		{
 			code.NewLine();
 			code.Write($"impl{implBounds} {applied} ");
 
 			using Scope block = new(code);
-			bool first = true;
+
+			foreach (FieldDeclaration field in associated)
+			{
+				WriteAssociatedField(field, code);
+			}
+
+			bool first = associated.Count == 0;
 			foreach (FunctionDeclaration function in inherent)
 			{
 				if (!first)
@@ -542,7 +550,7 @@ public class RustGenerator : StandardLanguageGenerator
 					WriteStructMember(field.Name, field.Type, VisibilityOf(field), code);
 					break;
 
-				case FieldDeclaration field:
+				case FieldDeclaration field when !IsAssociatedField(field):
 					GenerateDocumentation(field, code);
 					WriteStructMember(field.Name, field.Type, field.Visibility, code);
 					break;
@@ -553,6 +561,56 @@ public class RustGenerator : StandardLanguageGenerator
 		}
 
 		insideType--;
+	}
+
+	/// <summary>
+	/// Reports whether a field belongs to its type rather than to each instance of it.
+	/// </summary>
+	/// <param name="field">The field to test.</param>
+	/// <returns>True when the field is static or constant.</returns>
+	/// <remarks>
+	/// A constant is static whether or not the declaration says so. Either way it has no place in
+	/// the struct: a struct's fields are what every instance holds and every constructor supplies.
+	/// </remarks>
+	private static bool IsAssociatedField(FieldDeclaration field) => field.IsStatic || field.IsConstant;
+
+	/// <summary>
+	/// Writes a field that belongs to its type into the type's inherent impl block.
+	/// </summary>
+	/// <param name="field">The field to write.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// A constant is an associated <c>const</c>, named through the type as <c>Cfg::Limit</c>, which
+	/// is what a C++ <c>static constexpr</c> member is. A mutable static has no such form: Rust has
+	/// associated constants but no associated statics, so it is written down rather than dropped.
+	/// </remarks>
+	private void WriteAssociatedField(FieldDeclaration field, CodeBlocker code)
+	{
+		GenerateDocumentation(field, code);
+
+		if (!field.IsConstant)
+		{
+			WriteInexpressible(code, $"{field.Name}: Rust has no associated statics, so a mutable static belongs to no type");
+			return;
+		}
+
+		if (field.InitialValue is null)
+		{
+			WriteInexpressible(code, $"{field.Name}: Rust gives a const no value of its own");
+			return;
+		}
+
+		TypeReference type = field.Type ?? new TypeReference(UnknownTypeName);
+
+		code.Write($"{SpellVisibilityKeyword(field.Visibility)}const {field.Name}: {SpellStorageType(type)} = ");
+
+		if (type.IsArray)
+		{
+			code.Write("&");
+		}
+
+		GenerateInternal(field.InitialValue, code);
+		EndStatement(code);
 	}
 
 	/// <summary>
