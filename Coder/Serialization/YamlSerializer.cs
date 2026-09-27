@@ -24,6 +24,7 @@ public class YamlSerializer
 		_serializer = new SerializerBuilder()
 			.WithNamingConvention(CamelCaseNamingConvention.Instance)
 			.DisableAliases()
+			.WithQuotingNecessaryStrings()
 			.ConfigureDefaultValuesHandling(DefaultValuesHandling.OmitNull | DefaultValuesHandling.OmitEmptyCollections)
 			.Build();
 	}
@@ -173,6 +174,12 @@ public class YamlSerializer
 				break;
 			case LiteralExpression<double> doubleLit:
 				SerializeLiteralExpression(doubleLit, nodeData);
+				break;
+			case LiteralExpression<float> floatLit:
+				SerializeLiteralExpression(floatLit, nodeData);
+				break;
+			case LiteralExpression<long> longLit:
+				SerializeLiteralExpression(longLit, nodeData);
 				break;
 			case VariableReference varRef:
 				SerializeVariableReference(varRef, nodeData);

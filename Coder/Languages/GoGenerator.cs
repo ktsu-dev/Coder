@@ -1321,6 +1321,8 @@ public class GoGenerator : StandardLanguageGenerator
 			or LiteralExpression<int>
 			or LiteralExpression<bool>
 			or LiteralExpression<double>
+			or LiteralExpression<float>
+			or LiteralExpression<long>
 			or AstLeafNode<string>
 			or AstLeafNode<int>
 			or AstLeafNode<bool>;
@@ -1663,6 +1665,8 @@ public class GoGenerator : StandardLanguageGenerator
 		LiteralExpression<int> or AstLeafNode<int> => "int",
 		LiteralExpression<bool> or AstLeafNode<bool> => "bool",
 		LiteralExpression<double> => "float64",
+		LiteralExpression<float> => "float32",
+		LiteralExpression<long> => "int64",
 		ConstructionExpression { Type: not null } built => SpellType(built.Type),
 		_ => null,
 	};
