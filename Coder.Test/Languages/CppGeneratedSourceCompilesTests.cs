@@ -89,6 +89,46 @@ public class CppGeneratedSourceCompilesTests
 	}
 
 	/// <summary>
+	/// Tests that a class's mutable static fields compile, with and without an initialiser.
+	/// </summary>
+	/// <remarks>
+	/// ISO C++ forbids an in-class initialiser on a non-const static data member, and the generator
+	/// writes one on every field — the value it was given, or <c>{}</c> when it was given none. Only
+	/// <c>inline static</c> lets both stand inside the class.
+	/// </remarks>
+	[TestMethod]
+	public void AMutableStaticFieldCompilesInsideAClass()
+	{
+		string? compiler = ToolchainHarness.FindOnPath("--version", Compilers);
+		if (compiler is null)
+		{
+			Assert.Inconclusive("No C++ compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		SourceFile file = new("statics") { IsHeader = true };
+		ClassDeclaration config = new("Cfg") { Kind = TypeDeclarationKind.Struct };
+		config.Members.Add(new FieldDeclaration("count", "int") { IsStatic = true, InitialValue = new LiteralExpression<int>(0) });
+		config.Members.Add(new FieldDeclaration("limit", "int") { IsStatic = true });
+		file.Members.Add(config);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			File.WriteAllText(Path.Combine(directory, "statics.h"), new CppGenerator().Generate(file));
+			File.WriteAllText(
+				Path.Combine(directory, "driver.cpp"),
+				"#include \"statics.h\"\n\nint main()\n{\n\tCfg::count = Cfg::limit + 1;\n\treturn Cfg::count * 0;\n}\n");
+
+			(int exitCode, string output) = ToolchainHarness.Run(
+				compiler,
+				"-std=c++20 -Wall -Wextra -pedantic -c driver.cpp -o driver.o",
+				directory);
+
+			Assert.AreEqual(0, exitCode, $"{compiler} rejected the generated header:{Environment.NewLine}{output}");
+		});
+	}
+
+	/// <summary>
 	/// Builds a header declaring an array in each position one with no bound may stand in.
 	/// </summary>
 	/// <returns>The file to generate.</returns>
