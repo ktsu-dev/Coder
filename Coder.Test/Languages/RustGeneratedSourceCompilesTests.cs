@@ -144,11 +144,23 @@ public class RustGeneratedSourceCompilesTests
 		boxed.Documentation.Add("Holds one of whatever it was given.");
 		boxed.TypeParameters.Add(TypeParameter.Parse("T : Clone"));
 		boxed.Members.Add(new FieldDeclaration("held", "T"));
+		boxed.Members.Add(new FieldDeclaration("CAPACITY", "int")
+		{
+			IsStatic = true,
+			IsConstant = true,
+			InitialValue = new LiteralExpression<int>(8),
+		});
 
 		FunctionDeclaration copy = new("copy") { ReturnType = "T", IsReadOnly = true };
 		copy.Body.Add(new ReturnStatement(
 			new CallExpression(new VariableReference("self.held"), "clone")));
 		boxed.Members.Add(copy);
+
+		// Named through the type, which only compiles if the constant is an associated item of it
+		// rather than a field of each instance.
+		FunctionDeclaration capacity = new("capacity") { ReturnType = "int", IsReadOnly = true };
+		capacity.Body.Add(new ReturnStatement(new VariableReference("Self::CAPACITY")));
+		boxed.Members.Add(capacity);
 
 		return boxed;
 	}

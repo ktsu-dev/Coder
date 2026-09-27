@@ -62,6 +62,51 @@ public class RustGeneratorTests
 	}
 
 	/// <summary>
+	/// Tests that a constant field of a type is an associated constant in the inherent impl block,
+	/// keeping its value, rather than a field every instance holds.
+	/// </summary>
+	[TestMethod]
+	public void ConstantField_IsAnAssociatedConstant()
+	{
+		ClassDeclaration cfg = new("Cfg") { Kind = TypeDeclarationKind.Struct };
+		cfg.Members.Add(new FieldDeclaration("width", "int"));
+		cfg.Members.Add(new FieldDeclaration("Limit", "int")
+		{
+			IsStatic = true,
+			IsConstant = true,
+			InitialValue = new LiteralExpression<int>(8),
+		});
+
+		string code = Generator.Generate(cfg);
+		string structBody = code[..code.IndexOf("impl", StringComparison.Ordinal)];
+
+		StringAssert.Contains(structBody, "width: i32,", StringComparison.Ordinal);
+		Assert.DoesNotContain("Limit", structBody, StringComparison.Ordinal, code);
+		StringAssert.Contains(code, "impl Cfg {", StringComparison.Ordinal);
+		StringAssert.Contains(code, "const Limit: i32 = 8;", StringComparison.Ordinal);
+	}
+
+	/// <summary>
+	/// Tests that a mutable static field of a type, which Rust has no associated form for, is
+	/// written down as a note rather than becoming a per-instance field.
+	/// </summary>
+	[TestMethod]
+	public void MutableStaticField_IsNotedRatherThanAStructField()
+	{
+		ClassDeclaration counter = new("Counter") { Kind = TypeDeclarationKind.Struct };
+		counter.Members.Add(new FieldDeclaration("Count", "int")
+		{
+			IsStatic = true,
+			InitialValue = new LiteralExpression<int>(0),
+		});
+
+		string code = Generator.Generate(counter);
+
+		Assert.DoesNotContain("Count: i32,", code, StringComparison.Ordinal, code);
+		StringAssert.Contains(code, "// Count: Rust has no associated statics", StringComparison.Ordinal);
+	}
+
+	/// <summary>
 	/// Tests that a parameter the body assigns to is declared <c>mut</c>, and only that one, since
 	/// Rust binds a parameter immutably.
 	/// </summary>
