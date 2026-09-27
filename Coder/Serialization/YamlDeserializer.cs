@@ -766,6 +766,36 @@ public partial class YamlDeserializer
 	/// <summary>The key a node's single value is written under.</summary>
 	private const string ValueKey = "value";
 
+	/// <summary>
+	/// Parses a YAML float scalar, including the core schema's spellings of the non-finite values.
+	/// </summary>
+	/// <param name="text">The scalar's text.</param>
+	/// <param name="value">The parsed value.</param>
+	/// <returns><see langword="true"/> if <paramref name="text"/> is a float.</returns>
+	/// <remarks>
+	/// The serializer writes infinity and NaN as <c>.inf</c>, <c>-.inf</c> and <c>.nan</c>, which
+	/// <see cref="double.TryParse(string?, NumberStyles, IFormatProvider?, out double)"/> does not
+	/// read. Failing here drops the literal, so a declaration initialised to infinity would come back
+	/// with no initialiser at all (ktsu-dev/Coder#78).
+	/// </remarks>
+	private static bool TryParseDouble(string? text, out double value)
+	{
+		switch (text)
+		{
+			case ".inf" or ".Inf" or ".INF" or "+.inf" or "+.Inf" or "+.INF":
+				value = double.PositiveInfinity;
+				return true;
+			case "-.inf" or "-.Inf" or "-.INF":
+				value = double.NegativeInfinity;
+				return true;
+			case ".nan" or ".NaN" or ".NAN":
+				value = double.NaN;
+				return true;
+			default:
+				return double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
+		}
+	}
+
 	/// <summary>The key a declaration's documentation is written under.</summary>
 	private const string DocumentationKey = "documentation";
 
@@ -1261,7 +1291,7 @@ public partial class YamlDeserializer
 			"String" => new LiteralExpression<string>(value?.ToString() ?? string.Empty),
 			"Int32" when int.TryParse(value?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int intValue) => new LiteralExpression<int>(intValue),
 			"Boolean" when bool.TryParse(value?.ToString(), out bool boolValue) => new LiteralExpression<bool>(boolValue),
-			"Double" when double.TryParse(value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double doubleValue) => new LiteralExpression<double>(doubleValue),
+			"Double" when TryParseDouble(value?.ToString(), out double doubleValue) => new LiteralExpression<double>(doubleValue),
 			_ => null,
 		};
 
