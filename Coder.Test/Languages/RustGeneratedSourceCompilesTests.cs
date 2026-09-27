@@ -99,6 +99,7 @@ public class RustGeneratedSourceCompilesTests
 		geometry.Members.Add(CompiledExemplar.OriginTable());
 		geometry.Members.Add(CompiledExemplar.Measure());
 		geometry.Members.Add(Boxed());
+		geometry.Members.Add(Clamp());
 		geometry.Members.Add(new CompileTimeAssertion
 		{
 			Condition = "std::mem::size_of::<i32>() == 4",
@@ -107,6 +108,23 @@ public class RustGeneratedSourceCompilesTests
 
 		file.Members.Add(geometry);
 		return file;
+	}
+
+	/// <summary>
+	/// A function whose body assigns to one of its parameters.
+	/// </summary>
+	/// <returns>The declaration.</returns>
+	/// <remarks>
+	/// Every other target lets a parameter be reassigned; Rust binds it immutably, and without a
+	/// <c>mut</c> on the declaration the assignment is error E0384.
+	/// </remarks>
+	private static FunctionDeclaration Clamp()
+	{
+		FunctionDeclaration clamp = new("clamp") { ReturnType = "int" };
+		clamp.Parameters.Add(new Parameter("value", "int"));
+		clamp.Body.Add(new AssignmentStatement(new VariableReference("value"), new LiteralExpression<int>(0)));
+		clamp.Body.Add(new ReturnStatement(new VariableReference("value")));
+		return clamp;
 	}
 
 	/// <summary>

@@ -650,6 +650,11 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// <c>not ready</c> and C#'s <c>!ready</c> both come out right without either language special-casing
 	/// the emitter.
 	/// </para>
+	/// <para>
+	/// An operand whose spelling starts with the operator's own last character is parenthesised, so
+	/// negating <c>-1</c> is written <c>(-(-1))</c> rather than <c>(--1)</c>, which every C-family
+	/// target reads as a decrement.
+	/// </para>
 	/// </remarks>
 	protected void GenerateUnaryExpression(UnaryExpression unaryExpr, CodeBlocker code, string operatorSpelling)
 	{
@@ -665,9 +670,39 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 			code.Write(" ");
 		}
 
+		bool wouldFuse = operatorSpelling.Length > 0 && LeadingSign(unaryExpr.Operand) == operatorSpelling[^1];
+
+		if (wouldFuse)
+		{
+			code.Write("(");
+		}
+
 		GenerateInternal(unaryExpr.Operand, code);
+
+		if (wouldFuse)
+		{
+			code.Write(")");
+		}
+
 		code.Write(")");
 	}
+
+	/// <summary>
+	/// Reports the sign a node's spelling starts with, if any.
+	/// </summary>
+	/// <param name="node">The node to inspect.</param>
+	/// <returns><c>'-'</c> for a negative number literal; otherwise null.</returns>
+	/// <remarks>
+	/// Every other expression starts with a name, a quote, a digit or a parenthesis, so only a
+	/// negative literal can run its sign into the operator in front of it.
+	/// </remarks>
+	private static char? LeadingSign(AstNode? node) => node switch
+	{
+		LiteralExpression<int> { Value: < 0 } => '-',
+		LiteralExpression<double> doubleLit when double.IsNegative(doubleLit.Value) => '-',
+		AstLeafNode<int> { Value: < 0 } => '-',
+		_ => null,
+	};
 
 	/// <summary>
 	/// Reports whether a node is one of the standard shapes a generator built on these helpers accepts.

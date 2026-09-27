@@ -107,6 +107,44 @@ public class RustGeneratorTests
 	}
 
 	/// <summary>
+	/// Tests that a parameter the body assigns to is declared <c>mut</c>, and only that one, since
+	/// Rust binds a parameter immutably.
+	/// </summary>
+	[TestMethod]
+	public void ReassignedParameter_IsDeclaredMut()
+	{
+		FunctionDeclaration function = new("clamp") { ReturnType = "int" };
+		function.Parameters.Add(new Parameter("a", "int"));
+		function.Parameters.Add(new Parameter("b", "int"));
+		function.Body.Add(new AssignmentStatement(new VariableReference("a"), new VariableReference("b")));
+		function.Body.Add(new ReturnStatement(new VariableReference("a")));
+
+		StringAssert.Contains(
+			Generator.Generate(function),
+			"pub fn clamp(mut a: i32, b: i32) -> i32",
+			StringComparison.Ordinal);
+	}
+
+	/// <summary>
+	/// Tests that an assignment after a local has taken over a parameter's name is to the local, so
+	/// the parameter is left immutable.
+	/// </summary>
+	[TestMethod]
+	public void ParameterShadowedBeforeAssignment_IsNotDeclaredMut()
+	{
+		FunctionDeclaration function = new("shadow") { ReturnType = "int" };
+		function.Parameters.Add(new Parameter("a", "int"));
+		function.Body.Add(new VariableDeclaration("a", "int", new LiteralExpression<int>(1)));
+		function.Body.Add(new AssignmentStatement(new VariableReference("a"), new LiteralExpression<int>(2)));
+		function.Body.Add(new ReturnStatement(new VariableReference("a")));
+
+		StringAssert.Contains(
+			Generator.Generate(function),
+			"pub fn shadow(a: i32) -> i32",
+			StringComparison.Ordinal);
+	}
+
+	/// <summary>
 	/// Tests that an unrecognized type name is passed through, so a caller can name a real Rust type.
 	/// </summary>
 	[TestMethod]

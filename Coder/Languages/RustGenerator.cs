@@ -118,6 +118,17 @@ public class RustGenerator : StandardLanguageGenerator
 	private string implBounds = string.Empty;
 
 	/// <summary>
+	/// The parameters of the function being written that its body assigns to.
+	/// </summary>
+	/// <remarks>
+	/// Held rather than passed because a parameter is written through the shared parameter list,
+	/// which knows nothing of the body. Rust binds a parameter immutably, so one the body assigns to
+	/// has to be declared <c>mut</c>, and one it does not must not be, or rustc warns that the
+	/// <c>mut</c> is unused.
+	/// </remarks>
+	private IReadOnlySet<string> reassignedParameters = new HashSet<string>(StringComparer.Ordinal);
+
+	/// <summary>
 	/// Spells type parameters where they are being declared, bounds and all.
 	/// </summary>
 	/// <param name="parameters">The declaration's type parameters.</param>
@@ -884,7 +895,11 @@ public class RustGenerator : StandardLanguageGenerator
 
 		code.Write($"fn {SpellFunctionName(funcDecl)}{SpellParameterDeclarations(funcDecl.TypeParameters)}(");
 		WriteReceiver(funcDecl, enclosingType, code);
+
+		IReadOnlySet<string> outerReassigned = reassignedParameters;
+		reassignedParameters = ReassignedParameters(funcDecl);
 		GenerateParameterList(funcDecl.Parameters, code);
+		reassignedParameters = outerReassigned;
 		code.Write(")");
 
 		if (funcDecl.Kind == FunctionKind.Constructor)
@@ -1018,6 +1033,42 @@ public class RustGenerator : StandardLanguageGenerator
 		_ => funcDecl.Name ?? "unnamed_function",
 	};
 
+	/// <summary>
+	/// Finds the parameters a function's body assigns to before any local takes the name over.
+	/// </summary>
+	/// <param name="funcDecl">The function to inspect.</param>
+	/// <returns>The names of the parameters to declare <c>mut</c>.</returns>
+	/// <remarks>
+	/// A local declared with a parameter's name shadows it from there on, so an assignment after
+	/// that point is to the local, which is already <c>let mut</c>, and not to the parameter.
+	/// </remarks>
+	private static HashSet<string> ReassignedParameters(FunctionDeclaration funcDecl)
+	{
+		HashSet<string> parameters = new(
+			funcDecl.Parameters.Select(parameter => parameter.Name).OfType<string>(),
+			StringComparer.Ordinal);
+		HashSet<string> reassigned = new(StringComparer.Ordinal);
+
+		foreach (AstNode statement in funcDecl.Body)
+		{
+			switch (statement)
+			{
+				case VariableDeclaration local:
+					parameters.Remove(local.Name);
+					break;
+
+				case AssignmentStatement { Target: VariableReference target } when parameters.Contains(target.Name):
+					reassigned.Add(target.Name);
+					break;
+
+				default:
+					break;
+			}
+		}
+
+		return reassigned;
+	}
+
 	/// <inheritdoc/>
 	/// <remarks>
 	/// A parameter's default value is written beside it as a comment. Rust has no default arguments,
@@ -1028,6 +1079,11 @@ public class RustGenerator : StandardLanguageGenerator
 	{
 		Ensure.NotNull(parameter);
 		Ensure.NotNull(code);
+
+		if (parameter.Name is not null && reassignedParameters.Contains(parameter.Name))
+		{
+			code.Write("mut ");
+		}
 
 		code.Write($"{parameter.Name ?? $"param{position}"}: ");
 		code.Write(SpellType(parameter.Type ?? new TypeReference(UnknownTypeName)));
