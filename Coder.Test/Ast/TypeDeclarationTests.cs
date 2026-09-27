@@ -111,11 +111,56 @@ public class TypeDeclarationTests
 			StringComparison.Ordinal);
 		Assert.Contains("Dynamic = 7,", new CppGenerator().Generate(kind), StringComparison.Ordinal);
 
-		// Python and JavaScript have no enumeration, so a member with no value of its own is numbered
-		// from its position rather than left to a keyword that does not exist.
+		// Python and JavaScript have no enumeration, so a member with no value of its own is given one
+		// rather than left to a keyword that does not exist.
 		Assert.Contains("Static = 0", new PythonGenerator().Generate(kind), StringComparison.Ordinal);
 		Assert.Contains("Static: 0,", new JavaScriptGenerator().Generate(kind), StringComparison.Ordinal);
 		Assert.Contains("Object.freeze({", new JavaScriptGenerator().Generate(kind), StringComparison.Ordinal);
+	}
+
+	/// <summary>
+	/// A member with no value of its own follows the one before it, as every language with real
+	/// enumerations numbers it, rather than taking its position — which would disagree with those
+	/// languages and could repeat an earlier member's value.
+	/// </summary>
+	[TestMethod]
+	public void Enum_NumbersAMemberAfterAnExplicitValueFromThatValue()
+	{
+		EnumDeclaration colour = new("Colour");
+		colour.Members.Add(new EnumMember("Red"));
+		colour.Members.Add(new EnumMember("Green") { Value = "5" });
+		colour.Members.Add(new EnumMember("Blue"));
+
+		string python = new PythonGenerator().Generate(colour);
+		Assert.Contains("Red = 0", python, StringComparison.Ordinal);
+		Assert.Contains("Green = 5", python, StringComparison.Ordinal);
+		Assert.Contains("Blue = 6", python, StringComparison.Ordinal);
+
+		string javaScript = new JavaScriptGenerator().Generate(colour);
+		Assert.Contains("Red: 0,", javaScript, StringComparison.Ordinal);
+		Assert.Contains("Green: 5,", javaScript, StringComparison.Ordinal);
+		Assert.Contains("Blue: 6,", javaScript, StringComparison.Ordinal);
+	}
+
+	/// <summary>
+	/// A member following a value that is not a plain number counts on from that value's expression,
+	/// since the generator cannot work out what it comes to.
+	/// </summary>
+	[TestMethod]
+	public void Enum_CountsOnFromAnExplicitValueThatIsNotANumber()
+	{
+		EnumDeclaration flags = new("Flags");
+		flags.Members.Add(new EnumMember("High") { Value = "1 << 4" });
+		flags.Members.Add(new EnumMember("Next"));
+		flags.Members.Add(new EnumMember("After"));
+
+		string python = new PythonGenerator().Generate(flags);
+		Assert.Contains("Next = (1 << 4) + 1", python, StringComparison.Ordinal);
+		Assert.Contains("After = (1 << 4) + 2", python, StringComparison.Ordinal);
+
+		string javaScript = new JavaScriptGenerator().Generate(flags);
+		Assert.Contains("Next: (1 << 4) + 1,", javaScript, StringComparison.Ordinal);
+		Assert.Contains("After: (1 << 4) + 2,", javaScript, StringComparison.Ordinal);
 	}
 
 	/// <summary>

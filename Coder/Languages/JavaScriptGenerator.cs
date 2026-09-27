@@ -3,7 +3,6 @@
 namespace ktsu.Coder.Languages;
 
 using System.Collections.ObjectModel;
-using System.Globalization;
 using System.Linq;
 using ktsu.Coder.Ast;
 using ktsu.CodeBlocker;
@@ -137,10 +136,8 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	/// <param name="code">The writer to emit into.</param>
 	private static void WriteEnumMembers(EnumDeclaration enumDecl, CodeBlocker code)
 	{
-		for (int index = 0; index < enumDecl.Members.Count; index++)
+		foreach ((EnumMember member, string value) in enumDecl.Members.Zip(EnumMemberValues(enumDecl)))
 		{
-			EnumMember member = enumDecl.Members[index];
-			string value = member.Value ?? index.ToString(CultureInfo.InvariantCulture);
 			code.WriteLine($"{member.Name ?? "UNNAMED"}: {value},");
 		}
 	}
