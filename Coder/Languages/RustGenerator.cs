@@ -1397,6 +1397,11 @@ public class RustGenerator : StandardLanguageGenerator
 	/// reaches for the standard library: the arguments come from <c>std::env::args</c>, and an exit
 	/// code is handed to <c>std::process::exit</c>.
 	/// <para>
+	/// The first of <c>std::env::args</c> is the program's own path, which every other target here
+	/// leaves out, so it is skipped: a body reading <c>args[0]</c> means the first argument the
+	/// user typed in all of them.
+	/// </para>
+	/// <para>
 	/// A program that returns an exit code is written as a <c>run</c> answering one and a
 	/// <c>main</c> exiting with what it answered — the same shape Python's <c>__main__</c> guard
 	/// takes here, and for the same reason: it is what keeps the body's own <c>return</c> meaning
@@ -1409,7 +1414,7 @@ public class RustGenerator : StandardLanguageGenerator
 		Ensure.NotNull(code);
 
 		string arguments = entryPoint.AcceptsArguments ? "args: Vec<String>" : string.Empty;
-		string collect = entryPoint.AcceptsArguments ? "std::env::args().collect()" : string.Empty;
+		string collect = entryPoint.AcceptsArguments ? "std::env::args().skip(1).collect()" : string.Empty;
 
 		if (entryPoint.ReturnsExitCode)
 		{

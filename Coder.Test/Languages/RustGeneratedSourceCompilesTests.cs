@@ -64,6 +64,39 @@ public class RustGeneratedSourceCompilesTests
 	}
 
 	/// <summary>
+	/// Tests that the arguments an entry point is handed are the ones the user typed, without the
+	/// program's own path that <c>std::env::args</c> puts first — which is what they are in every
+	/// other target.
+	/// </summary>
+	[TestMethod]
+	public void EntryPointArguments_LeaveOutTheProgramPath()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "rustc") is null)
+		{
+			Assert.Inconclusive("No Rust compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		EntryPoint entryPoint = new() { AcceptsArguments = true, ReturnsExitCode = true };
+		entryPoint.Body.Add(new ReturnStatement(new VariableReference("args.len() as i32")));
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string program = OperatingSystem.IsWindows() ? "counting.exe" : "counting";
+			File.WriteAllText(Path.Combine(directory, "counting.rs"), new RustGenerator().Generate(entryPoint));
+
+			(int built, string output) = ToolchainHarness.Run(
+				"rustc",
+				$"--edition 2021 -o {program} counting.rs",
+				directory);
+			Assert.AreEqual(0, built, $"rustc rejected the generated source:{Environment.NewLine}{output}");
+
+			(int counted, _) = ToolchainHarness.Run(Path.Combine(directory, program), "first second", directory);
+			Assert.AreEqual(2, counted, "the entry point was not handed exactly the two arguments typed");
+		});
+	}
+
+	/// <summary>
 	/// Builds a file holding one of everything the generator has a spelling for.
 	/// </summary>
 	/// <returns>The file to generate.</returns>
