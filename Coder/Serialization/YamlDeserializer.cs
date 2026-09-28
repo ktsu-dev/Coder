@@ -137,7 +137,7 @@ public partial class YamlDeserializer
 		DeserializeFunctionParameters(funcDecl, dict);
 		DeserializeFunctionBody(funcDecl, dict);
 		DeserializeMetadata(funcDecl, dict);
-		DeserializeFunctionChildren(funcDecl, dict);
+		DeserializeKeyedChildren(funcDecl, dict);
 
 		return funcDecl;
 	}
@@ -292,6 +292,7 @@ public partial class YamlDeserializer
 			}
 		}
 
+		DeserializeKeyedChildren(entryPoint, dict);
 		DeserializeMetadata(entryPoint, dict);
 
 		return entryPoint;
@@ -921,6 +922,7 @@ public partial class YamlDeserializer
 		DeserializeTypeList(dict, "specialisationArguments", classDecl.SpecialisationArguments);
 
 		DeserializeClassMembers(classDecl, dict);
+		DeserializeKeyedChildren(classDecl, dict);
 		DeserializeMetadata(classDecl, dict);
 
 		return classDecl;
@@ -1132,7 +1134,16 @@ public partial class YamlDeserializer
 		}
 	}
 
-	private void DeserializeFunctionChildren(FunctionDeclaration funcDecl, Dictionary<object, object> dict)
+	/// <summary>
+	/// Reads the children a node was given by key rather than by one of its own properties.
+	/// </summary>
+	/// <param name="node">The node to add them to.</param>
+	/// <param name="dict">The node's mapping.</param>
+	/// <remarks>
+	/// A keyed child is written as a mapping holding one node, so anything else under a key is one
+	/// of the node's own properties and is left to the reader that knows it.
+	/// </remarks>
+	private void DeserializeKeyedChildren(AstCompositeNode node, Dictionary<object, object> dict)
 	{
 		HashSet<string> knownKeys = ["name", "returnType", "visibility", "accessModifier", "parameters", "body", "metadata"];
 
@@ -1149,7 +1160,7 @@ public partial class YamlDeserializer
 				AstNode? child = DeserializeNode(childType.ToString() ?? string.Empty, childData);
 				if (child != null)
 				{
-					funcDecl.SetChild(keyString, child);
+					node.SetChild(keyString, child);
 				}
 			}
 		}

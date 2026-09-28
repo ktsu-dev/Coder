@@ -118,6 +118,28 @@ public class YamlSerializer
 				SerializeOtherNode(node, nodeData);
 				break;
 		}
+
+		// After the switch rather than in either writer, so a declaration keeps these as well as an
+		// expression does.
+		if (node is AstCompositeNode compositeNode)
+		{
+			SerializeCompositeChildren(compositeNode, nodeData);
+		}
+
+		SerializeMetadata(node, nodeData);
+	}
+
+	/// <summary>
+	/// Writes a node's metadata, when it has any.
+	/// </summary>
+	/// <param name="node">The node being serialized.</param>
+	/// <param name="nodeData">The mapping to write into.</param>
+	private static void SerializeMetadata(AstNode node, Dictionary<string, object> nodeData)
+	{
+		if (node.Metadata.Count > 0)
+		{
+			nodeData["metadata"] = node.Metadata;
+		}
 	}
 
 	/// <summary>
@@ -193,18 +215,6 @@ public class YamlSerializer
 			default:
 				// Handle unknown node types - no specific serialization needed
 				break;
-		}
-
-		// Handle generic composite node children
-		if (node is AstCompositeNode compositeNode)
-		{
-			SerializeCompositeChildren(compositeNode, nodeData);
-		}
-
-		// Add metadata if present
-		if (node.Metadata.Count > 0)
-		{
-			nodeData["metadata"] = node.Metadata;
 		}
 	}
 
@@ -749,6 +759,7 @@ public class YamlSerializer
 		{
 			Dictionary<string, object> paramData = [];
 			SerializeParameter(param, paramData);
+			SerializeMetadata(param, paramData);
 			parameterList.Add(paramData);
 		}
 
