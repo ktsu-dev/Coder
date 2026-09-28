@@ -778,7 +778,39 @@ public partial class YamlDeserializer
 	/// read. Failing here drops the literal, so a declaration initialised to infinity would come back
 	/// with no initialiser at all (ktsu-dev/Coder#78).
 	/// </remarks>
-	private static bool TryParseDouble(string? text, out double value)
+	private static bool TryParseDouble(string? text, out double value) =>
+		TryParseNonFinite(text, out value)
+			|| double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
+
+	/// <summary>
+	/// Parses a YAML float scalar as a <see cref="float"/>, including the core schema's spellings of
+	/// the non-finite values.
+	/// </summary>
+	/// <param name="text">The scalar's text.</param>
+	/// <param name="value">The parsed value.</param>
+	/// <returns><see langword="true"/> if <paramref name="text"/> is a float.</returns>
+	/// <remarks>
+	/// Parsed as a <see cref="float"/> directly rather than through <see cref="double"/>, so the
+	/// shortest spelling the serializer wrote comes back as the same value without a second rounding.
+	/// </remarks>
+	private static bool TryParseSingle(string? text, out float value)
+	{
+		if (TryParseNonFinite(text, out double nonFinite))
+		{
+			value = (float)nonFinite;
+			return true;
+		}
+
+		return float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
+	}
+
+	/// <summary>
+	/// Reads the YAML core schema's spellings of infinity and NaN.
+	/// </summary>
+	/// <param name="text">The scalar's text.</param>
+	/// <param name="value">The value it spells.</param>
+	/// <returns><see langword="true"/> if <paramref name="text"/> is one of those spellings.</returns>
+	private static bool TryParseNonFinite(string? text, out double value)
 	{
 		switch (text)
 		{
@@ -792,7 +824,8 @@ public partial class YamlDeserializer
 				value = double.NaN;
 				return true;
 			default:
-				return double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
+				value = 0;
+				return false;
 		}
 	}
 
@@ -1292,6 +1325,8 @@ public partial class YamlDeserializer
 			"Int32" when int.TryParse(value?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int intValue) => new LiteralExpression<int>(intValue),
 			"Boolean" when bool.TryParse(value?.ToString(), out bool boolValue) => new LiteralExpression<bool>(boolValue),
 			"Double" when TryParseDouble(value?.ToString(), out double doubleValue) => new LiteralExpression<double>(doubleValue),
+			"Single" when TryParseSingle(value?.ToString(), out float floatValue) => new LiteralExpression<float>(floatValue),
+			"Int64" when long.TryParse(value?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out long longValue) => new LiteralExpression<long>(longValue),
 			_ => null,
 		};
 

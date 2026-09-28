@@ -105,6 +105,12 @@ public class CSharpGenerator : LanguageGeneratorBase
 			case LiteralExpression<double> doubleLit:
 				code.Write($"{doubleLit.Value.ToString(CultureInfo.InvariantCulture)}d");
 				break;
+			case LiteralExpression<float> floatLit:
+				code.Write($"{floatLit.Value.ToString(CultureInfo.InvariantCulture)}f");
+				break;
+			case LiteralExpression<long> longLit:
+				code.Write($"{longLit.Value.ToString(CultureInfo.InvariantCulture)}L");
+				break;
 			case SourceFile file:
 				GenerateSourceFile(file, code);
 				break;

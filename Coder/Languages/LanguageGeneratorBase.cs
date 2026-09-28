@@ -133,6 +133,14 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 				code.Write(FormatDouble(doubleLit.Value));
 				return true;
 
+			case LiteralExpression<float> floatLit:
+				code.Write(FormatSingle(floatLit.Value));
+				return true;
+
+			case LiteralExpression<long> longLit:
+				code.Write(longLit.Value.ToString(CultureInfo.InvariantCulture));
+				return true;
+
 			// Legacy support for AstLeafNode types
 			case AstLeafNode<string> strLeaf:
 				code.Write($"\"{EscapeString(strLeaf.Value ?? string.Empty)}\"");
@@ -700,6 +708,8 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	{
 		LiteralExpression<int> { Value: < 0 } => '-',
 		LiteralExpression<double> doubleLit when double.IsNegative(doubleLit.Value) => '-',
+		LiteralExpression<float> floatLit when float.IsNegative(floatLit.Value) => '-',
+		LiteralExpression<long> { Value: < 0 } => '-',
 		AstLeafNode<int> { Value: < 0 } => '-',
 		_ => null,
 	};
@@ -736,6 +746,8 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 			or LiteralExpression<int>
 			or LiteralExpression<bool>
 			or LiteralExpression<double>
+			or LiteralExpression<float>
+			or LiteralExpression<long>
 			or VariableDeclaration
 			or AssignmentStatement
 			or AstLeafNode<string>
@@ -818,12 +830,30 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// and type an inferred local as an integer. A value with a point or an exponent already reads as a
 	/// float, and one that is not finite is left as it is — there is no number to add a point to.
 	/// </remarks>
-	protected static string FormatDouble(double value)
-	{
-		string text = value.ToString("R", CultureInfo.InvariantCulture);
-		bool readsAsInteger = double.IsFinite(value) && text.IndexOfAny(['.', 'E', 'e']) < 0;
-		return readsAsInteger ? text + ".0" : text;
-	}
+	protected static string FormatDouble(double value) =>
+		WithFraction(value.ToString("R", CultureInfo.InvariantCulture), double.IsFinite(value));
+
+	/// <summary>
+	/// Formats a single-precision value so that every target reads it as floating-point.
+	/// </summary>
+	/// <param name="value">The value to format.</param>
+	/// <returns>The value's shortest round-trip spelling, with <c>.0</c> added to a whole number.</returns>
+	/// <remarks>
+	/// Formatted as a <see cref="float"/> rather than widened to <see cref="double"/> first, which
+	/// would write <c>0.1f</c> as <c>0.10000000149011612</c>. The targets without a single-precision
+	/// literal read the text as a double, which converts back to the same float.
+	/// </remarks>
+	protected static string FormatSingle(float value) =>
+		WithFraction(value.ToString("R", CultureInfo.InvariantCulture), float.IsFinite(value));
+
+	/// <summary>
+	/// Adds <c>.0</c> to a finite number's text when it would otherwise read as an integer.
+	/// </summary>
+	/// <param name="text">The number's round-trip spelling.</param>
+	/// <param name="isFinite">Whether the number is finite.</param>
+	/// <returns>The text as a floating-point literal.</returns>
+	private static string WithFraction(string text, bool isFinite) =>
+		isFinite && text.IndexOfAny(['.', 'E', 'e']) < 0 ? text + ".0" : text;
 
 	/// <summary>
 	/// Maps a unary operator to its C-family spelling.
