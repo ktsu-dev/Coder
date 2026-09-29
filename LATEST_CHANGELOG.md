@@ -1,6 +1,4 @@
-## v3.18.2 (patch)
+## v3.18.2
 
-Changes since v3.18.1:
-
-- [patch] Keep string, float and long literals through a YAML round trip ([@Claude](https://github.com/Claude))
+No significant changes detected since v3.18.2.
 

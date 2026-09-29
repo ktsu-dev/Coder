@@ -749,7 +749,7 @@ public class RustGeneratorTests
 		StringAssert.StartsWith(Generator.Generate(bare), "fn main() {", StringComparison.Ordinal);
 		StringAssert.Contains(
 			Generator.Generate(withArguments),
-			"    let args: Vec<String> = std::env::args().collect();",
+			"    let args: Vec<String> = std::env::args().skip(1).collect();",
 			StringComparison.Ordinal);
 	}
 

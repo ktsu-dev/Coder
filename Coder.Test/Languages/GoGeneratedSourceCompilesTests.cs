@@ -131,6 +131,64 @@ public class GoGeneratedSourceCompilesTests
 	}
 
 	/// <summary>
+	/// Tests that the arguments an entry point is handed are the ones the user typed, without the
+	/// program's own path that Go puts first — which is what they are in every other target.
+	/// </summary>
+	[TestMethod]
+	public void EntryPointArguments_LeaveOutTheProgramPath()
+	{
+		if (ToolchainHarness.FindOnPath("version", "go") is null)
+		{
+			Assert.Inconclusive("No Go toolchain on the path, so nothing was compiled.");
+			return;
+		}
+
+		SourceFile file = new("counting");
+		EntryPoint entryPoint = new() { AcceptsArguments = true, ReturnsExitCode = true };
+		entryPoint.Body.Add(new ReturnStatement(new VariableReference("len(args)")));
+		file.Members.Add(entryPoint);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string program = OperatingSystem.IsWindows() ? "counting.exe" : "counting";
+			File.WriteAllText(Path.Combine(directory, "go.mod"), Module);
+			File.WriteAllText(Path.Combine(directory, "counting.go"), new GoGenerator().Generate(file));
+
+			(int built, string output) = ToolchainHarness.Run("go", $"build -o {program} .", directory);
+			Assert.AreEqual(0, built, $"go rejected the generated source:{Environment.NewLine}{output}");
+
+			(int counted, _) = ToolchainHarness.Run(Path.Combine(directory, program), "first second", directory);
+			Assert.AreEqual(2, counted, "the entry point was not handed exactly the two arguments typed");
+		});
+	}
+
+	/// <summary>
+	/// Tests that an entry point may take its arguments and never read them, which Go would refuse
+	/// as a local nothing reads if the generator bound them and said nothing more.
+	/// </summary>
+	[TestMethod]
+	public void EntryPointIgnoringItsArguments_Compiles()
+	{
+		if (ToolchainHarness.FindOnPath("version", "go") is null)
+		{
+			Assert.Inconclusive("No Go toolchain on the path, so nothing was compiled.");
+			return;
+		}
+
+		SourceFile file = new("ignoring");
+		file.Members.Add(new EntryPoint { AcceptsArguments = true });
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			File.WriteAllText(Path.Combine(directory, "go.mod"), Module);
+			File.WriteAllText(Path.Combine(directory, "ignoring.go"), new GoGenerator().Generate(file));
+
+			(int exitCode, string output) = ToolchainHarness.Run("go", "build ./...", directory);
+			Assert.AreEqual(0, exitCode, $"go rejected the generated source:{Environment.NewLine}{output}");
+		});
+	}
+
+	/// <summary>
 	/// Builds a file holding one of everything the generator has a spelling for.
 	/// </summary>
 	/// <returns>The file to generate.</returns>

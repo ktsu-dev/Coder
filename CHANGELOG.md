@@ -1,3 +1,7 @@
+## v3.18.2
+
+No significant changes detected since v3.18.2.
+
 ## v3.18.2 (patch)
 
 Changes since v3.18.1:
@@ -335,15 +339,19 @@ Changes since v1.0.0:
 - docs: correct README, DESCRIPTION and TAGS metadata ([@matt-edmondson](https://github.com/matt-edmondson))
 - Stop Update SDKs failing when there is nothing to update ([@matt-edmondson](https://github.com/matt-edmondson))
 - Fix ktsu.Sdk 2.27 analyzer errors: Polyfill PrivateAssets, InternalsVisibleTo [patch] ([@matt-edmondson](https://github.com/matt-edmondson))
+- Sync .github\workflows\dotnet.yml ([@KtsuTools](https://github.com/KtsuTools))
 - Sync .editorconfig ([@KtsuTools](https://github.com/KtsuTools))
 - Sync global.json ([@KtsuTools](https://github.com/KtsuTools))
+- Sync .github\workflows\dotnet.yml ([@KtsuTools](https://github.com/KtsuTools))
 - chore: update ktsu.Sdk to 2.21.1 [patch] ([@matt-edmondson](https://github.com/matt-edmondson))
 - fix: standardize null checks and exact exception assertions ([@matt-edmondson](https://github.com/matt-edmondson))
 - chore: modernize project SDKs and target frameworks ([@matt-edmondson](https://github.com/matt-edmondson))
 - Remove serena/cursor files ([@matt-edmondson](https://github.com/matt-edmondson))
 - Regenerate TAGS.md with NuGet package tags ([@matt-edmondson](https://github.com/matt-edmondson))
+- Sync .github\workflows\dotnet.yml ([@KtsuTools](https://github.com/KtsuTools))
 - Remove legacy build scripts ([@matt-edmondson](https://github.com/matt-edmondson))
 - Enhance test assertions with descriptive messages in ExpressionTests and ExpressionIntegrationTests ([@matt-edmondson](https://github.com/matt-edmondson))
+- Remove .github\workflows\project.yml ([@matt-edmondson](https://github.com/matt-edmondson))
 - Refactor codebase to replace all instances of 'ktsu.Coder.Core' with 'ktsu.Coder' across files, enhancing consistency. Updated .runsettings for coverage configuration and modified .gitattributes for clarity. Removed obsolete test-expression-demo.cs file. Added new scripts for updating winget manifests and improved PSBuild.psm1 for better package publishing support. ([@matt-edmondson](https://github.com/matt-edmondson))
 - Update configuration files and scripts for improved build and test processes ([@matt-edmondson](https://github.com/matt-edmondson))
 - Enhance expression system integration and serialization support ([@matt-edmondson](https://github.com/matt-edmondson))
@@ -443,15 +451,19 @@ Changes since v1.0.0:
 - docs: correct README, DESCRIPTION and TAGS metadata ([@matt-edmondson](https://github.com/matt-edmondson))
 - Stop Update SDKs failing when there is nothing to update ([@matt-edmondson](https://github.com/matt-edmondson))
 - Fix ktsu.Sdk 2.27 analyzer errors: Polyfill PrivateAssets, InternalsVisibleTo [patch] ([@matt-edmondson](https://github.com/matt-edmondson))
+- Sync .github\workflows\dotnet.yml ([@KtsuTools](https://github.com/KtsuTools))
 - Sync .editorconfig ([@KtsuTools](https://github.com/KtsuTools))
 - Sync global.json ([@KtsuTools](https://github.com/KtsuTools))
+- Sync .github\workflows\dotnet.yml ([@KtsuTools](https://github.com/KtsuTools))
 - chore: update ktsu.Sdk to 2.21.1 [patch] ([@matt-edmondson](https://github.com/matt-edmondson))
 - fix: standardize null checks and exact exception assertions ([@matt-edmondson](https://github.com/matt-edmondson))
 - chore: modernize project SDKs and target frameworks ([@matt-edmondson](https://github.com/matt-edmondson))
 - Remove serena/cursor files ([@matt-edmondson](https://github.com/matt-edmondson))
 - Regenerate TAGS.md with NuGet package tags ([@matt-edmondson](https://github.com/matt-edmondson))
+- Sync .github\workflows\dotnet.yml ([@KtsuTools](https://github.com/KtsuTools))
 - Remove legacy build scripts ([@matt-edmondson](https://github.com/matt-edmondson))
 - Enhance test assertions with descriptive messages in ExpressionTests and ExpressionIntegrationTests ([@matt-edmondson](https://github.com/matt-edmondson))
+- Remove .github\workflows\project.yml ([@matt-edmondson](https://github.com/matt-edmondson))
 - Refactor codebase to replace all instances of 'ktsu.Coder.Core' with 'ktsu.Coder' across files, enhancing consistency. Updated .runsettings for coverage configuration and modified .gitattributes for clarity. Removed obsolete test-expression-demo.cs file. Added new scripts for updating winget manifests and improved PSBuild.psm1 for better package publishing support. ([@matt-edmondson](https://github.com/matt-edmondson))
 - Update configuration files and scripts for improved build and test processes ([@matt-edmondson](https://github.com/matt-edmondson))
 - Enhance expression system integration and serialization support ([@matt-edmondson](https://github.com/matt-edmondson))
@@ -490,8 +502,10 @@ Changes since v1.0.7:
 Changes since v1.0.6:
 
 - Fix ktsu.Sdk 2.27 analyzer errors: Polyfill PrivateAssets, InternalsVisibleTo [patch] ([@matt-edmondson](https://github.com/matt-edmondson))
+- Sync .github\workflows\dotnet.yml ([@KtsuTools](https://github.com/KtsuTools))
 - Sync .editorconfig ([@KtsuTools](https://github.com/KtsuTools))
 - Sync global.json ([@KtsuTools](https://github.com/KtsuTools))
+- Sync .github\workflows\dotnet.yml ([@KtsuTools](https://github.com/KtsuTools))
 
 ## v1.0.6 (patch)
 
@@ -515,14 +529,18 @@ Changes since v1.0.3:
 - chore: modernize project SDKs and target frameworks ([@matt-edmondson](https://github.com/matt-edmondson))
 - Remove serena/cursor files ([@matt-edmondson](https://github.com/matt-edmondson))
 - Regenerate TAGS.md with NuGet package tags ([@matt-edmondson](https://github.com/matt-edmondson))
+- Sync .github\workflows\dotnet.yml ([@KtsuTools](https://github.com/KtsuTools))
 - Remove legacy build scripts ([@matt-edmondson](https://github.com/matt-edmondson))
 - Enhance test assertions with descriptive messages in ExpressionTests and ExpressionIntegrationTests ([@matt-edmondson](https://github.com/matt-edmondson))
+- Remove .github\workflows\project.yml ([@matt-edmondson](https://github.com/matt-edmondson))
 - Refactor codebase to replace all instances of 'ktsu.Coder.Core' with 'ktsu.Coder' across files, enhancing consistency. Updated .runsettings for coverage configuration and modified .gitattributes for clarity. Removed obsolete test-expression-demo.cs file. Added new scripts for updating winget manifests and improved PSBuild.psm1 for better package publishing support. ([@matt-edmondson](https://github.com/matt-edmondson))
 - Update configuration files and scripts for improved build and test processes ([@matt-edmondson](https://github.com/matt-edmondson))
 
 ## v1.0.4-pre.1 (prerelease)
 
-No significant changes detected since v1.0.4.
+Changes since v1.0.3:
+
+- Bump the microsoft group with 2 updates ([@dependabot[bot]](https://github.com/dependabot[bot]))
 
 ## v1.0.3 (patch)
 
