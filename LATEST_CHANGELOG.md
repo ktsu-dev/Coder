@@ -1,7 +1,7 @@
-## v3.18.3 (patch)
+## v3.18.4 (patch)
 
-Changes since v3.18.2:
+Changes since v3.18.3:
 
-- [patch] Keep declaration metadata and keyed children through a YAML round trip ([@Claude](https://github.com/Claude))
-- [patch] Leave the program path out of Go and Rust entry-point arguments ([@Claude](https://github.com/Claude))
+- Merge remote-tracking branch 'origin/main' into fix/84-rust-owned-string-literals ([@Claude](https://github.com/Claude))
+- [patch] Make a string literal an owned String where Rust receives one ([@Claude](https://github.com/Claude))
 
