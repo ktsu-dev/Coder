@@ -617,7 +617,7 @@ public class GoGeneratorTests
 
 		StringAssert.Contains(generated, $"import \"os\"{NewLine}", StringComparison.Ordinal);
 		StringAssert.Contains(generated, "func run(args []string) int", StringComparison.Ordinal);
-		StringAssert.Contains(generated, "\tos.Exit(run(os.Args))", StringComparison.Ordinal);
+		StringAssert.Contains(generated, "\tos.Exit(run(os.Args[1:]))", StringComparison.Ordinal);
 	}
 
 	/// <summary>

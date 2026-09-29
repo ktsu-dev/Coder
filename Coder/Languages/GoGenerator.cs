@@ -1717,6 +1717,13 @@ public class GoGenerator : StandardLanguageGenerator
 	/// reaches for <c>os</c>: the arguments are <c>os.Args</c>, and an exit code is handed to
 	/// <c>os.Exit</c>.
 	/// <para>
+	/// The arguments are <c>os.Args[1:]</c> rather than <c>os.Args</c>, because Go puts the
+	/// program's own path first and every other target here hands the body only what the user
+	/// typed. A body reading <c>args[0]</c> means the first of those in all of them. A <c>main</c>
+	/// that binds them also writes <c>_ = args</c>, since Go refuses a local nothing reads and a
+	/// body is free to ignore its arguments.
+	/// </para>
+	/// <para>
 	/// A program that returns an exit code is written as a <c>run</c> answering one and a
 	/// <c>main</c> exiting with what it answered — the same shape Python's <c>__main__</c> guard
 	/// takes here, and for the same reason: it is what keeps the body's own <c>return</c> meaning
@@ -1730,7 +1737,7 @@ public class GoGenerator : StandardLanguageGenerator
 		Ensure.NotNull(code);
 
 		string parameters = entryPoint.AcceptsArguments ? "args []string" : string.Empty;
-		string arguments = entryPoint.AcceptsArguments ? "os.Args" : string.Empty;
+		string arguments = entryPoint.AcceptsArguments ? "os.Args[1:]" : string.Empty;
 
 		if (entryPoint.ReturnsExitCode)
 		{
@@ -1755,7 +1762,8 @@ public class GoGenerator : StandardLanguageGenerator
 
 		if (entryPoint.AcceptsArguments)
 		{
-			code.WriteLine("args := os.Args");
+			code.WriteLine($"args := {arguments}");
+			code.WriteLine("_ = args");
 		}
 
 		WriteBody(entryPoint.Body, code);
