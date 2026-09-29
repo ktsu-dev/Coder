@@ -82,6 +82,14 @@ public class RustGenerator : StandardLanguageGenerator
 	};
 
 	/// <summary>
+	/// What the function being written answers, so a return can say it in the type Rust expects.
+	/// </summary>
+	/// <remarks>
+	/// Null outside a function, and for one that answers nothing.
+	/// </remarks>
+	private TypeReference? returnType;
+
+	/// <summary>
 	/// How many type declarations enclose what is being written.
 	/// </summary>
 	/// <remarks>
@@ -930,7 +938,62 @@ public class RustGenerator : StandardLanguageGenerator
 			return;
 		}
 
+		TypeReference? outerReturnType = returnType;
+		returnType = ReturnsAValue(funcDecl) ? funcDecl.ReturnType : null;
 		WriteBody(funcDecl.Body, code);
+		returnType = outerReturnType;
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// The value is written for the type the function answers, so a string literal returned as an
+	/// owned <c>String</c> is made into one.
+	/// </remarks>
+	protected override void GenerateReturnStatement(ReturnStatement returnStmt, CodeBlocker code)
+	{
+		Ensure.NotNull(returnStmt);
+		Ensure.NotNull(code);
+
+		code.Write("return");
+
+		if (returnStmt.Expression is not null)
+		{
+			code.Write(" ");
+			WriteValue(returnStmt.Expression, returnType, code);
+		}
+
+		EndStatement(code);
+	}
+
+	/// <summary>
+	/// Writes a value where a declared type receives it.
+	/// </summary>
+	/// <param name="value">The value to write.</param>
+	/// <param name="target">The type receiving it, or null where none is declared.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// A string literal is a borrowed <c>&amp;str</c> in Rust, and <c>str</c> and <c>string</c>
+	/// map to the owned <c>String</c>, so a literal received as one is written
+	/// <c>String::from("…")</c>. Rust converts neither way on its own. Where the receiving type is
+	/// borrowed, or not declared, the literal stays bare, which is what those positions want.
+	/// </remarks>
+	private void WriteValue(AstNode value, TypeReference? target, CodeBlocker code)
+	{
+		bool owned = value is LiteralExpression<string>
+			&& target is not null
+			&& SpellType(target) == TypeMappings["string"];
+
+		if (owned)
+		{
+			code.Write("String::from(");
+		}
+
+		GenerateInternal(value, code);
+
+		if (owned)
+		{
+			code.Write(")");
+		}
 	}
 
 	/// <summary>
@@ -1123,7 +1186,7 @@ public class RustGenerator : StandardLanguageGenerator
 		if (varDecl.InitialValue is not null)
 		{
 			code.Write(" = ");
-			GenerateInternal(varDecl.InitialValue, code);
+			WriteValue(varDecl.InitialValue, inferred ? null : varDecl.Type, code);
 		}
 
 		EndStatement(code);

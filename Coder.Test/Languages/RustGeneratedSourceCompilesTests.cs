@@ -64,6 +64,49 @@ public class RustGeneratedSourceCompilesTests
 	}
 
 	/// <summary>
+	/// Tests that a string literal compiles where an owned <c>String</c> receives it: returned from
+	/// a function answering <c>str</c> or <c>string</c>, and initialising a local declared as one.
+	/// </summary>
+	[TestMethod]
+	public void StringLiteralsReceivedAsOwnedStrings_Compile()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "rustc") is null)
+		{
+			Assert.Inconclusive("No Rust compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		FunctionDeclaration greet = new("greet") { ReturnType = "str" };
+		greet.Body.Add(new ReturnStatement(Literal.Text("hello")));
+
+		FunctionDeclaration named = new("named") { ReturnType = "string" };
+		named.Body.Add(new VariableDeclaration("name", "str", Literal.Text("x")));
+		named.Body.Add(new VariableDeclaration("guessed", null, Literal.Text("y")) { IsTypeInferred = true });
+		named.Body.Add(new ReturnStatement(new VariableReference("name")));
+
+		SourceFile file = new("strings");
+		file.Members.Add(greet);
+		file.Members.Add(named);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new RustGenerator().Generate(file);
+			string allowed = "#![allow(dead_code, unused_variables, unused_mut)]";
+
+			File.WriteAllText(
+				Path.Combine(directory, "strings.rs"),
+				$"{allowed}{Environment.NewLine}{source}");
+
+			(int exitCode, string output) = ToolchainHarness.Run(
+				"rustc",
+				"--crate-type lib --edition 2021 -o strings.rlib strings.rs",
+				directory);
+
+			Assert.AreEqual(0, exitCode, $"rustc rejected the generated source:{Environment.NewLine}{source}{Environment.NewLine}{output}");
+		});
+	}
+
+	/// <summary>
 	/// Tests that the arguments an entry point is handed are the ones the user typed, without the
 	/// program's own path that <c>std::env::args</c> puts first — which is what they are in every
 	/// other target.

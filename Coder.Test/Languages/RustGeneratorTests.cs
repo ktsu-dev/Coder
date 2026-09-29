@@ -718,6 +718,25 @@ public class RustGeneratorTests
 	}
 
 	/// <summary>
+	/// Tests that a string literal is made an owned <c>String</c> where one receives it, and left a
+	/// borrowed literal where the receiving type is not declared.
+	/// </summary>
+	[TestMethod]
+	public void StringLiteral_IsOwnedOnlyWhereAStringReceivesIt()
+	{
+		FunctionDeclaration greet = new("greet") { ReturnType = "str" };
+		greet.Body.Add(new VariableDeclaration("name", "string", Literal.Text("x")));
+		greet.Body.Add(new VariableDeclaration("guessed", null, Literal.Text("y")) { IsTypeInferred = true });
+		greet.Body.Add(new ReturnStatement(Literal.Text("hello")));
+
+		string code = Generator.Generate(greet);
+
+		StringAssert.Contains(code, "return String::from(\"hello\");", StringComparison.Ordinal);
+		StringAssert.Contains(code, "let mut name: String = String::from(\"x\");", StringComparison.Ordinal);
+		StringAssert.Contains(code, "let mut guessed = \"y\";", StringComparison.Ordinal);
+	}
+
+	/// <summary>
 	/// Tests that the entry point is Rust's <c>main</c>, and that a program wanting its arguments
 	/// gets them from the standard library rather than from a parameter Rust does not offer.
 	/// </summary>
