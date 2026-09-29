@@ -1,6 +1,4 @@
-## v3.18.5 (patch)
+## v3.18.5
 
-Changes since v3.18.4:
-
-- Move CI onto the shared ci-shared.yml pipeline ([@Claude](https://github.com/Claude))
+No significant changes detected since v3.18.5.
 

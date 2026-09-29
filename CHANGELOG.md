@@ -1,3 +1,7 @@
+## v3.18.5
+
+No significant changes detected since v3.18.5.
+
 ## v3.18.5 (patch)
 
 Changes since v3.18.4:
