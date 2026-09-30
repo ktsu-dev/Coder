@@ -558,6 +558,12 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// <see cref="CallExpression.Callee"/> is written verbatim. Nothing here maps a function's name
 	/// between languages, and nothing pretends to — see the node's own remarks for why.
 	/// </para>
+	/// <para>
+	/// A number literal receiver is parenthesised. A negative one would otherwise negate the call's
+	/// result rather than its receiver, since unary minus binds looser than member access, so
+	/// <c>-2.5.abs()</c> is <c>-(2.5.abs())</c>; and an integer one would run the dot into the
+	/// literal, which JavaScript and Python read as a malformed number rather than a member call.
+	/// </para>
 	/// </remarks>
 	protected virtual void GenerateCallExpression(CallExpression callExpr, CodeBlocker code)
 	{
@@ -566,7 +572,20 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 
 		if (callExpr.Receiver is not null)
 		{
+			bool parenthesise = IsNumberLiteral(callExpr.Receiver);
+
+			if (parenthesise)
+			{
+				code.Write("(");
+			}
+
 			GenerateInternal(callExpr.Receiver, code);
+
+			if (parenthesise)
+			{
+				code.Write(")");
+			}
+
 			code.Write(".");
 		}
 
@@ -713,6 +732,17 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 		AstLeafNode<int> { Value: < 0 } => '-',
 		_ => null,
 	};
+
+	/// <summary>
+	/// Reports whether a node is a number literal.
+	/// </summary>
+	/// <param name="node">The node to inspect.</param>
+	/// <returns>True for an integer or floating-point literal of any sign; otherwise false.</returns>
+	private static bool IsNumberLiteral(AstNode? node) => node is LiteralExpression<int>
+		or LiteralExpression<double>
+		or LiteralExpression<float>
+		or LiteralExpression<long>
+		or AstLeafNode<int>;
 
 	/// <summary>
 	/// Reports whether a node is one of the standard shapes a generator built on these helpers accepts.
