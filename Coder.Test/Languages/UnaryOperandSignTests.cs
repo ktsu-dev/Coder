@@ -2,6 +2,7 @@
 
 namespace ktsu.Coder.Test.Languages;
 
+using System.Linq;
 using ktsu.Coder.Ast;
 using ktsu.Coder.Languages;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -74,7 +75,8 @@ public class UnaryOperandSignTests
 	{
 		UnaryExpression unary = new(op, Literal.Number(value));
 
-		foreach (ILanguageGenerator generator in Generators)
+		// Rust has no unary plus, so it writes the operand alone; RustGeneratorTests covers it.
+		foreach (ILanguageGenerator generator in Generators.Where(g => op != UnaryOperator.Plus || g is not RustGenerator))
 		{
 			Assert.AreEqual(expected, generator.Generate(unary).Trim(), generator.GetType().Name);
 		}

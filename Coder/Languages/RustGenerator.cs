@@ -302,6 +302,23 @@ public class RustGenerator : StandardLanguageGenerator
 
 	/// <inheritdoc/>
 	protected override string? SpellAnnotation(Annotation annotation) => $"#[{annotation}]";
+
+	/// <summary>
+	/// Maps a unary operator to its Rust spelling.
+	/// </summary>
+	/// <param name="op">The operator to map.</param>
+	/// <returns>The operator's source spelling.</returns>
+	/// <remarks>
+	/// Rust has neither <c>~</c> nor a unary <c>+</c>. Its <c>!</c> is bitwise complement on an
+	/// integer as well as logical negation on a <c>bool</c>, and unary plus, being the identity, is
+	/// written as the operand alone. The emitter still parenthesises it, so precedence is unchanged.
+	/// </remarks>
+	protected override string GetUnaryOperatorSpelling(UnaryOperator op) => op switch
+	{
+		UnaryOperator.BitwiseNot => "!",
+		UnaryOperator.Plus => string.Empty,
+		_ => GetUnaryOperator(op)
+	};
 	/// <inheritdoc/>
 	/// <remarks>
 	/// <c>use</c>, which is what Rust writes where the others write an include or an import. A path
