@@ -1649,4 +1649,8 @@ public class RustGenerator : StandardLanguageGenerator
 			? $"[{owned[4..^1]}]"
 			: owned;
 	}
+
+	/// <inheritdoc/>
+	/// <remarks>Rust writes a Unicode escape with the code point in braces.</remarks>
+	protected override string EscapeCodeUnit(char c) => $"\\u{{{(int)c:X4}}}";
 }
