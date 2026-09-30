@@ -1,6 +1,8 @@
-## v3.18.5
+## v3.18.6 (patch)
 
-No significant changes detected since v3.18.5.
+Changes since v3.18.5:
+
+- Spell bitwise not as ! and drop unary plus in Rust output [patch] ([@Claude](https://github.com/Claude))
 
 ## v3.18.5 (patch)
 
