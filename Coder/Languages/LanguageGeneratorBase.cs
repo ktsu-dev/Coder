@@ -6,6 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Text;
 using ktsu.Coder.Ast;
 using ktsu.CodeBlocker;
 
@@ -792,19 +793,57 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// </summary>
 	/// <param name="value">The raw string value.</param>
 	/// <returns>The escaped value, without surrounding quotes.</returns>
-	/// <remarks>Every language the generators target uses these escapes, Python included.</remarks>
-	protected static string EscapeString(string value)
+	/// <remarks>
+	/// Every language the generators target uses the named escapes, Python included. Every other
+	/// control character, and the Unicode line terminators, are escaped numerically through
+	/// <see cref="EscapeCodeUnit"/>, because written raw they break the literal: Go and Python reject a
+	/// NUL in source, and C# reads U+0085, U+2028 and U+2029 as ending the line.
+	/// </remarks>
+	protected string EscapeString(string value)
 	{
 		Ensure.NotNull(value);
 
 		// Ordinal explicitly: these are source-syntax escapes, never subject to a culture.
-		return value
+		string named = value
 			.Replace("\\", "\\\\", StringComparison.Ordinal)
 			.Replace("\"", "\\\"", StringComparison.Ordinal)
 			.Replace("\n", "\\n", StringComparison.Ordinal)
 			.Replace("\r", "\\r", StringComparison.Ordinal)
 			.Replace("\t", "\\t", StringComparison.Ordinal);
+
+		if (!named.Any(NeedsNumericEscape))
+		{
+			return named;
+		}
+
+		StringBuilder escaped = new(named.Length + 8);
+		foreach (char c in named)
+		{
+			escaped.Append(NeedsNumericEscape(c) ? EscapeCodeUnit(c) : c.ToString());
+		}
+
+		return escaped.ToString();
 	}
+
+	/// <summary>
+	/// Spells one character that cannot stand raw in a string literal as a numeric escape.
+	/// </summary>
+	/// <param name="c">A control character or Unicode line terminator.</param>
+	/// <returns>The escape sequence.</returns>
+	/// <remarks>
+	/// Defaults to <c>\uXXXX</c>, which C#, JavaScript, Python and Go all read. Rust writes the code
+	/// point in braces, and C and C++ override this with octal, since their <c>\x</c> is greedy and
+	/// would swallow a following hex digit.
+	/// </remarks>
+	protected virtual string EscapeCodeUnit(char c) => $"\\u{(int)c:X4}";
+
+	/// <summary>
+	/// Reports whether a character must be written as a numeric escape inside a string literal.
+	/// </summary>
+	/// <param name="c">The character.</param>
+	/// <returns>True for a C0 control, DEL, U+0085, U+2028 or U+2029.</returns>
+	private static bool NeedsNumericEscape(char c) =>
+		c is < '\u0020' or '\u007F' or '\u0085' or '\u2028' or '\u2029';
 
 	/// <summary>
 	/// Maps a binary operator to its C-family spelling.

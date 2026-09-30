@@ -2,6 +2,9 @@
 
 namespace ktsu.Coder.Languages;
 
+using System;
+using System.Linq;
+using System.Text;
 using ktsu.Coder.Ast;
 using ktsu.CodeBlocker;
 
@@ -166,4 +169,14 @@ public abstract class CFamilyGenerator : StandardLanguageGenerator
 	/// </remarks>
 	protected void WriteBracedList(ConstructionExpression construction, CodeBlocker code, string emptyList) =>
 		WriteElementList(construction, code, "{", "}", emptyList);
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// Octal, one escape per byte of the character's UTF-8 encoding. <c>\x</c> would read on through
+	/// any hex digit that follows it, so ESC followed by <c>b</c> would be the single escape
+	/// <c>\x1bb</c>, and a universal character name may not name a control character. The bytes are
+	/// the ones the character would have been written as raw, so the string's contents do not change.
+	/// </remarks>
+	protected override string EscapeCodeUnit(char c) =>
+		string.Concat(Encoding.UTF8.GetBytes(c.ToString()).Select(b => $"\\{Convert.ToString(b, 8).PadLeft(3, '0')}"));
 }
