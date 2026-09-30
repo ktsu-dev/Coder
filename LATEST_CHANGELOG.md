@@ -1,6 +1,7 @@
-## v3.18.7 (patch)
+## v3.18.8 (patch)
 
-Changes since v3.18.6:
+Changes since v3.18.7:
 
-- [patch] Write a C++ constant of an allocating type as const, not constexpr ([@Claude](https://github.com/Claude))
+- [patch] Escape control characters and Unicode line terminators in string literals ([@Claude](https://github.com/Claude))
+- [patch] Parenthesise a number literal used as a call receiver ([@Claude](https://github.com/Claude))
 
