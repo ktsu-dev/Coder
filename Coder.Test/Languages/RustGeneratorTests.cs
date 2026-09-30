@@ -34,6 +34,29 @@ public class RustGeneratorTests
 	}
 
 	/// <summary>
+	/// Tests that the unary operators Rust spells differently are written its way: <c>!</c> for bitwise
+	/// complement, since Rust has no <c>~</c>, and the bare operand for unary plus, since Rust has no
+	/// unary <c>+</c>.
+	/// </summary>
+	/// <param name="op">The operator under test.</param>
+	/// <param name="expected">The expected generated source.</param>
+	[TestMethod]
+	[DataRow(UnaryOperator.BitwiseNot, "(!x)")]
+	[DataRow(UnaryOperator.Plus, "(x)")]
+	[DataRow(UnaryOperator.LogicalNot, "(!x)")]
+	[DataRow(UnaryOperator.Negate, "(-x)")]
+	public void UnaryOperators_AreSpelledAsRustWritesThem(UnaryOperator op, string expected)
+		=> Assert.AreEqual(expected, Generate(new UnaryExpression(op, new VariableReference("x"))).Trim());
+
+	/// <summary>
+	/// Tests that unary plus on a negative literal is written as the literal alone, not the <c>+-1</c>
+	/// rustc rejects.
+	/// </summary>
+	[TestMethod]
+	public void UnaryPlusOnANegativeLiteral_IsTheLiteral()
+		=> Assert.AreEqual("(-1)", Generate(new UnaryExpression(UnaryOperator.Plus, Literal.Number(-1))).Trim());
+
+	/// <summary>
 	/// Tests that a function with nothing to answer writes no return type, since Rust names the unit
 	/// only when it has to and nobody writes it.
 	/// </summary>

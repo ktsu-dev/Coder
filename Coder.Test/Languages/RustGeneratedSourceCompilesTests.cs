@@ -107,6 +107,53 @@ public class RustGeneratedSourceCompilesTests
 	}
 
 	/// <summary>
+	/// Tests that bitwise complement and unary plus compile: Rust has neither <c>~</c> nor a unary
+	/// <c>+</c>, so both have to be spelled its way.
+	/// </summary>
+	[TestMethod]
+	public void UnaryOperatorsRustSpellsDifferently_Compile()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "rustc") is null)
+		{
+			Assert.Inconclusive("No Rust compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		FunctionDeclaration complement = new("complement") { ReturnType = "int" };
+		complement.Parameters.Add(new Parameter("value", "int"));
+		complement.Body.Add(new ReturnStatement(new UnaryExpression(UnaryOperator.BitwiseNot, new VariableReference("value"))));
+
+		FunctionDeclaration identity = new("identity") { ReturnType = "int" };
+		identity.Parameters.Add(new Parameter("value", "int"));
+		identity.Body.Add(new ReturnStatement(new UnaryExpression(UnaryOperator.Plus, new VariableReference("value"))));
+
+		FunctionDeclaration minusOne = new("minus_one") { ReturnType = "int" };
+		minusOne.Body.Add(new ReturnStatement(new UnaryExpression(UnaryOperator.Plus, Literal.Number(-1))));
+
+		SourceFile file = new("unary");
+		file.Members.Add(complement);
+		file.Members.Add(identity);
+		file.Members.Add(minusOne);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new RustGenerator().Generate(file);
+			string allowed = "#![allow(unused_parens, dead_code)]";
+
+			File.WriteAllText(
+				Path.Combine(directory, "unary.rs"),
+				$"{allowed}{Environment.NewLine}{source}");
+
+			(int exitCode, string output) = ToolchainHarness.Run(
+				"rustc",
+				"--crate-type lib --edition 2021 -o unary.rlib unary.rs",
+				directory);
+
+			Assert.AreEqual(0, exitCode, $"rustc rejected the generated source:{Environment.NewLine}{source}{Environment.NewLine}{output}");
+		});
+	}
+
+	/// <summary>
 	/// Tests that the arguments an entry point is handed are the ones the user typed, without the
 	/// program's own path that <c>std::env::args</c> puts first — which is what they are in every
 	/// other target.
