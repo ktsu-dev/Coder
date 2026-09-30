@@ -116,6 +116,31 @@ public class CppGeneratorTests
 	}
 
 	/// <summary>
+	/// Tests that a constant field of a type that allocates is <c>const</c> rather than <c>constexpr</c>,
+	/// and that a literal type keeps <c>constexpr</c>.
+	/// </summary>
+	[TestMethod]
+	public void ConstantField_OfANonLiteralType_IsConstRatherThanConstexpr()
+	{
+		FieldDeclaration text = new("Name", "string") { IsConstant = true, InitialValue = Literal.Text("a string longer than fifteen chars") };
+		FieldDeclaration number = new("Limit", "int") { IsConstant = true, InitialValue = Literal.Number(10) };
+
+		Assert.StartsWith("inline const std::string Name = ", Generator.Generate(text), StringComparison.Ordinal);
+		Assert.StartsWith("inline constexpr int Limit = ", Generator.Generate(number), StringComparison.Ordinal);
+
+		ClassDeclaration holder = new("Names") { Kind = TypeDeclarationKind.Struct };
+		holder.Members.Add(text);
+		holder.Members.Add(number);
+		holder.Members.Add(new VariableDeclaration("Title", "string", Literal.Text("a title")) { IsConstant = true });
+		string code = Generator.Generate(holder);
+
+		Assert.Contains("inline static const std::string Name = ", code, StringComparison.Ordinal);
+		Assert.Contains("static constexpr int Limit = ", code, StringComparison.Ordinal);
+		Assert.Contains("inline static const std::string Title = ", code, StringComparison.Ordinal);
+		Assert.DoesNotContain("constexpr std::string", code, StringComparison.Ordinal);
+	}
+
+	/// <summary>
 	/// Tests that logical operators use the C++ symbolic spellings rather than Python's words.
 	/// </summary>
 	[TestMethod]

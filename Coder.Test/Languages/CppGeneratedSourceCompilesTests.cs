@@ -129,6 +129,54 @@ public class CppGeneratedSourceCompilesTests
 	}
 
 	/// <summary>
+	/// Tests that a constant string longer than the small-string buffer compiles in each position a
+	/// constant may stand.
+	/// </summary>
+	/// <remarks>
+	/// <c>constexpr std::string</c> compiles only while the value fits libstdc++'s small-string buffer,
+	/// so a short literal would pass whichever way the generator spelled it. The value here is longer
+	/// than that buffer, which is what makes the spelling load-bearing.
+	/// </remarks>
+	[TestMethod]
+	public void ALongConstantStringCompilesWhereverAConstantMayStand()
+	{
+		string? compiler = ToolchainHarness.FindOnPath("--version", Compilers);
+		if (compiler is null)
+		{
+			Assert.Inconclusive("No C++ compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		const string Long = "a string longer than fifteen chars";
+
+		SourceFile file = new("strings") { IsHeader = true, Imports = { "<string>" } };
+		file.Members.Add(new FieldDeclaration("GREETING", "string") { IsConstant = true, InitialValue = Literal.Text(Long) });
+
+		ClassDeclaration holder = new("Names") { Kind = TypeDeclarationKind.Struct };
+		holder.Members.Add(new FieldDeclaration("Name", "string") { IsStatic = true, IsConstant = true, InitialValue = Literal.Text(Long) });
+		file.Members.Add(holder);
+
+		ClassDeclaration labels = new("Labels");
+		labels.Members.Add(new VariableDeclaration("Title", "string") { Visibility = Visibility.Public, IsConstant = true, InitialValue = Literal.Text(Long) });
+		file.Members.Add(labels);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			File.WriteAllText(Path.Combine(directory, "strings.h"), new CppGenerator().Generate(file));
+			File.WriteAllText(
+				Path.Combine(directory, "driver.cpp"),
+				"#include \"strings.h\"\n\nint main()\n{\n\treturn static_cast<int>(GREETING.size() + Names::Name.size() + Labels::Title.size()) * 0;\n}\n");
+
+			(int exitCode, string output) = ToolchainHarness.Run(
+				compiler,
+				"-std=c++20 -Wall -Wextra -pedantic -c driver.cpp -o driver.o",
+				directory);
+
+			Assert.AreEqual(0, exitCode, $"{compiler} rejected the generated header:{Environment.NewLine}{output}");
+		});
+	}
+
+	/// <summary>
 	/// Builds a header declaring an array in each position one with no bound may stand in.
 	/// </summary>
 	/// <returns>The file to generate.</returns>
