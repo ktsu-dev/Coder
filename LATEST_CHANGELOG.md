@@ -1,6 +1,6 @@
-## v3.18.6 (patch)
+## v3.18.7 (patch)
 
-Changes since v3.18.5:
+Changes since v3.18.6:
 
-- Spell bitwise not as ! and drop unary plus in Rust output [patch] ([@Claude](https://github.com/Claude))
+- [patch] Write a C++ constant of an allocating type as const, not constexpr ([@Claude](https://github.com/Claude))
 
