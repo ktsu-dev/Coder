@@ -58,6 +58,17 @@ public class CppGenerator : CFamilyGenerator
 	};
 
 	/// <summary>
+	/// The standard-library types this generator writes that are not literal types.
+	/// </summary>
+	private static readonly HashSet<string> NonLiteralTypes = new(StringComparer.Ordinal)
+	{
+		"std::string",
+		"std::vector",
+		"std::map",
+		"std::any",
+	};
+
+	/// <summary>
 	/// Gets the unique identifier for this language generator.
 	/// </summary>
 	public override string LanguageId => "cpp";
@@ -607,13 +618,15 @@ public class CppGenerator : CFamilyGenerator
 	/// A constant member is emitted as <c>static constexpr</c>. A plain <c>const</c> member is a
 	/// per-instance value initialised once per object, which is not what a constant means; the
 	/// <c>static constexpr</c> spelling is the one that gives the class a single compile-time value,
-	/// and it is available because a constant declared here is initialised from a literal.
+	/// and it is available because a constant declared here is initialised from a literal. A type
+	/// that is not a literal type is <c>inline static const</c> instead; see <see cref="IsLiteralType"/>.
 	/// </remarks>
 	private void GenerateField(VariableDeclaration field, CodeBlocker code)
 	{
 		if (field.IsConstant && field.InitialValue is not null)
 		{
-			code.Write("static constexpr ");
+			bool literal = field.IsTypeInferred || field.Type is null || IsLiteralType(field.Type);
+			code.Write(literal ? "static constexpr " : "inline static const ");
 		}
 		else if (field.IsConstant)
 		{
@@ -786,11 +799,20 @@ public class CppGenerator : CFamilyGenerator
 	/// inline, so saying it inside a class would be noise at best. <see cref="insideType"/> is what
 	/// tells the two apart, and it is a depth rather than a flag so a type nested in a type stays
 	/// balanced.
+	/// <para>
+	/// A constant of a type that is not a literal type is <c>const</c> rather than <c>constexpr</c>;
+	/// see <see cref="IsLiteralType"/>.
+	/// </para>
 	/// </remarks>
 	private string SpellStorage(FieldDeclaration field)
 	{
 		if (field.IsConstant)
 		{
+			if (field.Type is not null && !IsLiteralType(field.Type))
+			{
+				return insideType > 0 ? "inline static const " : "inline const ";
+			}
+
 			return insideType > 0 ? "static constexpr " : "inline constexpr ";
 		}
 
@@ -802,6 +824,30 @@ public class CppGenerator : CFamilyGenerator
 		}
 
 		return string.Empty;
+	}
+
+	/// <summary>
+	/// Reports whether a type can be declared <c>constexpr</c>.
+	/// </summary>
+	/// <param name="type">The declared type.</param>
+	/// <returns>False for a standard-library type that allocates; otherwise true.</returns>
+	/// <remarks>
+	/// <c>std::string</c> and the containers allocate, and an allocation cannot outlive the constant
+	/// evaluation that made it, so a <c>constexpr</c> one does not compile. A short string appears to
+	/// work only because it fits libstdc++'s small-string buffer, so whether the output builds would
+	/// otherwise depend on the literal's length and the standard library. Before C++20 it is never
+	/// valid. A pointer or reference to one is a literal type, and a type this generator does not map
+	/// is the caller's, which is assumed to have been written to be one.
+	/// </remarks>
+	private static bool IsLiteralType(TypeReference type)
+	{
+		if (type.Indirection != TypeIndirection.None)
+		{
+			return true;
+		}
+
+		string name = TypeMappings.TryGetValue(type.Name, out string? mapped) ? mapped : type.Name;
+		return !NonLiteralTypes.Contains(name);
 	}
 
 	/// <summary>
