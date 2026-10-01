@@ -20,6 +20,8 @@ using ktsu.CodeBlocker;
 /// </remarks>
 public class PythonGenerator : StandardLanguageGenerator
 {
+	private HashSet<FieldDeclaration>? instanceInitialisedFields;
+
 	/// <summary>
 	/// Gets the unique identifier for this language generator.
 	/// </summary>
@@ -188,7 +190,9 @@ public class PythonGenerator : StandardLanguageGenerator
 	{
 		foreach (AstNode node in nodes)
 		{
-			if (node is EnumDeclaration || (node is ClassDeclaration declaration && ContainsEnum(declaration.Members)))
+			if (node is EnumDeclaration
+				|| (node is ClassDeclaration declaration && ContainsEnum(declaration.Members))
+				|| (node is NamespaceDeclaration namespaceDeclaration && ContainsEnum(namespaceDeclaration.Members)))
 			{
 				return true;
 			}
@@ -349,7 +353,7 @@ public class PythonGenerator : StandardLanguageGenerator
 			code.Write($": {PythonTypeFromGenericType(type)}");
 		}
 
-		if (field.InitialValue is not null && !NeedsConstruction(field))
+		if (field.InitialValue is not null && instanceInitialisedFields?.Contains(field) != true)
 		{
 			code.Write(" = ");
 			GenerateInternal(field.InitialValue, code);
@@ -452,46 +456,57 @@ public class PythonGenerator : StandardLanguageGenerator
 
 		code.WriteLine(":");
 
-		// Python's body is delimited by indentation alone, so there is no brace scope to open.
-		using IndentScope members = new(code);
-
-		bool hasConstructor = classDecl.Members
-			.OfType<FunctionDeclaration>()
-			.Any(member => member.Kind == FunctionKind.Constructor);
-		bool synthesiseConstructor = !hasConstructor
-			&& (classDecl.BaseType is not null || InstanceInitialised(classDecl, NeedsConstruction).Count > 0);
-
-		if (classDecl.Members.Count == 0 && !synthesiseConstructor)
+		HashSet<FieldDeclaration>? previousFields = instanceInitialisedFields;
+		instanceInitialisedFields = new HashSet<FieldDeclaration>(
+			InstanceInitialised(classDecl, NeedsConstruction),
+			ReferenceEqualityComparer.Instance);
+		try
 		{
-			code.WriteLine("pass");
-			return;
+			// Python's body is delimited by indentation alone, so there is no brace scope to open.
+			using IndentScope members = new(code);
+
+			bool hasConstructor = classDecl.Members
+				.OfType<FunctionDeclaration>()
+				.Any(member => member.Kind == FunctionKind.Constructor);
+			bool synthesiseConstructor = !hasConstructor
+				&& (classDecl.BaseType is not null || instanceInitialisedFields.Count > 0);
+
+			if (classDecl.Members.Count == 0 && !synthesiseConstructor)
+			{
+				code.WriteLine("pass");
+				return;
+			}
+
+			// EndStatement writes nothing for Python, so the line break is this loop's to write.
+			foreach (AstNode member in classDecl.Members)
+			{
+				if (member is FunctionDeclaration method)
+				{
+					GenerateMethod(method, classDecl, code);
+				}
+				else
+				{
+					GenerateInternal(member, code);
+				}
+
+				code.WriteLine();
+			}
+
+			if (synthesiseConstructor)
+			{
+				code.WriteLine("def __init__(self):");
+				using IndentScope body = new(code);
+				if (classDecl.BaseType is not null)
+				{
+					code.WriteLine("super().__init__()");
+				}
+
+				WriteConstructorPrologue(classDecl, code, NeedsConstruction, WriteInstanceInitialiser);
+			}
 		}
-
-		// EndStatement writes nothing for Python, so the line break is this loop's to write.
-		foreach (AstNode member in classDecl.Members)
+		finally
 		{
-			if (member is FunctionDeclaration method)
-			{
-				GenerateMethod(method, classDecl, code);
-			}
-			else
-			{
-				GenerateInternal(member, code);
-			}
-
-			code.WriteLine();
-		}
-
-		if (synthesiseConstructor)
-		{
-			code.WriteLine("def __init__(self):");
-			using IndentScope body = new(code);
-			if (classDecl.BaseType is not null)
-			{
-				code.WriteLine("super().__init__()");
-			}
-
-			WriteConstructorPrologue(classDecl, code, NeedsConstruction, WriteInstanceInitialiser);
+			instanceInitialisedFields = previousFields;
 		}
 	}
 

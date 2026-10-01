@@ -1655,8 +1655,13 @@ public class GoGenerator : StandardLanguageGenerator
 		Ensure.NotNull(conditional);
 		Ensure.NotNull(code);
 
-		code.WriteLine($"func() {BranchType(conditional)} {{");
+		TypeReference? branchType = StaticType(conditional.WhenTrue) ?? StaticType(conditional.WhenFalse);
+		code.WriteLine($"func() {(branchType is null ? TypeMappings[UnknownTypeName] : SpellType(branchType))} {{");
 		code.Indent();
+		if (branchType is null)
+		{
+			WriteInexpressible(code, "conditional expression has no known type; using any");
+		}
 
 		WriteConditionalBranch(conditional, code, bothArms: false, branch =>
 		{
@@ -1667,17 +1672,6 @@ public class GoGenerator : StandardLanguageGenerator
 
 		code.Outdent();
 		code.Write("}()");
-	}
-
-	/// <summary>
-	/// Spells what a conditional answers with, which Go makes the caller name.
-	/// </summary>
-	/// <param name="conditional">The expression being written.</param>
-	/// <returns>The type as Go writes it.</returns>
-	private string BranchType(ConditionalExpression conditional)
-	{
-		TypeReference? type = StaticType(conditional.WhenTrue) ?? StaticType(conditional.WhenFalse);
-		return type is null ? TypeMappings[UnknownTypeName] : SpellType(type);
 	}
 
 	/// <inheritdoc/>

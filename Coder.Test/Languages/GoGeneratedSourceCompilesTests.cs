@@ -130,6 +130,52 @@ public class GoGeneratedSourceCompilesTests
 		});
 	}
 
+	[TestMethod]
+	public void ConditionalExpressions_InferParameterTypesAndLowerNestedReturns()
+	{
+		if (ToolchainHarness.FindOnPath("version", "go") is null)
+		{
+			Assert.Inconclusive("No Go toolchain on the path, so nothing was compiled.");
+			return;
+		}
+
+		SourceFile file = new("conditionals");
+		FunctionDeclaration nested = new("choose") { ReturnType = new TypeReference("int") };
+		nested.Parameters.Add(new Parameter("condition", "bool"));
+		nested.Parameters.Add(new Parameter("inner", "bool"));
+		nested.Parameters.Add(new Parameter("a", "int"));
+		nested.Parameters.Add(new Parameter("b", "int"));
+		nested.Parameters.Add(new Parameter("c", "int"));
+		nested.Body.Add(new ReturnStatement(new ConditionalExpression(
+			new VariableReference("condition"),
+			new ConditionalExpression(new VariableReference("inner"), new VariableReference("a"), new VariableReference("b")),
+			new VariableReference("c"))));
+		file.Members.Add(nested);
+
+		FunctionDeclaration operand = new("add") { ReturnType = new TypeReference("int") };
+		operand.Parameters.Add(new Parameter("condition", "bool"));
+		operand.Parameters.Add(new Parameter("a", "int"));
+		operand.Parameters.Add(new Parameter("b", "int"));
+		operand.Parameters.Add(new Parameter("d", "int"));
+		operand.Body.Add(new ReturnStatement(new BinaryExpression(
+			new ConditionalExpression(new VariableReference("condition"), new VariableReference("a"), new VariableReference("b")),
+			BinaryOperator.Add,
+			new VariableReference("d"))));
+		file.Members.Add(operand);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			File.WriteAllText(Path.Combine(directory, "go.mod"), Module);
+			File.WriteAllText(Path.Combine(directory, "conditionals.go"), new GoGenerator().Generate(file));
+			(int exitCode, string output) = ToolchainHarness.Run("go", "build ./...", directory);
+			Assert.AreEqual(0, exitCode, $"Go rejected the generated source:{Environment.NewLine}{output}");
+
+			(int formatted, string differs) = ToolchainHarness.Run("gofmt", "-l conditionals.go", directory);
+			Assert.AreEqual(0, formatted, $"gofmt did not run:{Environment.NewLine}{differs}");
+			Assert.AreEqual(string.Empty, differs.Trim(), "gofmt would rewrite the generated source.");
+		});
+	}
+
 	/// <summary>
 	/// Tests that the arguments an entry point is handed are the ones the user typed, without the
 	/// program's own path that Go puts first — which is what they are in every other target.

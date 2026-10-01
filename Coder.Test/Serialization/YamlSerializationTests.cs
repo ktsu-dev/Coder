@@ -2,11 +2,14 @@
 
 namespace ktsu.Coder.Test.Serialization;
 
+using System;
+using System.IO;
+using System.Text.RegularExpressions;
 using ktsu.Coder.Ast;
 using ktsu.Coder.Serialization;
 
 [TestClass]
-public class YamlSerializationTests
+public partial class YamlSerializationTests
 {
 	private static readonly string[] LegacyArguments = ["'/a,b'", "','", "\"say \\\"hi,there\\\"\"", "x > 3"];
 
@@ -184,5 +187,39 @@ public class YamlSerializationTests
 		{
 			Assert.IsNotNull(deserializer.Deserialize(yaml), yaml);
 		}
+	}
+
+	[TestMethod]
+	public void Deserializer_UsesTypedReadersForScalars()
+	{
+		string root = FindRepositoryRoot();
+		string source = File.ReadAllText(Path.Combine(root, "Coder", "Serialization", "YamlDeserializer.cs"));
+		int readerStart = source.IndexOf("private static string? ReadString", StringComparison.Ordinal);
+		int readerEnd = source.IndexOf("private static void DeserializeVisibility", readerStart, StringComparison.Ordinal);
+		Assert.IsTrue(readerStart >= 0);
+		Assert.IsTrue(readerEnd > readerStart);
+		string deserializationMethods = source.Remove(readerStart, readerEnd - readerStart);
+
+		MatchCollection unsafeReads = UnsafeScalarRead().Matches(deserializationMethods);
+		Assert.AreEqual(0, unsafeReads.Count, "Scalar values from dictionary reads must use the typed readers.");
+	}
+
+	[GeneratedRegex(@"TryGetValue\([^;\r\n]*out object\?\s+(?<name>\w+)\)[^;]*\b\k<name>\?\.ToString\(", RegexOptions.CultureInvariant)]
+	private static partial Regex UnsafeScalarRead();
+
+	private static string FindRepositoryRoot()
+	{
+		foreach (string start in new[] { AppContext.BaseDirectory, Environment.CurrentDirectory })
+		{
+			for (DirectoryInfo? directory = new(start); directory is not null; directory = directory.Parent)
+			{
+				if (File.Exists(Path.Combine(directory.FullName, "Coder", "Serialization", "YamlDeserializer.cs")))
+				{
+					return directory.FullName;
+				}
+			}
+		}
+
+		throw new DirectoryNotFoundException("Could not find the repository root from the test output directory.");
 	}
 }

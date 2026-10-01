@@ -108,7 +108,11 @@ source in seven target languages. The solution uses:
   exactly the split `SpellImport` already makes. C, JavaScript and Go have no metadata syntax and
   write the annotation down, because a file that quietly loses its `[Obsolete]` looks like a file
   that never had one. The arguments are a sequence rather than one string so that a comma inside an
-  argument stays inside it.
+  argument stays inside it. Every declaration's documentation and annotations go through
+  `LanguageGeneratorBase.WritePreamble`; its reference-identity ledger can be enabled in tests to
+  fail generation when any preamble item in the input tree was not emitted. When `Separated` lowers a
+  property, its cloned annotations retain a mapping to the original so emitting a lowered member
+  satisfies the same conservation check.
 - `Coder/Ast/TypeParameter.cs` and `TypeConstraint.cs` — what a declaration is written *over*, on
   `ClassDeclaration` and on `FunctionDeclaration`. Values rather than nodes, like
   `SpecialisationArguments` and for the same reason: a type parameter is part of the thing being
