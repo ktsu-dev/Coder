@@ -6,6 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Reflection;
 using ktsu.Coder.Ast;
 
 /// <summary>
@@ -688,6 +689,11 @@ public static class AstSchema
 	{
 		Ensure.NotNull(node);
 
+		if (IsLiteral(node))
+		{
+			return DescribeLiteral(node);
+		}
+
 		return node switch
 		{
 			ClassDeclaration classDecl => $"class {classDecl.Name ?? Unnamed}",
@@ -704,14 +710,28 @@ public static class AstSchema
 			AssignmentStatement assignment => $"assign {SpellOrName(assignment.Operator)}",
 			VariableDeclaration varDecl => $"var {varDecl.Name}",
 			VariableReference varRef => varRef.Name,
-			LiteralExpression<string> literal => Quote(literal.Value),
-			LiteralExpression<int> literal => literal.Value.ToString(CultureInfo.InvariantCulture),
-			LiteralExpression<double> literal => literal.Value.ToString(CultureInfo.InvariantCulture),
-			LiteralExpression<bool> literal => literal.Value ? "true" : "false",
 			AstLeafNode<string> leaf => Quote(leaf.Value),
 			AstLeafNode<int> leaf => leaf.Value.ToString(CultureInfo.InvariantCulture),
 			AstLeafNode<bool> leaf => leaf.Value ? "true" : "false",
 			_ => node.GetNodeTypeName(),
+		};
+	}
+
+	private static bool IsLiteral(AstNode node) =>
+		node.GetType().IsGenericType
+		&& node.GetType().GetGenericTypeDefinition() == typeof(LiteralExpression<>)
+		&& LiteralExpression.StorageTypes.Contains(node.GetType().GetGenericArguments()[0]);
+
+	private static string DescribeLiteral(AstNode node)
+	{
+		Type type = node.GetType().GetGenericArguments()[0];
+		object? value = node.GetType().GetProperty(nameof(LiteralExpression<>.Value), BindingFlags.Public | BindingFlags.Instance)?.GetValue(node);
+
+		return LiteralExpression.Kind(type) switch
+		{
+			LiteralKind.Text => Quote(value?.ToString()),
+			LiteralKind.Flag => value is true ? "true" : "false",
+			_ => (value as IFormattable)?.ToString(null, CultureInfo.InvariantCulture) ?? string.Empty,
 		};
 	}
 

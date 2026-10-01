@@ -166,7 +166,7 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 		Ensure.NotNull(namespaceDecl);
 		Ensure.NotNull(code);
 
-		GenerateDocumentation(namespaceDecl, code);
+		WritePreamble(namespaceDecl, code, PreambleSite.Type);
 		WriteMembers(namespaceDecl.Members, code);
 	}
 
@@ -340,6 +340,11 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 		}
 
 		ClassDeclaration separated = (ClassDeclaration)classDecl.Clone();
+		for (int index = 0; index < classDecl.Annotations.Count; index++)
+		{
+			RememberAnnotationClone(separated.Annotations[index], classDecl.Annotations[index]);
+		}
+
 		separated.Members.Clear();
 
 		foreach (AstNode member in classDecl.Members)
@@ -382,7 +387,7 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 				Visibility = property.Visibility,
 				IsStatic = property.IsStatic,
 				Documentation = [.. documentation],
-				Annotations = [.. property.Annotations.Select(annotation => annotation.Clone())],
+				Annotations = [.. property.Annotations.Select(CloneAnnotation)],
 			};
 
 			yield break;
@@ -397,7 +402,7 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 				IsStatic = property.IsStatic,
 				IsReadOnly = true,
 				Documentation = [.. property.Documentation],
-				Annotations = [.. property.Annotations.Select(annotation => annotation.Clone())],
+				Annotations = [.. property.Annotations.Select(CloneAnnotation)],
 				Body = [.. property.GetterBody.Select(statement => statement.Clone())],
 			};
 

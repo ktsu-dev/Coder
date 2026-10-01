@@ -49,8 +49,6 @@ public sealed class AstNodeCoverageTests
 	/// exist as far as the editor is concerned. A fifth would have to be added in both places, and
 	/// adding it only here fails the field-coverage test.
 	/// </remarks>
-	private static readonly Type[] StorageTypes = [typeof(string), typeof(int), typeof(double), typeof(bool)];
-
 	/// <summary>
 	/// The node types that hold no children, said rather than defaulted.
 	/// </summary>
@@ -69,6 +67,7 @@ public sealed class AstNodeCoverageTests
 		typeof(AstLeafNode<>),
 		typeof(LiteralExpression<>),
 	];
+	private static readonly Type[] LegacyLeafStorageTypes = [typeof(string), typeof(int), typeof(double), typeof(bool)];
 
 	/// <summary>
 	/// Gets every concrete node type, as MSTest data rows.
@@ -220,7 +219,8 @@ public sealed class AstNodeCoverageTests
 	/// <returns>The constructible types it stands for.</returns>
 	private static IEnumerable<Type> Closed(Type type) =>
 		type.IsGenericTypeDefinition
-			? StorageTypes.Select(storage => type.MakeGenericType(storage))
+			? (type == typeof(LiteralExpression<>) ? LiteralExpression.StorageTypes : LegacyLeafStorageTypes)
+				.Select(storage => type.MakeGenericType(storage))
 			: [type];
 
 	private static Type Definition(Type type) => type.IsGenericType ? type.GetGenericTypeDefinition() : type;
@@ -266,6 +266,8 @@ public sealed class AstNodeCoverageTests
 			|| bare == typeof(string)
 			|| bare == typeof(bool)
 			|| bare == typeof(int)
+			|| bare == typeof(long)
+			|| bare == typeof(float)
 			|| bare == typeof(double)
 			|| bare == typeof(TypeReference);
 	}

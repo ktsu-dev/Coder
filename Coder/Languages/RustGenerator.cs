@@ -301,7 +301,7 @@ public class RustGenerator : StandardLanguageGenerator
 	protected override NamingStyle MemberNaming => NamingStyle.Snake;
 
 	/// <inheritdoc/>
-	protected override string? SpellAnnotation(Annotation annotation) => $"#[{annotation}]";
+	protected override string? SpellAnnotation(Annotation annotation, PreambleSite site) => $"#[{annotation}]";
 
 	/// <summary>
 	/// Maps a unary operator to its Rust spelling.
@@ -342,7 +342,7 @@ public class RustGenerator : StandardLanguageGenerator
 		Ensure.NotNull(namespaceDecl);
 		Ensure.NotNull(code);
 
-		GenerateDocumentation(namespaceDecl, code);
+		WritePreamble(namespaceDecl, code, PreambleSite.Type);
 		WriteModule([.. NamespaceDeclaration.Split(namespaceDecl.Name)], namespaceDecl.Members, code);
 	}
 
@@ -504,7 +504,7 @@ public class RustGenerator : StandardLanguageGenerator
 	/// </remarks>
 	private void GenerateSpecialisation(ClassDeclaration classDecl, string name, CodeBlocker code)
 	{
-		GenerateDocumentation(classDecl, code);
+		WritePreamble(classDecl, code, PreambleSite.Type);
 
 		string arguments = string.Join(", ", classDecl.SpecialisationArguments.Select(SpellType));
 		code.Write($"impl {name} for {arguments} ");
@@ -536,8 +536,7 @@ public class RustGenerator : StandardLanguageGenerator
 	/// <param name="code">The writer to emit into.</param>
 	private void GenerateStruct(ClassDeclaration classDecl, string name, CodeBlocker code)
 	{
-		GenerateDocumentation(classDecl, code);
-		WriteAnnotations(classDecl.Annotations, code);
+		WritePreamble(classDecl, code, PreambleSite.Type);
 
 		// A trait a struct implements needs an impl block, and an impl block needs the bodies of
 		// the methods it supplies, which the declaration does not have: the members here belong to
@@ -587,7 +586,7 @@ public class RustGenerator : StandardLanguageGenerator
 					break;
 
 				case FieldDeclaration field when !IsAssociatedField(field):
-					GenerateDocumentation(field, code);
+					WritePreamble(field, code, PreambleSite.Field);
 					WriteStructMember(field.Name, field.Type, field.Visibility, code);
 					break;
 
@@ -622,7 +621,7 @@ public class RustGenerator : StandardLanguageGenerator
 	/// </remarks>
 	private void WriteAssociatedField(FieldDeclaration field, CodeBlocker code)
 	{
-		GenerateDocumentation(field, code);
+		WritePreamble(field, code, PreambleSite.Field);
 
 		if (!field.IsConstant)
 		{
@@ -672,8 +671,7 @@ public class RustGenerator : StandardLanguageGenerator
 	/// <param name="code">The writer to emit into.</param>
 	private void GenerateTrait(ClassDeclaration classDecl, string name, CodeBlocker code)
 	{
-		GenerateDocumentation(classDecl, code);
-		WriteAnnotations(classDecl.Annotations, code);
+		WritePreamble(classDecl, code, PreambleSite.Type);
 		WriteTypePromises(classDecl, code);
 		WriteUnaskedConstraints(
 			classDecl.TypeParameters,
@@ -748,12 +746,12 @@ public class RustGenerator : StandardLanguageGenerator
 			string reason = ComparisonOperators.TryGetValue(symbol, out string? supplied)
 				? supplied
 				: "no std::ops trait";
-			GenerateDocumentation(funcDecl, code);
+			WritePreamble(funcDecl, code, PreambleSite.Method);
 			WriteInexpressible(code, $"operator{symbol} on {typeName}: implement {reason}");
 			return;
 		}
 
-		GenerateDocumentation(funcDecl, code);
+		WritePreamble(funcDecl, code, PreambleSite.Method);
 		code.Write($"impl{implBounds} {op.Name} for {typeName} ");
 
 		using Scope block = new(code);
@@ -814,7 +812,7 @@ public class RustGenerator : StandardLanguageGenerator
 	{
 		string target = SpellType(funcDecl.ReturnType ?? new TypeReference(UnknownTypeName));
 
-		GenerateDocumentation(funcDecl, code);
+		WritePreamble(funcDecl, code, PreambleSite.Method);
 		code.Write($"impl{implBounds} From<{typeName}> for {target} ");
 
 		using Scope block = new(code);
@@ -837,7 +835,7 @@ public class RustGenerator : StandardLanguageGenerator
 	/// </remarks>
 	private void GenerateDrop(FunctionDeclaration funcDecl, string typeName, CodeBlocker code)
 	{
-		GenerateDocumentation(funcDecl, code);
+		WritePreamble(funcDecl, code, PreambleSite.Method);
 		code.Write($"impl{implBounds} Drop for {typeName} ");
 
 		using Scope block = new(code);
@@ -875,7 +873,7 @@ public class RustGenerator : StandardLanguageGenerator
 		Ensure.NotNull(funcDecl);
 		Ensure.NotNull(code);
 
-		GenerateDocumentation(funcDecl, code);
+		WritePreamble(funcDecl, code, enclosingType is null ? PreambleSite.Function : PreambleSite.Method);
 
 		// A deleted declaration exists to make a call illegal, and Rust has no way to say that of one
 		// member. Writing the signature would do the opposite of what it asks for.
@@ -893,7 +891,6 @@ public class RustGenerator : StandardLanguageGenerator
 			return;
 		}
 
-		WriteAnnotations(funcDecl.Annotations, code);
 
 		// #[must_use] says what a pure function's purity means to a caller, and is worth nothing on
 		// one that answers nothing.
@@ -1229,13 +1226,12 @@ public class RustGenerator : StandardLanguageGenerator
 
 		if (insideType > 0)
 		{
-			GenerateDocumentation(field, code);
-			WriteAnnotations(field.Annotations, code);
+			WritePreamble(field, code, PreambleSite.Field);
 			WriteStructMember(field.Name, field.Type, field.Visibility, code);
 			return;
 		}
 
-		GenerateDocumentation(field, code);
+		WritePreamble(field, code, PreambleSite.Field);
 
 		TypeReference type = field.Type ?? new TypeReference(UnknownTypeName);
 
@@ -1300,7 +1296,7 @@ public class RustGenerator : StandardLanguageGenerator
 		Ensure.NotNull(enumDecl);
 		Ensure.NotNull(code);
 
-		GenerateDocumentation(enumDecl, code);
+		WritePreamble(enumDecl, code, PreambleSite.Enum);
 
 		if (enumDecl.UnderlyingType is TypeReference underlying)
 		{
@@ -1330,7 +1326,7 @@ public class RustGenerator : StandardLanguageGenerator
 		Ensure.NotNull(usingAlias);
 		Ensure.NotNull(code);
 
-		GenerateDocumentation(usingAlias, code);
+		WritePreamble(usingAlias, code, PreambleSite.Type);
 		code.Write($"{SpellVisibilityOf(usingAlias)}type {usingAlias.Name} = ");
 		code.Write(SpellType(usingAlias.AliasedType ?? new TypeReference(UnknownTypeName)));
 		EndStatement(code);

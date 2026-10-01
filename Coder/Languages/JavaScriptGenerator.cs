@@ -58,8 +58,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 
 		string name = declaration.Name ?? "value";
 
-		GenerateDocumentation(declaration, code);
-		WriteAnnotations(declaration.Annotations, code);
+		WritePreamble(declaration, code, PreambleSite.Property);
 
 		if (declaration.IsAutomatic)
 		{
@@ -118,7 +117,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	/// </remarks>
 	private void GenerateNestedEnum(EnumDeclaration enumDecl, CodeBlocker code)
 	{
-		GenerateDocumentation(enumDecl, code);
+		WritePreamble(enumDecl, code, PreambleSite.Enum);
 		code.WriteLine($"static {enumDecl.Name ?? "UnnamedEnum"} = Object.freeze({{");
 
 		using (IndentScope members = new(code))
@@ -165,7 +164,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		Ensure.NotNull(usingAlias);
 		Ensure.NotNull(code);
 
-		GenerateDocumentation(usingAlias, code);
+		WritePreamble(usingAlias, code, PreambleSite.Type);
 		code.Write($"const {usingAlias.Name} = {usingAlias.AliasedType?.Name ?? "Object"}");
 		EndStatement(code);
 	}
@@ -253,7 +252,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		Ensure.NotNull(enumDecl);
 		Ensure.NotNull(code);
 
-		GenerateDocumentation(enumDecl, code);
+		WritePreamble(enumDecl, code, PreambleSite.Enum);
 		code.WriteLine($"const {enumDecl.Name ?? "UnnamedEnum"} = Object.freeze({{");
 
 		using (IndentScope members = new(code))
@@ -275,7 +274,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		Ensure.NotNull(field);
 		Ensure.NotNull(code);
 
-		GenerateDocumentation(field, code);
+		WritePreamble(field, code, PreambleSite.Field);
 		code.Write(field.Name ?? "unnamed");
 
 		if (field.InitialValue is not null)
@@ -293,7 +292,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		Ensure.NotNull(funcDecl);
 		Ensure.NotNull(code);
 
-		GenerateDocumentation(funcDecl, code);
+		WritePreamble(funcDecl, code, PreambleSite.Function);
 
 		code.Write($"function {funcDecl.Name ?? "unnamedFunction"}(");
 		GenerateParameterList(funcDecl.Parameters, code);
@@ -335,7 +334,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 			WriteInexpressible(code, $"specialised for {string.Join(", ", classDecl.SpecialisationArguments)}");
 		}
 
-		WriteAnnotations(classDecl.Annotations, code);
+		WritePreamble(classDecl, code, PreambleSite.Type);
 		WriteTypePromises(classDecl, code);
 		WriteTypeParametersDown(classDecl.TypeParameters, code);
 
@@ -416,7 +415,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	/// <param name="code">The writer to emit into.</param>
 	private void GenerateMethod(FunctionDeclaration method, CodeBlocker code)
 	{
-		GenerateDocumentation(method, code);
+		WritePreamble(method, code, PreambleSite.Method);
 
 		if (method.Definition != FunctionDefinition.Provided)
 		{

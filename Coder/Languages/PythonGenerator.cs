@@ -92,7 +92,8 @@ public class PythonGenerator : StandardLanguageGenerator
 	/// the name up and calls it on what follows. That makes it the closest of the four to being a
 	/// caller's own, and the least likely to be something the language itself reads.
 	/// </remarks>
-	protected override string? SpellAnnotation(Annotation annotation) => $"@{annotation}";
+	protected override string? SpellAnnotation(Annotation annotation, PreambleSite site) =>
+		site == PreambleSite.Field ? null : $"@{annotation}";
 
 	/// <inheritdoc/>
 	/// <remarks>
@@ -113,8 +114,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		string annotation = declaration.Type is TypeReference type ? $": {PythonTypeFromGenericType(type)}" : string.Empty;
 		string result = declaration.Type is TypeReference answered ? $" -> {PythonTypeFromGenericType(answered)}" : string.Empty;
 
-		GenerateDocumentation(declaration, code);
-		WriteAnnotations(declaration.Annotations, code);
+		WritePreamble(declaration, code, PreambleSite.Property);
 
 		if (declaration.IsAutomatic)
 		{
@@ -190,7 +190,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		Ensure.NotNull(usingAlias);
 		Ensure.NotNull(code);
 
-		GenerateDocumentation(usingAlias, code);
+		WritePreamble(usingAlias, code, PreambleSite.Type);
 		code.WriteLine($"{usingAlias.Name} = {PythonTypeFromGenericType(usingAlias.AliasedType ?? new TypeReference("object"))}");
 	}
 
@@ -285,7 +285,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		Ensure.NotNull(enumDecl);
 		Ensure.NotNull(code);
 
-		GenerateDocumentation(enumDecl, code);
+		WritePreamble(enumDecl, code, PreambleSite.Enum);
 		code.WriteLine($"class {enumDecl.Name ?? "UnnamedEnum"}(Enum):");
 
 		using IndentScope body = new(code);
@@ -312,7 +312,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		Ensure.NotNull(field);
 		Ensure.NotNull(code);
 
-		GenerateDocumentation(field, code);
+		WritePreamble(field, code, PreambleSite.Field);
 		code.Write(field.Name ?? "unnamed");
 
 		if (field.Type is TypeReference type)
@@ -335,7 +335,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		Ensure.NotNull(funcDecl);
 		Ensure.NotNull(code);
 
-		GenerateDocumentation(funcDecl, code);
+		WritePreamble(funcDecl, code, PreambleSite.Function);
 
 		// Function signature
 		code.Write($"def {funcDecl.Name ?? "unnamed_function"}(");
@@ -393,7 +393,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		// needs an import, and a class is generated on its own as readily as inside a file whose
 		// imports the AST carries. Emitting one would be a change to how this generator writes a
 		// file rather than to how it writes a class.
-		WriteAnnotations(classDecl.Annotations, code);
+		WritePreamble(classDecl, code, PreambleSite.Type);
 		WriteTypePromises(classDecl, code);
 
 		// Python has TypeVar and Generic, and both need an import the AST does not carry for a
@@ -462,7 +462,7 @@ public class PythonGenerator : StandardLanguageGenerator
 	/// </remarks>
 	private void GenerateMethod(FunctionDeclaration method, CodeBlocker code)
 	{
-		GenerateDocumentation(method, code);
+		WritePreamble(method, code, PreambleSite.Method);
 
 		if (method.Definition != FunctionDefinition.Provided)
 		{
