@@ -57,6 +57,11 @@ public class EnumDeclaration : AstNode, IHasVisibility, IHasDocumentation
 	/// </summary>
 	public Visibility Visibility { get; set; }
 
+	/// <summary>
+	/// Gets the metadata attached to this declaration, which may be none.
+	/// </summary>
+	public Collection<Annotation> Annotations { get; init; } = [];
+
 	/// <inheritdoc/>
 	public Collection<string> Documentation { get; init; } = [];
 
@@ -87,6 +92,11 @@ public class EnumDeclaration : AstNode, IHasVisibility, IHasDocumentation
 		foreach (string line in Documentation)
 		{
 			clone.Documentation.Add(line);
+		}
+
+		foreach (Annotation annotation in Annotations)
+		{
+			clone.Annotations.Add(annotation.Clone());
 		}
 
 		foreach (EnumMember member in Members)

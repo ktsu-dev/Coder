@@ -474,6 +474,7 @@ public class YamlSerializer
 
 		SerializeVisibility(enumDecl, nodeData);
 		SerializeDocumentation(enumDecl, nodeData);
+		SerializeAnnotations(enumDecl.Annotations, nodeData);
 
 		if (enumDecl.Members.Count > 0)
 		{

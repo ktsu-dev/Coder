@@ -890,8 +890,6 @@ public class RustGenerator : StandardLanguageGenerator
 			WriteInexpressible(code, $"{SpellFunctionName(funcDecl)} is defaulted: derive it, or implement Default");
 			return;
 		}
-
-
 		// #[must_use] says what a pure function's purity means to a caller, and is worth nothing on
 		// one that answers nothing.
 		if ((funcDecl.IsPure || funcDecl.MustUseResult) && ReturnsAValue(funcDecl))

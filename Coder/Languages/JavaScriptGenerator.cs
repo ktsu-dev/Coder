@@ -103,7 +103,11 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	protected override string DocumentationPrefix => "//";
 
 	/// <inheritdoc/>
-	protected override string? SpellImport(string import) => $"import \"{import}\";";
+	protected override string? SpellImport(string import)
+	{
+		Ensure.NotNull(import);
+		return import.StartsWith("import ", StringComparison.Ordinal) ? import : $"import \"{import}\";";
+	}
 
 	/// <summary>
 	/// Emits an enumeration declared inside a class, as a static member of it.

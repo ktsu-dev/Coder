@@ -744,7 +744,7 @@ public class GoGenerator : StandardLanguageGenerator
 	/// <param name="name">The field's name.</param>
 	/// <param name="type">The field's type.</param>
 	/// <param name="visibility">What the declaration said about who may see it.</param>
-	/// <param name="documentation">What the declaration says about itself.</param>
+	/// <param name="declaration">The source declaration, when this is an AST field.</param>
 	/// <returns>The line.</returns>
 	private AlignedLine Field(string? name, TypeReference? type, Visibility visibility, FieldDeclaration? declaration = null)
 	{
@@ -899,15 +899,23 @@ public class GoGenerator : StandardLanguageGenerator
 		// have them anywhere else.
 		code.Write(" ");
 
-		using Scope body = new(code);
-
-		if (funcDecl.Kind == FunctionKind.Constructor)
+		PushStaticTypeScope(funcDecl);
+		try
 		{
-			WriteConstructorBody(funcDecl, enclosingType, code);
-			return;
-		}
+			using Scope body = new(code);
 
-		WriteBody(funcDecl.Body, code);
+			if (funcDecl.Kind == FunctionKind.Constructor)
+			{
+				WriteConstructorBody(funcDecl, enclosingType, code);
+				return;
+			}
+
+			WriteBody(funcDecl.Body, code);
+		}
+		finally
+		{
+			PopStaticTypeScope();
+		}
 	}
 
 	/// <summary>
@@ -1181,6 +1189,7 @@ public class GoGenerator : StandardLanguageGenerator
 	{
 		Ensure.NotNull(varDecl);
 		Ensure.NotNull(code);
+		RegisterStaticType(varDecl);
 
 		bool inferred = varDecl.IsTypeInferred || varDecl.Type is null;
 
@@ -1192,7 +1201,7 @@ public class GoGenerator : StandardLanguageGenerator
 			code.Write($"var {varDecl.Name} {SpellType(varDecl.Type!)}");
 			EndStatement(code);
 
-			WriteChoice(chosen, code, bothArms: true, branch =>
+			WriteConditionalBranch(chosen, code, bothArms: true, branch =>
 			{
 				code.Write($"{varDecl.Name} = ");
 				GenerateInternal(branch, code);
@@ -1501,7 +1510,7 @@ public class GoGenerator : StandardLanguageGenerator
 
 		// One arm: a return leaves the statement, so the second branch is what follows rather than
 		// what an else holds.
-		WriteChoice(conditional, code, bothArms: false, branch =>
+		WriteConditionalBranch(conditional, code, bothArms: false, branch =>
 		{
 			code.Write("return ");
 			GenerateInternal(branch, code);
@@ -1526,12 +1535,31 @@ public class GoGenerator : StandardLanguageGenerator
 			return;
 		}
 
-		WriteChoice(conditional, code, bothArms: true, branch =>
+		WriteConditionalBranch(conditional, code, bothArms: true, branch =>
 		{
 			GenerateInternal(assignment.Target, code);
 			code.Write($" {GetAssignmentOperator(assignment.Operator)} ");
 			GenerateInternal(branch, code);
 			EndStatement(code);
+		});
+	}
+
+	private void WriteConditionalBranch(
+		ConditionalExpression conditional,
+		CodeBlocker code,
+		bool bothArms,
+		Action<AstNode> writeLeaf)
+	{
+		WriteChoice(conditional, code, bothArms, branch =>
+		{
+			if (branch is ConditionalExpression nested)
+			{
+				WriteConditionalBranch(nested, code, bothArms, writeLeaf);
+			}
+			else
+			{
+				writeLeaf(branch);
+			}
 		});
 	}
 
@@ -1630,7 +1658,7 @@ public class GoGenerator : StandardLanguageGenerator
 		code.WriteLine($"func() {BranchType(conditional)} {{");
 		code.Indent();
 
-		WriteChoice(conditional, code, bothArms: false, branch =>
+		WriteConditionalBranch(conditional, code, bothArms: false, branch =>
 		{
 			code.Write("return ");
 			GenerateInternal(branch, code);
@@ -1646,27 +1674,11 @@ public class GoGenerator : StandardLanguageGenerator
 	/// </summary>
 	/// <param name="conditional">The expression being written.</param>
 	/// <returns>The type as Go writes it.</returns>
-	private string BranchType(ConditionalExpression conditional) =>
-		TypeOfValue(conditional.WhenTrue)
-			?? TypeOfValue(conditional.WhenFalse)
-			?? TypeMappings[UnknownTypeName];
-
-	/// <summary>
-	/// Reads a type off a value that says what it is.
-	/// </summary>
-	/// <param name="value">The value to read.</param>
-	/// <returns>The type as Go writes it, or null where the value does not say.</returns>
-	private string? TypeOfValue(AstNode value) => value switch
+	private string BranchType(ConditionalExpression conditional)
 	{
-		LiteralExpression<string> or AstLeafNode<string> => StringTypeName,
-		LiteralExpression<int> or AstLeafNode<int> => "int",
-		LiteralExpression<bool> or AstLeafNode<bool> => "bool",
-		LiteralExpression<double> => "float64",
-		LiteralExpression<float> => "float32",
-		LiteralExpression<long> => "int64",
-		ConstructionExpression { Type: not null } built => SpellType(built.Type),
-		_ => null,
-	};
+		TypeReference? type = StaticType(conditional.WhenTrue) ?? StaticType(conditional.WhenFalse);
+		return type is null ? TypeMappings[UnknownTypeName] : SpellType(type);
+	}
 
 	/// <inheritdoc/>
 	/// <remarks>
@@ -1815,6 +1827,7 @@ public class GoGenerator : StandardLanguageGenerator
 	/// <param name="Notes">What is written above the line.</param>
 	/// <param name="Name">The first column.</param>
 	/// <param name="Rest">The second column, or nothing where the line has only one.</param>
+	/// <param name="Declaration">The source field, when this line represents an AST field.</param>
 	private sealed record AlignedLine(
 		IReadOnlyList<(string Prefix, string Text)> Notes,
 		string Name,

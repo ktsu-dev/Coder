@@ -166,7 +166,36 @@ public class PythonGenerator : StandardLanguageGenerator
 	}
 
 	/// <inheritdoc/>
-	protected override string? SpellImport(string import) => $"import {import}";
+	protected override string? SpellImport(string import)
+	{
+		Ensure.NotNull(import);
+		return import.StartsWith("import ", StringComparison.Ordinal) || import.StartsWith("from ", StringComparison.Ordinal)
+			? import
+			: $"import {import}";
+	}
+
+	/// <inheritdoc/>
+	protected override IEnumerable<string> RequiredImports(SourceFile file)
+	{
+		Ensure.NotNull(file);
+		if (ContainsEnum(file.Members))
+		{
+			yield return "from enum import Enum";
+		}
+	}
+
+	private static bool ContainsEnum(IEnumerable<AstNode> nodes)
+	{
+		foreach (AstNode node in nodes)
+		{
+			if (node is EnumDeclaration || (node is ClassDeclaration declaration && ContainsEnum(declaration.Members)))
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
 
 	/// <inheritdoc/>
 	/// <remarks>
@@ -320,10 +349,14 @@ public class PythonGenerator : StandardLanguageGenerator
 			code.Write($": {PythonTypeFromGenericType(type)}");
 		}
 
-		if (field.InitialValue is not null)
+		if (field.InitialValue is not null && !NeedsConstruction(field))
 		{
 			code.Write(" = ");
 			GenerateInternal(field.InitialValue, code);
+		}
+		else if (field.Type is null && field.InitialValue is null)
+		{
+			code.Write(" = None");
 		}
 
 		code.WriteLine();
@@ -422,7 +455,13 @@ public class PythonGenerator : StandardLanguageGenerator
 		// Python's body is delimited by indentation alone, so there is no brace scope to open.
 		using IndentScope members = new(code);
 
-		if (classDecl.Members.Count == 0)
+		bool hasConstructor = classDecl.Members
+			.OfType<FunctionDeclaration>()
+			.Any(member => member.Kind == FunctionKind.Constructor);
+		bool synthesiseConstructor = !hasConstructor
+			&& (classDecl.BaseType is not null || InstanceInitialised(classDecl, NeedsConstruction).Count > 0);
+
+		if (classDecl.Members.Count == 0 && !synthesiseConstructor)
 		{
 			code.WriteLine("pass");
 			return;
@@ -433,7 +472,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		{
 			if (member is FunctionDeclaration method)
 			{
-				GenerateMethod(method, code);
+				GenerateMethod(method, classDecl, code);
 			}
 			else
 			{
@@ -442,6 +481,18 @@ public class PythonGenerator : StandardLanguageGenerator
 
 			code.WriteLine();
 		}
+
+		if (synthesiseConstructor)
+		{
+			code.WriteLine("def __init__(self):");
+			using IndentScope body = new(code);
+			if (classDecl.BaseType is not null)
+			{
+				code.WriteLine("super().__init__()");
+			}
+
+			WriteConstructorPrologue(classDecl, code, NeedsConstruction, WriteInstanceInitialiser);
+		}
 	}
 
 	/// <summary>
@@ -449,6 +500,7 @@ public class PythonGenerator : StandardLanguageGenerator
 	/// parameter.
 	/// </summary>
 	/// <param name="method">The function to emit as a method.</param>
+	/// <param name="declaration">The containing class.</param>
 	/// <param name="code">The writer to emit into.</param>
 	/// <remarks>
 	/// <c>self</c> is Python's spelling of the receiver a method is called on. It is not carried in
@@ -460,7 +512,7 @@ public class PythonGenerator : StandardLanguageGenerator
 	/// alongside the signature; Python spells it by changing the signature.
 	/// </para>
 	/// </remarks>
-	private void GenerateMethod(FunctionDeclaration method, CodeBlocker code)
+	private void GenerateMethod(FunctionDeclaration method, ClassDeclaration declaration, CodeBlocker code)
 	{
 		WritePreamble(method, code, PreambleSite.Method);
 
@@ -490,6 +542,10 @@ public class PythonGenerator : StandardLanguageGenerator
 		}
 
 		WriteInitialiserAssignments(method, code);
+		if (method.Kind == FunctionKind.Constructor)
+		{
+			WriteConstructorPrologue(declaration, code, NeedsConstruction, WriteInstanceInitialiser);
+		}
 
 		if (method.Body.Count == 0 && method.Initialisers.Count == 0)
 		{
@@ -502,6 +558,22 @@ public class PythonGenerator : StandardLanguageGenerator
 			GenerateInternal(statement, code);
 			code.WriteLine();
 		}
+	}
+
+	private static bool NeedsConstruction(FieldDeclaration field) =>
+		field.InitialValue is not null and not (
+			LiteralExpression<string>
+			or LiteralExpression<int>
+			or LiteralExpression<long>
+			or LiteralExpression<float>
+			or LiteralExpression<double>
+			or LiteralExpression<bool>);
+
+	private void WriteInstanceInitialiser(FieldDeclaration field, CodeBlocker code)
+	{
+		code.Write($"self.{field.Name ?? "unnamed"} = ");
+		GenerateInternal(field.InitialValue!, code);
+		code.WriteLine();
 	}
 
 	/// <summary>

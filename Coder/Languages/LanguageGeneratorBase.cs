@@ -5,6 +5,7 @@ namespace ktsu.Coder.Languages;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Linq;
 using System.Reflection;
@@ -338,7 +339,7 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 		preambleCloneOrigins?.Add(clone, original);
 	}
 
-	private static IEnumerable<Annotation> AnnotationsOf(AstNode declaration) => declaration switch
+	private static Collection<Annotation> AnnotationsOf(AstNode declaration) => declaration switch
 	{
 		ClassDeclaration classDeclaration => classDeclaration.Annotations,
 		EnumDeclaration enumDeclaration => enumDeclaration.Annotations,
@@ -530,6 +531,13 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	protected virtual string? SpellImport(string import) => null;
 
 	/// <summary>
+	/// Lists imports required by the generated contents of a source file.
+	/// </summary>
+	/// <param name="file">The file being emitted.</param>
+	/// <returns>The imports the generated declarations need.</returns>
+	protected virtual IEnumerable<string> RequiredImports(SourceFile file) => [];
+
+	/// <summary>
 	/// Emits whatever a file needs before its imports.
 	/// </summary>
 	/// <param name="file">The file being emitted.</param>
@@ -597,9 +605,24 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	private void WriteImports(SourceFile file, CodeBlocker code)
 	{
 		bool wroteImport = false;
+		HashSet<string> required = new(RequiredImports(file), StringComparer.Ordinal);
+
+		foreach (string import in required)
+		{
+			if (SpellImport(import) is string spelled)
+			{
+				code.WriteLine(spelled);
+				wroteImport = true;
+			}
+		}
 
 		foreach (string import in file.Imports)
 		{
+			if (required.Contains(import))
+			{
+				continue;
+			}
+
 			if (import.Length == 0)
 			{
 				if (wroteImport)

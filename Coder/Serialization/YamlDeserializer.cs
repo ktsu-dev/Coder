@@ -588,6 +588,7 @@ public partial class YamlDeserializer
 
 		DeserializeVisibility(enumDecl, dict);
 		ReadStrings(dict, DocumentationKey, enumDecl.Documentation);
+		DeserializeAnnotations(dict, enumDecl.Annotations);
 
 		if (dict.TryGetValue(MembersKey, out object? membersObj) && membersObj is List<object> members)
 		{
@@ -886,9 +887,7 @@ public partial class YamlDeserializer
 			switch (entry)
 			{
 				case Dictionary<object, object> mapping:
-					string name = mapping.TryGetValue("name", out object? nameValue)
-						? nameValue?.ToString() ?? string.Empty
-						: string.Empty;
+					string name = ReadString(mapping, "name") ?? string.Empty;
 					Annotation annotation = new(name);
 					if (mapping.TryGetValue("arguments", out object? argumentsValue) && argumentsValue is List<object> arguments)
 					{
@@ -1137,25 +1136,14 @@ public partial class YamlDeserializer
 		Parameter param = new();
 		if (nodeData is Dictionary<object, object> dict)
 		{
-			if (dict.TryGetValue("name", out object? nameObj))
-			{
-				param.Name = nameObj?.ToString();
-			}
+			param.Name = ReadString(dict, "name");
+			param.Type = ReadString(dict, "type");
 
-			if (dict.TryGetValue("type", out object? typeObj))
-			{
-				param.Type = typeObj?.ToString();
-			}
-
-			if (dict.TryGetValue("isOptional", out object? optionalObj) &&
-				bool.TryParse(optionalObj?.ToString(), out bool isOptional))
+			if (ReadBool(dict, "isOptional") is bool isOptional)
 			{
 				param.IsOptional = isOptional;
 
-				if (dict.TryGetValue("defaultValue", out object? defaultObj))
-				{
-					param.DefaultValue = defaultObj?.ToString();
-				}
+				param.DefaultValue = ReadString(dict, "defaultValue");
 			}
 
 			// Parse metadata if present
