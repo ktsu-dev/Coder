@@ -8,6 +8,8 @@ using ktsu.Coder.Serialization;
 [TestClass]
 public class YamlSerializationTests
 {
+	private static readonly string[] LegacyArguments = ["'/a,b'", "','", "\"say \\\"hi,there\\\"\"", "x > 3"];
+
 	[TestMethod]
 	public void Serialize_FunctionDeclaration_GeneratesCorrectYaml()
 	{
@@ -126,5 +128,61 @@ public class YamlSerializationTests
 
 		// Act & Assert
 		Assert.ThrowsExactly<YamlDotNet.Core.YamlException>(() => deserializer.Deserialize(invalidYaml));
+	}
+
+	[TestMethod]
+	public void AnnotationArguments_RoundTripAsStructuredValues()
+	{
+		ClassDeclaration declaration = new("Annotated");
+		foreach (string argument in new[] { "/a,b", ",", "say \"hi,there\"", "x > 3" })
+		{
+			Annotation annotation = new("Mark");
+			annotation.Arguments.Add(argument);
+			declaration.Annotations.Add(annotation);
+		}
+
+		YamlSerializer serializer = new();
+		YamlDeserializer deserializer = new();
+		string yaml = serializer.Serialize(declaration);
+		ClassDeclaration restored = Assert.IsInstanceOfType<ClassDeclaration>(deserializer.Deserialize(yaml));
+
+		CollectionAssert.AreEqual(declaration.Annotations.ToArray(), restored.Annotations.ToArray());
+		Assert.AreEqual(yaml, serializer.Serialize(restored));
+	}
+
+	[TestMethod]
+	public void Deserialize_LegacyAnnotationArgumentsKeepsQuotedCommas()
+	{
+		const string yaml = """
+			classDeclaration:
+			  annotations:
+			    - "Legacy('/a,b', ',', \"say \\\"hi,there\\\"\", x > 3)"
+			""";
+
+		ClassDeclaration declaration = Assert.IsInstanceOfType<ClassDeclaration>(new YamlDeserializer().Deserialize(yaml));
+
+		Assert.AreEqual(1, declaration.Annotations.Count);
+		CollectionAssert.AreEqual(
+			LegacyArguments,
+			declaration.Annotations[0].Arguments.ToArray());
+	}
+
+	[TestMethod]
+	public void Deserialize_BlankScalarValuesDoNotThrow()
+	{
+		YamlDeserializer deserializer = new();
+		string[] documents =
+		[
+			"fieldDeclaration:\n  type:\n",
+			"literal<Int32>:\n  value: 1\n  expectedType:\n",
+			"binaryExpression:\n  operator:\n",
+			"variableDeclaration:\n  type:\n  isConstant:\n",
+			"assignmentStatement:\n  operator:\n",
+		];
+
+		foreach (string yaml in documents)
+		{
+			Assert.IsNotNull(deserializer.Deserialize(yaml), yaml);
+		}
 	}
 }

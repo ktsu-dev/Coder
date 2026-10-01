@@ -144,36 +144,25 @@ public partial class YamlDeserializer
 
 	private void DeserializeFunctionBasicProperties(FunctionDeclaration funcDecl, Dictionary<object, object> dict)
 	{
-		if (dict.TryGetValue("name", out object? nameObj))
-		{
-			funcDecl.Name = nameObj?.ToString();
-		}
+		funcDecl.Name = ReadString(dict, "name");
+		funcDecl.ReturnType = ReadString(dict, "returnType");
 
-		if (dict.TryGetValue("returnType", out object? returnTypeObj))
-		{
-			funcDecl.ReturnType = returnTypeObj?.ToString();
-		}
-
-		if (dict.TryGetValue("isStatic", out object? staticObj) &&
-			bool.TryParse(staticObj?.ToString(), out bool isStatic))
+		if (ReadBool(dict, "isStatic") is bool isStatic)
 		{
 			funcDecl.IsStatic = isStatic;
 		}
 
-		if (dict.TryGetValue("isPure", out object? pureObj) &&
-			bool.TryParse(pureObj?.ToString(), out bool isPure))
+		if (ReadBool(dict, "isPure") is bool isPure)
 		{
 			funcDecl.IsPure = isPure;
 		}
 
-		if (dict.TryGetValue("kind", out object? kindObj) &&
-			Enum.TryParse(kindObj?.ToString(), out FunctionKind kind))
+		if (ReadEnum<FunctionKind>(dict, "kind") is FunctionKind kind)
 		{
 			funcDecl.Kind = kind;
 		}
 
-		if (dict.TryGetValue("definition", out object? definitionObj) &&
-			Enum.TryParse(definitionObj?.ToString(), out FunctionDefinition definition))
+		if (ReadEnum<FunctionDefinition>(dict, "definition") is FunctionDefinition definition)
 		{
 			funcDecl.Definition = definition;
 		}
@@ -228,9 +217,45 @@ public partial class YamlDeserializer
 	/// <param name="fallback">What to return when the document is silent.</param>
 	/// <returns>The value read, or the fallback.</returns>
 	private static bool ReadFlag(Dictionary<object, object> dict, string key, bool fallback) =>
-		dict.TryGetValue(key, out object? value) && bool.TryParse(value?.ToString(), out bool flag)
-			? flag
-			: fallback;
+		ReadBool(dict, key) ?? fallback;
+
+	private static string? ReadString(Dictionary<object, object> dict, string key) =>
+		dict.TryGetValue(key, out object? value) ? value?.ToString() : null;
+
+	private static bool? ReadBool(Dictionary<object, object> dict, string key) =>
+		dict.TryGetValue(key, out object? value) && bool.TryParse(value?.ToString(), out bool parsed)
+			? parsed
+			: null;
+
+	private static T? ReadEnum<T>(Dictionary<object, object> dict, string key, bool ignoreCase = false)
+		where T : struct, Enum =>
+		dict.TryGetValue(key, out object? value) && Enum.TryParse(value?.ToString(), ignoreCase, out T parsed)
+			? parsed
+			: null;
+
+	private static int? ReadInt(Dictionary<object, object> dict, string key) =>
+		dict.TryGetValue(key, out object? value) && int.TryParse(value?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed)
+			? parsed
+			: null;
+
+	private AstNode? ReadNode<T>(object? value)
+		where T : AstNode
+	{
+		if (value is not Dictionary<object, object> dict)
+		{
+			return null;
+		}
+
+		foreach ((object nodeType, object nodeData) in dict)
+		{
+			if (DeserializeNode(nodeType.ToString() ?? string.Empty, nodeData) is T node)
+			{
+				return node;
+			}
+		}
+
+		return null;
+	}
 
 	/// <summary>
 	/// Reads a declaration's visibility, leaving it <see cref="Visibility.Unspecified"/> when the
@@ -245,8 +270,8 @@ public partial class YamlDeserializer
 	/// </remarks>
 	private static void DeserializeVisibility(IHasVisibility declaration, Dictionary<object, object> dict)
 	{
-		if ((dict.TryGetValue("visibility", out object? visibilityObj) || dict.TryGetValue("accessModifier", out visibilityObj))
-			&& Enum.TryParse(visibilityObj?.ToString(), ignoreCase: true, out Visibility visibility))
+		if ((ReadEnum<Visibility>(dict, "visibility", ignoreCase: true)
+			?? ReadEnum<Visibility>(dict, "accessModifier", ignoreCase: true)) is Visibility visibility)
 		{
 			declaration.Visibility = visibility;
 		}
@@ -260,14 +285,12 @@ public partial class YamlDeserializer
 			return entryPoint;
 		}
 
-		if (dict.TryGetValue("acceptsArguments", out object? argumentsObj)
-			&& bool.TryParse(argumentsObj?.ToString(), out bool acceptsArguments))
+		if (ReadBool(dict, "acceptsArguments") is bool acceptsArguments)
 		{
 			entryPoint.AcceptsArguments = acceptsArguments;
 		}
 
-		if (dict.TryGetValue("returnsExitCode", out object? exitCodeObj)
-			&& bool.TryParse(exitCodeObj?.ToString(), out bool returnsExitCode))
+		if (ReadBool(dict, "returnsExitCode") is bool returnsExitCode)
 		{
 			entryPoint.ReturnsExitCode = returnsExitCode;
 		}
@@ -349,13 +372,9 @@ public partial class YamlDeserializer
 			return file;
 		}
 
-		if (dict.TryGetValue("name", out object? nameObj))
-		{
-			file.Name = nameObj?.ToString();
-		}
+		file.Name = ReadString(dict, "name");
 
-		if (dict.TryGetValue("isHeader", out object? headerObj) &&
-			bool.TryParse(headerObj?.ToString(), out bool isHeader))
+		if (ReadBool(dict, "isHeader") is bool isHeader)
 		{
 			file.IsHeader = isHeader;
 		}
@@ -376,10 +395,7 @@ public partial class YamlDeserializer
 			return namespaceDecl;
 		}
 
-		if (dict.TryGetValue("name", out object? nameObj))
-		{
-			namespaceDecl.Name = nameObj?.ToString();
-		}
+		namespaceDecl.Name = ReadString(dict, "name");
 
 		ReadStrings(dict, DocumentationKey, namespaceDecl.Documentation);
 		DeserializeMembersInto(dict, namespaceDecl.Members);
@@ -396,15 +412,8 @@ public partial class YamlDeserializer
 			return assertion;
 		}
 
-		if (dict.TryGetValue("condition", out object? conditionObj))
-		{
-			assertion.Condition = conditionObj?.ToString();
-		}
-
-		if (dict.TryGetValue("message", out object? messageObj))
-		{
-			assertion.Message = messageObj?.ToString();
-		}
+		assertion.Condition = ReadString(dict, "condition");
+		assertion.Message = ReadString(dict, "message");
 
 		DeserializeMetadata(assertion, dict);
 		return assertion;
@@ -418,15 +427,8 @@ public partial class YamlDeserializer
 			return usingAlias;
 		}
 
-		if (dict.TryGetValue("name", out object? nameObj))
-		{
-			usingAlias.Name = nameObj?.ToString();
-		}
-
-		if (dict.TryGetValue("aliasedType", out object? typeObj))
-		{
-			usingAlias.AliasedType = typeObj?.ToString();
-		}
+		usingAlias.Name = ReadString(dict, "name");
+		usingAlias.AliasedType = ReadString(dict, "aliasedType");
 
 		DeserializeVisibility(usingAlias, dict);
 		ReadStrings(dict, DocumentationKey, usingAlias.Documentation);
@@ -443,10 +445,7 @@ public partial class YamlDeserializer
 			return initialiser;
 		}
 
-		if (dict.TryGetValue("name", out object? nameObj))
-		{
-			initialiser.Name = nameObj?.ToString();
-		}
+		initialiser.Name = ReadString(dict, "name");
 
 		if (dict.TryGetValue(ValueKey, out object? valueObj) &&
 			valueObj is Dictionary<object, object> valueDict && valueDict.Count > 0)
@@ -467,10 +466,7 @@ public partial class YamlDeserializer
 			return construction;
 		}
 
-		if (dict.TryGetValue("type", out object? typeObj))
-		{
-			construction.Type = typeObj?.ToString();
-		}
+		construction.Type = ReadString(dict, "type");
 
 		if (dict.TryGetValue("arguments", out object? argumentsObj) && argumentsObj is List<object> arguments)
 		{
@@ -494,22 +490,7 @@ public partial class YamlDeserializer
 	/// <param name="value">The mapping, as the deserializer produced it.</param>
 	/// <returns>The expression, or null when the mapping holds nothing that is one.</returns>
 	private Expression? DeserializeNestedExpression(object? value)
-	{
-		if (value is not Dictionary<object, object> dict)
-		{
-			return null;
-		}
-
-		foreach ((object nodeType, object nodeData) in dict)
-		{
-			if (DeserializeNode(nodeType.ToString() ?? string.Empty, nodeData) is Expression expression)
-			{
-				return expression;
-			}
-		}
-
-		return null;
-	}
+		=> ReadNode<Expression>(value) as Expression;
 
 	private CallExpression DeserializeCallExpression(object? nodeData)
 	{
@@ -519,10 +500,7 @@ public partial class YamlDeserializer
 			return callExpr;
 		}
 
-		if (dict.TryGetValue("callee", out object? calleeObj))
-		{
-			callExpr.Callee = calleeObj?.ToString() ?? string.Empty;
-		}
+		callExpr.Callee = ReadString(dict, "callee") ?? string.Empty;
 
 		if (dict.TryGetValue("receiver", out object? receiverObj))
 		{
@@ -541,10 +519,7 @@ public partial class YamlDeserializer
 			}
 		}
 
-		if (dict.TryGetValue("expectedType", out object? typeObj))
-		{
-			callExpr.ExpectedType = typeObj?.ToString();
-		}
+		callExpr.ExpectedType = ReadString(dict, "expectedType");
 
 		DeserializeMetadata(callExpr, dict);
 		return callExpr;
@@ -576,10 +551,7 @@ public partial class YamlDeserializer
 			conditional.WhenFalse = whenFalse;
 		}
 
-		if (dict.TryGetValue("expectedType", out object? typeObj))
-		{
-			conditional.ExpectedType = typeObj?.ToString();
-		}
+		conditional.ExpectedType = ReadString(dict, "expectedType");
 
 		DeserializeMetadata(conditional, dict);
 		return conditional;
@@ -611,15 +583,8 @@ public partial class YamlDeserializer
 			return enumDecl;
 		}
 
-		if (dict.TryGetValue("name", out object? nameObj))
-		{
-			enumDecl.Name = nameObj?.ToString();
-		}
-
-		if (dict.TryGetValue("underlyingType", out object? underlyingObj))
-		{
-			enumDecl.UnderlyingType = underlyingObj?.ToString();
-		}
+		enumDecl.Name = ReadString(dict, "name");
+		enumDecl.UnderlyingType = ReadString(dict, "underlyingType");
 
 		DeserializeVisibility(enumDecl, dict);
 		ReadStrings(dict, DocumentationKey, enumDecl.Documentation);
@@ -648,15 +613,8 @@ public partial class YamlDeserializer
 			return member;
 		}
 
-		if (dict.TryGetValue("name", out object? nameObj))
-		{
-			member.Name = nameObj?.ToString();
-		}
-
-		if (dict.TryGetValue(ValueKey, out object? valueObj))
-		{
-			member.Value = valueObj?.ToString();
-		}
+		member.Name = ReadString(dict, "name");
+		member.Value = ReadString(dict, ValueKey);
 
 		DeserializeMetadata(member, dict);
 		return member;
@@ -670,15 +628,8 @@ public partial class YamlDeserializer
 			return property;
 		}
 
-		if (dict.TryGetValue("name", out object? nameObj))
-		{
-			property.Name = nameObj?.ToString();
-		}
-
-		if (dict.TryGetValue("type", out object? typeObj))
-		{
-			property.Type = typeObj?.ToString();
-		}
+		property.Name = ReadString(dict, "name");
+		property.Type = ReadString(dict, "type");
 
 		property.HasGetter = ReadFlag(dict, "readable", property.HasGetter);
 		property.HasSetter = ReadFlag(dict, "writable", property.HasSetter);
@@ -733,15 +684,8 @@ public partial class YamlDeserializer
 			return field;
 		}
 
-		if (dict.TryGetValue("name", out object? nameObj))
-		{
-			field.Name = nameObj?.ToString();
-		}
-
-		if (dict.TryGetValue("type", out object? typeObj))
-		{
-			field.Type = typeObj?.ToString();
-		}
+		field.Name = ReadString(dict, "name");
+		field.Type = ReadString(dict, "type");
 
 		field.IsStatic = ReadFlag(dict, "isStatic", field.IsStatic);
 		field.IsConstant = ReadFlag(dict, "isConstant", field.IsConstant);
@@ -894,18 +838,10 @@ public partial class YamlDeserializer
 			return classDecl;
 		}
 
-		if (dict.TryGetValue("name", out object? nameObj))
-		{
-			classDecl.Name = nameObj?.ToString();
-		}
+		classDecl.Name = ReadString(dict, "name");
+		classDecl.BaseType = ReadString(dict, "baseType");
 
-		if (dict.TryGetValue("baseType", out object? baseTypeObj))
-		{
-			classDecl.BaseType = baseTypeObj?.ToString();
-		}
-
-		if (dict.TryGetValue("kind", out object? kindObj) &&
-			Enum.TryParse(kindObj?.ToString(), out TypeDeclarationKind kind))
+		if (ReadEnum<TypeDeclarationKind>(dict, "kind") is TypeDeclarationKind kind)
 		{
 			classDecl.Kind = kind;
 		}
@@ -945,13 +881,34 @@ public partial class YamlDeserializer
 			return;
 		}
 
-		IEnumerable<string> spelled = written
-			.Select(annotation => annotation?.ToString() ?? string.Empty)
-			.Where(text => text.Length > 0);
-
-		foreach (string text in spelled)
+		foreach (object? entry in written)
 		{
-			annotations.Add(ReadAnnotation(text));
+			switch (entry)
+			{
+				case Dictionary<object, object> mapping:
+					string name = mapping.TryGetValue("name", out object? nameValue)
+						? nameValue?.ToString() ?? string.Empty
+						: string.Empty;
+					Annotation annotation = new(name);
+					if (mapping.TryGetValue("arguments", out object? argumentsValue) && argumentsValue is List<object> arguments)
+					{
+						foreach (object? argument in arguments)
+						{
+							annotation.Arguments.Add(argument?.ToString() ?? string.Empty);
+						}
+					}
+
+					annotations.Add(annotation);
+					break;
+				case not null:
+					string text = entry.ToString() ?? string.Empty;
+					if (text.Length > 0)
+					{
+						annotations.Add(ReadAnnotation(text));
+					}
+
+					break;
+			}
 		}
 	}
 
@@ -997,32 +954,41 @@ public partial class YamlDeserializer
 	private static IEnumerable<string> SplitArguments(string text)
 	{
 		int depth = 0;
-		bool quoted = false;
+		char quote = '\0';
 		int start = 0;
 
 		for (int index = 0; index < text.Length; index++)
 		{
 			char character = text[index];
 
-			if (character == '"')
+			if (quote != '\0')
 			{
-				quoted = !quoted;
+				if (character == '\\' && index + 1 < text.Length)
+				{
+					index++;
+				}
+				else if (character == quote)
+				{
+					quote = '\0';
+				}
+
 				continue;
 			}
 
-			if (quoted)
+			if (character is '"' or '\'')
 			{
+				quote = character;
 				continue;
 			}
 
 			switch (character)
 			{
-				case '(' or '[' or '<':
+				case '(' or '[':
 					depth++;
 					break;
 
-				case ')' or ']' or '>':
-					depth--;
+				case ')' or ']':
+					depth = Math.Max(0, depth - 1);
 					break;
 
 				case ',' when depth == 0:
@@ -1241,8 +1207,7 @@ public partial class YamlDeserializer
 			}
 
 			// Deserialize operator
-			if (dict.TryGetValue("operator", out object? operatorObj) &&
-				Enum.TryParse<BinaryOperator>(operatorObj.ToString(), out BinaryOperator binaryOp))
+			if (ReadEnum<BinaryOperator>(dict, "operator") is BinaryOperator binaryOp)
 			{
 				binaryExpr.Operator = binaryOp;
 			}
@@ -1262,10 +1227,7 @@ public partial class YamlDeserializer
 			}
 
 			// Deserialize expected type
-			if (dict.TryGetValue("expectedType", out object? typeObj))
-			{
-				binaryExpr.ExpectedType = typeObj.ToString();
-			}
+			binaryExpr.ExpectedType = ReadString(dict, "expectedType");
 
 			DeserializeMetadata(binaryExpr, dict);
 		}
@@ -1279,8 +1241,7 @@ public partial class YamlDeserializer
 		if (nodeData is Dictionary<object, object> dict)
 		{
 			// Deserialize operator
-			if (dict.TryGetValue("operator", out object? operatorObj) &&
-				Enum.TryParse<UnaryOperator>(operatorObj.ToString(), out UnaryOperator unaryOp))
+			if (ReadEnum<UnaryOperator>(dict, "operator") is UnaryOperator unaryOp)
 			{
 				unaryExpr.Operator = unaryOp;
 			}
@@ -1300,10 +1261,7 @@ public partial class YamlDeserializer
 			}
 
 			// Deserialize expected type
-			if (dict.TryGetValue("expectedType", out object? typeObj))
-			{
-				unaryExpr.ExpectedType = typeObj.ToString();
-			}
+			unaryExpr.ExpectedType = ReadString(dict, "expectedType");
 
 			DeserializeMetadata(unaryExpr, dict);
 		}
@@ -1333,17 +1291,17 @@ public partial class YamlDeserializer
 		Expression? result = valueType switch
 		{
 			"String" => new LiteralExpression<string>(value?.ToString() ?? string.Empty),
-			"Int32" when int.TryParse(value?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int intValue) => new LiteralExpression<int>(intValue),
-			"Boolean" when bool.TryParse(value?.ToString(), out bool boolValue) => new LiteralExpression<bool>(boolValue),
+			"Int32" when ReadInt(dict, ValueKey) is int intValue => new LiteralExpression<int>(intValue),
+			"Boolean" when ReadBool(dict, ValueKey) is bool boolValue => new LiteralExpression<bool>(boolValue),
 			"Double" when TryParseDouble(value?.ToString(), out double doubleValue) => new LiteralExpression<double>(doubleValue),
 			"Single" when TryParseSingle(value?.ToString(), out float floatValue) => new LiteralExpression<float>(floatValue),
 			"Int64" when long.TryParse(value?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out long longValue) => new LiteralExpression<long>(longValue),
 			_ => null,
 		};
 
-		if (result != null && dict.TryGetValue("expectedType", out object? typeObj))
+		if (result is Expression expression)
 		{
-			result.ExpectedType = typeObj.ToString();
+			expression.ExpectedType = ReadString(dict, "expectedType");
 		}
 
 		return result;
@@ -1354,15 +1312,8 @@ public partial class YamlDeserializer
 		VariableReference varRef = new();
 		if (nodeData is Dictionary<object, object> dict)
 		{
-			if (dict.TryGetValue("name", out object? nameObj))
-			{
-				varRef.Name = nameObj?.ToString() ?? string.Empty;
-			}
-
-			if (dict.TryGetValue("expectedType", out object? typeObj))
-			{
-				varRef.ExpectedType = typeObj.ToString();
-			}
+			varRef.Name = ReadString(dict, "name") ?? string.Empty;
+			varRef.ExpectedType = ReadString(dict, "expectedType");
 
 			DeserializeMetadata(varRef, dict);
 		}
@@ -1375,15 +1326,8 @@ public partial class YamlDeserializer
 		VariableDeclaration varDecl = new();
 		if (nodeData is Dictionary<object, object> dict)
 		{
-			if (dict.TryGetValue("name", out object? nameObj))
-			{
-				varDecl.Name = nameObj?.ToString() ?? string.Empty;
-			}
-
-			if (dict.TryGetValue("type", out object? typeObj))
-			{
-				varDecl.Type = typeObj.ToString();
-			}
+			varDecl.Name = ReadString(dict, "name") ?? string.Empty;
+			varDecl.Type = ReadString(dict, "type");
 
 			if (dict.TryGetValue("initialValue", out object? initialObj) && initialObj is Dictionary<object, object> initialDict)
 			{
@@ -1398,12 +1342,12 @@ public partial class YamlDeserializer
 				}
 			}
 
-			if (dict.TryGetValue("isConstant", out object? constantObj) && bool.TryParse(constantObj.ToString(), out bool isConstant))
+			if (ReadBool(dict, "isConstant") is bool isConstant)
 			{
 				varDecl.IsConstant = isConstant;
 			}
 
-			if (dict.TryGetValue("isTypeInferred", out object? inferredObj) && bool.TryParse(inferredObj.ToString(), out bool isInferred))
+			if (ReadBool(dict, "isTypeInferred") is bool isInferred)
 			{
 				varDecl.IsTypeInferred = isInferred;
 			}
@@ -1450,8 +1394,7 @@ public partial class YamlDeserializer
 			}
 
 			// Deserialize operator
-			if (dict.TryGetValue("operator", out object? operatorObj) &&
-				Enum.TryParse<AssignmentOperator>(operatorObj.ToString(), out AssignmentOperator assignOp))
+			if (ReadEnum<AssignmentOperator>(dict, "operator") is AssignmentOperator assignOp)
 			{
 				assignment.Operator = assignOp;
 			}
