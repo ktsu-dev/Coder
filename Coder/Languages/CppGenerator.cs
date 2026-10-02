@@ -116,7 +116,7 @@ public class CppGenerator : CFamilyGenerator
 	/// the compiler does not know is ignored with a warning rather than refused, which is what
 	/// makes writing a caller's attribute through safe here.
 	/// </remarks>
-	protected override string? SpellAnnotation(Annotation annotation) => $"[[{annotation}]]";
+	protected override string? SpellAnnotation(Annotation annotation, PreambleSite site) => $"[[{annotation}]]";
 	/// <inheritdoc/>
 	/// <remarks>
 	/// A constructor and a destructor are named after the type rather than after themselves, so the
@@ -135,8 +135,7 @@ public class CppGenerator : CFamilyGenerator
 		Ensure.NotNull(funcDecl);
 		Ensure.NotNull(code);
 
-		GenerateDocumentation(funcDecl, code);
-		WriteAnnotations(funcDecl.Annotations, code);
+		WritePreamble(funcDecl, code, enclosingType is null ? PreambleSite.Function : PreambleSite.Method);
 		WriteUnaskedConstraints(funcDecl.TypeParameters, code);
 		WriteTemplateHead(funcDecl.TypeParameters, code);
 
@@ -304,7 +303,7 @@ public class CppGenerator : CFamilyGenerator
 		Ensure.NotNull(namespaceDecl);
 		Ensure.NotNull(code);
 
-		GenerateDocumentation(namespaceDecl, code);
+		WritePreamble(namespaceDecl, code, PreambleSite.Type);
 
 		string name = string.Join("::", NamespaceDeclaration.Split(namespaceDecl.Name));
 		code.WriteLine($"namespace {name}");
@@ -327,7 +326,8 @@ public class CppGenerator : CFamilyGenerator
 		}
 
 		code.NewLine();
-		code.WriteLine($"}}  // namespace {name}");
+		code.Write("}  ");
+		WriteComment(code, "// namespace", name);
 	}
 
 	/// <inheritdoc/>
@@ -348,7 +348,7 @@ public class CppGenerator : CFamilyGenerator
 
 		classDecl = Separated(classDecl);
 
-		GenerateDocumentation(classDecl, code);
+		WritePreamble(classDecl, code, PreambleSite.Type);
 
 		// A struct's members are public already, so labelling them would be noise. An interface has
 		// no keyword in C++ and is a class whose members are all public.
@@ -366,7 +366,6 @@ public class CppGenerator : CFamilyGenerator
 
 		WriteTemplateHead(classDecl.TypeParameters, code);
 
-		WriteAnnotations(classDecl.Annotations, code);
 		WriteTypePromises(classDecl, code);
 
 		// Every constraint. A concept is a predicate over a type and can ask anything at all, so
@@ -494,7 +493,7 @@ public class CppGenerator : CFamilyGenerator
 		Ensure.NotNull(usingAlias);
 		Ensure.NotNull(code);
 
-		GenerateDocumentation(usingAlias, code);
+		WritePreamble(usingAlias, code, PreambleSite.Type);
 		code.Write($"using {usingAlias.Name} = {MapToCppType(usingAlias.AliasedType ?? new TypeReference(UnknownTypeName))}");
 		EndStatement(code);
 	}
@@ -540,7 +539,7 @@ public class CppGenerator : CFamilyGenerator
 		Ensure.NotNull(enumDecl);
 		Ensure.NotNull(code);
 
-		GenerateDocumentation(enumDecl, code);
+		WritePreamble(enumDecl, code, PreambleSite.Enum);
 
 		code.Write($"enum class {enumDecl.Name ?? "UnnamedEnum"}");
 
@@ -578,8 +577,7 @@ public class CppGenerator : CFamilyGenerator
 		Ensure.NotNull(field);
 		Ensure.NotNull(code);
 
-		GenerateDocumentation(field, code);
-		WriteAnnotations(field.Annotations, code);
+		WritePreamble(field, code, PreambleSite.Field);
 
 		code.Write(SpellStorage(field));
 		code.Write(SpellDeclarator(field.Type ?? new TypeReference(UnknownTypeName), field.Name ?? string.Empty));

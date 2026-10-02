@@ -3,9 +3,12 @@
 namespace ktsu.Coder.Languages;
 
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using ktsu.Coder.Ast;
 using ktsu.CodeBlocker;
@@ -22,6 +25,11 @@ using ktsu.CodeBlocker;
 /// </remarks>
 public abstract class LanguageGeneratorBase : ILanguageGenerator
 {
+	private HashSet<object>? emittedPreambleItems;
+	private Dictionary<object, object>? preambleCloneOrigins;
+
+	internal bool EnforceConservation { get; set; }
+
 	/// <summary>
 	/// Gets the indentation one level of nesting adds.
 	/// </summary>
@@ -65,9 +73,28 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 			throw new NotSupportedException($"Cannot generate code for node type: {astNode.GetNodeTypeName()}");
 		}
 
-		using CodeBlocker code = CodeBlocker.Create(IndentString);
-		GenerateInternal(astNode, code);
-		return code.ToString();
+		HashSet<object>? previousItems = emittedPreambleItems;
+		Dictionary<object, object>? previousOrigins = preambleCloneOrigins;
+		emittedPreambleItems = new HashSet<object>(ReferenceEqualityComparer.Instance);
+		preambleCloneOrigins = new Dictionary<object, object>(ReferenceEqualityComparer.Instance);
+
+		try
+		{
+			using CodeBlocker code = CodeBlocker.Create(IndentString);
+			GenerateInternal(astNode, code);
+
+			if (EnforceConservation)
+			{
+				EnsureConserved(astNode);
+			}
+
+			return code.ToString();
+		}
+		finally
+		{
+			emittedPreambleItems = previousItems;
+			preambleCloneOrigins = previousOrigins;
+		}
 	}
 
 	/// <summary>
@@ -190,7 +217,7 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	protected void WriteInexpressible(CodeBlocker code, string what)
 	{
 		Ensure.NotNull(code);
-		code.WriteLine($"{CommentPrefix} {what}");
+		WriteComment(code, CommentPrefix, what);
 	}
 
 	/// <summary>
@@ -199,42 +226,194 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	protected virtual string CommentPrefix => "//";
 
 	/// <summary>
-	/// Spells one piece of metadata attached to a declaration, or reports that the language has no
-	/// syntax for one.
+	/// Writes caller-provided text as comment lines without letting it escape the comment.
 	/// </summary>
-	/// <param name="annotation">The annotation as the declaration carries it.</param>
-	/// <returns>The line to write, or null when the language has no metadata syntax.</returns>
-	/// <remarks>
-	/// The same shape as <see cref="SpellImport"/>, and for the same reason: what the annotation
-	/// says is the caller's — a <c>[TestMethod]</c> means nothing outside the framework that reads
-	/// it — and what is around it is the language's. Four targets have somewhere to put one and
-	/// three do not.
-	/// </remarks>
-	protected virtual string? SpellAnnotation(Annotation annotation) => null;
+	/// <param name="code">The writer to emit into.</param>
+	/// <param name="prefix">The comment marker to write on each line.</param>
+	/// <param name="text">The text to write.</param>
+	protected virtual void WriteComment(CodeBlocker code, string prefix, string text)
+	{
+		Ensure.NotNull(code);
+		Ensure.NotNull(prefix);
+		Ensure.NotNull(text);
+
+		foreach (string line in text.Split(["\r\n", "\n", "\r"], StringSplitOptions.None))
+		{
+			code.WriteLine(line.Length == 0 ? prefix : $"{prefix} {line}");
+		}
+	}
 
 	/// <summary>
-	/// Writes a declaration's metadata, above the declaration.
+	/// The kind of declaration that owns a preamble.
 	/// </summary>
-	/// <param name="annotations">The annotations the declaration carries.</param>
-	/// <param name="code">The writer to emit into.</param>
-	/// <remarks>
-	/// A target with no metadata syntax writes down the one it was given rather than dropping it. A
-	/// file that quietly loses its <c>[Obsolete]</c> looks like a file that never had one.
-	/// </remarks>
-	protected void WriteAnnotations(IEnumerable<Annotation> annotations, CodeBlocker code)
+	protected enum PreambleSite
 	{
-		Ensure.NotNull(annotations);
+		/// <summary>A class or other type declaration.</summary>
+		Type,
+
+		/// <summary>A free function.</summary>
+		Function,
+
+		/// <summary>A member function.</summary>
+		Method,
+
+		/// <summary>A field declaration.</summary>
+		Field,
+
+		/// <summary>A property declaration.</summary>
+		Property,
+
+		/// <summary>An enumeration.</summary>
+		Enum,
+	}
+
+	/// <summary>
+	/// Spells an annotation at a specific declaration site.
+	/// </summary>
+	/// <param name="annotation">The annotation as the declaration carries it.</param>
+	/// <param name="site">The kind of declaration carrying it.</param>
+	/// <returns>The line to write, or null when the language has no syntax at this site.</returns>
+	protected virtual string? SpellAnnotation(Annotation annotation, PreambleSite site) => null;
+
+	/// <summary>
+	/// Writes a declaration's documentation and annotations.
+	/// </summary>
+	/// <param name="declaration">The declaration whose preamble to write.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <param name="site">The kind of declaration carrying its annotations.</param>
+	protected void WritePreamble(AstNode declaration, CodeBlocker code, PreambleSite site)
+	{
+		Ensure.NotNull(declaration);
 		Ensure.NotNull(code);
 
-		foreach (Annotation annotation in annotations)
+		if (declaration is IHasDocumentation documented)
 		{
-			if (SpellAnnotation(annotation) is string spelled)
+			foreach (string line in documented.Documentation)
+			{
+				WriteComment(code, DocumentationPrefix, line);
+				emittedPreambleItems?.Add(line);
+			}
+		}
+
+		foreach (Annotation annotation in AnnotationsOf(declaration))
+		{
+			if (SpellAnnotation(annotation, site) is string spelled)
 			{
 				code.WriteLine(spelled);
 			}
 			else
 			{
 				WriteInexpressible(code, $"annotated {annotation}");
+			}
+
+			emittedPreambleItems?.Add(annotation);
+			if (preambleCloneOrigins?.TryGetValue(annotation, out object? origin) == true)
+			{
+				emittedPreambleItems?.Add(origin);
+			}
+		}
+	}
+
+	/// <summary>
+	/// Clones an annotation and records the original for conservation checks.
+	/// </summary>
+	/// <param name="annotation">The annotation to clone.</param>
+	/// <returns>The clone.</returns>
+	protected Annotation CloneAnnotation(Annotation annotation)
+	{
+		Ensure.NotNull(annotation);
+		Annotation clone = annotation.Clone();
+		RememberAnnotationClone(clone, annotation);
+		return clone;
+	}
+
+	/// <summary>
+	/// Associates an annotation clone with the original preamble item it represents.
+	/// </summary>
+	/// <param name="clone">The annotation being emitted.</param>
+	/// <param name="original">The annotation present on the input tree.</param>
+	protected void RememberAnnotationClone(Annotation clone, Annotation original)
+	{
+		Ensure.NotNull(clone);
+		Ensure.NotNull(original);
+		preambleCloneOrigins?.Add(clone, original);
+	}
+
+	private static Collection<Annotation> AnnotationsOf(AstNode declaration) => declaration switch
+	{
+		ClassDeclaration classDeclaration => classDeclaration.Annotations,
+		EnumDeclaration enumDeclaration => enumDeclaration.Annotations,
+		FieldDeclaration fieldDeclaration => fieldDeclaration.Annotations,
+		FunctionDeclaration functionDeclaration => functionDeclaration.Annotations,
+		PropertyDeclaration propertyDeclaration => propertyDeclaration.Annotations,
+		_ => [],
+	};
+
+	private void EnsureConserved(AstNode root)
+	{
+		HashSet<object> expected = new(ReferenceEqualityComparer.Instance);
+		HashSet<AstNode> visited = new(ReferenceEqualityComparer.Instance);
+		Stack<AstNode> pending = new();
+		pending.Push(root);
+
+		while (pending.TryPop(out AstNode? node))
+		{
+			if (!visited.Add(node))
+			{
+				continue;
+			}
+
+			if (node is IHasDocumentation documented)
+			{
+				foreach (string line in documented.Documentation)
+				{
+					expected.Add(line);
+				}
+			}
+
+			foreach (Annotation annotation in AnnotationsOf(node))
+			{
+				expected.Add(annotation);
+			}
+
+			if (node is AstCompositeNode composite)
+			{
+				foreach (AstNode child in composite.Children.Values)
+				{
+					pending.Push(child);
+				}
+			}
+
+			foreach (PropertyInfo property in node.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance))
+			{
+				if (property.GetIndexParameters().Length > 0)
+				{
+					continue;
+				}
+
+				object? value = property.GetValue(node);
+				if (value is AstNode child)
+				{
+					pending.Push(child);
+				}
+				else if (value is IEnumerable children)
+				{
+					foreach (object? item in children)
+					{
+						if (item is AstNode sequenceChild)
+						{
+							pending.Push(sequenceChild);
+						}
+					}
+				}
+			}
+		}
+
+		foreach (object item in expected)
+		{
+			if (!emittedPreambleItems!.Contains(item))
+			{
+				throw new InvalidOperationException($"{item} was dropped by {DisplayName}.");
 			}
 		}
 	}
@@ -352,6 +531,13 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	protected virtual string? SpellImport(string import) => null;
 
 	/// <summary>
+	/// Lists imports required by the generated contents of a source file.
+	/// </summary>
+	/// <param name="file">The file being emitted.</param>
+	/// <returns>The imports the generated declarations need.</returns>
+	protected virtual IEnumerable<string> RequiredImports(SourceFile file) => [];
+
+	/// <summary>
 	/// Emits whatever a file needs before its imports.
 	/// </summary>
 	/// <param name="file">The file being emitted.</param>
@@ -377,7 +563,7 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 
 		foreach (string line in file.HeaderComment)
 		{
-			code.WriteLine(line.Length == 0 ? CommentPrefix : $"{CommentPrefix} {line}");
+			WriteComment(code, CommentPrefix, line);
 			wroteAnything = true;
 		}
 
@@ -419,9 +605,24 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	private void WriteImports(SourceFile file, CodeBlocker code)
 	{
 		bool wroteImport = false;
+		HashSet<string> required = new(RequiredImports(file), StringComparer.Ordinal);
+
+		foreach (string import in required)
+		{
+			if (SpellImport(import) is string spelled)
+			{
+				code.WriteLine(spelled);
+				wroteImport = true;
+			}
+		}
 
 		foreach (string import in file.Imports)
 		{
+			if (required.Contains(import))
+			{
+				continue;
+			}
+
 			if (import.Length == 0)
 			{
 				if (wroteImport)
@@ -456,24 +657,6 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// want grouping overrides this with the rule it wants.
 	/// </remarks>
 	protected virtual bool NeedsSeparation(AstNode previous, AstNode member) => true;
-
-	/// <summary>
-	/// Emits a declaration's documentation, one comment per line.
-	/// </summary>
-	/// <param name="node">The declaration whose documentation to emit.</param>
-	/// <param name="code">The writer to emit into.</param>
-	protected void GenerateDocumentation(IHasDocumentation node, CodeBlocker code)
-	{
-		Ensure.NotNull(node);
-		Ensure.NotNull(code);
-
-		foreach (string line in node.Documentation)
-		{
-			// A blank line is written as a bare marker rather than one with a trailing space, which
-			// every formatter and most reviewers would strip anyway.
-			code.WriteLine(line.Length == 0 ? DocumentationPrefix : $"{DocumentationPrefix} {line}");
-		}
-	}
 
 	/// <summary>
 	/// Ends a statement with the terminator and line break the language uses.

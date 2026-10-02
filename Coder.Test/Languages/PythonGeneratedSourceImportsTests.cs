@@ -94,6 +94,47 @@ public class PythonGeneratedSourceImportsTests
 		});
 	}
 
+	[TestMethod]
+	public void MutableFields_ArePerInstanceAndEnumsImport()
+	{
+		string? python = ToolchainHarness.FindOnPath("--version", "python3", "python");
+		if (python is null)
+		{
+			Assert.Inconclusive("No Python interpreter on the path, so nothing was run.");
+			return;
+		}
+
+		SourceFile file = new("mutable");
+		ClassDeclaration bag = new("Bag");
+		bag.Members.Add(new FieldDeclaration("items", TypeReference.Parse("list<int>"))
+		{
+			InitialValue = new ConstructionExpression(),
+		});
+		bag.Members.Add(new FieldDeclaration("bare"));
+		file.Members.Add(bag);
+		file.Members.Add(new EnumDeclaration("State"));
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			File.WriteAllText(Path.Combine(directory, "mutable.py"), new PythonGenerator().Generate(file));
+			File.WriteAllText(
+				Path.Combine(directory, "driver.py"),
+				"""
+				import mutable
+
+				first = mutable.Bag()
+				second = mutable.Bag()
+				first.items.append(1)
+				assert second.items == []
+				assert first.bare is None
+				assert mutable.State
+				""");
+
+			(int exitCode, string output) = ToolchainHarness.Run(python, "driver.py", directory);
+			Assert.AreEqual(0, exitCode, $"Python rejected the generated module:{Environment.NewLine}{output}");
+		});
+	}
+
 	/// <summary>
 	/// Builds a file whose declarations are each written over themselves.
 	/// </summary>

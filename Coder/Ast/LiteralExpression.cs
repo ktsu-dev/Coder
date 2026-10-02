@@ -2,6 +2,55 @@
 
 namespace ktsu.Coder.Ast;
 
+using System;
+using System.Collections.Generic;
+
+/// <summary>
+/// The inspector kind a literal storage type maps to.
+/// </summary>
+public enum LiteralKind
+{
+	/// <summary>Free text.</summary>
+	Text,
+
+	/// <summary>A whole number.</summary>
+	Number,
+
+	/// <summary>A number with a fractional part.</summary>
+	Fraction,
+
+	/// <summary>True or false.</summary>
+	Flag,
+}
+
+/// <summary>
+/// The storage types supported by <see cref="LiteralExpression{T}"/>.
+/// </summary>
+public static class LiteralExpression
+{
+	/// <summary>
+	/// The supported literal storage types.
+	/// </summary>
+	public static IReadOnlyList<Type> StorageTypes { get; } =
+		Array.AsReadOnly([typeof(string), typeof(int), typeof(long), typeof(float), typeof(double), typeof(bool)]);
+
+	/// <summary>
+	/// Gets the inspector kind for a literal storage type.
+	/// </summary>
+	/// <param name="type">The literal storage type.</param>
+	/// <returns>The field kind used to edit the value.</returns>
+	/// <exception cref="ArgumentException"><paramref name="type"/> is not supported.</exception>
+	public static LiteralKind Kind(Type type) => type == typeof(string)
+		? LiteralKind.Text
+		: type == typeof(int) || type == typeof(long)
+			? LiteralKind.Number
+			: type == typeof(float) || type == typeof(double)
+				? LiteralKind.Fraction
+				: type == typeof(bool)
+					? LiteralKind.Flag
+					: throw new ArgumentException($"Unsupported literal storage type: {type}.", nameof(type));
+}
+
 /// <summary>
 /// Represents a literal value in an expression.
 /// Examples: 42, "hello", true, 3.14

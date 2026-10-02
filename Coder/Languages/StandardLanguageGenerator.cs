@@ -28,12 +28,164 @@ using ktsu.CodeBlocker;
 /// </remarks>
 public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 {
+	private readonly Stack<StaticTypeScope> staticTypeScopes = new();
+
 	/// <summary>
 	/// Determines whether this generator can generate code for the specified AST node.
 	/// </summary>
 	/// <param name="astNode">The AST node to check.</param>
 	/// <returns>True if this generator can generate code for the node; otherwise, false.</returns>
 	public override bool CanGenerate(AstNode astNode) => CanGenerateStandardNodes(astNode);
+
+	/// <summary>
+	/// Finds non-static fields whose initial values the target must write during construction.
+	/// </summary>
+	/// <param name="declaration">The type whose instance fields are being considered.</param>
+	/// <param name="needsConstruction">Whether the field's initializer belongs in its constructor.</param>
+	/// <returns>The fields to initialize per instance.</returns>
+	protected static IReadOnlyList<FieldDeclaration> InstanceInitialised(
+		ClassDeclaration declaration,
+		Func<FieldDeclaration, bool> needsConstruction)
+	{
+		Ensure.NotNull(declaration);
+		Ensure.NotNull(needsConstruction);
+		return [.. declaration.Members
+			.OfType<FieldDeclaration>()
+			.Where(field => !field.IsStatic && !field.IsConstant && field.InitialValue is not null && needsConstruction(field))];
+	}
+
+	/// <summary>
+	/// Writes the per-instance field initializers that belong at the top of a constructor.
+	/// </summary>
+	/// <param name="declaration">The type whose instance fields are being initialized.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <param name="needsConstruction">Whether the field's initializer belongs in its constructor.</param>
+	/// <param name="writeInitialisation">How to emit an individual field initialization.</param>
+	protected static void WriteConstructorPrologue(
+		ClassDeclaration declaration,
+		CodeBlocker code,
+		Func<FieldDeclaration, bool> needsConstruction,
+		Action<FieldDeclaration, CodeBlocker> writeInitialisation)
+	{
+		Ensure.NotNull(code);
+		Ensure.NotNull(writeInitialisation);
+		foreach (FieldDeclaration field in InstanceInitialised(declaration, needsConstruction))
+		{
+			writeInitialisation(field, code);
+		}
+	}
+
+	/// <summary>
+	/// Starts a scope containing the types declared by a function's parameters and return type.
+	/// </summary>
+	/// <param name="function">The function whose body is about to be generated.</param>
+	protected void PushStaticTypeScope(FunctionDeclaration function)
+	{
+		Ensure.NotNull(function);
+		Dictionary<string, TypeReference> types = new(StringComparer.Ordinal);
+		foreach (Parameter parameter in function.Parameters)
+		{
+			if (parameter.Name is string name && parameter.Type is TypeReference type)
+			{
+				types[name] = type;
+			}
+		}
+
+		staticTypeScopes.Push(new StaticTypeScope(types, function.ReturnType));
+	}
+
+	/// <summary>
+	/// Ends the most recently opened function type scope.
+	/// </summary>
+	protected void PopStaticTypeScope() => staticTypeScopes.Pop();
+
+	/// <summary>
+	/// Records a local's declared or inferred type for later references.
+	/// </summary>
+	/// <param name="declaration">The local declaration being generated.</param>
+	protected void RegisterStaticType(VariableDeclaration declaration)
+	{
+		Ensure.NotNull(declaration);
+		if (staticTypeScopes.TryPeek(out StaticTypeScope? scope) && declaration.Name is string name)
+		{
+			TypeReference? type = declaration.Type
+				?? (declaration.InitialValue is Expression expression ? StaticType(expression) : null);
+			if (type is not null)
+			{
+				scope.Types[name] = type;
+			}
+		}
+	}
+
+	/// <summary>
+	/// Reads the type an expression can establish from its own annotation, shape, or current scope.
+	/// </summary>
+	/// <param name="expression">The expression to inspect.</param>
+	/// <returns>The known type, or null when the AST does not establish one.</returns>
+	protected TypeReference? StaticType(Expression expression)
+	{
+		Ensure.NotNull(expression);
+		if (expression.ExpectedType is string expectedType)
+		{
+			return new TypeReference(expectedType);
+		}
+
+		switch (expression)
+		{
+			case LiteralExpression<string>:
+				return new TypeReference("string");
+			case LiteralExpression<int>:
+				return new TypeReference("int");
+			case LiteralExpression<long>:
+				return new TypeReference("long");
+			case LiteralExpression<float>:
+				return new TypeReference("float");
+			case LiteralExpression<double>:
+				return new TypeReference("double");
+			case LiteralExpression<bool>:
+				return new TypeReference("bool");
+			case ConstructionExpression { Type: not null } construction:
+				return construction.Type;
+			case ConditionalExpression conditional:
+				return StaticType(conditional.WhenTrue) ?? StaticType(conditional.WhenFalse);
+			case BinaryExpression binary when binary.Operator is BinaryOperator.Equal
+				or BinaryOperator.NotEqual
+				or BinaryOperator.LessThan
+				or BinaryOperator.LessThanOrEqual
+				or BinaryOperator.GreaterThan
+				or BinaryOperator.GreaterThanOrEqual
+				or BinaryOperator.LogicalAnd
+				or BinaryOperator.LogicalOr:
+				return new TypeReference("bool");
+			case BinaryExpression binary:
+				return StaticType(binary.Left) ?? StaticType(binary.Right);
+			case VariableReference reference:
+				foreach (StaticTypeScope scope in staticTypeScopes)
+				{
+					if (scope.Types.TryGetValue(reference.Name, out TypeReference? type))
+					{
+						return type;
+					}
+				}
+
+				return null;
+			default:
+				return null;
+		}
+	}
+
+	/// <summary>
+	/// Reads the type of a return statement from its enclosing function.
+	/// </summary>
+	/// <param name="statement">The return statement.</param>
+	/// <returns>The function's return type, or null when it has none.</returns>
+	protected TypeReference? StaticType(ReturnStatement statement)
+	{
+		Ensure.NotNull(statement);
+		return staticTypeScopes.TryPeek(out StaticTypeScope? scope) ? scope.ReturnType : null;
+	}
+
+	private sealed record StaticTypeScope(Dictionary<string, TypeReference> Types, TypeReference? ReturnType);
 
 	/// <summary>
 	/// Dispatches a node to the emitter for its shape.
@@ -166,7 +318,7 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 		Ensure.NotNull(namespaceDecl);
 		Ensure.NotNull(code);
 
-		GenerateDocumentation(namespaceDecl, code);
+		WritePreamble(namespaceDecl, code, PreambleSite.Type);
 		WriteMembers(namespaceDecl.Members, code);
 	}
 
@@ -340,6 +492,11 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 		}
 
 		ClassDeclaration separated = (ClassDeclaration)classDecl.Clone();
+		for (int index = 0; index < classDecl.Annotations.Count; index++)
+		{
+			RememberAnnotationClone(separated.Annotations[index], classDecl.Annotations[index]);
+		}
+
 		separated.Members.Clear();
 
 		foreach (AstNode member in classDecl.Members)
@@ -382,7 +539,7 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 				Visibility = property.Visibility,
 				IsStatic = property.IsStatic,
 				Documentation = [.. documentation],
-				Annotations = [.. property.Annotations.Select(annotation => annotation.Clone())],
+				Annotations = [.. property.Annotations.Select(CloneAnnotation)],
 			};
 
 			yield break;
@@ -397,7 +554,7 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 				IsStatic = property.IsStatic,
 				IsReadOnly = true,
 				Documentation = [.. property.Documentation],
-				Annotations = [.. property.Annotations.Select(annotation => annotation.Clone())],
+				Annotations = [.. property.Annotations.Select(CloneAnnotation)],
 				Body = [.. property.GetterBody.Select(statement => statement.Clone())],
 			};
 

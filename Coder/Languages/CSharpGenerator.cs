@@ -146,7 +146,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 				// from the shared path; anything else is genuinely unrecognised.
 				if (!TryGenerateCommonNode(node, code))
 				{
-					code.WriteLine($"// Unsupported node type: {node.GetType().Name}");
+					WriteComment(code, "//", $"Unsupported node type: {node.GetType().Name}");
 				}
 
 				break;
@@ -171,8 +171,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// </remarks>
 	private void GenerateClass(ClassDeclaration classDecl, CodeBlocker code)
 	{
-		GenerateDocumentation(classDecl, code);
-		WriteAnnotations(classDecl.Annotations, code);
+		WritePreamble(classDecl, code, PreambleSite.Type);
 
 		// C++ can attach a declaration to a type it does not own, by specialising a template on it.
 		// Nothing here can, so the fact is written down rather than lost: what follows is an
@@ -293,7 +292,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// Square brackets, and one attribute per line rather than several in one pair of them: a
 	/// declaration with four of them reads down the page, and a diff that adds one touches one line.
 	/// </remarks>
-	protected override string? SpellAnnotation(Annotation annotation) => $"[{annotation}]";
+	protected override string? SpellAnnotation(Annotation annotation, PreambleSite site) => $"[{annotation}]";
 
 	/// <inheritdoc/>
 	protected override string? SpellImport(string import) => $"using {import};";
@@ -310,7 +309,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// </remarks>
 	private void GenerateNamespace(NamespaceDeclaration namespaceDecl, CodeBlocker code)
 	{
-		GenerateDocumentation(namespaceDecl, code);
+		WritePreamble(namespaceDecl, code, PreambleSite.Type);
 
 		code.WriteLine($"namespace {string.Join(".", NamespaceDeclaration.Split(namespaceDecl.Name))}");
 
@@ -340,7 +339,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// </remarks>
 	private void GenerateUsingAlias(UsingAlias usingAlias, CodeBlocker code)
 	{
-		GenerateDocumentation(usingAlias, code);
+		WritePreamble(usingAlias, code, PreambleSite.Type);
 		code.WriteLine($"using {usingAlias.Name} = {MapToCSType(usingAlias.AliasedType ?? new TypeReference(UnknownTypeName))};");
 	}
 
@@ -472,7 +471,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// </remarks>
 	private void GenerateEnum(EnumDeclaration enumDecl, CodeBlocker code)
 	{
-		GenerateDocumentation(enumDecl, code);
+		WritePreamble(enumDecl, code, PreambleSite.Enum);
 
 		code.Write($"{SpellVisibility(enumDecl.Visibility) ?? DefaultVisibility} enum {enumDecl.Name ?? "UnnamedEnum"}");
 
@@ -509,8 +508,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// </remarks>
 	private void GenerateProperty(PropertyDeclaration property, CodeBlocker code)
 	{
-		GenerateDocumentation(property, code);
-		WriteAnnotations(property.Annotations, code);
+		WritePreamble(property, code, PreambleSite.Property);
 
 		string type = property.Type is TypeReference declared ? MapToCSType(declared) : "object";
 		string modifiers = property.IsStatic ? " static" : string.Empty;
@@ -574,8 +572,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// </remarks>
 	private void GenerateField(FieldDeclaration field, CodeBlocker code)
 	{
-		GenerateDocumentation(field, code);
-		WriteAnnotations(field.Annotations, code);
+		WritePreamble(field, code, PreambleSite.Field);
 
 		code.Write($"{SpellVisibility(field.Visibility) ?? DefaultVisibility} ");
 
@@ -634,7 +631,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// </remarks>
 	private void GenerateFunction(FunctionDeclaration function, CodeBlocker code, string? enclosingType)
 	{
-		GenerateDocumentation(function, code);
+		WritePreamble(function, code, enclosingType is null ? PreambleSite.Function : PreambleSite.Method);
 
 		if (function.Definition != FunctionDefinition.Provided
 			&& !(function.Kind == FunctionKind.Constructor && function.Definition == FunctionDefinition.Defaulted))
@@ -644,7 +641,6 @@ public class CSharpGenerator : LanguageGeneratorBase
 			return;
 		}
 
-		WriteAnnotations(function.Annotations, code);
 		WriteFunctionAttributes(function, code);
 		WriteFunctionModifiers(function, code);
 

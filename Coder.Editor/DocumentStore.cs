@@ -6,7 +6,6 @@ using System;
 using ktsu.Coder.Ast;
 using ktsu.Coder.Serialization;
 using ktsu.Essentials;
-using YamlDotNet.Core;
 
 /// <summary>
 /// Reads and writes AST documents as YAML files.
@@ -67,13 +66,7 @@ public sealed class DocumentStore(
 		{
 			root = deserializer.Deserialize(yaml);
 		}
-		catch (YamlException ex)
-		{
-			// YamlDotNet reports malformed input by throwing, and a user opening the wrong file is
-			// the ordinary way to reach that. Letting it escape would take the editor down.
-			return DocumentResult.Failed($"{path} is not a document this editor understands: {ex.Message}");
-		}
-		catch (InvalidOperationException ex)
+		catch (Exception ex) when (ex is not OutOfMemoryException)
 		{
 			return DocumentResult.Failed($"{path} is not a document this editor understands: {ex.Message}");
 		}

@@ -4,6 +4,7 @@ namespace ktsu.Coder.Ast;
 
 using System;
 using System.Collections.ObjectModel;
+using System.Linq;
 
 /// <summary>
 /// One piece of metadata attached to a declaration.
@@ -83,11 +84,23 @@ public sealed class Annotation : IEquatable<Annotation>
 
 	/// <inheritdoc />
 	public bool Equals(Annotation? other) =>
-		other is not null && string.Equals(ToString(), other.ToString(), StringComparison.Ordinal);
+		other is not null
+		&& string.Equals(Name, other.Name, StringComparison.Ordinal)
+		&& Arguments.SequenceEqual(other.Arguments, StringComparer.Ordinal);
 
 	/// <inheritdoc />
 	public override bool Equals(object? obj) => Equals(obj as Annotation);
 
 	/// <inheritdoc />
-	public override int GetHashCode() => ToString().GetHashCode(StringComparison.Ordinal);
+	public override int GetHashCode()
+	{
+		HashCode hash = new();
+		hash.Add(Name, StringComparer.Ordinal);
+		foreach (string argument in Arguments)
+		{
+			hash.Add(argument, StringComparer.Ordinal);
+		}
+
+		return hash.ToHashCode();
+	}
 }

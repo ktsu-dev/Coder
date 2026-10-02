@@ -113,6 +113,50 @@ public class LiteralRoundTripTests
 	}
 
 	[TestMethod]
+	public void EveryStorageType_RoundTripsAndGeneratesInEveryLanguage()
+	{
+		ILanguageGenerator[] generators =
+		[
+			new CSharpGenerator(),
+			new CGenerator(),
+			new CppGenerator(),
+			new GoGenerator(),
+			new RustGenerator(),
+			new PythonGenerator(),
+			new JavaScriptGenerator(),
+		];
+		Dictionary<Type, object> values = new()
+		{
+			[typeof(string)] = "value",
+			[typeof(int)] = 42,
+			[typeof(long)] = 5_000_000_000L,
+			[typeof(float)] = 1.5f,
+			[typeof(double)] = 2.5,
+			[typeof(bool)] = true,
+		};
+
+		foreach (Type storageType in LiteralExpression.StorageTypes)
+		{
+			object literal = Activator.CreateInstance(
+				typeof(LiteralExpression<>).MakeGenericType(storageType),
+				values[storageType])!;
+			string yaml = new YamlSerializer().Serialize((AstNode)literal);
+			AstNode deserialized = new YamlDeserializer().Deserialize(yaml)!;
+
+			Assert.AreEqual(literal.GetType(), deserialized.GetType(), storageType.Name);
+			Assert.AreEqual(
+				values[storageType],
+				literal.GetType().GetProperty("Value")!.GetValue(deserialized),
+				storageType.Name);
+
+			foreach (ILanguageGenerator generator in generators)
+			{
+				Assert.IsNotEmpty(generator.Generate((AstNode)literal), $"{generator.DisplayName}: {storageType.Name}");
+			}
+		}
+	}
+
+	[TestMethod]
 	public void CSharpGenerator_SuffixesFloatAndLongLiterals()
 	{
 		CSharpGenerator generator = new();

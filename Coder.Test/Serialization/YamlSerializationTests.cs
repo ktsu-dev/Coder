@@ -2,12 +2,17 @@
 
 namespace ktsu.Coder.Test.Serialization;
 
+using System;
+using System.IO;
+using System.Text.RegularExpressions;
 using ktsu.Coder.Ast;
 using ktsu.Coder.Serialization;
 
 [TestClass]
-public class YamlSerializationTests
+public partial class YamlSerializationTests
 {
+	private static readonly string[] LegacyArguments = ["'/a,b'", "','", "\"say \\\"hi,there\\\"\"", "x > 3"];
+
 	[TestMethod]
 	public void Serialize_FunctionDeclaration_GeneratesCorrectYaml()
 	{
@@ -126,5 +131,95 @@ public class YamlSerializationTests
 
 		// Act & Assert
 		Assert.ThrowsExactly<YamlDotNet.Core.YamlException>(() => deserializer.Deserialize(invalidYaml));
+	}
+
+	[TestMethod]
+	public void AnnotationArguments_RoundTripAsStructuredValues()
+	{
+		ClassDeclaration declaration = new("Annotated");
+		foreach (string argument in new[] { "/a,b", ",", "say \"hi,there\"", "x > 3" })
+		{
+			Annotation annotation = new("Mark");
+			annotation.Arguments.Add(argument);
+			declaration.Annotations.Add(annotation);
+		}
+
+		YamlSerializer serializer = new();
+		YamlDeserializer deserializer = new();
+		string yaml = serializer.Serialize(declaration);
+		ClassDeclaration restored = Assert.IsInstanceOfType<ClassDeclaration>(deserializer.Deserialize(yaml));
+
+		CollectionAssert.AreEqual(declaration.Annotations.ToArray(), restored.Annotations.ToArray());
+		Assert.AreEqual(yaml, serializer.Serialize(restored));
+	}
+
+	[TestMethod]
+	public void Deserialize_LegacyAnnotationArgumentsKeepsQuotedCommas()
+	{
+		const string yaml = """
+			classDeclaration:
+			  annotations:
+			    - "Legacy('/a,b', ',', \"say \\\"hi,there\\\"\", x > 3)"
+			""";
+
+		ClassDeclaration declaration = Assert.IsInstanceOfType<ClassDeclaration>(new YamlDeserializer().Deserialize(yaml));
+
+		Assert.AreEqual(1, declaration.Annotations.Count);
+		CollectionAssert.AreEqual(
+			LegacyArguments,
+			declaration.Annotations[0].Arguments.ToArray());
+	}
+
+	[TestMethod]
+	public void Deserialize_BlankScalarValuesDoNotThrow()
+	{
+		YamlDeserializer deserializer = new();
+		string[] documents =
+		[
+			"fieldDeclaration:\n  type:\n",
+			"literal<Int32>:\n  value: 1\n  expectedType:\n",
+			"binaryExpression:\n  operator:\n",
+			"variableDeclaration:\n  type:\n  isConstant:\n",
+			"assignmentStatement:\n  operator:\n",
+		];
+
+		foreach (string yaml in documents)
+		{
+			Assert.IsNotNull(deserializer.Deserialize(yaml), yaml);
+		}
+	}
+
+	[TestMethod]
+	public void Deserializer_UsesTypedReadersForScalars()
+	{
+		string root = FindRepositoryRoot();
+		string source = File.ReadAllText(Path.Combine(root, "Coder", "Serialization", "YamlDeserializer.cs"));
+		int readerStart = source.IndexOf("private static string? ReadString", StringComparison.Ordinal);
+		int readerEnd = source.IndexOf("private static void DeserializeVisibility", readerStart, StringComparison.Ordinal);
+		Assert.IsTrue(readerStart >= 0);
+		Assert.IsTrue(readerEnd > readerStart);
+		string deserializationMethods = source.Remove(readerStart, readerEnd - readerStart);
+
+		MatchCollection unsafeReads = UnsafeScalarRead().Matches(deserializationMethods);
+		Assert.AreEqual(0, unsafeReads.Count, "Scalar values from dictionary reads must use the typed readers.");
+	}
+
+	[GeneratedRegex(@"TryGetValue\([^;\r\n]*out object\?\s+(?<name>\w+)\)[^;]*\b\k<name>\?\.ToString\(", RegexOptions.CultureInvariant)]
+	private static partial Regex UnsafeScalarRead();
+
+	private static string FindRepositoryRoot()
+	{
+		foreach (string start in new[] { AppContext.BaseDirectory, Environment.CurrentDirectory })
+		{
+			for (DirectoryInfo? directory = new(start); directory is not null; directory = directory.Parent)
+			{
+				if (File.Exists(Path.Combine(directory.FullName, "Coder", "Serialization", "YamlDeserializer.cs")))
+				{
+					return directory.FullName;
+				}
+			}
+		}
+
+		throw new DirectoryNotFoundException("Could not find the repository root from the test output directory.");
 	}
 }

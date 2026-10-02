@@ -474,6 +474,7 @@ public class YamlSerializer
 
 		SerializeVisibility(enumDecl, nodeData);
 		SerializeDocumentation(enumDecl, nodeData);
+		SerializeAnnotations(enumDecl.Annotations, nodeData);
 
 		if (enumDecl.Members.Count > 0)
 		{
@@ -672,15 +673,26 @@ public class YamlSerializer
 	/// <param name="annotations">The annotations the declaration carries.</param>
 	/// <param name="nodeData">The mapping to write into.</param>
 	/// <remarks>
-	/// One line per annotation, name and arguments together, because
-	/// <see cref="Annotation.ToString"/> writes what a person would and the syntax around it is the
-	/// generator's rather than the document's.
+	/// An annotation without arguments is a scalar; one with arguments is structure, so commas and
+	/// quotes inside an argument survive the round trip unchanged.
 	/// </remarks>
 	private static void SerializeAnnotations(Collection<Annotation> annotations, Dictionary<string, object> nodeData)
 	{
 		if (annotations.Count > 0)
 		{
-			nodeData["annotations"] = annotations.Select(annotation => annotation.ToString()).ToList();
+			nodeData["annotations"] = annotations.Select(annotation =>
+			{
+				if (annotation.Arguments.Count == 0)
+				{
+					return (object)annotation.Name;
+				}
+
+				return new Dictionary<string, object>
+				{
+					["name"] = annotation.Name,
+					["arguments"] = annotation.Arguments.ToList(),
+				};
+			}).ToList();
 		}
 	}
 

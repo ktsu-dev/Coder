@@ -6,6 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Reflection;
 using ktsu.Coder.Ast;
 
 /// <summary>
@@ -243,6 +244,11 @@ public static class AstFields
 	/// </remarks>
 	private static IReadOnlyList<AstField> OfCallable(AstNode node)
 	{
+		if (IsLiteral(node))
+		{
+			return [DescribeLiteral(node)];
+		}
+
 		return node switch
 		{
 			FunctionDeclaration function =>
@@ -332,11 +338,6 @@ public static class AstFields
 			[
 				new("Operator", AstFieldKind.Choice, assignment.Operator.ToString(), OperatorChoices<AssignmentOperator>()),
 			],
-
-			LiteralExpression<string> literal => [new(ValueField, AstFieldKind.Text, literal.Value ?? string.Empty)],
-			LiteralExpression<int> literal => [new(ValueField, AstFieldKind.Number, Spell(literal.Value))],
-			LiteralExpression<double> literal => [new(ValueField, AstFieldKind.Fraction, Spell(literal.Value))],
-			LiteralExpression<bool> literal => [new(ValueField, AstFieldKind.Flag, Spell(literal.Value))],
 
 			AstLeafNode<string> leaf => [new(ValueField, AstFieldKind.Text, leaf.Value ?? string.Empty)],
 			AstLeafNode<int> leaf => [new(ValueField, AstFieldKind.Number, Spell(leaf.Value))],
@@ -526,6 +527,11 @@ public static class AstFields
 	/// <returns>True if the node was changed.</returns>
 	private static bool TryWriteExpression(AstNode node, string fieldName, string value)
 	{
+		if (fieldName == ValueField && IsLiteral(node))
+		{
+			return TryWriteLiteral(node, value);
+		}
+
 		return (node, fieldName) switch
 		{
 			(VariableReference varRef, "Name") => value.Length > 0 && Assign(() => varRef.Name = value),
@@ -541,11 +547,6 @@ public static class AstFields
 			(AssignmentStatement assignment, "Operator") =>
 				AssignMember<AssignmentOperator>(value, assignOp => assignment.Operator = assignOp),
 
-			(LiteralExpression<string> literal, ValueField) => Assign(() => literal.Value = value),
-			(LiteralExpression<int> literal, ValueField) => AssignInteger(value, number => literal.Value = number),
-			(LiteralExpression<double> literal, ValueField) => AssignNumber(value, number => literal.Value = number),
-			(LiteralExpression<bool> literal, ValueField) => AssignFlag(value, flag => literal.Value = flag),
-
 			(AstLeafNode<string> leaf, ValueField) => Assign(() => leaf.Value = value),
 			(AstLeafNode<int> leaf, ValueField) => AssignInteger(value, number => leaf.Value = number),
 			(AstLeafNode<double> leaf, ValueField) => AssignNumber(value, number => leaf.Value = number),
@@ -553,6 +554,62 @@ public static class AstFields
 
 			_ => false,
 		};
+	}
+
+	private static bool IsLiteral(AstNode node) =>
+		node.GetType().IsGenericType
+		&& node.GetType().GetGenericTypeDefinition() == typeof(LiteralExpression<>)
+		&& LiteralExpression.StorageTypes.Contains(node.GetType().GetGenericArguments()[0]);
+
+	private static AstField DescribeLiteral(AstNode node)
+	{
+		Type type = node.GetType().GetGenericArguments()[0];
+		object? value = node.GetType().GetProperty(nameof(LiteralExpression<>.Value), BindingFlags.Public | BindingFlags.Instance)?.GetValue(node);
+		LiteralKind kind = LiteralExpression.Kind(type);
+
+		return new AstField(
+			ValueField,
+			kind switch
+			{
+				LiteralKind.Text => AstFieldKind.Text,
+				LiteralKind.Number => AstFieldKind.Number,
+				LiteralKind.Fraction => AstFieldKind.Fraction,
+				LiteralKind.Flag => AstFieldKind.Flag,
+				_ => throw new InvalidOperationException($"Unknown literal kind: {kind}."),
+			},
+			value switch
+			{
+				string text => text,
+				bool flag => Spell(flag),
+				IFormattable formatted => formatted.ToString(null, CultureInfo.InvariantCulture),
+				_ => string.Empty,
+			});
+	}
+
+	private static bool TryWriteLiteral(AstNode node, string value)
+	{
+		Type type = node.GetType().GetGenericArguments()[0];
+		object? parsed = type == typeof(string)
+			? value
+			: type == typeof(int) && int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int integer)
+				? integer
+				: type == typeof(long) && long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out long longInteger)
+					? longInteger
+					: type == typeof(float) && float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out float single)
+						? single
+						: type == typeof(double) && double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double fractional)
+							? fractional
+							: type == typeof(bool) && bool.TryParse(value, out bool flag)
+								? flag
+								: null;
+
+		if (parsed is null)
+		{
+			return false;
+		}
+
+		node.GetType().GetProperty(nameof(LiteralExpression<>.Value), BindingFlags.Public | BindingFlags.Instance)?.SetValue(node, parsed);
+		return true;
 	}
 
 	/// <summary>

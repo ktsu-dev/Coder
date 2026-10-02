@@ -479,7 +479,7 @@ public class GoGenerator : StandardLanguageGenerator
 		Ensure.NotNull(namespaceDecl);
 		Ensure.NotNull(code);
 
-		GenerateDocumentation(namespaceDecl, code);
+		WritePreamble(namespaceDecl, code, PreambleSite.Type);
 
 		IReadOnlyList<string> path = NamespaceDeclaration.Split(namespaceDecl.Name);
 		if (path.Count > 1)
@@ -560,7 +560,7 @@ public class GoGenerator : StandardLanguageGenerator
 	{
 		if (classDecl.IsSpecialisation)
 		{
-			GenerateDocumentation(classDecl, code);
+			WritePreamble(classDecl, code, PreambleSite.Type);
 			WriteInexpressible(
 				code,
 				$"{name} for {string.Join(", ", classDecl.SpecialisationArguments.Select(SpellType))}: "
@@ -685,8 +685,7 @@ public class GoGenerator : StandardLanguageGenerator
 	/// </remarks>
 	private void GenerateStruct(ClassDeclaration classDecl, string name, CodeBlocker code)
 	{
-		GenerateDocumentation(classDecl, code);
-		WriteAnnotations(classDecl.Annotations, code);
+		WritePreamble(classDecl, code, PreambleSite.Type);
 		WriteTypePromises(classDecl, code);
 
 		WriteWrittenDownParameters(classDecl, name, code);
@@ -716,7 +715,7 @@ public class GoGenerator : StandardLanguageGenerator
 		if (classDecl.BaseType is TypeReference baseType)
 		{
 			yield return new AlignedLine(
-				[$"{CommentPrefix} the base, embedded: Go promotes an embedded type's members rather than deriving from it"],
+				[(CommentPrefix, "the base, embedded: Go promotes an embedded type's members rather than deriving from it")],
 				SpellType(baseType),
 				string.Empty);
 		}
@@ -726,11 +725,11 @@ public class GoGenerator : StandardLanguageGenerator
 			switch (member)
 			{
 				case VariableDeclaration field:
-					yield return Field(field.Name, field.Type, field.Visibility, []);
+					yield return Field(field.Name, field.Type, field.Visibility);
 					break;
 
 				case FieldDeclaration field when !field.IsStatic:
-					yield return Field(field.Name, field.Type, field.Visibility, field.Documentation);
+					yield return Field(field.Name, field.Type, field.Visibility, field);
 					break;
 
 				default:
@@ -745,18 +744,18 @@ public class GoGenerator : StandardLanguageGenerator
 	/// <param name="name">The field's name.</param>
 	/// <param name="type">The field's type.</param>
 	/// <param name="visibility">What the declaration said about who may see it.</param>
-	/// <param name="documentation">What the declaration says about itself.</param>
+	/// <param name="declaration">The source declaration, when this is an AST field.</param>
 	/// <returns>The line.</returns>
-	private AlignedLine Field(string? name, TypeReference? type, Visibility visibility, IEnumerable<string> documentation)
+	private AlignedLine Field(string? name, TypeReference? type, Visibility visibility, FieldDeclaration? declaration = null)
 	{
-		List<string> notes = [.. documentation.Select(DocumentationLine)];
+		List<(string Prefix, string Text)> notes = [];
 
 		if (ExportNote(name, visibility) is string note)
 		{
-			notes.Add($"{CommentPrefix} {note}");
+			notes.Add((CommentPrefix, note));
 		}
 
-		return new AlignedLine(notes, name ?? UnnamedMember, SpellType(type ?? new TypeReference(UnknownTypeName)));
+		return new AlignedLine(notes, name ?? UnnamedMember, SpellType(type ?? new TypeReference(UnknownTypeName)), declaration);
 	}
 
 	/// <summary>
@@ -773,8 +772,7 @@ public class GoGenerator : StandardLanguageGenerator
 	/// </remarks>
 	private void GenerateInterface(ClassDeclaration classDecl, string name, CodeBlocker code)
 	{
-		GenerateDocumentation(classDecl, code);
-		WriteAnnotations(classDecl.Annotations, code);
+		WritePreamble(classDecl, code, PreambleSite.Type);
 		WriteTypePromises(classDecl, code);
 		WriteWrittenDownParameters(classDecl, name, code);
 		WriteExportNote(name, classDecl.Visibility, code);
@@ -856,7 +854,7 @@ public class GoGenerator : StandardLanguageGenerator
 		Ensure.NotNull(funcDecl);
 		Ensure.NotNull(code);
 
-		GenerateDocumentation(funcDecl, code);
+		WritePreamble(funcDecl, code, enclosingType is null ? PreambleSite.Function : PreambleSite.Method);
 
 		string name = SpellFunctionName(funcDecl, enclosingType);
 
@@ -891,7 +889,6 @@ public class GoGenerator : StandardLanguageGenerator
 			return;
 		}
 
-		WriteAnnotations(funcDecl.Annotations, code);
 		WriteExportNote(name, funcDecl.Visibility, code);
 
 		code.Write("func ");
@@ -902,15 +899,23 @@ public class GoGenerator : StandardLanguageGenerator
 		// have them anywhere else.
 		code.Write(" ");
 
-		using Scope body = new(code);
-
-		if (funcDecl.Kind == FunctionKind.Constructor)
+		PushStaticTypeScope(funcDecl);
+		try
 		{
-			WriteConstructorBody(funcDecl, enclosingType, code);
-			return;
-		}
+			using Scope body = new(code);
 
-		WriteBody(funcDecl.Body, code);
+			if (funcDecl.Kind == FunctionKind.Constructor)
+			{
+				WriteConstructorBody(funcDecl, enclosingType, code);
+				return;
+			}
+
+			WriteBody(funcDecl.Body, code);
+		}
+		finally
+		{
+			PopStaticTypeScope();
+		}
 	}
 
 	/// <summary>
@@ -1184,6 +1189,7 @@ public class GoGenerator : StandardLanguageGenerator
 	{
 		Ensure.NotNull(varDecl);
 		Ensure.NotNull(code);
+		RegisterStaticType(varDecl);
 
 		bool inferred = varDecl.IsTypeInferred || varDecl.Type is null;
 
@@ -1195,7 +1201,7 @@ public class GoGenerator : StandardLanguageGenerator
 			code.Write($"var {varDecl.Name} {SpellType(varDecl.Type!)}");
 			EndStatement(code);
 
-			WriteChoice(chosen, code, bothArms: true, branch =>
+			WriteConditionalBranch(chosen, code, bothArms: true, branch =>
 			{
 				code.Write($"{varDecl.Name} = ");
 				GenerateInternal(branch, code);
@@ -1246,7 +1252,7 @@ public class GoGenerator : StandardLanguageGenerator
 
 		if (insideInterface)
 		{
-			GenerateDocumentation(field, code);
+			WritePreamble(field, code, PreambleSite.Field);
 			WriteInexpressible(code, $"{field.Name}: a Go interface holds methods, so a constant belongs to what implements it");
 			return;
 		}
@@ -1262,7 +1268,7 @@ public class GoGenerator : StandardLanguageGenerator
 	/// <param name="code">The writer to emit into.</param>
 	private void WriteStorage(string name, FieldDeclaration field, CodeBlocker code)
 	{
-		GenerateDocumentation(field, code);
+		WritePreamble(field, code, PreambleSite.Field);
 		WriteExportNote(name, field.Visibility, code);
 
 		TypeReference type = field.Type ?? new TypeReference(UnknownTypeName);
@@ -1370,7 +1376,7 @@ public class GoGenerator : StandardLanguageGenerator
 
 		string name = enumDecl.Name ?? UnnamedType;
 
-		GenerateDocumentation(enumDecl, code);
+		WritePreamble(enumDecl, code, PreambleSite.Enum);
 		WriteExportNote(name, enumDecl.Visibility, code);
 		code.WriteLine($"type {name} {SpellType(enumDecl.UnderlyingType ?? new TypeReference("int"))}");
 
@@ -1445,7 +1451,7 @@ public class GoGenerator : StandardLanguageGenerator
 		Ensure.NotNull(usingAlias);
 		Ensure.NotNull(code);
 
-		GenerateDocumentation(usingAlias, code);
+		WritePreamble(usingAlias, code, PreambleSite.Type);
 		WriteExportNote(usingAlias.Name, usingAlias.Visibility, code);
 		code.Write($"type {usingAlias.Name} = {SpellType(usingAlias.AliasedType ?? new TypeReference(UnknownTypeName))}");
 		EndStatement(code);
@@ -1470,10 +1476,10 @@ public class GoGenerator : StandardLanguageGenerator
 
 		if (assertion.Message is string message)
 		{
-			code.WriteLine($"{CommentPrefix} {message}");
+			WriteComment(code, CommentPrefix, message);
 		}
 
-		code.WriteLine($"{CommentPrefix} A false condition repeats the false key, which Go refuses to compile.");
+		WriteComment(code, CommentPrefix, "A false condition repeats the false key, which Go refuses to compile.");
 		code.Write($"var _ = map[bool]struct{{}}{{false: {{}}, {assertion.Condition ?? "false"}: {{}}}}");
 		EndStatement(code);
 	}
@@ -1504,7 +1510,7 @@ public class GoGenerator : StandardLanguageGenerator
 
 		// One arm: a return leaves the statement, so the second branch is what follows rather than
 		// what an else holds.
-		WriteChoice(conditional, code, bothArms: false, branch =>
+		WriteConditionalBranch(conditional, code, bothArms: false, branch =>
 		{
 			code.Write("return ");
 			GenerateInternal(branch, code);
@@ -1529,12 +1535,31 @@ public class GoGenerator : StandardLanguageGenerator
 			return;
 		}
 
-		WriteChoice(conditional, code, bothArms: true, branch =>
+		WriteConditionalBranch(conditional, code, bothArms: true, branch =>
 		{
 			GenerateInternal(assignment.Target, code);
 			code.Write($" {GetAssignmentOperator(assignment.Operator)} ");
 			GenerateInternal(branch, code);
 			EndStatement(code);
+		});
+	}
+
+	private void WriteConditionalBranch(
+		ConditionalExpression conditional,
+		CodeBlocker code,
+		bool bothArms,
+		Action<AstNode> writeLeaf)
+	{
+		WriteChoice(conditional, code, bothArms, branch =>
+		{
+			if (branch is ConditionalExpression nested)
+			{
+				WriteConditionalBranch(nested, code, bothArms, writeLeaf);
+			}
+			else
+			{
+				writeLeaf(branch);
+			}
 		});
 	}
 
@@ -1630,10 +1655,15 @@ public class GoGenerator : StandardLanguageGenerator
 		Ensure.NotNull(conditional);
 		Ensure.NotNull(code);
 
-		code.WriteLine($"func() {BranchType(conditional)} {{");
+		TypeReference? branchType = StaticType(conditional.WhenTrue) ?? StaticType(conditional.WhenFalse);
+		code.WriteLine($"func() {(branchType is null ? TypeMappings[UnknownTypeName] : SpellType(branchType))} {{");
 		code.Indent();
+		if (branchType is null)
+		{
+			WriteInexpressible(code, "conditional expression has no known type; using any");
+		}
 
-		WriteChoice(conditional, code, bothArms: false, branch =>
+		WriteConditionalBranch(conditional, code, bothArms: false, branch =>
 		{
 			code.Write("return ");
 			GenerateInternal(branch, code);
@@ -1643,33 +1673,6 @@ public class GoGenerator : StandardLanguageGenerator
 		code.Outdent();
 		code.Write("}()");
 	}
-
-	/// <summary>
-	/// Spells what a conditional answers with, which Go makes the caller name.
-	/// </summary>
-	/// <param name="conditional">The expression being written.</param>
-	/// <returns>The type as Go writes it.</returns>
-	private string BranchType(ConditionalExpression conditional) =>
-		TypeOfValue(conditional.WhenTrue)
-			?? TypeOfValue(conditional.WhenFalse)
-			?? TypeMappings[UnknownTypeName];
-
-	/// <summary>
-	/// Reads a type off a value that says what it is.
-	/// </summary>
-	/// <param name="value">The value to read.</param>
-	/// <returns>The type as Go writes it, or null where the value does not say.</returns>
-	private string? TypeOfValue(AstNode value) => value switch
-	{
-		LiteralExpression<string> or AstLeafNode<string> => StringTypeName,
-		LiteralExpression<int> or AstLeafNode<int> => "int",
-		LiteralExpression<bool> or AstLeafNode<bool> => "bool",
-		LiteralExpression<double> => "float64",
-		LiteralExpression<float> => "float32",
-		LiteralExpression<long> => "int64",
-		ConstructionExpression { Type: not null } built => SpellType(built.Type),
-		_ => null,
-	};
 
 	/// <inheritdoc/>
 	/// <remarks>
@@ -1813,20 +1816,17 @@ public class GoGenerator : StandardLanguageGenerator
 	}
 
 	/// <summary>
-	/// Writes one line of documentation as Go writes one.
-	/// </summary>
-	/// <param name="line">The line to write.</param>
-	/// <returns>The comment line.</returns>
-	private string DocumentationLine(string line) =>
-		line.Length == 0 ? DocumentationPrefix : $"{DocumentationPrefix} {line}";
-
-	/// <summary>
 	/// One line of a block whose columns line up, and the comments belonging above it.
 	/// </summary>
 	/// <param name="Notes">What is written above the line.</param>
 	/// <param name="Name">The first column.</param>
 	/// <param name="Rest">The second column, or nothing where the line has only one.</param>
-	private sealed record AlignedLine(IReadOnlyList<string> Notes, string Name, string Rest);
+	/// <param name="Declaration">The source field, when this line represents an AST field.</param>
+	private sealed record AlignedLine(
+		IReadOnlyList<(string Prefix, string Text)> Notes,
+		string Name,
+		string Rest,
+		FieldDeclaration? Declaration = null);
 
 	/// <summary>
 	/// Writes a block of lines with their second columns lined up.
@@ -1843,7 +1843,7 @@ public class GoGenerator : StandardLanguageGenerator
 	/// which is why the notes belong to the line rather than being written before the block.
 	/// </para>
 	/// </remarks>
-	private static void WriteAligned(IReadOnlyList<AlignedLine> lines, CodeBlocker code)
+	private void WriteAligned(IReadOnlyList<AlignedLine> lines, CodeBlocker code)
 	{
 		int width = lines
 			.Where(line => line.Rest.Length > 0)
@@ -1853,9 +1853,14 @@ public class GoGenerator : StandardLanguageGenerator
 
 		foreach (AlignedLine line in lines)
 		{
-			foreach (string note in line.Notes)
+			if (line.Declaration is FieldDeclaration declaration)
 			{
-				code.WriteLine(note);
+				WritePreamble(declaration, code, PreambleSite.Field);
+			}
+
+			foreach ((string prefix, string text) in line.Notes)
+			{
+				WriteComment(code, prefix, text);
 			}
 
 			code.WriteLine(line.Rest.Length == 0 ? line.Name : $"{line.Name.PadRight(width)} {line.Rest}");

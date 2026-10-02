@@ -39,6 +39,30 @@ public class JavaScriptGeneratorTests
 		Assert.AreEqual($"function doNothing() {{{CodeBlocker.DefaultNewLineString}}}{CodeBlocker.DefaultNewLineString}", code);
 	}
 
+	[TestMethod]
+	public void CompleteImportItem_IsPassedThroughAndParses()
+	{
+		string? node = ToolchainHarness.FindOnPath("--version", "node");
+		if (node is null)
+		{
+			Assert.Inconclusive("No Node.js runtime on the path, so nothing was parsed.");
+			return;
+		}
+
+		SourceFile file = new("imports");
+		file.Imports.Add("import { P } from \"./p.js\";");
+		string generated = Generator.Generate(file);
+		StringAssert.Contains(generated, "import { P } from \"./p.js\";", StringComparison.Ordinal);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string path = Path.Combine(directory, "imports.mjs");
+			File.WriteAllText(path, generated);
+			(int exitCode, string output) = ToolchainHarness.Run(node, $"--check {path}", directory);
+			Assert.AreEqual(0, exitCode, $"Node.js rejected the generated source:{Environment.NewLine}{output}");
+		});
+	}
+
 	/// <summary>
 	/// Tests that parameter types are dropped, since JavaScript has nowhere to put them, and that
 	/// an optional parameter becomes a default argument.

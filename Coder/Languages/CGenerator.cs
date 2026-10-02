@@ -192,12 +192,12 @@ public class CGenerator : CFamilyGenerator
 		// the function is missing — which is what someone looking for it needs.
 		if (funcDecl.Definition == FunctionDefinition.Deleted)
 		{
-			GenerateDocumentation(funcDecl, code);
+			WritePreamble(funcDecl, code, enclosingType is null ? PreambleSite.Function : PreambleSite.Method);
 			WriteInexpressible(code, $"{SpellFunctionName(funcDecl, enclosingType)} is deleted: C cannot refuse a call");
 			return;
 		}
 
-		GenerateDocumentation(funcDecl, code);
+		WritePreamble(funcDecl, code, enclosingType is null ? PreambleSite.Function : PreambleSite.Method);
 
 		// Internal linkage is the only privacy C has, and it is what a private function wants: the
 		// declaration is visible to this translation unit and to nothing else.
@@ -471,7 +471,7 @@ public class CGenerator : CFamilyGenerator
 		Ensure.NotNull(namespaceDecl);
 		Ensure.NotNull(code);
 
-		GenerateDocumentation(namespaceDecl, code);
+		WritePreamble(namespaceDecl, code, PreambleSite.Type);
 
 		string name = string.Join("_", NamespaceDeclaration.Split(namespaceDecl.Name));
 		WriteInexpressible(code, $"namespace {name}: C has none, so these declarations are not nested in one");
@@ -553,8 +553,7 @@ public class CGenerator : CFamilyGenerator
 			code.NewLine();
 		}
 
-		GenerateDocumentation(classDecl, code);
-		WriteAnnotations(classDecl.Annotations, code);
+		WritePreamble(classDecl, code, PreambleSite.Type);
 		WriteTypePromises(classDecl, code);
 		WriteTypeParametersDown(classDecl.TypeParameters, code);
 
@@ -634,10 +633,13 @@ public class CGenerator : CFamilyGenerator
 
 		if (initialValue is not null || isConstant)
 		{
-			code.Write($"  {CommentPrefix} {DescribeMemberIntent(initialValue, isConstant)}");
+			code.Write("  ");
+			WriteComment(code, CommentPrefix, DescribeMemberIntent(initialValue, isConstant));
 		}
-
-		code.WriteLine();
+		else
+		{
+			code.WriteLine();
+		}
 	}
 
 	/// <summary>
@@ -670,7 +672,7 @@ public class CGenerator : CFamilyGenerator
 	/// </remarks>
 	private void GenerateFunctionPointer(FunctionDeclaration funcDecl, CodeBlocker code)
 	{
-		GenerateDocumentation(funcDecl, code);
+		WritePreamble(funcDecl, code, PreambleSite.Function);
 
 		List<Parameter> parameters = [];
 		if (!funcDecl.IsStatic)
@@ -721,7 +723,7 @@ public class CGenerator : CFamilyGenerator
 		Ensure.NotNull(usingAlias);
 		Ensure.NotNull(code);
 
-		GenerateDocumentation(usingAlias, code);
+		WritePreamble(usingAlias, code, PreambleSite.Type);
 		code.Write($"typedef {SpellDeclarator(usingAlias.AliasedType ?? new TypeReference(UnknownTypeName), usingAlias.Name ?? string.Empty)}");
 		EndStatement(code);
 	}
@@ -869,7 +871,7 @@ public class CGenerator : CFamilyGenerator
 			WriteInexpressible(code, $"underlying type {MapToCType(underlying)}: C chooses one that fits the members");
 		}
 
-		GenerateDocumentation(enumDecl, code);
+		WritePreamble(enumDecl, code, PreambleSite.Enum);
 
 		code.WriteLine($"typedef enum {name}");
 		code.WriteLine("{");
@@ -933,12 +935,12 @@ public class CGenerator : CFamilyGenerator
 
 		if (insideType > 0)
 		{
-			GenerateDocumentation(field, code);
+			WritePreamble(field, code, PreambleSite.Field);
 			GenerateStructMember(field.Name, field.Type, field.InitialValue, field.IsConstant, code);
 			return;
 		}
 
-		GenerateDocumentation(field, code);
+		WritePreamble(field, code, PreambleSite.Field);
 
 		TypeReference type = field.Type ?? new TypeReference(UnknownTypeName);
 
