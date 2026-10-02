@@ -1,5 +1,9 @@
 ## v3.18.9-pre.1 (prerelease)
 
+No significant changes detected since v3.18.9-pre.1.
+
+## v3.18.9-pre.1 (prerelease)
+
 Changes since v3.18.8:
 
 - Add cluster regression and toolchain tests ([@copilot-swe-agent[bot]](https://github.com/copilot-swe-agent[bot]))
