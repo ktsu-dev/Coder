@@ -154,6 +154,81 @@ public class RustGeneratedSourceCompilesTests
 	}
 
 	/// <summary>
+	/// Tests that a parameter whose field the body assigns, and an operator's <c>self</c> or operand
+	/// whose field its body assigns, are bound <c>mut</c> — which Rust asks for to assign through a
+	/// field of a value just as it does to assign the whole of it.
+	/// </summary>
+	[TestMethod]
+	public void AssigningAFieldOfAParameterOrSelf_BindsItMut()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "rustc") is null)
+		{
+			Assert.Inconclusive("No Rust compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		ClassDeclaration point = new("Point") { Kind = TypeDeclarationKind.Struct };
+		point.Members.Add(new VariableDeclaration("x", "int"));
+		point.Members.Add(new VariableDeclaration("y", "int"));
+
+		// self.x += rhs.x; rhs.y = 0; return self;
+		FunctionDeclaration plus = new("+") { Kind = FunctionKind.Operator, ReturnType = "Point" };
+		plus.Parameters.Add(new Parameter("rhs", "Point"));
+		plus.Body.Add(new AssignmentStatement(
+			new VariableReference("self.x"), new VariableReference("rhs.x"), AssignmentOperator.AddAssign));
+		plus.Body.Add(new AssignmentStatement(new VariableReference("rhs.y"), Literal.Number(0)));
+		plus.Body.Add(new ReturnStatement(new VariableReference("self")));
+		point.Members.Add(plus);
+
+		// p.x += 1; return p;
+		FunctionDeclaration shifted = new("shifted") { ReturnType = "Point" };
+		shifted.Parameters.Add(new Parameter("p", "Point"));
+		shifted.Body.Add(new AssignmentStatement(
+			new VariableReference("p.x"), Literal.Number(1), AssignmentOperator.AddAssign));
+		shifted.Body.Add(new ReturnStatement(new VariableReference("p")));
+
+		SourceFile file = new("fields");
+		file.Members.Add(point);
+		file.Members.Add(shifted);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new RustGenerator().Generate(file);
+			string allowed = "#![allow(unused_parens, unused_assignments, dead_code)]";
+
+			Assert.Contains("fn add(mut self, mut rhs: Point)", source, StringComparison.Ordinal, source);
+			Assert.Contains("mut p: Point", source, StringComparison.Ordinal, source);
+
+			File.WriteAllText(
+				Path.Combine(directory, "fields.rs"),
+				$"{allowed}{Environment.NewLine}{source}");
+
+			(int exitCode, string output) = ToolchainHarness.Run(
+				"rustc",
+				"--crate-type lib --edition 2021 -o fields.rlib fields.rs",
+				directory);
+
+			Assert.AreEqual(0, exitCode, $"rustc rejected the generated source:{Environment.NewLine}{source}{Environment.NewLine}{output}");
+		});
+	}
+
+	/// <summary>
+	/// Tests that an operator whose body assigns nothing still takes its operands as they are, since
+	/// a <c>mut</c> nothing needs is a warning in Rust.
+	/// </summary>
+	[TestMethod]
+	public void AnOperatorThatAssignsNothing_BindsNothingMut()
+	{
+		ClassDeclaration point = new("Point") { Kind = TypeDeclarationKind.Struct };
+		point.Members.Add(new VariableDeclaration("x", "int"));
+		point.Members.Add(CompiledExemplar.Plus());
+
+		string source = new RustGenerator().Generate(point);
+
+		Assert.Contains("fn add(self, rhs: Point)", source, StringComparison.Ordinal, source);
+	}
+
+	/// <summary>
 	/// Tests that the arguments an entry point is handed are the ones the user typed, without the
 	/// program's own path that <c>std::env::args</c> puts first — which is what they are in every
 	/// other target.
