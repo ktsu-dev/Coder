@@ -118,6 +118,11 @@ public class GoGenerator : StandardLanguageGenerator
 	private const string RuntimePackage = "\"os\"";
 
 	/// <summary>
+	/// The package that spells NaN and the infinities, quoted as an import line.
+	/// </summary>
+	private const string MathPackage = "\"math\"";
+
+	/// <summary>
 	/// How Go spells a string.
 	/// </summary>
 	/// <remarks>
@@ -260,6 +265,14 @@ public class GoGenerator : StandardLanguageGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
+	/// The <c>math</c> package's functions, which <see cref="ImportGroups"/> imports for a file that
+	/// holds one.
+	/// </remarks>
+	protected override string SpellNonFiniteDouble(double value) =>
+		double.IsNaN(value) ? "math.NaN()" : value > 0 ? "math.Inf(1)" : "math.Inf(-1)";
+
+	/// <inheritdoc/>
+	/// <remarks>
 	/// Nothing: a Go file's imports are written with its package clause, by
 	/// <see cref="WriteFileDirectives"/>, because the two are one header and have to appear in that
 	/// order before anything else.
@@ -396,6 +409,11 @@ public class GoGenerator : StandardLanguageGenerator
 			&& !groups.Any(group => group.Contains(RuntimePackage)))
 		{
 			groups[0].Add(RuntimePackage);
+		}
+
+		if (ContainsNonFiniteDouble(file) && !groups.Any(group => group.Contains(MathPackage)))
+		{
+			groups[0].Add(MathPackage);
 		}
 
 		foreach (List<string> group in groups)

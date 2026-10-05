@@ -119,6 +119,31 @@ public class CppGenerator : CFamilyGenerator
 	protected override string? SpellAnnotation(Annotation annotation, PreambleSite site) => $"[[{annotation}]]";
 	/// <inheritdoc/>
 	/// <remarks>
+	/// <c>std::numeric_limits</c> rather than C's macros, because they are constant expressions of type
+	/// <c>double</c> rather than <c>float</c>, and need only <c>&lt;limits&gt;</c>.
+	/// </remarks>
+	protected override string SpellNonFiniteDouble(double value) =>
+		double.IsNaN(value) ? "std::numeric_limits<double>::quiet_NaN()"
+		: value > 0 ? "std::numeric_limits<double>::infinity()"
+		: "-std::numeric_limits<double>::infinity()";
+
+	/// <inheritdoc/>
+	protected override IEnumerable<string> RequiredImports(SourceFile file)
+	{
+		Ensure.NotNull(file);
+		if (ContainsNonFiniteDouble(file))
+		{
+			yield return LimitsHeader;
+		}
+	}
+
+	/// <summary>
+	/// The header that declares <c>std::numeric_limits</c>.
+	/// </summary>
+	private const string LimitsHeader = "<limits>";
+
+	/// <inheritdoc/>
+	/// <remarks>
 	/// A constructor and a destructor are named after the type rather than after themselves, so the
 	/// name comes from the class emitter rather than from the declaration. That is what stops the two
 	/// desynchronising when the type is renamed — the alternative is holding the type's name twice

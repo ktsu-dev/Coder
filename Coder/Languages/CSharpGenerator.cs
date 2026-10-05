@@ -103,7 +103,9 @@ public class CSharpGenerator : LanguageGeneratorBase
 				code.Write(boolLit.Value ? "true" : "false");
 				break;
 			case LiteralExpression<double> doubleLit:
-				code.Write($"{doubleLit.Value.ToString(CultureInfo.InvariantCulture)}d");
+				code.Write(double.IsFinite(doubleLit.Value)
+					? $"{doubleLit.Value.ToString(CultureInfo.InvariantCulture)}d"
+					: SpellNonFiniteDouble(doubleLit.Value));
 				break;
 			case LiteralExpression<float> floatLit:
 				code.Write($"{floatLit.Value.ToString(CultureInfo.InvariantCulture)}f");
@@ -296,6 +298,13 @@ public class CSharpGenerator : LanguageGeneratorBase
 
 	/// <inheritdoc/>
 	protected override string? SpellImport(string import) => $"using {import};";
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// The constants on <see cref="double"/>, which every file can name without a <c>using</c>.
+	/// </remarks>
+	protected override string SpellNonFiniteDouble(double value) =>
+		double.IsNaN(value) ? "double.NaN" : value > 0 ? "double.PositiveInfinity" : "double.NegativeInfinity";
 
 	/// <summary>
 	/// Emits a namespace and its members.

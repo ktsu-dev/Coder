@@ -158,7 +158,7 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 				return true;
 
 			case LiteralExpression<double> doubleLit:
-				code.Write(FormatDouble(doubleLit.Value));
+				code.Write(double.IsFinite(doubleLit.Value) ? FormatDouble(doubleLit.Value) : SpellNonFiniteDouble(doubleLit.Value));
 				return true;
 
 			case LiteralExpression<float> floatLit:
@@ -352,17 +352,9 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	private void EnsureConserved(AstNode root)
 	{
 		HashSet<object> expected = new(ReferenceEqualityComparer.Instance);
-		HashSet<AstNode> visited = new(ReferenceEqualityComparer.Instance);
-		Stack<AstNode> pending = new();
-		pending.Push(root);
 
-		while (pending.TryPop(out AstNode? node))
+		foreach (AstNode node in SelfAndDescendants(root))
 		{
-			if (!visited.Add(node))
-			{
-				continue;
-			}
-
 			if (node is IHasDocumentation documented)
 			{
 				foreach (string line in documented.Documentation)
@@ -375,6 +367,40 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 			{
 				expected.Add(annotation);
 			}
+		}
+
+		foreach (object item in expected)
+		{
+			if (!emittedPreambleItems!.Contains(item))
+			{
+				throw new InvalidOperationException($"{item} was dropped by {DisplayName}.");
+			}
+		}
+	}
+
+	/// <summary>
+	/// Lists a node and every node beneath it, each once.
+	/// </summary>
+	/// <param name="root">The node to start from.</param>
+	/// <returns>The root, then the nodes under it, in no particular order.</returns>
+	/// <remarks>
+	/// Read off the nodes' public properties rather than a list of node types, so a node added to the
+	/// AST is walked without anybody remembering to add it here.
+	/// </remarks>
+	protected static IEnumerable<AstNode> SelfAndDescendants(AstNode root)
+	{
+		HashSet<AstNode> visited = new(ReferenceEqualityComparer.Instance);
+		Stack<AstNode> pending = new();
+		pending.Push(root);
+
+		while (pending.TryPop(out AstNode? node))
+		{
+			if (!visited.Add(node))
+			{
+				continue;
+			}
+
+			yield return node;
 
 			if (node is AstCompositeNode composite)
 			{
@@ -408,15 +434,19 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 				}
 			}
 		}
-
-		foreach (object item in expected)
-		{
-			if (!emittedPreambleItems!.Contains(item))
-			{
-				throw new InvalidOperationException($"{item} was dropped by {DisplayName}.");
-			}
-		}
 	}
+
+	/// <summary>
+	/// Reports whether a file holds a double literal that is not a finite number.
+	/// </summary>
+	/// <param name="file">The file being emitted.</param>
+	/// <returns>True if any double literal in the file is NaN or an infinity.</returns>
+	/// <remarks>
+	/// What a generator asks before deciding whether the file needs the import its spelling of
+	/// <see cref="SpellNonFiniteDouble"/> depends on.
+	/// </remarks>
+	protected static bool ContainsNonFiniteDouble(SourceFile file) =>
+		SelfAndDescendants(file).Any(node => node is LiteralExpression<double> literal && !double.IsFinite(literal.Value));
 
 	/// <summary>
 	/// Writes down the types a declaration is written over, for a target that has no generics.
@@ -910,7 +940,7 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	private static char? LeadingSign(AstNode? node) => node switch
 	{
 		LiteralExpression<int> { Value: < 0 } => '-',
-		LiteralExpression<double> doubleLit when double.IsNegative(doubleLit.Value) => '-',
+		LiteralExpression<double> doubleLit when double.IsNegative(doubleLit.Value) && !double.IsNaN(doubleLit.Value) => '-',
 		LiteralExpression<float> floatLit when float.IsNegative(floatLit.Value) => '-',
 		LiteralExpression<long> { Value: < 0 } => '-',
 		AstLeafNode<int> { Value: < 0 } => '-',
@@ -1080,10 +1110,25 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// Round-trip formatting drops the fraction of a whole number, and <c>2</c> is an integer in every
 	/// target: <c>1.0 / 2.0</c> would become integer division in C, C++ and Go, fail to compile in Rust,
 	/// and type an inferred local as an integer. A value with a point or an exponent already reads as a
-	/// float, and one that is not finite is left as it is — there is no number to add a point to.
+	/// float, and one that is not finite is left as it is — there is no number to add a point to. A
+	/// literal that is not finite is spelled by <see cref="SpellNonFiniteDouble"/> instead.
 	/// </remarks>
 	protected static string FormatDouble(double value) =>
 		WithFraction(value.ToString("R", CultureInfo.InvariantCulture), double.IsFinite(value));
+
+	/// <summary>
+	/// Spells a double that is NaN or an infinity.
+	/// </summary>
+	/// <param name="value">The value to spell, which is not finite.</param>
+	/// <returns>The language's name for the value.</returns>
+	/// <remarks>
+	/// JavaScript's <c>NaN</c>, <c>Infinity</c> and <c>-Infinity</c>, which is the one target where the
+	/// text round-trip formatting gives is already a name the language knows. Every other language
+	/// spells these as a constant of its own, and the C, C++ and Go spellings need an import that
+	/// the generator adds through <see cref="RequiredImports"/>.
+	/// </remarks>
+	protected virtual string SpellNonFiniteDouble(double value) =>
+		double.IsNaN(value) ? "NaN" : value > 0 ? "Infinity" : "-Infinity";
 
 	/// <summary>
 	/// Formats a single-precision value so that every target reads it as floating-point.

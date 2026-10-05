@@ -163,6 +163,28 @@ public class CGenerator : CFamilyGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
+	/// The <c>&lt;math.h&gt;</c> macros, which is why a file holding one includes it.
+	/// </remarks>
+	protected override string SpellNonFiniteDouble(double value) =>
+		double.IsNaN(value) ? "NAN" : value > 0 ? "INFINITY" : "-INFINITY";
+
+	/// <inheritdoc/>
+	protected override IEnumerable<string> RequiredImports(SourceFile file)
+	{
+		Ensure.NotNull(file);
+		if (ContainsNonFiniteDouble(file))
+		{
+			yield return MathHeader;
+		}
+	}
+
+	/// <summary>
+	/// The header that declares <c>NAN</c> and <c>INFINITY</c>.
+	/// </summary>
+	private const string MathHeader = "<math.h>";
+
+	/// <inheritdoc/>
+	/// <remarks>
 	/// C has no member functions, so a member becomes a free function named for the type it belongs
 	/// to and taking the instance as its first parameter — <c>Point_translate(Point* self, …)</c>.
 	/// That is what C code written by hand does.
