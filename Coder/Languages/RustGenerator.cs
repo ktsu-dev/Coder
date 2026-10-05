@@ -54,6 +54,11 @@ public class RustGenerator : StandardLanguageGenerator
 	/// </remarks>
 	private const string BaseMemberName = "base";
 
+	/// <summary>
+	/// The receiver, as a body names it and as an operator's signature binds it.
+	/// </summary>
+	private const string SelfName = "self";
+
 	private static readonly Dictionary<string, string> TypeMappings = new(StringComparer.OrdinalIgnoreCase)
 	{
 		{ "str", "String" },
@@ -765,14 +770,19 @@ public class RustGenerator : StandardLanguageGenerator
 		}
 
 		// A comparison borrows what it compares and answers a bool; an arithmetic operator consumes
-		// its operands and answers the type it named as its Output.
-		string self = op.ReturnsBool ? "&self" : "self";
+		// its operands and answers the type it named as its Output. An operand it consumes is its
+		// own to change, but only if it is bound mut, as a parameter is.
+		HashSet<string> reassigned = op.ReturnsBool
+			? []
+			: ReassignedNames(funcDecl.Body, [SelfName, .. funcDecl.Parameters.Select(OperandName)]);
+		string self = op.ReturnsBool ? "&self" : reassigned.Contains(SelfName) ? $"mut {SelfName}" : SelfName;
 		code.Write($"fn {op.Method}({self}");
 
 		foreach (Parameter parameter in funcDecl.Parameters)
 		{
+			string name = OperandName(parameter);
 			code.Write(", ");
-			code.Write($"{parameter.Name ?? "rhs"}: {SpellOperandType(parameter, op, typeName)}");
+			code.Write($"{(reassigned.Contains(name) ? "mut " : string.Empty)}{name}: {SpellOperandType(parameter, op, typeName)}");
 		}
 
 		code.Write($") -> {(op.ReturnsBool ? "bool" : result)} ");
@@ -780,6 +790,13 @@ public class RustGenerator : StandardLanguageGenerator
 		using Scope body = new(code);
 		WriteBody(funcDecl.Body, code);
 	}
+
+	/// <summary>
+	/// Names the operand beside the instance.
+	/// </summary>
+	/// <param name="parameter">The operand as the declaration carries it.</param>
+	/// <returns>Its name, or <c>rhs</c>, which is what the standard library's traits call it.</returns>
+	private static string OperandName(Parameter parameter) => parameter.Name ?? "rhs";
 
 	/// <summary>
 	/// Spells the type of the operand beside the instance.
@@ -1113,27 +1130,40 @@ public class RustGenerator : StandardLanguageGenerator
 	/// </summary>
 	/// <param name="funcDecl">The function to inspect.</param>
 	/// <returns>The names of the parameters to declare <c>mut</c>.</returns>
+	private static HashSet<string> ReassignedParameters(FunctionDeclaration funcDecl) =>
+		ReassignedNames(funcDecl.Body, funcDecl.Parameters.Select(parameter => parameter.Name).OfType<string>());
+
+	/// <summary>
+	/// Finds which of the given bindings a body assigns to, or assigns a field of, before any local
+	/// takes the name over.
+	/// </summary>
+	/// <param name="body">The statements to inspect.</param>
+	/// <param name="candidates">The names bound on entry: parameters, and <c>self</c> where it is taken by value.</param>
+	/// <returns>The names to declare <c>mut</c>.</returns>
 	/// <remarks>
+	/// Member access is a dotted <see cref="VariableReference"/>, so <c>p.x = …</c> names <c>p</c> by
+	/// the text before its first dot — and Rust asks for <c>mut p</c> to assign through a field of a
+	/// value just as it does to assign the whole of it.
+	/// <para>
 	/// A local declared with a parameter's name shadows it from there on, so an assignment after
 	/// that point is to the local, which is already <c>let mut</c>, and not to the parameter.
+	/// </para>
 	/// </remarks>
-	private static HashSet<string> ReassignedParameters(FunctionDeclaration funcDecl)
+	private static HashSet<string> ReassignedNames(IEnumerable<AstNode> body, IEnumerable<string> candidates)
 	{
-		HashSet<string> parameters = new(
-			funcDecl.Parameters.Select(parameter => parameter.Name).OfType<string>(),
-			StringComparer.Ordinal);
+		HashSet<string> bound = new(candidates, StringComparer.Ordinal);
 		HashSet<string> reassigned = new(StringComparer.Ordinal);
 
-		foreach (AstNode statement in funcDecl.Body)
+		foreach (AstNode statement in body)
 		{
 			switch (statement)
 			{
 				case VariableDeclaration local:
-					parameters.Remove(local.Name);
+					bound.Remove(local.Name);
 					break;
 
-				case AssignmentStatement { Target: VariableReference target } when parameters.Contains(target.Name):
-					reassigned.Add(target.Name);
+				case AssignmentStatement { Target: VariableReference target } when bound.Contains(RootOf(target.Name)):
+					reassigned.Add(RootOf(target.Name));
 					break;
 
 				default:
@@ -1142,6 +1172,17 @@ public class RustGenerator : StandardLanguageGenerator
 		}
 
 		return reassigned;
+	}
+
+	/// <summary>
+	/// Gives the binding a possibly dotted name starts from.
+	/// </summary>
+	/// <param name="name">A name, or a member access written as one.</param>
+	/// <returns>The text before the first dot, or the whole name when there is none.</returns>
+	private static string RootOf(string name)
+	{
+		int dot = name.IndexOf('.', StringComparison.Ordinal);
+		return dot < 0 ? name : name[..dot];
 	}
 
 	/// <inheritdoc/>
