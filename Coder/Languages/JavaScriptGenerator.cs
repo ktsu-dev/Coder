@@ -462,15 +462,28 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 			? WriteSuperCall(method, baseType, code)
 			: null;
 
-		// JavaScript assigns where C++ initialises, before the body's own statements and in the order
-		// declared, which is what the initialiser means where there is no initialiser list.
-		foreach (MemberInitialiser initialiser in method.Initialisers)
-		{
-			if (ReferenceEquals(initialiser, baseInitialiser))
-			{
-				continue;
-			}
+		WriteInitialiserAssignments(method, baseInitialiser, code);
 
+		foreach (AstNode statement in method.Body)
+		{
+			GenerateInternal(statement, code);
+		}
+	}
+
+	/// <summary>
+	/// Writes a method's member initialisers as assignments to <c>this</c>.
+	/// </summary>
+	/// <param name="method">The method whose initialisers to write.</param>
+	/// <param name="baseInitialiser">The initialiser already passed to <c>super</c>, which is skipped.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// JavaScript assigns where C++ initialises, before the body's own statements and in the order
+	/// declared, which is what the initialiser means where there is no initialiser list.
+	/// </remarks>
+	private void WriteInitialiserAssignments(FunctionDeclaration method, MemberInitialiser? baseInitialiser, CodeBlocker code)
+	{
+		foreach (MemberInitialiser initialiser in method.Initialisers.Where(initialiser => !ReferenceEquals(initialiser, baseInitialiser)))
+		{
 			code.Write($"this.{initialiser.Name} = ");
 
 			if (initialiser.Value is not null)
@@ -479,11 +492,6 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 			}
 
 			EndStatement(code);
-		}
-
-		foreach (AstNode statement in method.Body)
-		{
-			GenerateInternal(statement, code);
 		}
 	}
 
