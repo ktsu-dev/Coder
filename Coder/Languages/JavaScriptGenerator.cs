@@ -269,16 +269,45 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
-	/// A class field, which JavaScript writes without a type since it has none to write. A field with
-	/// no initialiser is still declared: the property then exists on every instance, which is what
-	/// makes the shape of an object predictable rather than growing as it is assigned to.
+	/// A field outside a class, in a file or a namespace, is a module-level binding, so it is declared
+	/// the way a local is. A bare assignment would be to an undeclared name, which throws in an ES
+	/// module and creates a global in a script. <c>const</c> needs an initializer, so an uninitialized
+	/// constant is declared with <c>let</c>. Fields inside a class go through
+	/// <see cref="GenerateClassField"/> instead.
 	/// </remarks>
 	protected override void GenerateFieldDeclaration(FieldDeclaration field, CodeBlocker code)
 	{
 		Ensure.NotNull(field);
 		Ensure.NotNull(code);
 
+		WriteField(field, field.IsConstant && field.InitialValue is not null ? "const " : "let ", code);
+	}
+
+	/// <summary>
+	/// Emits a field declaration as a class field.
+	/// </summary>
+	/// <param name="field">The declaration to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// JavaScript writes a class field without a type, since it has none to write. A field with no
+	/// initialiser is still declared: the property then exists on every instance, which is what makes
+	/// the shape of an object predictable rather than growing as it is assigned to. A static field, and
+	/// a constant one, which is static whether or not it says so, is written <c>static</c>, so the
+	/// class holds one value rather than each instance holding its own.
+	/// </remarks>
+	private void GenerateClassField(FieldDeclaration field, CodeBlocker code) =>
+		WriteField(field, field.IsStatic || field.IsConstant ? StaticKeyword : string.Empty, code);
+
+	/// <summary>
+	/// Writes a field declaration after the keyword its scope calls for.
+	/// </summary>
+	/// <param name="field">The declaration to emit.</param>
+	/// <param name="keyword">The keyword, with its trailing space, or empty for none.</param>
+	/// <param name="code">The writer to emit into.</param>
+	private void WriteField(FieldDeclaration field, string keyword, CodeBlocker code)
+	{
 		WritePreamble(field, code, PreambleSite.Field);
+		code.Write(keyword);
 		code.Write(field.Name ?? "unnamed");
 
 		if (field.InitialValue is not null)
@@ -371,6 +400,10 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 
 				case EnumDeclaration nested:
 					GenerateNestedEnum(nested, code);
+					break;
+
+				case FieldDeclaration classField:
+					GenerateClassField(classField, code);
 					break;
 
 				// A field is not a variable: `let` is a statement keyword and a syntax error in a

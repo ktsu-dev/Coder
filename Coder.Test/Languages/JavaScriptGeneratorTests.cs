@@ -160,4 +160,84 @@ public class JavaScriptGeneratorTests
 		Assert.IsFalse(Generator.CanGenerate(new AstLeafNode<double>(1.0)));
 		Assert.ThrowsExactly<NotSupportedException>(() => Generator.Generate(new AstLeafNode<double>(1.0)));
 	}
+	/// <summary>
+	/// Builds the file from issue #104: a file-scope constant, and a class with a static field and a
+	/// static constant.
+	/// </summary>
+	/// <returns>The source file.</returns>
+	private static SourceFile StaticFieldFile()
+	{
+		SourceFile file = new("Sample");
+		file.Members.Add(new FieldDeclaration("Limit", "int") { IsConstant = true, InitialValue = new LiteralExpression<int>(10) });
+		ClassDeclaration counter = new("Counter");
+		counter.Members.Add(new FieldDeclaration("created", "int") { IsStatic = true, InitialValue = new LiteralExpression<int>(0) });
+		counter.Members.Add(new FieldDeclaration("MAX", "int") { IsStatic = true, IsConstant = true, InitialValue = new LiteralExpression<int>(99) });
+		counter.Members.Add(new FieldDeclaration("count", "int") { InitialValue = new LiteralExpression<int>(1) });
+		file.Members.Add(counter);
+		return file;
+	}
+
+	/// <summary>
+	/// Tests that static and constant class fields are written <c>static</c>, and an instance field is not.
+	/// </summary>
+	[TestMethod]
+	public void ClassField_StaticOrConstant_IsWrittenStatic()
+	{
+		ClassDeclaration counter = new("Counter");
+		counter.Members.Add(new FieldDeclaration("created", "int") { IsStatic = true, InitialValue = new LiteralExpression<int>(0) });
+		counter.Members.Add(new FieldDeclaration("LIMIT", "int") { IsConstant = true, InitialValue = new LiteralExpression<int>(5) });
+		counter.Members.Add(new FieldDeclaration("count", "int") { InitialValue = new LiteralExpression<int>(1) });
+
+		string code = Generator.Generate(counter);
+
+		StringAssert.Contains(code, "static created = 0;", StringComparison.Ordinal);
+		StringAssert.Contains(code, "static LIMIT = 5;", StringComparison.Ordinal);
+		StringAssert.Contains(code, "count = 1;", StringComparison.Ordinal);
+		Assert.DoesNotContain("static count", code);
+	}
+
+	/// <summary>
+	/// Tests that a field outside a class is declared, <c>const</c> when constant and <c>let</c> otherwise,
+	/// rather than assigned to an undeclared name.
+	/// </summary>
+	[TestMethod]
+	public void FileScopeField_IsDeclaredConstOrLet()
+	{
+		SourceFile file = new("Sample");
+		file.Members.Add(new FieldDeclaration("Limit", "int") { IsConstant = true, InitialValue = new LiteralExpression<int>(10) });
+		file.Members.Add(new FieldDeclaration("total", "int") { InitialValue = new LiteralExpression<int>(0) });
+		file.Members.Add(new FieldDeclaration("Pending", "int") { IsConstant = true });
+
+		string code = Generator.Generate(file);
+
+		StringAssert.Contains(code, "const Limit = 10;", StringComparison.Ordinal);
+		StringAssert.Contains(code, "let total = 0;", StringComparison.Ordinal);
+		StringAssert.Contains(code, "let Pending;", StringComparison.Ordinal);
+	}
+
+	/// <summary>
+	/// Tests that the issue's file loads as an ES module under Node.js, the static constant is on the
+	/// class, and the file-scope constant does not leak onto the global object.
+	/// </summary>
+	[TestMethod]
+	public void StaticAndFileScopeFields_RunUnderNode()
+	{
+		string? node = ToolchainHarness.FindOnPath("--version", "node");
+		if (node is null)
+		{
+			Assert.Inconclusive("No Node.js runtime on the path, so nothing was run.");
+			return;
+		}
+
+		string generated = Generator.Generate(StaticFieldFile());
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string path = Path.Combine(directory, "sample.mjs");
+			File.WriteAllText(path, generated + "console.log(Counter.MAX === 99, Counter.created, new Counter().MAX, Limit, globalThis.Limit);\n");
+			(int exitCode, string output) = ToolchainHarness.Run(node, path, directory);
+			Assert.AreEqual(0, exitCode, $"Node.js could not load the generated module:{Environment.NewLine}{output}{Environment.NewLine}{generated}");
+			StringAssert.Contains(output, "true 0 undefined 10 undefined", StringComparison.Ordinal);
+		});
+	}
 }
