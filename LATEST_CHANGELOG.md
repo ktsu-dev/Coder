@@ -1,4 +1,6 @@
-## v3.18.9
+## v3.18.10 (patch)
 
-No significant changes detected since v3.18.9.
+Changes since v3.18.9:
+
+- [patch] Defer Python annotations so a class can name itself or a later class ([@Claude](https://github.com/Claude))
 
