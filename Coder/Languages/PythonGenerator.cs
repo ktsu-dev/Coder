@@ -177,6 +177,14 @@ public class PythonGenerator : StandardLanguageGenerator
 	}
 
 	/// <inheritdoc/>
+	/// <remarks>
+	/// Python has no literal for these, and <c>math.nan</c> would need an import that
+	/// <c>float("nan")</c> does not.
+	/// </remarks>
+	protected override string SpellNonFiniteDouble(double value) =>
+		double.IsNaN(value) ? "float(\"nan\")" : value > 0 ? "float(\"inf\")" : "float(\"-inf\")";
+
+	/// <inheritdoc/>
 	protected override IEnumerable<string> RequiredImports(SourceFile file)
 	{
 		Ensure.NotNull(file);
