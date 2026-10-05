@@ -366,7 +366,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 			switch (member)
 			{
 				case FunctionDeclaration method:
-					GenerateMethod(method, code);
+					GenerateMethod(method, classDecl.BaseType, code);
 					break;
 
 				case EnumDeclaration nested:
@@ -416,8 +416,9 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	/// Emits a function as a class method, which drops the <c>function</c> keyword.
 	/// </summary>
 	/// <param name="method">The function to emit as a method.</param>
+	/// <param name="baseType">The class the method's class extends, if any.</param>
 	/// <param name="code">The writer to emit into.</param>
-	private void GenerateMethod(FunctionDeclaration method, CodeBlocker code)
+	private void GenerateMethod(FunctionDeclaration method, TypeReference? baseType, CodeBlocker code)
 	{
 		WritePreamble(method, code, PreambleSite.Method);
 
@@ -457,10 +458,19 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 			return;
 		}
 
+		MemberInitialiser? baseInitialiser = method.Kind == FunctionKind.Constructor && baseType is not null
+			? WriteSuperCall(method, baseType, code)
+			: null;
+
 		// JavaScript assigns where C++ initialises, before the body's own statements and in the order
 		// declared, which is what the initialiser means where there is no initialiser list.
 		foreach (MemberInitialiser initialiser in method.Initialisers)
 		{
+			if (ReferenceEquals(initialiser, baseInitialiser))
+			{
+				continue;
+			}
+
 			code.Write($"this.{initialiser.Name} = ");
 
 			if (initialiser.Value is not null)
@@ -475,6 +485,36 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		{
 			GenerateInternal(statement, code);
 		}
+	}
+
+	/// <summary>
+	/// Emits the base constructor call a derived class's constructor has to make.
+	/// </summary>
+	/// <param name="constructor">The constructor being emitted.</param>
+	/// <param name="baseType">The class it extends.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <returns>The initialiser that supplied the call's argument, or null when the call passes none.</returns>
+	/// <remarks>
+	/// A derived constructor that touches <c>this</c>, or returns at all, without calling <c>super</c>
+	/// throws, so the call comes first. C++ and C# call the base's default constructor implicitly, and
+	/// a call with no arguments is the same thing. An initialiser named after the base is the C++
+	/// <c>: Base(args)</c> idiom, so its value is passed to the base rather than assigned to a member.
+	/// </remarks>
+	private MemberInitialiser? WriteSuperCall(FunctionDeclaration constructor, TypeReference baseType, CodeBlocker code)
+	{
+		MemberInitialiser? baseInitialiser = constructor.Initialisers
+			.FirstOrDefault(initialiser => string.Equals(initialiser.Name, baseType.Name, StringComparison.Ordinal));
+
+		code.Write("super(");
+
+		if (baseInitialiser?.Value is not null)
+		{
+			GenerateInternal(baseInitialiser.Value, code);
+		}
+
+		code.Write(")");
+		EndStatement(code);
+		return baseInitialiser;
 	}
 
 	/// <inheritdoc/>
