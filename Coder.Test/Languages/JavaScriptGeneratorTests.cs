@@ -160,6 +160,100 @@ public class JavaScriptGeneratorTests
 		Assert.IsFalse(Generator.CanGenerate(new AstLeafNode<double>(1.0)));
 		Assert.ThrowsExactly<NotSupportedException>(() => Generator.Generate(new AstLeafNode<double>(1.0)));
 	}
+
+	/// <summary>
+	/// Builds a <c>Shape</c> base class and a <c>Circle</c> that extends it with a constructor, the
+	/// shape that throws on construction when the derived constructor never calls <c>super</c>.
+	/// </summary>
+	/// <param name="circleConstructor">Adds the constructor's base-call initialiser, if any.</param>
+	/// <returns>A source file holding both classes.</returns>
+	private static SourceFile DerivedClassFile(Action<FunctionDeclaration>? circleConstructor = null)
+	{
+		ClassDeclaration shape = new("Shape");
+		shape.Members.Add(new FieldDeclaration("name", "string") { InitialValue = new LiteralExpression<string>("shape") });
+
+		ClassDeclaration circle = new("Circle") { BaseType = "Shape" };
+		circle.Members.Add(new FieldDeclaration("radius", "double"));
+		FunctionDeclaration constructor = new("Circle") { Kind = FunctionKind.Constructor };
+		constructor.Parameters.Add(new Parameter("radius", "double"));
+		circleConstructor?.Invoke(constructor);
+		constructor.Initialisers.Add(new MemberInitialiser("radius") { Value = new VariableReference("radius") });
+		circle.Members.Add(constructor);
+
+		return new SourceFile("shapes") { Members = { shape, circle } };
+	}
+
+	/// <summary>
+	/// Tests that a derived class's constructor calls <c>super()</c> before it assigns to <c>this</c>.
+	/// </summary>
+	[TestMethod]
+	public void DerivedConstructor_CallsSuperBeforeInitialisers()
+	{
+		string code = Generator.Generate(DerivedClassFile());
+
+		int superCall = code.IndexOf("super();", StringComparison.Ordinal);
+		int assignment = code.IndexOf("this.radius = radius;", StringComparison.Ordinal);
+		Assert.IsGreaterThanOrEqualTo(0, superCall, $"The derived constructor should call super():{Environment.NewLine}{code}");
+		Assert.IsLessThan(assignment, superCall, $"super() should come before the first assignment to this:{Environment.NewLine}{code}");
+	}
+
+	/// <summary>
+	/// Tests that a class with no base type gets no <c>super</c> call, which would be a syntax error.
+	/// </summary>
+	[TestMethod]
+	public void BaseClassConstructor_DoesNotCallSuper()
+	{
+		ClassDeclaration shape = new("Shape");
+		FunctionDeclaration constructor = new("Shape") { Kind = FunctionKind.Constructor };
+		constructor.Initialisers.Add(new MemberInitialiser("name") { Value = new LiteralExpression<string>("shape") });
+		shape.Members.Add(constructor);
+
+		string code = Generator.Generate(shape);
+
+		Assert.DoesNotContain("super", code);
+	}
+
+	/// <summary>
+	/// Tests that an initialiser named after the base, the C++ <c>: Base(args)</c> idiom, passes its
+	/// value to <c>super</c> instead of being assigned to a member called after the base.
+	/// </summary>
+	[TestMethod]
+	public void DerivedConstructor_BaseNamedInitialiser_BecomesTheSuperArgument()
+	{
+		string code = Generator.Generate(DerivedClassFile(constructor =>
+			constructor.Initialisers.Add(new MemberInitialiser("Shape") { Value = new VariableReference("radius") })));
+
+		StringAssert.Contains(code, "super(radius);", StringComparison.Ordinal);
+		Assert.DoesNotContain("this.Shape", code);
+		Assert.DoesNotContain("super();", code);
+	}
+
+	/// <summary>
+	/// Tests that an instance of a derived class can be constructed under Node.js, and that both the
+	/// base's field and the derived constructor's assignment land on it.
+	/// </summary>
+	[TestMethod]
+	public void DerivedClass_ConstructsUnderNode()
+	{
+		string? node = ToolchainHarness.FindOnPath("--version", "node");
+		if (node is null)
+		{
+			Assert.Inconclusive("No Node.js runtime on the path, so nothing was run.");
+			return;
+		}
+
+		string generated = Generator.Generate(DerivedClassFile());
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string path = Path.Combine(directory, "shapes.mjs");
+			File.WriteAllText(path, generated + "const c = new Circle(2);\nconsole.log(c.radius, c.name);\n");
+			(int exitCode, string output) = ToolchainHarness.Run(node, path, directory);
+			Assert.AreEqual(0, exitCode, $"Node.js could not construct the derived class:{Environment.NewLine}{output}{Environment.NewLine}{generated}");
+			StringAssert.Contains(output, "2 shape", StringComparison.Ordinal);
+		});
+	}
+
 	/// <summary>
 	/// Builds the file from issue #104: a file-scope constant, and a class with a static field and a
 	/// static constant.

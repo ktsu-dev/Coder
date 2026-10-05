@@ -1,7 +1,6 @@
-## v3.18.9 (patch)
+## v3.18.10 (patch)
 
-Changes since v3.18.8:
+Changes since v3.18.9:
 
-- [patch] Bind a Rust parameter or operator self mut when the body assigns its field ([@Claude](https://github.com/Claude))
-- [patch] Spell NaN and infinity in each target language, with the import it needs ([@Claude](https://github.com/Claude))
+- [patch] Defer Python annotations so a class can name itself or a later class ([@Claude](https://github.com/Claude))
 

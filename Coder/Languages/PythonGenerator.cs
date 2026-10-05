@@ -168,6 +168,31 @@ public class PythonGenerator : StandardLanguageGenerator
 	}
 
 	/// <inheritdoc/>
+	/// <remarks>
+	/// <c>from __future__ import annotations</c>, which defers every annotation in the module. Python
+	/// before 3.14 evaluates an annotation when the <c>def</c> or the class body runs, so a factory
+	/// answering its own class, a method taking another instance, or a parameter naming a class
+	/// declared further down is a name that does not exist yet and the module raises
+	/// <c>NameError</c> on import. Deferring them all is the language's own answer and needs nothing
+	/// to know which names are forward; a base list is an expression rather than an annotation, which
+	/// is why <see cref="PythonBaseFromGenericType"/> still quotes. A future statement has to come
+	/// before any other, so it is written here rather than as an import.
+	/// </remarks>
+	protected override bool WriteFileDirectives(SourceFile file, CodeBlocker code)
+	{
+		Ensure.NotNull(file);
+		Ensure.NotNull(code);
+
+		if (file.Members.Count == 0)
+		{
+			return false;
+		}
+
+		code.WriteLine("from __future__ import annotations");
+		return true;
+	}
+
+	/// <inheritdoc/>
 	protected override string? SpellImport(string import)
 	{
 		Ensure.NotNull(import);
