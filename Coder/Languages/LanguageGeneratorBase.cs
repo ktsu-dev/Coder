@@ -574,8 +574,8 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// <param name="code">The writer to emit into.</param>
 	/// <returns>True if anything was written.</returns>
 	/// <remarks>
-	/// Empty for every language but C++, which is the only one here where a file can be included
-	/// twice and has to say what that means.
+	/// Empty unless a language has something that must precede everything else: C++'s
+	/// <c>#pragma once</c>, Go's package clause, Python's future statement.
 	/// </remarks>
 	protected virtual bool WriteFileDirectives(SourceFile file, CodeBlocker code) => false;
 
