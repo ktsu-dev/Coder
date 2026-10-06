@@ -900,9 +900,12 @@ public class CSharpGenerator : LanguageGeneratorBase
 			code.Write($"{modifier} ");
 		}
 
-		// A C# constant must name its type, so an inferred one stays a plain declaration rather than
-		// becoming source that does not compile.
-		if (varDecl.IsConstant && !string.Equals(type, "var", StringComparison.Ordinal))
+		// A C# constant must name its type and hold a compile-time value, so an inferred one, or one
+		// computed from a parameter or a call, stays a plain declaration rather than becoming source
+		// that does not compile. C# has no readonly local to say the rest with.
+		if (varDecl.IsConstant
+			&& !string.Equals(type, "var", StringComparison.Ordinal)
+			&& IsCompileTimeValue(varDecl.InitialValue))
 		{
 			code.Write("const ");
 		}

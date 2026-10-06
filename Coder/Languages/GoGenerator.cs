@@ -1332,26 +1332,6 @@ public class GoGenerator : StandardLanguageGenerator
 	private static bool IsConstant(bool wanted, AstNode? value) => wanted && IsCompileTimeValue(value);
 
 	/// <summary>
-	/// Reports whether a value is one Go will let a <c>const</c> hold.
-	/// </summary>
-	/// <param name="value">The value to test.</param>
-	/// <returns>True when it is.</returns>
-	/// <remarks>
-	/// A literal, and nothing else. Go's constants are the untyped ones the compiler evaluates, which
-	/// rules out every value with a field or an element in it however fixed its contents are.
-	/// </remarks>
-	private static bool IsCompileTimeValue(AstNode? value) =>
-		value is LiteralExpression<string>
-			or LiteralExpression<int>
-			or LiteralExpression<bool>
-			or LiteralExpression<double>
-			or LiteralExpression<float>
-			or LiteralExpression<long>
-			or AstLeafNode<string>
-			or AstLeafNode<int>
-			or AstLeafNode<bool>;
-
-	/// <summary>
 	/// Writes what a declaration starts at, giving a bare list the declaration's own type.
 	/// </summary>
 	/// <param name="declared">The declared type.</param>
