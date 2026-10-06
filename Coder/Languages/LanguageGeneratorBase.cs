@@ -437,6 +437,23 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	}
 
 	/// <summary>
+	/// Gets the elements of a list that are written, leaving out a member named with no value yet.
+	/// </summary>
+	/// <param name="construction">The list.</param>
+	/// <returns>Its elements, without any <see cref="MemberInitialiser"/> whose value is null.</returns>
+	/// <remarks>
+	/// A null value is legal, and is what the graph editor holds between adding a member initialiser
+	/// and filling it in. There is nothing to write for it, and leaving the member out is what every
+	/// target already does with a member the list does not name. The shape of the list is still
+	/// decided by every argument, so a list whose only element is unfilled stays a designated one.
+	/// </remarks>
+	protected static IReadOnlyList<AstNode> WrittenElements(ConstructionExpression construction)
+	{
+		Ensure.NotNull(construction);
+		return [.. construction.Arguments.Where(argument => argument is not MemberInitialiser { Value: null })];
+	}
+
+	/// <summary>
 	/// Reports whether a file holds a double literal that is not a finite number.
 	/// </summary>
 	/// <param name="file">The file being emitted.</param>
