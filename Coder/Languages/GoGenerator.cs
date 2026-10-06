@@ -1638,26 +1638,51 @@ public class GoGenerator : StandardLanguageGenerator
 	/// Only the outermost pair: <c>gofmt</c> takes no view on the ones inside, which are what make
 	/// the expression unambiguous in the first place.
 	/// </para>
+	/// <para>
+	/// Taking that pair off exposes the operands to the clause, and a struct literal is the one operand
+	/// that cannot stand there: Go reads <c>Point{</c> in the header of an <c>if</c> as the start of
+	/// the block, so <c>if p == Point{1, 2} {</c> is a syntax error. The language's own answer is to
+	/// parenthesise the literal, which <c>gofmt</c> keeps, so <see cref="WriteConditionOperand"/> does.
+	/// </para>
 	/// </remarks>
 	private void WriteCondition(AstNode condition, CodeBlocker code)
 	{
 		switch (condition)
 		{
 			case BinaryExpression binary:
-				GenerateInternal(binary.Left, code);
+				WriteConditionOperand(binary.Left, code);
 				code.Write($" {GetOperatorSpelling(binary.Operator)} ");
-				GenerateInternal(binary.Right, code);
+				WriteConditionOperand(binary.Right, code);
 				return;
 
 			case UnaryExpression unary:
 				code.Write(GetUnaryOperatorSpelling(unary.Operator));
-				GenerateInternal(unary.Operand, code);
+				WriteConditionOperand(unary.Operand, code);
 				return;
 
 			default:
 				GenerateInternal(condition, code);
 				return;
 		}
+	}
+
+	/// <summary>
+	/// Writes one operand of the expression an <c>if</c> tests, parenthesising a struct literal so the
+	/// clause does not end at its opening brace.
+	/// </summary>
+	/// <param name="operand">The operand to write.</param>
+	/// <param name="code">The writer to emit into.</param>
+	private void WriteConditionOperand(AstNode operand, CodeBlocker code)
+	{
+		if (operand is ConstructionExpression construction && IsCompositeLiteral(construction))
+		{
+			code.Write("(");
+			GenerateInternal(operand, code);
+			code.Write(")");
+			return;
+		}
+
+		GenerateInternal(operand, code);
 	}
 
 	/// <inheritdoc/>
@@ -1720,7 +1745,7 @@ public class GoGenerator : StandardLanguageGenerator
 
 		string type = SpellType(construction.Type);
 
-		if (construction.Arguments.Count != 1 || construction.Arguments.Any(argument => argument is MemberInitialiser))
+		if (IsCompositeLiteral(construction))
 		{
 			code.Write(type);
 			WriteElementList(construction, code, "{", "}", "{}");
@@ -1731,6 +1756,17 @@ public class GoGenerator : StandardLanguageGenerator
 		GenerateInternal(construction.Arguments[0], code);
 		code.Write(")");
 	}
+
+	/// <summary>
+	/// Reports whether <see cref="GenerateConstructionExpression"/> writes a construction as a
+	/// composite literal in braces rather than as a conversion in parentheses.
+	/// </summary>
+	/// <param name="construction">The construction to classify.</param>
+	/// <returns>True when it is written with braces.</returns>
+	private static bool IsCompositeLiteral(ConstructionExpression construction) =>
+		construction.Type is null
+		|| construction.Arguments.Count != 1
+		|| construction.Arguments.Any(argument => argument is MemberInitialiser);
 
 	/// <inheritdoc/>
 	/// <remarks>
