@@ -1042,7 +1042,7 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// <see cref="EscapeCodeUnit"/>, because written raw they break the literal: Go and Python reject a
 	/// NUL in source, and C# reads U+0085, U+2028 and U+2029 as ending the line.
 	/// </remarks>
-	protected string EscapeString(string value)
+	protected virtual string EscapeString(string value)
 	{
 		Ensure.NotNull(value);
 
