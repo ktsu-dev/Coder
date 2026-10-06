@@ -131,6 +131,18 @@ public class PythonGenerator : StandardLanguageGenerator
 			WriteAccessorBody(declaration.GetterBody, code);
 		}
 
+		if (declaration.CanWrite && !declaration.CanRead)
+		{
+			// `@name.setter` is an attribute of the property the getter made, so with no getter there
+			// is nothing for the decorator to name and the class statement raises NameError. The
+			// property is built from the setter alone instead.
+			string setter = $"_set_{name}";
+			code.Write($"def {setter}(self, value{annotation}) -> None:");
+			WriteAccessorBody(declaration.SetterBody, code);
+			code.WriteLine($"{name} = property(fset={setter})");
+			return;
+		}
+
 		if (declaration.CanWrite)
 		{
 			code.WriteLine($"@{name}.setter");
