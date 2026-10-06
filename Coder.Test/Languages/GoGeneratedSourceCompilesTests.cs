@@ -177,6 +177,90 @@ public class GoGeneratedSourceCompilesTests
 	}
 
 	/// <summary>
+	/// Tests that a condition comparing against a struct literal compiles in every position a
+	/// conditional is lowered to an <c>if</c>, and is still what <c>gofmt</c> writes.
+	/// </summary>
+	/// <remarks>
+	/// Go reads <c>Pair{</c> in the header of an <c>if</c> as the start of the block, so the literal
+	/// has to be parenthesised once the clause's own parentheses are left off (issue #105).
+	/// </remarks>
+	[TestMethod]
+	public void ConditionComparingAgainstAStructLiteral_Compiles()
+	{
+		if (ToolchainHarness.FindOnPath("version", "go") is null)
+		{
+			Assert.Inconclusive("No Go toolchain on the path, so nothing was compiled.");
+			return;
+		}
+
+		SourceFile file = new("literals");
+		ClassDeclaration pair = new("Pair") { Kind = TypeDeclarationKind.Struct };
+		pair.Members.Add(new VariableDeclaration("x", "int"));
+		pair.Members.Add(new VariableDeclaration("y", "int"));
+		file.Members.Add(pair);
+
+		// The return the issue reproduced with, the struct on the right.
+		FunctionDeclaration returned = new("returned") { ReturnType = new TypeReference("int") };
+		returned.Parameters.Add(new Parameter("p", "Pair"));
+		returned.Body.Add(new ReturnStatement(new ConditionalExpression(
+			new BinaryExpression(new VariableReference("p"), BinaryOperator.Equal, PairLiteral()),
+			new LiteralExpression<int>(1),
+			new LiteralExpression<int>(0))));
+		file.Members.Add(returned);
+
+		// An assignment, the struct on the left and spelled with field names.
+		FunctionDeclaration assigned = new("assigned") { ReturnType = new TypeReference("int") };
+		assigned.Parameters.Add(new Parameter("p", "Pair"));
+		assigned.Body.Add(new VariableDeclaration("r", "int", new LiteralExpression<int>(0)));
+		ConstructionExpression named = new(new TypeReference("Pair"));
+		named.Arguments.Add(new MemberInitialiser("x") { Value = new LiteralExpression<int>(1) });
+		named.Arguments.Add(new MemberInitialiser("y") { Value = new LiteralExpression<int>(2) });
+		assigned.Body.Add(new AssignmentStatement(
+			new VariableReference("r"),
+			new ConditionalExpression(
+				new BinaryExpression(named, BinaryOperator.NotEqual, new VariableReference("p")),
+				new LiteralExpression<int>(1),
+				new LiteralExpression<int>(0))));
+		assigned.Body.Add(new ReturnStatement(new VariableReference("r")));
+		file.Members.Add(assigned);
+
+		// Inside another expression, where the conditional becomes a function literal called in place.
+		FunctionDeclaration nested = new("nested") { ReturnType = new TypeReference("int") };
+		nested.Parameters.Add(new Parameter("p", "Pair"));
+		nested.Body.Add(new ReturnStatement(new BinaryExpression(
+			new ConditionalExpression(
+				new BinaryExpression(new VariableReference("p"), BinaryOperator.Equal, PairLiteral()),
+				new LiteralExpression<int>(1),
+				new LiteralExpression<int>(0)),
+			BinaryOperator.Add,
+			new LiteralExpression<int>(1))));
+		file.Members.Add(nested);
+
+		string generated = new GoGenerator().Generate(file);
+		Assert.Contains("p == (Pair{1, 2})", generated, StringComparison.Ordinal, generated);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			File.WriteAllText(Path.Combine(directory, "go.mod"), Module);
+			File.WriteAllText(Path.Combine(directory, "literals.go"), generated);
+			(int exitCode, string output) = ToolchainHarness.Run("go", "build ./...", directory);
+			Assert.AreEqual(0, exitCode, $"Go rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{generated}");
+
+			(int formatted, string differs) = ToolchainHarness.Run("gofmt", "-l literals.go", directory);
+			Assert.AreEqual(0, formatted, $"gofmt did not run:{Environment.NewLine}{differs}");
+			Assert.AreEqual(string.Empty, differs.Trim(), "gofmt would rewrite the generated source.");
+		});
+
+		static ConstructionExpression PairLiteral()
+		{
+			ConstructionExpression literal = new(new TypeReference("Pair"));
+			literal.Arguments.Add(new LiteralExpression<int>(1));
+			literal.Arguments.Add(new LiteralExpression<int>(2));
+			return literal;
+		}
+	}
+
+	/// <summary>
 	/// Tests that the arguments an entry point is handed are the ones the user typed, without the
 	/// program's own path that Go puts first — which is what they are in every other target.
 	/// </summary>
