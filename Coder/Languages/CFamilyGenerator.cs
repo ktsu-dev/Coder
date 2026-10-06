@@ -172,6 +172,35 @@ public abstract class CFamilyGenerator : StandardLanguageGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
+	/// Adds one escape to the shared ones: a <c>?</c> that follows another <c>?</c> is written <c>\?</c>.
+	/// C up to C17, and C++ before C++17, replace a trigraph such as <c>??!</c> or <c>??/</c> even inside
+	/// a string literal, so <c>"what??!"</c> would read as <c>what|</c> and <c>??/</c> would become a
+	/// backslash that escapes whatever follows it. <c>\?</c> is a question mark in every C and C++
+	/// standard, so the string's contents do not change, and escaping only the second of a pair breaks
+	/// every trigraph while leaving a lone <c>?</c> as it was written. The override stays here because
+	/// <c>\?</c> is not an escape in Go, Rust or JavaScript.
+	/// </remarks>
+	protected override string EscapeString(string value)
+	{
+		string escaped = base.EscapeString(value);
+		if (!escaped.Contains("??", StringComparison.Ordinal))
+		{
+			return escaped;
+		}
+
+		StringBuilder builder = new(escaped.Length + 4);
+		char previous = '\0';
+		foreach (char c in escaped)
+		{
+			builder.Append(c == '?' && previous == '?' ? "\\?" : c.ToString());
+			previous = c;
+		}
+
+		return builder.ToString();
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
 	/// Octal, one escape per byte of the character's UTF-8 encoding. <c>\x</c> would read on through
 	/// any hex digit that follows it, so ESC followed by <c>b</c> would be the single escape
 	/// <c>\x1bb</c>, and a universal character name may not name a control character. The bytes are
