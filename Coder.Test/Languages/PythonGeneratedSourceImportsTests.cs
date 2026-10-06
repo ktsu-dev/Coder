@@ -197,6 +197,58 @@ public class PythonGeneratedSourceImportsTests
 	}
 
 	/// <summary>
+	/// Tests that a class with a property that can be written but not read can be loaded and set.
+	/// </summary>
+	/// <remarks>
+	/// <c>@level.setter</c> names the property a getter made, so a property with no getter needs
+	/// another spelling or the class statement raises <c>NameError</c>.
+	/// </remarks>
+	[TestMethod]
+	public void WriteOnlyProperty_ImportsAndSets()
+	{
+		string? python = ToolchainHarness.FindOnPath("--version", "python3", "python");
+		if (python is null)
+		{
+			Assert.Inconclusive("No Python interpreter on the path, so nothing was run.");
+			return;
+		}
+
+		ClassDeclaration sink = new("Sink");
+		PropertyDeclaration level = new("level", "int") { HasGetter = false, HasSetter = true };
+		CallExpression record = new("record");
+		record.Arguments.Add(new VariableReference("value"));
+		level.SetterBody.Add(new ExpressionStatement(record));
+		sink.Members.Add(level);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			File.WriteAllText(Path.Combine(directory, "sink.py"), new PythonGenerator().Generate(sink));
+			File.WriteAllText(
+				Path.Combine(directory, "driver.py"),
+				"""
+				import runpy
+
+				recorded = []
+				module = runpy.run_path("sink.py", init_globals={"record": recorded.append})
+
+				instance = module["Sink"]()
+				instance.level = 3
+				assert recorded == [3], recorded
+
+				try:
+				    instance.level
+				except AttributeError:
+				    pass
+				else:
+				    raise AssertionError("a write-only property could be read")
+				""");
+
+			(int exitCode, string output) = ToolchainHarness.Run(python, "driver.py", directory);
+			Assert.AreEqual(0, exitCode, $"Python rejected the generated module:{Environment.NewLine}{output}");
+		});
+	}
+
+	/// <summary>
 	/// Builds a file whose declarations are each written over themselves.
 	/// </summary>
 	/// <returns>The file to generate.</returns>
