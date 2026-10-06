@@ -449,6 +449,28 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 		SelfAndDescendants(file).Any(node => node is LiteralExpression<double> literal && !double.IsFinite(literal.Value));
 
 	/// <summary>
+	/// Reports whether a value is one the compiler evaluates, and so one a constant can hold.
+	/// </summary>
+	/// <param name="value">The value to test.</param>
+	/// <returns>True when it is.</returns>
+	/// <remarks>
+	/// A literal, and nothing else. Go's constants are the untyped ones the compiler evaluates, and a
+	/// C# <c>const</c> local must be a compile-time constant, which rules out a parameter, a call, an
+	/// expression over either, and every value with a field or an element in it however fixed its
+	/// contents are. Sharing the rule keeps the two generators from drifting apart on it.
+	/// </remarks>
+	protected static bool IsCompileTimeValue(AstNode? value) =>
+		value is LiteralExpression<string>
+			or LiteralExpression<int>
+			or LiteralExpression<bool>
+			or LiteralExpression<double>
+			or LiteralExpression<float>
+			or LiteralExpression<long>
+			or AstLeafNode<string>
+			or AstLeafNode<int>
+			or AstLeafNode<bool>;
+
+	/// <summary>
 	/// Writes down the types a declaration is written over, for a target that has no generics.
 	/// </summary>
 	/// <param name="parameters">The declaration's type parameters.</param>
