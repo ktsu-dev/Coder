@@ -225,21 +225,23 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	{
 		code.Write(named ? "{ " : "[");
 
-		for (int index = 0; index < construction.Arguments.Count; index++)
+		IReadOnlyList<AstNode> elements = WrittenElements(construction);
+
+		for (int index = 0; index < elements.Count; index++)
 		{
 			if (index > 0)
 			{
 				code.Write(", ");
 			}
 
-			if (construction.Arguments[index] is MemberInitialiser member)
+			if (elements[index] is MemberInitialiser member)
 			{
 				code.Write($"{member.Name}: ");
-				GenerateInternal(member.Value ?? new VariableReference(string.Empty), code);
+				GenerateInternal(member.Value!, code);
 				continue;
 			}
 
-			GenerateInternal(construction.Arguments[index], code);
+			GenerateInternal(elements[index], code);
 		}
 
 		code.Write(named ? " }" : "]");

@@ -411,7 +411,9 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// </remarks>
 	private void WriteBracedList(ConstructionExpression construction, CodeBlocker code)
 	{
-		if (construction.Arguments.Count == 0)
+		IReadOnlyList<AstNode> elements = WrittenElements(construction);
+
+		if (elements.Count == 0)
 		{
 			code.Write("{ }");
 			return;
@@ -425,7 +427,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 			code.WriteLine("{");
 			code.Indent();
 
-			foreach (AstNode argument in construction.Arguments)
+			foreach (AstNode argument in elements)
 			{
 				WriteListElement(argument, code);
 				code.WriteLine(",");
@@ -438,14 +440,14 @@ public class CSharpGenerator : LanguageGeneratorBase
 
 		code.Write("{ ");
 
-		for (int index = 0; index < construction.Arguments.Count; index++)
+		for (int index = 0; index < elements.Count; index++)
 		{
 			if (index > 0)
 			{
 				code.Write(", ");
 			}
 
-			WriteListElement(construction.Arguments[index], code);
+			WriteListElement(elements[index], code);
 		}
 
 		code.Write(" }");
@@ -461,7 +463,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 		if (argument is MemberInitialiser designated)
 		{
 			code.Write($"{designated.Name} = ");
-			GenerateInternal(designated.Value ?? new VariableReference(string.Empty), code);
+			GenerateInternal(designated.Value!, code);
 			return;
 		}
 

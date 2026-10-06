@@ -688,7 +688,9 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 		Ensure.NotNull(construction);
 		Ensure.NotNull(code);
 
-		if (construction.Arguments.Count == 0)
+		IReadOnlyList<AstNode> elements = WrittenElements(construction);
+
+		if (elements.Count == 0)
 		{
 			code.Write(empty);
 			return;
@@ -696,19 +698,19 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 
 		if (SpansLines(construction))
 		{
-			WriteStackedList(construction, code, open, close);
+			WriteStackedList(elements, code, open, close);
 			return;
 		}
 
 		code.Write($"{open}{ListPadding}");
-		for (int index = 0; index < construction.Arguments.Count; index++)
+		for (int index = 0; index < elements.Count; index++)
 		{
 			if (index > 0)
 			{
 				code.Write(", ");
 			}
 
-			WriteListElement(construction.Arguments[index], code);
+			WriteListElement(elements[index], code);
 		}
 
 		code.Write($"{ListPadding}{close}");
@@ -727,7 +729,7 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	/// <summary>
 	/// Writes a list one element per line.
 	/// </summary>
-	/// <param name="construction">The expression whose arguments to write.</param>
+	/// <param name="elements">The elements to write.</param>
 	/// <param name="code">The writer to emit into.</param>
 	/// <param name="open">What opens the list.</param>
 	/// <param name="close">What closes it.</param>
@@ -735,12 +737,12 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	/// A trailing comma after the last element, which every target language allows in a list and
 	/// which keeps adding a row to a generated table from touching the row above it in the diff.
 	/// </remarks>
-	private void WriteStackedList(ConstructionExpression construction, CodeBlocker code, string open, string close)
+	private void WriteStackedList(IReadOnlyList<AstNode> elements, CodeBlocker code, string open, string close)
 	{
 		code.WriteLine(open);
 		code.Indent();
 
-		foreach (AstNode argument in construction.Arguments)
+		foreach (AstNode argument in elements)
 		{
 			WriteListElement(argument, code);
 			code.WriteLine(",");
@@ -764,7 +766,7 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 		if (argument is MemberInitialiser designated)
 		{
 			WriteDesignator(designated.Name ?? string.Empty, code);
-			WriteListValue(designated.Value ?? new VariableReference(string.Empty), code);
+			WriteListValue(designated.Value!, code);
 			return;
 		}
 
