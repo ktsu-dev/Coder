@@ -41,12 +41,12 @@ public class AstGraphSequenceUndoTests
 		AstNode[] original = [.. function.Body];
 
 		Assert.IsTrue(editor.Remove(FindId(editor, original[1])));
-		CollectionAssert.AreEqual(new[] { original[0], original[2] }, function.Body.ToArray());
+		Assert.AreSequenceEqual((AstNode[])[original[0], original[2]], [.. function.Body]);
 
 		editor.Undo();
 
-		CollectionAssert.AreEqual(original, function.Body.ToArray());
-		Assert.AreEqual(0, editor.Graph.Detached.Count);
+		Assert.AreSequenceEqual(original, [.. function.Body]);
+		Assert.IsEmpty(editor.Graph.Detached);
 	}
 
 	/// <summary>
@@ -60,13 +60,13 @@ public class AstGraphSequenceUndoTests
 		AstNode[] original = [.. function.Body];
 
 		Assert.IsTrue(editor.Disconnect(LinkInto(editor, original[1])));
-		CollectionAssert.AreEqual(new[] { original[0], original[2] }, function.Body.ToArray());
+		Assert.AreSequenceEqual((AstNode[])[original[0], original[2]], [.. function.Body]);
 		Assert.AreSame(original[1], editor.Graph.Detached.Single());
 
 		editor.Undo();
 
-		CollectionAssert.AreEqual(original, function.Body.ToArray());
-		Assert.AreEqual(0, editor.Graph.Detached.Count);
+		Assert.AreSequenceEqual(original, [.. function.Body]);
+		Assert.IsEmpty(editor.Graph.Detached);
 	}
 
 	/// <summary>
@@ -83,17 +83,17 @@ public class AstGraphSequenceUndoTests
 		AstConnectResult result = editor.Connect(OutputPinOf(editor, original[0]), InputPinOf(editor, function, "Body", 1));
 
 		Assert.IsTrue(result.Success, result.Message);
-		CollectionAssert.AreEqual(new[] { original[0], original[2] }, function.Body.ToArray(), "s1 held the pin, so s1 is the one replaced");
+		Assert.AreSequenceEqual((AstNode[])[original[0], original[2]], [.. function.Body], "s1 held the pin, so s1 is the one replaced");
 		Assert.AreSame(original[1], editor.Graph.Detached.Single(), "the displaced statement stays in the graph");
 
 		editor.Undo();
 
-		CollectionAssert.AreEqual(original, function.Body.ToArray());
-		Assert.AreEqual(0, editor.Graph.Detached.Count);
+		Assert.AreSequenceEqual(original, [.. function.Body]);
+		Assert.IsEmpty(editor.Graph.Detached);
 
 		editor.Redo();
 
-		CollectionAssert.AreEqual(new[] { original[0], original[2] }, function.Body.ToArray());
+		Assert.AreSequenceEqual((AstNode[])[original[0], original[2]], [.. function.Body]);
 		Assert.AreSame(original[1], editor.Graph.Detached.Single());
 	}
 
@@ -113,12 +113,12 @@ public class AstGraphSequenceUndoTests
 		AstConnectResult result = editor.Connect(OutputPinOf(editor, loose), InputPinOf(editor, function, "Body", 0));
 
 		Assert.IsTrue(result.Success, result.Message);
-		CollectionAssert.AreEqual(new AstNode[] { loose, original[1], original[2] }, function.Body.ToArray());
+		Assert.AreSequenceEqual((AstNode[])[loose, original[1], original[2]], [.. function.Body]);
 		Assert.AreSame(original[0], editor.Graph.Detached.Single(), "the displaced statement stays in the graph");
 
 		editor.Undo();
 
-		CollectionAssert.AreEqual(original, function.Body.ToArray());
+		Assert.AreSequenceEqual(original, [.. function.Body]);
 		Assert.AreSame(loose, editor.Graph.Detached.Single(), "the loose node goes back to being loose");
 	}
 
@@ -135,7 +135,7 @@ public class AstGraphSequenceUndoTests
 
 		Assert.IsTrue(AstSchema.TryInsertAt(function, body, 1, inserted));
 
-		CollectionAssert.AreEqual(new[] { original[0], inserted, original[1], original[2] }, function.Body.ToArray());
+		Assert.AreSequenceEqual((AstNode[])[original[0], inserted, original[1], original[2]], [.. function.Body]);
 	}
 
 	private static int FindId(AstGraphEditor editor, AstNode node) =>
