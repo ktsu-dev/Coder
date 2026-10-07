@@ -100,6 +100,42 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	protected void PopStaticTypeScope() => staticTypeScopes.Pop();
 
 	/// <summary>
+	/// Starts a function's type scope and ends it when the returned guard is disposed.
+	/// </summary>
+	/// <param name="function">The function whose body is about to be generated.</param>
+	/// <returns>The guard whose disposal ends the scope.</returns>
+	protected IDisposable OpenStaticTypeScope(FunctionDeclaration function)
+	{
+		PushStaticTypeScope(function);
+		return new StaticTypeScopeGuard(this);
+	}
+
+	/// <summary>
+	/// Reads whether both operands of a binary expression are statically known to be integers.
+	/// </summary>
+	/// <param name="binary">The expression to inspect.</param>
+	/// <returns>True when the AST establishes an integer type for each operand.</returns>
+	/// <remarks>
+	/// This is what separates <c>-7 / 2</c>, which the AST means as truncating integer division because
+	/// that is what it is in C, C++, C#, Go and Rust, from a division the AST cannot say anything about.
+	/// An operand whose type is unknown is not assumed to be an integer.
+	/// </remarks>
+	protected bool IsIntegerArithmetic(BinaryExpression binary)
+	{
+		Ensure.NotNull(binary);
+		return IsIntegerType(StaticType(binary.Left)) && IsIntegerType(StaticType(binary.Right));
+	}
+
+	private static bool IsIntegerType(TypeReference? type) =>
+		type is { IsArray: false, Indirection: TypeIndirection.None, TypeArguments.Count: 0 }
+		&& IntegerTypeNames.Contains(type.Name);
+
+	private static readonly HashSet<string> IntegerTypeNames = new(StringComparer.Ordinal)
+	{
+		"int", "long", "short", "byte", "sbyte", "uint", "ulong", "ushort",
+	};
+
+	/// <summary>
 	/// Records a local's declared or inferred type for later references.
 	/// </summary>
 	/// <param name="declaration">The local declaration being generated.</param>
@@ -187,6 +223,11 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 
 	private sealed record StaticTypeScope(Dictionary<string, TypeReference> Types, TypeReference? ReturnType);
 
+	private sealed class StaticTypeScopeGuard(StandardLanguageGenerator generator) : IDisposable
+	{
+		public void Dispose() => generator.PopStaticTypeScope();
+	}
+
 	/// <summary>
 	/// Dispatches a node to the emitter for its shape.
 	/// </summary>
@@ -265,7 +306,7 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 				break;
 
 			case BinaryExpression binaryExpr:
-				GenerateBinaryExpression(binaryExpr, code, GetOperatorSpelling(binaryExpr.Operator));
+				GenerateBinary(binaryExpr, code);
 				break;
 
 			case UnaryExpression unaryExpr:
@@ -892,6 +933,21 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	/// and defers the rest to <see cref="LanguageGeneratorBase.GetBinaryOperator"/>.
 	/// </remarks>
 	protected virtual string GetOperatorSpelling(BinaryOperator op) => GetBinaryOperator(op);
+
+	/// <summary>
+	/// Emits a binary expression in the target language.
+	/// </summary>
+	/// <param name="binary">The expression to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// Defaults to the operands either side of the operator's spelling. A language whose operator
+	/// means something else for some operands, rather than being spelled differently, overrides this.
+	/// </remarks>
+	protected virtual void GenerateBinary(BinaryExpression binary, CodeBlocker code)
+	{
+		Ensure.NotNull(binary);
+		GenerateBinaryExpression(binary, code, GetOperatorSpelling(binary.Operator));
+	}
 
 	/// <summary>
 	/// Spells a unary operator in the target language.

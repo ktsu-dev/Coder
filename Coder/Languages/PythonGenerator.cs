@@ -421,6 +421,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		Ensure.NotNull(funcDecl);
 		Ensure.NotNull(code);
 
+		using IDisposable types = OpenStaticTypeScope(funcDecl);
 		WritePreamble(funcDecl, code, PreambleSite.Function);
 
 		// Function signature
@@ -578,6 +579,7 @@ public class PythonGenerator : StandardLanguageGenerator
 	/// </remarks>
 	private void GenerateMethod(FunctionDeclaration method, ClassDeclaration declaration, CodeBlocker code)
 	{
+		using IDisposable types = OpenStaticTypeScope(method);
 		WritePreamble(method, code, PreambleSite.Method);
 
 		if (method.Definition != FunctionDefinition.Provided)
@@ -915,6 +917,7 @@ public class PythonGenerator : StandardLanguageGenerator
 	{
 		Ensure.NotNull(varDecl);
 		Ensure.NotNull(code);
+		RegisterStaticType(varDecl);
 
 		code.Write(varDecl.Name);
 
@@ -929,6 +932,64 @@ public class PythonGenerator : StandardLanguageGenerator
 			code.Write(" = None");
 		}
 	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// The AST means integer <see cref="BinaryOperator.Divide"/> and <see cref="BinaryOperator.Modulo"/>
+	/// the way the C family does: the quotient truncates toward zero and the remainder takes the sign
+	/// of the dividend, so <c>-7 / 2</c> is <c>-3</c> and <c>-7 % 2</c> is <c>-1</c>. Python's <c>/</c>
+	/// is true division and gives <c>-3.5</c>, a float, and its <c>//</c> and <c>%</c> floor, giving
+	/// <c>-4</c> and <c>1</c>. So when both operands are known to be integers the quotient is truncated
+	/// with <c>int()</c>, and the remainder is what is left once the truncated quotient is taken away.
+	/// <para>
+	/// The remainder names each operand twice. An operand that is a literal or a variable reads the
+	/// same both times; anything else is bound once, as the parameters of a lambda called where it
+	/// stands, so a call is not made twice. <c>math.fmod</c> would say it in one call, but it needs an
+	/// import and an expression can be generated outside any file that could carry one.
+	/// </para>
+	/// </remarks>
+	protected override void GenerateBinary(BinaryExpression binary, CodeBlocker code)
+	{
+		Ensure.NotNull(binary);
+		Ensure.NotNull(code);
+
+		if (binary.Operator is not (BinaryOperator.Divide or BinaryOperator.Modulo) || !IsIntegerArithmetic(binary))
+		{
+			base.GenerateBinary(binary, code);
+			return;
+		}
+
+		if (binary.Operator == BinaryOperator.Divide)
+		{
+			code.Write("int(");
+			GenerateBinaryExpression(binary, code, "/");
+			code.Write(")");
+			return;
+		}
+
+		if (IsReadTwiceSafely(binary.Left) && IsReadTwiceSafely(binary.Right))
+		{
+			code.Write("(");
+			GenerateInternal(binary.Left, code);
+			code.Write(" - ");
+			GenerateInternal(binary.Right, code);
+			code.Write(" * int(");
+			GenerateBinaryExpression(binary, code, "/");
+			code.Write("))");
+			return;
+		}
+
+		code.Write("(lambda a, b: a - b * int(a / b))(");
+		GenerateInternal(binary.Left, code);
+		code.Write(", ");
+		GenerateInternal(binary.Right, code);
+		code.Write(")");
+	}
+
+	private static bool IsReadTwiceSafely(Expression operand) =>
+		operand is VariableReference
+			or LiteralExpression<int>
+			or LiteralExpression<long>;
 
 	/// <summary>
 	/// Maps a binary operator to its Python spelling.
