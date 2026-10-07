@@ -29,8 +29,8 @@ using ktsu.UndoRedo.Core.Services;
 /// <para>
 /// Undo is <c>ktsu.UndoRedo</c>'s, recorded here rather than inside <see cref="AstGraph"/> because
 /// only the caller knows where one user-visible edit begins and ends. Reparenting is expressed as
-/// <see cref="AstGraph.MoveTo"/>, whose inverse is the same call with the location the node came
-/// from, so connecting, disconnecting and dragging a node between slots share one implementation of
+/// <see cref="AstGraph.MoveTo"/>, whose inverse is <see cref="AstGraph.PutBack"/> with the location the
+/// node came from, so connecting, disconnecting and dragging a node between slots share one implementation of
 /// undo rather than needing one each. The stack therefore holds a description of what each step did
 /// rather than an opaque snapshot, and it knows where the document was last saved.
 /// </para>
@@ -1539,7 +1539,7 @@ public sealed class AstGraphEditor(AstNode root)
 			ChangeType.Delete,
 			child,
 			() => Graph.RemoveNode(child),
-			() => Graph.MoveTo(child, from));
+			() => Graph.PutBack(child, from));
 
 		statusMessage = $"Removed {AstSchema.Describe(child)} from {slot.Name}.";
 		return true;
@@ -1598,7 +1598,7 @@ public sealed class AstGraphEditor(AstNode root)
 			ChangeType.Delete,
 			node,
 			() => Graph.RemoveNode(node),
-			() => Graph.MoveTo(node, from));
+			() => Graph.PutBack(node, from));
 
 		statusMessage = $"Removed {AstSchema.Describe(node)}.";
 		return true;
@@ -1612,8 +1612,36 @@ public sealed class AstGraphEditor(AstNode root)
 	/// <param name="node">The node being moved.</param>
 	/// <param name="to">Where it is going.</param>
 	/// <param name="from">Where it came from, which is where undo puts it back.</param>
-	private void RecordMove(string description, ChangeType changeType, AstNode node, AstLocation to, AstLocation from) =>
-		Record(description, changeType, node, () => Graph.MoveTo(node, to), () => Graph.MoveTo(node, from));
+	/// <remarks>
+	/// A move onto a filled entry of a sequence displaces the entry, which <see cref="AstGraph.MoveTo"/>
+	/// leaves loose, so undo puts that back too. Both go back by insertion, in the order of the
+	/// positions they came from: each position was recorded with the other node still in the sequence,
+	/// so filling the earlier one first is what makes the later one mean the same place again.
+	/// </remarks>
+	private void RecordMove(string description, ChangeType changeType, AstNode node, AstLocation to, AstLocation from)
+	{
+		AstNode? displaced = AstGraph.OccupantAt(to);
+		if (ReferenceEquals(displaced, node))
+		{
+			displaced = null;
+		}
+
+		Record(description, changeType, node, () => Graph.MoveTo(node, to), () =>
+		{
+			List<(AstNode Node, AstLocation Where)> restores = [(node, from)];
+			if (displaced is not null)
+			{
+				restores.Add((displaced, to));
+			}
+
+			// A node going back to being loose goes first, so it is out of the sequence before anything
+			// is inserted into it.
+			foreach ((AstNode restored, AstLocation where) in restores.OrderBy(r => r.Where.Parent is null ? -1 : r.Where.Index))
+			{
+				Graph.PutBack(restored, where);
+			}
+		});
+	}
 
 	/// <summary>
 	/// Records an edit as an undoable step and performs it.
