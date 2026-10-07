@@ -595,18 +595,46 @@ public class GoGenerator : StandardLanguageGenerator
 		GenerateStruct(classDecl, name, code);
 		WriteInterfaceAssertions(classDecl, name, code);
 
-		foreach (FieldDeclaration field in classDecl.Members.OfType<FieldDeclaration>().Where(field => field.IsStatic))
+		foreach (FieldDeclaration field in classDecl.Members.OfType<FieldDeclaration>().Where(IsPackageLevelField))
 		{
 			code.NewLine();
 			WriteStorage(Join(name, field.Name ?? UnnamedMember), field, code);
 		}
 
-		foreach (FunctionDeclaration function in classDecl.Members.OfType<FunctionDeclaration>())
+		IReadOnlyList<FieldDeclaration> outerDefaults = _instanceFieldDefaults;
+		_instanceFieldDefaults = [.. classDecl.Members.OfType<FieldDeclaration>()
+			.Where(field => !IsPackageLevelField(field) && field.InitialValue is not null)];
+		try
 		{
-			code.NewLine();
-			GenerateFunction(function, code, name);
+			foreach (FunctionDeclaration function in classDecl.Members.OfType<FunctionDeclaration>())
+			{
+				code.NewLine();
+				GenerateFunction(function, code, name);
+			}
+		}
+		finally
+		{
+			_instanceFieldDefaults = outerDefaults;
 		}
 	}
+
+	/// <summary>
+	/// The instance fields of the struct whose functions are being written that say what they
+	/// start at, which its constructors set because a Go struct field cannot say so itself.
+	/// </summary>
+	private IReadOnlyList<FieldDeclaration> _instanceFieldDefaults = [];
+
+	/// <summary>
+	/// Reports whether a field belongs to its type rather than to each value of it, and so is
+	/// written as package-level storage rather than as a struct member.
+	/// </summary>
+	/// <param name="field">The field to place.</param>
+	/// <returns>True for a static or a constant field.</returns>
+	/// <remarks>
+	/// A constant belongs to the type in every other target, and a struct member has nowhere to
+	/// hold its value, so treating one as an instance field would write it at its zero.
+	/// </remarks>
+	private static bool IsPackageLevelField(FieldDeclaration field) => field.IsStatic || field.IsConstant;
 
 	/// <summary>
 	/// Asserts, at compile time, that a type implements what it said it implements.
@@ -746,7 +774,7 @@ public class GoGenerator : StandardLanguageGenerator
 					yield return Field(field.Name, field.Type, field.Visibility);
 					break;
 
-				case FieldDeclaration field when !field.IsStatic:
+				case FieldDeclaration field when !IsPackageLevelField(field):
 					yield return Field(field.Name, field.Type, field.Visibility, field);
 					break;
 
@@ -771,6 +799,11 @@ public class GoGenerator : StandardLanguageGenerator
 		if (ExportNote(name, visibility) is string note)
 		{
 			notes.Add((CommentPrefix, note));
+		}
+
+		if (declaration?.InitialValue is Expression initialValue)
+		{
+			notes.Add((CommentPrefix, $"defaults to {GenerateExpression(initialValue)}: Go has no field initialisers, so only a constructor sets it"));
 		}
 
 		return new AlignedLine(notes, name ?? UnnamedMember, SpellType(type ?? new TypeReference(UnknownTypeName)), declaration);
@@ -1151,6 +1184,14 @@ public class GoGenerator : StandardLanguageGenerator
 		foreach (MemberInitialiser initialiser in funcDecl.Initialisers)
 		{
 			value.Arguments.Add(initialiser);
+		}
+
+		// A field the declaration gave a starting value, and this constructor did not set, starts
+		// at that value rather than at its zero, as it would in every other target.
+		foreach (FieldDeclaration field in _instanceFieldDefaults
+			.Where(field => !funcDecl.Initialisers.Any(initialiser => initialiser.Name == field.Name)))
+		{
+			value.Arguments.Add(new MemberInitialiser(field.Name ?? UnnamedMember, (Expression)field.InitialValue!.DeepClone()));
 		}
 
 		code.Write("return ");
@@ -1899,6 +1940,18 @@ public class GoGenerator : StandardLanguageGenerator
 
 			code.WriteLine(line.Rest.Length == 0 ? line.Name : $"{line.Name.PadRight(width)} {line.Rest}");
 		}
+	}
+
+	/// <summary>
+	/// Writes an expression to a string, for the places a comment has to quote one.
+	/// </summary>
+	/// <param name="expression">The expression to write.</param>
+	/// <returns>Its Go source.</returns>
+	private string GenerateExpression(Expression expression)
+	{
+		using CodeBlocker inline = CodeBlocker.Create(IndentString);
+		GenerateInternal(expression, inline);
+		return inline.ToString().TrimEnd('\r', '\n');
 	}
 
 	/// <summary>
