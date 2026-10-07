@@ -213,6 +213,49 @@ public static class AstSchema
 	}
 
 	/// <summary>
+	/// Attaches a child to a slot, inserting it at a position within a sequence rather than replacing.
+	/// </summary>
+	/// <param name="parent">The parent node.</param>
+	/// <param name="slot">The slot to fill.</param>
+	/// <param name="index">The position the child should end up at; ignored for a single-valued slot.</param>
+	/// <param name="child">The node to attach.</param>
+	/// <returns>True if the child was attached; false if the slot will not take it.</returns>
+	/// <remarks>
+	/// What putting a node back needs, where <see cref="TryAttachAt"/> is what dropping one onto a pin
+	/// needs. Taking an entry out of a sequence shifts every later one down, so the position it came
+	/// from now holds its next sibling, and writing over that would lose the sibling. Later entries are
+	/// shifted up instead, by taking each out and appending it again, which keeps this to the
+	/// sequence operations the schema already has.
+	/// </remarks>
+	public static bool TryInsertAt(AstNode parent, AstSlot slot, int index, AstNode child)
+	{
+		Ensure.NotNull(parent);
+		Ensure.NotNull(slot);
+		Ensure.NotNull(child);
+
+		int position = Math.Max(index, 0);
+		int count = slot.Cardinality == AstSlotCardinality.Many ? ChildrenOf(parent, slot).Count : 0;
+		if (position >= count)
+		{
+			return TryAttachAt(parent, slot, index, child);
+		}
+
+		if (!Accepts(slot, child) || !TryAttachSequence(parent, slot, child))
+		{
+			return false;
+		}
+
+		for (int shifted = position; shifted < count; shifted++)
+		{
+			AstNode following = ChildrenOf(parent, slot)[position];
+			TryDetachFromSequence(parent, slot, position);
+			TryAttachSequence(parent, slot, following);
+		}
+
+		return true;
+	}
+
+	/// <summary>
 	/// Fills one of an expression's own operand slots.
 	/// </summary>
 	/// <param name="parent">The parent node.</param>

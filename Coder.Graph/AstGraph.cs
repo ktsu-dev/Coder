@@ -315,7 +315,63 @@ public sealed class AstGraph
 	/// <see cref="AstLocation.Root"/>, so undoing it is the same move in reverse.
 	/// </para>
 	/// </remarks>
-	public bool MoveTo(AstNode node, AstLocation location)
+	public bool MoveTo(AstNode node, AstLocation location) => Place(node, location, putBack: false);
+
+	/// <summary>
+	/// Puts a node back where a location says it was, inserting it into a sequence rather than
+	/// replacing whatever is there now.
+	/// </summary>
+	/// <param name="node">The node to put back.</param>
+	/// <param name="location">Where it was, as <see cref="LocationOf"/> reported it before it moved.</param>
+	/// <returns>True if the node was put back.</returns>
+	/// <remarks>
+	/// The inverse of <see cref="MoveTo"/>, which is what undo needs and what <see cref="MoveTo"/>
+	/// itself is not. Taking a node out of a sequence shifts every later sibling down, so the position
+	/// it came from now holds its next sibling; writing over that one would put the node back by
+	/// deleting its neighbour.
+	/// </remarks>
+	public bool PutBack(AstNode node, AstLocation location) => Place(node, location, putBack: true);
+
+	/// <summary>
+	/// Reports the node a move to a location would displace, if any.
+	/// </summary>
+	/// <param name="location">Where a node is about to be moved.</param>
+	/// <returns>
+	/// The entry of a sequence at that position, which <see cref="MoveTo"/> would replace and leave
+	/// loose; null when the position is free or holds only a placeholder.
+	/// </returns>
+	public static AstNode? OccupantAt(AstLocation location)
+	{
+		if (location.Parent is null || location.Slot is not { Cardinality: AstSlotCardinality.Many } slot)
+		{
+			return null;
+		}
+
+		IReadOnlyList<AstNode> children = AstSchema.ChildrenOf(location.Parent, slot);
+		return location.Index >= 0 && location.Index < children.Count && !AstSchema.IsUnfilled(children[location.Index])
+			? children[location.Index]
+			: null;
+	}
+
+	/// <summary>
+	/// Puts a node at a location, either replacing what is there or inserting before it.
+	/// </summary>
+	/// <param name="node">The node to move.</param>
+	/// <param name="location">Where to put it.</param>
+	/// <param name="putBack">Whether to insert into a sequence rather than replace an entry of it.</param>
+	/// <returns>True if the node was moved.</returns>
+	/// <remarks>
+	/// A replaced entry of a sequence becomes a loose node rather than leaving the graph, the same as
+	/// the children <see cref="Replace"/> cannot move: dropping a node onto a filled pin swaps it in,
+	/// and the user can see what came out and connect it somewhere else.
+	/// <para>
+	/// A location names a position before the node is taken out of wherever it is. When that is
+	/// earlier in the same sequence, taking it out shifts the target down by one, so the index is
+	/// adjusted to keep naming the entry the user dropped onto. Putting back needs no adjustment: the
+	/// position it was at is the position it should end up at.
+	/// </para>
+	/// </remarks>
+	private bool Place(AstNode node, AstLocation location, bool putBack)
 	{
 		Ensure.NotNull(node);
 
@@ -329,23 +385,44 @@ public sealed class AstGraph
 			return false;
 		}
 
+		AstLocation current = LocationOf(node);
+		if (current == location)
+		{
+			return true;
+		}
+
+		AstNode? displaced = putBack ? null : OccupantAt(location);
+		int index = location.Index;
+		if (!putBack
+			&& current.Parent is not null
+			&& ReferenceEquals(current.Parent, location.Parent)
+			&& current.Slot == location.Slot
+			&& current.Index < location.Index)
+		{
+			index--;
+		}
+
 		DetachFromParent(node);
 		detached.Remove(node);
 
-		if (location.Parent is null)
+		bool attached = location.Parent is null
+			|| (putBack
+				? AstSchema.TryInsertAt(location.Parent, location.Slot!, index, node)
+				: AstSchema.TryAttachAt(location.Parent, location.Slot!, index, node));
+
+		// A node the slot will not take any more stays in the graph rather than vanishing, and so does
+		// one it was swapped in for.
+		if (!attached || location.Parent is null)
 		{
 			detached.Add(node);
 		}
-		else if (!AstSchema.TryAttachAt(location.Parent, location.Slot!, location.Index, node))
+		else if (displaced is not null && !ReferenceEquals(displaced, node) && !detached.Contains(displaced))
 		{
-			// The slot will not take it any more, so the node stays in the graph rather than vanishing.
-			detached.Add(node);
-			Rebuild();
-			return false;
+			detached.Add(displaced);
 		}
 
 		Rebuild();
-		return true;
+		return attached;
 	}
 
 	/// <summary>
