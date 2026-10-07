@@ -35,6 +35,42 @@ public class GoGeneratorTests
 	}
 
 	/// <summary>
+	/// Tests that a constructor sets an initialised instance field it does not set itself, leaves the
+	/// one it does set to its own value, and that the struct member says where its value comes from.
+	/// </summary>
+	[TestMethod]
+	public void Constructor_SetsInstanceFieldDefaultsItDoesNotSetItself()
+	{
+		ClassDeclaration cfg = new("Cfg") { Kind = TypeDeclarationKind.Struct };
+		cfg.Members.Add(new FieldDeclaration("Hits", new TypeReference("int")) { InitialValue = Literal.Number(5) });
+		cfg.Members.Add(new FieldDeclaration("Misses", new TypeReference("int")) { InitialValue = Literal.Number(7) });
+		FunctionDeclaration constructor = new("Cfg") { Kind = FunctionKind.Constructor };
+		constructor.Initialisers.Add(new MemberInitialiser("Misses", Literal.Number(1)));
+		cfg.Members.Add(constructor);
+
+		string generated = Generator.Generate(cfg);
+
+		StringAssert.Contains(generated, "return Cfg{Misses: 1, Hits: 5}");
+		StringAssert.Contains(generated, "// defaults to 5: Go has no field initialisers, so only a constructor sets it");
+	}
+
+	/// <summary>
+	/// Tests that a constant field that is not static is still written as package-level storage,
+	/// with its value, rather than as a struct member at its zero.
+	/// </summary>
+	[TestMethod]
+	public void ConstantField_IsPackageLevelEvenWhenNotStatic()
+	{
+		ClassDeclaration cfg = new("Cfg") { Kind = TypeDeclarationKind.Struct };
+		cfg.Members.Add(new FieldDeclaration("Ratio", new TypeReference("double")) { IsConstant = true, InitialValue = Literal.DecimalValue(0.5) });
+
+		string generated = Generator.Generate(cfg);
+
+		StringAssert.Contains(generated, "const CfgRatio float64 = 0.5");
+		Assert.IsFalse(generated.Contains("\tRatio", StringComparison.Ordinal), generated);
+	}
+
+	/// <summary>
 	/// Tests that a function's statements carry no terminator, since Go's lexer supplies the one its
 	/// grammar wants and gofmt deletes any that were written.
 	/// </summary>

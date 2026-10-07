@@ -130,6 +130,59 @@ public class GoGeneratedSourceCompilesTests
 		});
 	}
 
+	/// <summary>
+	/// Tests that a constant field keeps its value and that a constructor starts an initialised
+	/// instance field at its value, by running the generated code rather than reading it.
+	/// </summary>
+	/// <remarks>
+	/// Go placed a field by <see cref="FieldDeclaration.IsStatic"/> alone, so a constant became a
+	/// struct member and its value went nowhere, and an instance field's initialiser was dropped from
+	/// the constructor: both printed 0 (issue #111).
+	/// </remarks>
+	[TestMethod]
+	public void ConstantAndInitialisedFields_KeepTheirValuesWhenRun()
+	{
+		if (ToolchainHarness.FindOnPath("version", "go") is null)
+		{
+			Assert.Inconclusive("No Go toolchain on the path, so nothing was compiled.");
+			return;
+		}
+
+		SourceFile file = new("main");
+		ClassDeclaration cfg = new("Cfg") { Kind = TypeDeclarationKind.Struct };
+		cfg.Members.Add(new FieldDeclaration("Ratio", new TypeReference("double")) { IsConstant = true, InitialValue = Literal.DecimalValue(0.5) });
+		cfg.Members.Add(new FieldDeclaration("Hits", new TypeReference("int")) { InitialValue = Literal.Number(5) });
+		cfg.Members.Add(new FunctionDeclaration("Cfg") { Kind = FunctionKind.Constructor });
+		file.Members.Add(cfg);
+
+		const string driver = """
+			package main
+
+			import "fmt"
+
+			func main() {
+				built := NewCfg()
+				fmt.Println(CfgRatio, built.Hits)
+			}
+
+			""";
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			File.WriteAllText(Path.Combine(directory, "go.mod"), Module);
+			File.WriteAllText(Path.Combine(directory, "driver.go"), driver);
+			File.WriteAllText(Path.Combine(directory, "cfg.go"), new GoGenerator().Generate(file));
+
+			(int exitCode, string output) = ToolchainHarness.Run("go", "run .", directory);
+			Assert.AreEqual(0, exitCode, $"go rejected the generated source:{Environment.NewLine}{output}");
+			Assert.AreEqual("0.5 5", output.Trim());
+
+			(int formatted, string differs) = ToolchainHarness.Run("gofmt", "-l cfg.go", directory);
+			Assert.AreEqual(0, formatted, $"gofmt did not run:{Environment.NewLine}{differs}");
+			Assert.AreEqual(string.Empty, differs.Trim(), "gofmt would rewrite the generated source.");
+		});
+	}
+
 	[TestMethod]
 	public void ConditionalExpressions_InferParameterTypesAndLowerNestedReturns()
 	{
