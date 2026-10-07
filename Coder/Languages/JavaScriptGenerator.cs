@@ -327,6 +327,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		Ensure.NotNull(funcDecl);
 		Ensure.NotNull(code);
 
+		using IDisposable types = OpenStaticTypeScope(funcDecl);
 		WritePreamble(funcDecl, code, PreambleSite.Function);
 
 		code.Write($"function {funcDecl.Name ?? "unnamedFunction"}(");
@@ -455,6 +456,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	/// <param name="code">The writer to emit into.</param>
 	private void GenerateMethod(FunctionDeclaration method, TypeReference? baseType, CodeBlocker code)
 	{
+		using IDisposable types = OpenStaticTypeScope(method);
 		WritePreamble(method, code, PreambleSite.Method);
 
 		if (method.Definition != FunctionDefinition.Provided)
@@ -575,6 +577,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	{
 		Ensure.NotNull(varDecl);
 		Ensure.NotNull(code);
+		RegisterStaticType(varDecl);
 
 		// `const` needs an initializer, so an uninitialized constant has to be declared with `let`.
 		string keyword = varDecl.IsConstant && varDecl.InitialValue is not null ? "const" : "let";
@@ -626,6 +629,30 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		code.WriteLine(entryPoint.ReturnsExitCode
 			? $"process.exit(main({arguments}));"
 			: $"main({arguments});");
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// The AST means integer <see cref="BinaryOperator.Divide"/> the way the C family does, truncating
+	/// toward zero, so <c>-7 / 2</c> is <c>-3</c>. JavaScript has one number type and its <c>/</c> is
+	/// true division, giving <c>-3.5</c>, so when both operands are known to be integers the quotient
+	/// is truncated with <c>Math.trunc</c> — not <c>Math.floor</c>, which would give <c>-4</c>.
+	/// JavaScript's <c>%</c> already takes the sign of the dividend, the same as the C family's.
+	/// </remarks>
+	protected override void GenerateBinary(BinaryExpression binary, CodeBlocker code)
+	{
+		Ensure.NotNull(binary);
+		Ensure.NotNull(code);
+
+		if (binary.Operator != BinaryOperator.Divide || !IsIntegerArithmetic(binary))
+		{
+			base.GenerateBinary(binary, code);
+			return;
+		}
+
+		code.Write("Math.trunc(");
+		GenerateBinaryExpression(binary, code, "/");
+		code.Write(")");
 	}
 
 	/// <summary>
