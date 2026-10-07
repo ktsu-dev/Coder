@@ -1188,12 +1188,10 @@ public class GoGenerator : StandardLanguageGenerator
 
 		// A field the declaration gave a starting value, and this constructor did not set, starts
 		// at that value rather than at its zero, as it would in every other target.
-		foreach (FieldDeclaration field in _instanceFieldDefaults)
+		foreach (FieldDeclaration field in _instanceFieldDefaults
+			.Where(field => !funcDecl.Initialisers.Any(initialiser => initialiser.Name == field.Name)))
 		{
-			if (!funcDecl.Initialisers.Any(initialiser => initialiser.Name == field.Name))
-			{
-				value.Arguments.Add(new MemberInitialiser(field.Name ?? UnnamedMember, (Expression)field.InitialValue!.DeepClone()));
-			}
+			value.Arguments.Add(new MemberInitialiser(field.Name ?? UnnamedMember, (Expression)field.InitialValue!.DeepClone()));
 		}
 
 		code.Write("return ");
