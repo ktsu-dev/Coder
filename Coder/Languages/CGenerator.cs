@@ -66,6 +66,11 @@ public class CGenerator : CFamilyGenerator
 	private const string BaseMemberName = "base";
 
 	/// <summary>
+	/// The name of the member that stands in for a type with no data, which C cannot declare.
+	/// </summary>
+	private const string UnusedMemberName = "unused_";
+
+	/// <summary>
 	/// What an embedded interface is called as a member.
 	/// </summary>
 	/// <param name="contract">The interface being embedded.</param>
@@ -541,6 +546,11 @@ public class CGenerator : CFamilyGenerator
 	/// does take internal linkage; that is <see cref="GenerateFunction"/>'s business rather than this
 	/// method's.
 	/// </para>
+	/// <para>
+	/// A type with no data at all — no fields, no base and no interface, only functions or nothing —
+	/// still gets one placeholder member. ISO C forbids a struct with no members, and MSVC rejects one
+	/// outright; the placeholder also gives a constructor's <c>{0}</c> something to zero.
+	/// </para>
 	/// </remarks>
 	protected override void GenerateClassDeclaration(ClassDeclaration classDecl, CodeBlocker code)
 	{
@@ -586,6 +596,12 @@ public class CGenerator : CFamilyGenerator
 		insideType++;
 
 		WriteEmbeddedBases(classDecl, fields.Count, code);
+
+		if (fields.Count == 0 && classDecl.BaseType is null && classDecl.Interfaces.Count == 0)
+		{
+			WriteInexpressible(code, $"{name} holds no data: C has no empty struct, so this member stands in");
+			code.WriteLine($"char {UnusedMemberName};");
+		}
 
 		AstNode? previous = null;
 		foreach (AstNode member in fields)
