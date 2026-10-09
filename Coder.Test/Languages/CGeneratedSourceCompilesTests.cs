@@ -153,6 +153,74 @@ public class CGeneratedSourceCompilesTests
 	}
 
 	/// <summary>
+	/// The consumer of the empty-type header, which builds the one with a constructor.
+	/// </summary>
+	private const string EmptyDriver = """
+		#include "empty.h"
+
+		int main(void)
+		{
+			Empty built = Empty_create();
+			(void)built;
+			return MathX_twice(0);
+		}
+
+		""";
+
+	/// <summary>
+	/// Tests that a type with no data and a type with only static functions compile as strict ISO C,
+	/// which has no empty struct.
+	/// </summary>
+	[TestMethod]
+	public void TypesWithNoData_CompileAsStrictC()
+	{
+		string? compiler = ToolchainHarness.FindOnPath("--version", Compilers);
+		if (compiler is null)
+		{
+			Assert.Inconclusive("No C compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			File.WriteAllText(
+				Path.Combine(directory, "empty.h"),
+				new CGenerator().Generate(EmptyExemplar()));
+			File.WriteAllText(Path.Combine(directory, "driver.c"), EmptyDriver);
+
+			(int exitCode, string output) = ToolchainHarness.Run(
+				compiler,
+				"-std=c11 -Wall -Wextra -pedantic-errors -c driver.c -o driver.o",
+				directory);
+
+			Assert.AreEqual(0, exitCode, $"{compiler} rejected the generated types:{Environment.NewLine}{output}");
+		});
+	}
+
+	/// <summary>
+	/// Builds a header holding a type with no members but a constructor, and a type with only a
+	/// static function.
+	/// </summary>
+	/// <returns>The file to generate.</returns>
+	private static SourceFile EmptyExemplar()
+	{
+		SourceFile file = new("empty") { IsHeader = true };
+
+		ClassDeclaration empty = new("Empty");
+		empty.Members.Add(new FunctionDeclaration("Empty") { Kind = FunctionKind.Constructor });
+		file.Members.Add(empty);
+
+		ClassDeclaration mathX = new("MathX");
+		FunctionDeclaration twice = new("twice") { IsStatic = true, ReturnType = "int" };
+		twice.Parameters.Add(new Parameter("value", "int"));
+		twice.Body.Add(new ReturnStatement(new VariableReference("value")));
+		mathX.Members.Add(twice);
+		file.Members.Add(mathX);
+
+		return file;
+	}
+
+	/// <summary>
 	/// Builds a header whose one static member calls a member function on a local instance, both as
 	/// a statement and for its value.
 	/// </summary>

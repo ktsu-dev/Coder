@@ -341,6 +341,25 @@ public class CGeneratorTests
 	}
 
 	/// <summary>
+	/// Tests that a type with no data still declares one member, because ISO C forbids an empty
+	/// struct, while a type with a field or a base gets no placeholder.
+	/// </summary>
+	[TestMethod]
+	public void Struct_WithNoData_GetsAPlaceholderMember()
+	{
+		ClassDeclaration mathX = new("MathX");
+		mathX.Members.Add(new FunctionDeclaration("twice") { IsStatic = true, ReturnType = "int" });
+
+		string empty = Generator.Generate(new ClassDeclaration("Empty"));
+		string staticOnly = Generator.Generate(mathX);
+		string derived = Generator.Generate(new ClassDeclaration("Circle") { BaseType = "Shape" });
+
+		StringAssert.Contains(empty, $"{{{NewLine}    // Empty holds no data: C has no empty struct, so this member stands in{NewLine}    char unused_;{NewLine}}} Empty;", StringComparison.Ordinal);
+		StringAssert.Contains(staticOnly, "    char unused_;", StringComparison.Ordinal);
+		Assert.IsFalse(derived.Contains("unused_", StringComparison.Ordinal), derived);
+	}
+
+	/// <summary>
 	/// Tests that a member's initial value becomes a note. C has no default member initialisers, and
 	/// whoever writes the initialiser for the struct is the one who needs to know what it was.
 	/// </summary>
