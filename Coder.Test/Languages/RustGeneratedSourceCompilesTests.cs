@@ -303,6 +303,11 @@ public class RustGeneratedSourceCompilesTests
 			Condition = "std::mem::size_of::<i32>() == 4",
 			Message = "an i32 is four bytes",
 		});
+		geometry.Members.Add(new CompileTimeAssertion
+		{
+			Condition = "std::mem::size_of::<u8>() == 1",
+			Message = "size {N} fits, brace {} here",
+		});
 
 		file.Members.Add(geometry);
 		return file;
