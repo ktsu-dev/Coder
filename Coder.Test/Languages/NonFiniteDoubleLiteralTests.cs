@@ -155,6 +155,46 @@ public class NonFiniteDoubleLiteralTests
 	}
 
 	/// <summary>
+	/// Tests that a constant field or local holding NaN or an infinity is a Go <c>var</c>, because
+	/// <c>math.NaN()</c> and <c>math.Inf</c> are calls and a Go <c>const</c> cannot hold one.
+	/// </summary>
+	[TestMethod]
+	public void GoConstantNonFiniteValue_IsAVar()
+	{
+		string code = new GoGenerator().Generate(FileWithNonFiniteConstants());
+
+		StringAssert.Contains(code, "var Unset float64 = math.NaN()", StringComparison.Ordinal);
+		StringAssert.Contains(code, "var ceiling float64 = math.Inf(1)", StringComparison.Ordinal);
+		Assert.DoesNotContain("const Unset", code, StringComparison.Ordinal, code);
+		Assert.DoesNotContain("const ceiling", code, StringComparison.Ordinal, code);
+	}
+
+	/// <summary>
+	/// Tests that a Go file declaring a constant NaN field and a constant infinite local compiles.
+	/// </summary>
+	[TestMethod]
+	public void GeneratedGoConstants_Compile()
+	{
+		if (ToolchainHarness.FindOnPath("version", "go") is null)
+		{
+			Assert.Inconclusive("No Go toolchain on the path, so nothing was compiled.");
+			return;
+		}
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			File.WriteAllText(Path.Combine(directory, "go.mod"), "module limits\n\ngo 1.21\n");
+
+			string code = new GoGenerator().Generate(FileWithNonFiniteConstants());
+			File.WriteAllText(Path.Combine(directory, "limits.go"), code);
+
+			(int exitCode, string output) = ToolchainHarness.Run("go", "build ./...", directory);
+
+			Assert.AreEqual(0, exitCode, $"go rejected the generated source:{Environment.NewLine}{code}{Environment.NewLine}{output}");
+		});
+	}
+
+	/// <summary>
 	/// Tests that a Rust file returning NaN and both infinities compiles.
 	/// </summary>
 	[TestMethod]
@@ -194,6 +234,27 @@ public class NonFiniteDoubleLiteralTests
 			function.Body.Add(new ReturnStatement(new LiteralExpression<double>(values[index])));
 			file.Members.Add(function);
 		}
+
+		return file;
+	}
+
+	/// <summary>
+	/// Builds a file with a constant NaN field and a function holding a constant infinite local.
+	/// </summary>
+	private static SourceFile FileWithNonFiniteConstants()
+	{
+		SourceFile file = new("limits");
+		file.Members.Add(new FieldDeclaration("Unset", new TypeReference("double"))
+		{
+			IsConstant = true,
+			IsStatic = true,
+			InitialValue = new LiteralExpression<double>(double.NaN),
+		});
+
+		FunctionDeclaration function = new("ceiling") { ReturnType = new TypeReference("double") };
+		function.Body.Add(new VariableDeclaration("ceiling", "double", new LiteralExpression<double>(double.PositiveInfinity)) { IsConstant = true });
+		function.Body.Add(new ReturnStatement(new VariableReference("ceiling")));
+		file.Members.Add(function);
 
 		return file;
 	}

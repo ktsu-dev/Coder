@@ -1370,7 +1370,24 @@ public class GoGenerator : StandardLanguageGenerator
 	/// <param name="wanted">Whether the declaration says its value never changes.</param>
 	/// <param name="value">What it starts at.</param>
 	/// <returns>True when Go will hold it as a constant.</returns>
-	private static bool IsConstant(bool wanted, AstNode? value) => wanted && IsCompileTimeValue(value);
+	/// <remarks>
+	/// NaN and the infinities are the one kind of number that is not: Go has no constant spelling for
+	/// them, and <c>math.NaN()</c> and <c>math.Inf(1)</c> are calls, which a <c>const</c> cannot hold.
+	/// </remarks>
+	private static bool IsConstant(bool wanted, AstNode? value) =>
+		wanted && IsCompileTimeValue(value) && !IsNonFinite(value);
+
+	/// <summary>
+	/// Reports whether a value is a NaN or infinite floating-point literal.
+	/// </summary>
+	/// <param name="value">The value to test.</param>
+	/// <returns>True when it is.</returns>
+	private static bool IsNonFinite(AstNode? value) => value switch
+	{
+		LiteralExpression<double> literal => !double.IsFinite(literal.Value),
+		LiteralExpression<float> literal => !float.IsFinite(literal.Value),
+		_ => false,
+	};
 
 	/// <summary>
 	/// Writes what a declaration starts at, giving a bare list the declaration's own type.
