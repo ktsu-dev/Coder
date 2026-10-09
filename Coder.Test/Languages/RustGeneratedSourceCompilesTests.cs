@@ -298,6 +298,7 @@ public class RustGeneratedSourceCompilesTests
 		geometry.Members.Add(CompiledExemplar.Measure());
 		geometry.Members.Add(Boxed());
 		geometry.Members.Add(Clamp());
+		geometry.Members.Add(new EnumDeclaration("Empty") { UnderlyingType = "int" });
 		geometry.Members.Add(new CompileTimeAssertion
 		{
 			Condition = "std::mem::size_of::<i32>() == 4",

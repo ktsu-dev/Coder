@@ -203,6 +203,8 @@ public class CGeneratedSourceCompilesTests
 		file.Members.Add(CompiledExemplar.Shape());
 		file.Members.Add(CompiledExemplar.OriginAlias());
 		file.Members.Add(CompiledExemplar.OriginTable());
+		file.Members.Add(new EnumDeclaration("Empty"));
+		file.Members.Add(new EnumDeclaration("EmptyFlags") { UnderlyingType = "long" });
 		file.Members.Add(new CompileTimeAssertion
 		{
 			Condition = "sizeof(Point) == 2 * sizeof(int)",
