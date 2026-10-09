@@ -894,6 +894,10 @@ public class CGenerator : CFamilyGenerator
 	/// that needs the guarantee can assert it with a <see cref="CompileTimeAssertion"/>, which is a
 	/// thing the AST can already say.
 	/// </para>
+	/// <para>
+	/// An enumeration with no members is a typedef of its underlying type, or of <c>int</c>, since
+	/// ISO C has no empty enumerator list and <c>typedef enum Name { } Name;</c> does not compile.
+	/// </para>
 	/// </remarks>
 	protected override void GenerateEnumDeclaration(EnumDeclaration enumDecl, CodeBlocker code)
 	{
@@ -901,6 +905,14 @@ public class CGenerator : CFamilyGenerator
 		Ensure.NotNull(code);
 
 		string name = enumDecl.Name ?? "UnnamedEnum";
+
+		if (enumDecl.Members.Count == 0)
+		{
+			WriteInexpressible(code, $"enum {name} has no members: C has no empty enum, so it is the type that would hold one");
+			WritePreamble(enumDecl, code, PreambleSite.Enum);
+			code.WriteLine($"typedef {(enumDecl.UnderlyingType is TypeReference type ? MapToCType(type) : "int")} {name};");
+			return;
+		}
 
 		// Above the documentation rather than below it, so the comment block in front of the
 		// declaration stays one block rather than the note splitting it in two.

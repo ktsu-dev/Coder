@@ -563,6 +563,19 @@ public class RustGeneratorTests
 	}
 
 	/// <summary>
+	/// Tests that an enumeration with no variants leaves off <c>#[repr]</c>, which rustc rejects on
+	/// one (E0084).
+	/// </summary>
+	[TestMethod]
+	public void Enum_WithNoVariants_HasNoRepr()
+	{
+		string code = Generator.Generate(new EnumDeclaration("Empty") { UnderlyingType = "int" });
+
+		Assert.IsFalse(code.Contains("#[repr", StringComparison.Ordinal));
+		StringAssert.StartsWith(code, "pub enum Empty {", StringComparison.Ordinal);
+	}
+
+	/// <summary>
 	/// Tests that a constant is a <c>const</c> and an ordinary field a <c>static</c>, and that an
 	/// array one is a borrowed slice — the bound-free spelling Rust does have, which is what a table
 	/// with no length has to be.

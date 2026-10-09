@@ -1335,7 +1335,8 @@ public class RustGenerator : StandardLanguageGenerator
 	/// An enumeration's variants are named through it — <c>Colour::Red</c> — so nothing has to be
 	/// prefixed to keep two enumerations with a <c>None</c> each apart, which is the thing C cannot
 	/// do. A fixed underlying type is <c>#[repr]</c>, which is the guarantee rather than a comment
-	/// about one.
+	/// about one. An enumeration with no variants has no representation to fix, and rustc rejects
+	/// <c>#[repr]</c> on one (E0084), so it is left off.
 	/// </remarks>
 	protected override void GenerateEnumDeclaration(EnumDeclaration enumDecl, CodeBlocker code)
 	{
@@ -1344,7 +1345,7 @@ public class RustGenerator : StandardLanguageGenerator
 
 		WritePreamble(enumDecl, code, PreambleSite.Enum);
 
-		if (enumDecl.UnderlyingType is TypeReference underlying)
+		if (enumDecl.UnderlyingType is TypeReference underlying && enumDecl.Members.Count > 0)
 		{
 			code.WriteLine($"#[repr({SpellType(underlying)})]");
 		}

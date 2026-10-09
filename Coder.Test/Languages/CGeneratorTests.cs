@@ -424,6 +424,21 @@ public class CGeneratorTests
 	}
 
 	/// <summary>
+	/// Tests that an enumeration with no members is a typedef of the type that would hold one, since
+	/// ISO C has no empty enumerator list.
+	/// </summary>
+	[TestMethod]
+	public void Enum_WithNoMembers_IsATypedefOfItsType()
+	{
+		string bare = Generator.Generate(new EnumDeclaration("Empty"));
+		string typed = Generator.Generate(new EnumDeclaration("Flags") { UnderlyingType = "long" });
+
+		StringAssert.EndsWith(bare, $"typedef int Empty;{NewLine}", StringComparison.Ordinal);
+		StringAssert.EndsWith(typed, $"typedef long long Flags;{NewLine}", StringComparison.Ordinal);
+		Assert.IsFalse(bare.Contains("typedef enum", StringComparison.Ordinal));
+	}
+
+	/// <summary>
 	/// Tests that a constant is <c>static const</c>. A file-scope <c>const</c> in C has external
 	/// linkage, so a header declaring one and included twice is the same object defined twice.
 	/// </summary>
