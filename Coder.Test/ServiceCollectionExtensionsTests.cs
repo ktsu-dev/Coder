@@ -200,7 +200,15 @@ public class ServiceCollectionExtensionsTests
 		YamlSerializer? serializer = serviceProvider.GetService<YamlSerializer>();
 		YamlDeserializer? deserializer = serviceProvider.GetService<YamlDeserializer>();
 
-		Assert.IsTrue(generators.Count > 0, "Generators should still be registered");
+		Assert.HasCount(7, generators, "Each generator should be registered once however often AddCoder is called");
+		foreach (string languageId in new[] { "python", "csharp", "javascript", "cpp", "c", "rust", "go" })
+		{
+			ILanguageGenerator generator = generators.Single(g => g.LanguageId == languageId);
+			Assert.IsNotNull(generator, $"{languageId} should resolve to exactly one generator");
+		}
+
+		Assert.HasCount(1, serviceProvider.GetServices<YamlSerializer>(), "Serializer should be registered once");
+		Assert.HasCount(1, serviceProvider.GetServices<YamlDeserializer>(), "Deserializer should be registered once");
 		Assert.IsNotNull(serializer, "Serializer should still be registered");
 		Assert.IsNotNull(deserializer, "Deserializer should still be registered");
 	}
