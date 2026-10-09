@@ -236,6 +236,27 @@ public sealed class CoderEditorAppTests
 	}
 
 	/// <summary>
+	/// Tests that an empty or whitespace-only file is reported as empty rather than as a document
+	/// the editor cannot parse, since an interrupted save leaves exactly that behind.
+	/// </summary>
+	/// <param name="content">What the file holds.</param>
+	[TestMethod]
+	[DataRow("")]
+	[DataRow("  \n")]
+	public void Open_ReportsAnEmptyFile(string content)
+	{
+		DocumentStore store = NewStore();
+		string empty = Path.Combine(root, "empty" + DocumentStore.Extension);
+		File.WriteAllText(empty, content);
+		CoderEditorApp app = NewApp(store);
+
+		Assert.IsFalse(app.Open(empty));
+
+		Assert.AreEqual($"{empty} is empty.", app.Status);
+		Assert.IsNull(app.DocumentPath);
+	}
+
+	/// <summary>
 	/// Tests that a write the filesystem refuses is reported rather than thrown, so a bad
 	/// destination cannot take the editor down mid-session.
 	/// </summary>

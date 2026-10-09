@@ -61,6 +61,13 @@ public sealed class DocumentStore(
 			return DocumentResult.Failed($"Could not read {path}: {ex.Message}");
 		}
 
+		// An interrupted save or a newly created file leaves nothing in it, and the deserializer
+		// refuses empty text as a bad argument, which would read to the user as a parse failure.
+		if (string.IsNullOrWhiteSpace(yaml))
+		{
+			return DocumentResult.Failed($"{path} is empty.");
+		}
+
 		AstNode? root;
 		try
 		{
