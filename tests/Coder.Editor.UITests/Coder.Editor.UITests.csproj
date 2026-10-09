@@ -1,0 +1,32 @@
+<Project>
+  <Sdk Name="MSTest.Sdk" />
+  <Sdk Name="ktsu.Sdk" />
+
+  <PropertyGroup>
+    <IsTestProject>true</IsTestProject>
+    <TargetFramework>net10.0</TargetFramework>
+    <TargetFrameworks></TargetFrameworks>
+    <!-- The SDK folds the tests/ folder into the namespace, deriving ktsu.tests.Coder.*, so the name
+         is given outright until ktsu-dev/Sdk#37 teaches it to skip scaffolding folders. -->
+    <RootNamespace>ktsu.Coder.Editor.UITests</RootNamespace>
+    <AssemblyName>$(RootNamespace)</AssemblyName>
+    <EnableSourceLink>false</EnableSourceLink>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Starts the editor headlessly, through the CPU rasterizer. -->
+    <PackageReference Include="ktsu.ImGui.App" />
+    <PackageReference Include="ktsu.ImGui.App.Testing" />
+    <!-- The gallery loads ImGuiApp's own font through Dear ImGui's IO. -->
+    <PackageReference Include="Hexa.NET.ImGui" />
+    <!-- The editor is built from the same container Program.Main builds it from. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Coder\Coder.csproj" />
+    <ProjectReference Include="..\..\Coder.Graph\Coder.Graph.csproj" />
+    <ProjectReference Include="..\..\Coder.Editor\Coder.Editor.csproj" />
+  </ItemGroup>
+</Project>

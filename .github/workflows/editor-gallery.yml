@@ -1,0 +1,148 @@
+name: Editor Gallery
+
+# Regenerates docs/gallery after CI finishes on main, and commits the pictures back to main when they
+# differ. Modelled on ImGuiApp's widget-gallery.yml and ImageGui's feature-gallery.yml; the reasoning
+# there holds here too, and is repeated where it decides something.
+#
+# The pictures come from the Gallery tests in tests/Coder.Editor.UITests, run with CODER_GALLERY_OUT
+# pointing at docs/gallery. Pull requests already run those tests in the Linux UI test leg, writing
+# to a temporary directory, so a stage that no longer works fails the pull request; this workflow
+# only ever builds main, and only to publish the result.
+#
+# Nothing is committed when the output is byte-identical, which it is run to run: the editor draws
+# on the CPU rasterizer at a pinned display size, opens nothing from disk, starts from the document
+# built in code, steps its layout simulation at the harness's fixed frame time, and draws in the font
+# ImGuiApp ships. The only thing that moves a picture is a change to the code that draws it. Always
+# on the same runner image, because the pictures are compared with the last ones committed.
+#
+# ci.yml calls this as a job that needs its pipeline, only for a push to main; it can also be run by
+# hand on main. It is deliberately not a workflow_run workflow. workflow_run runs with the
+# repository's own token and secrets whatever started the run it follows, including a pull request
+# from a fork, so building checked-out code there is the pattern githubactions:S7631 exists to catch.
+# Here the only things that can start a run are a push to main, which needs write access, and a
+# dispatch by someone with write access, so nothing a fork wrote is ever checked out or built with
+# this job's permissions.
+#
+# Why after CI rather than beside it: CI's release job commits VERSION.md and friends back to main
+# with a plain `git push` from the commit it was started on. A gallery commit landing on main first
+# makes that push non-fast-forward, and the release fails. Needing the pipeline means main already
+# carries the release commit. A failed pipeline skips this job.
+#
+# Why the commit back cannot loop or cut a release:
+#   - It is pushed with the workflow's own GITHUB_TOKEN, and GitHub starts no workflow run for a
+#     push made with that token. Neither CI nor, through it, this workflow sees it.
+#   - It carries `[bot][skip ci]`, the prefix KtsuBuild's own metadata commits use, so KtsuBuild
+#     leaves it out of the version calculation and the changelog either way.
+#
+# Why it can push to a protected main: the main ruleset lists github-actions[bot] (the identity
+# behind GITHUB_TOKEN) as an always-bypass actor, which is also how KtsuBuild pushes its metadata
+# commits. If it ever stops doing so, the push step fails and says so.
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_VERSION: "10.0"
+
+jobs:
+  regenerate:
+    name: Regenerate editor gallery
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: github.repository == 'ktsu-dev/Coder' && github.ref == 'refs/heads/main'
+    # A newer run supersedes an older one: both regenerate from the current main. On the job rather
+    # than the workflow, because a called workflow's github.workflow is the caller's name.
+    concurrency:
+      group: editor-gallery
+      cancel-in-progress: true
+    permissions:
+      contents: write # To push the regenerated pictures to main
+
+    steps:
+      # LFS content is not fetched: nothing the gallery builds from is in LFS, and every picture it
+      # writes replaces the pointer that was there. The LFS filters are installed below instead,
+      # which is what makes git compare and commit the pictures as LFS objects.
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+        with:
+          # The current main, never the triggering event's ref or SHA.
+          ref: main
+          fetch-depth: 1
+          lfs: false
+          persist-credentials: true
+
+      - name: Setup .NET SDK ${{ env.DOTNET_VERSION }}
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}.x
+          cache: true
+          cache-dependency-path: |
+            **/*.csproj
+            **/Directory.Packages.props
+            **/global.json
+
+      - name: Install Git LFS filters
+        run: git lfs install --local
+
+      - name: Build the UI tests
+        run: dotnet build tests/Coder.Editor.UITests/Coder.Editor.UITests.csproj -c Release
+
+      # The old pictures are removed first so that one whose entry was renamed or removed goes with
+      # it. A stage that fails fails the job before anything is committed.
+      - name: Regenerate the gallery
+        env:
+          CODER_GALLERY_OUT: ${{ github.workspace }}/docs/gallery
+        run: |
+          rm -f docs/gallery/*.png docs/gallery/README.md
+          tests/Coder.Editor.UITests/bin/Release/net10.0/ktsu.Coder.Editor.UITests \
+            --filter "FullyQualifiedName~ktsu.Coder.Editor.UITests.Gallery"
+
+      # Only docs/gallery is staged. The build also rewrites some tracked files (ktsu.Sdk syncs
+      # .gitignore and friends from its own copy), and none of that belongs in this commit.
+      - name: Commit and push the pictures
+        env:
+          GIT_LFS_SKIP_SMUDGE: "1"
+        run: |
+          source_sha=$(git rev-parse HEAD)
+          git add --all docs/gallery
+
+          if git diff --cached --quiet; then
+            echo "The editor gallery is up to date."
+            exit 0
+          fi
+
+          git diff --cached --stat
+
+          # A PNG committed as a blob rather than as an LFS pointer would bloat the history for good.
+          for path in $(git diff --cached --name-only --diff-filter=AM -- '*.png'); do
+            header=$(git cat-file blob ":$path" | head -c 42 | tr -d '\0' || true)
+            if [[ "$header" != "version https://git-lfs.github.com/spec/v1" ]]; then
+              echo "::error file=$path::Staged as a raw blob rather than an LFS pointer."
+              exit 1
+            fi
+          done
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit --quiet --message "[bot][skip ci] Regenerate the editor gallery" \
+            --message "Rendered by .github/workflows/editor-gallery.yml from $source_sha."
+
+          # Drop what the build rewrote and was left unstaged, which a rebase refuses to run over.
+          git reset --hard --quiet HEAD
+
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            echo "Push rejected (attempt $attempt); rebasing onto the current main."
+            sleep $((attempt * 5))
+            git fetch --depth=50 origin main
+            git rebase FETCH_HEAD
+          done
+
+          echo "::error::Could not push the regenerated gallery to main. If main's ruleset does not let github-actions[bot] bypass it, that is why."
+          exit 1
