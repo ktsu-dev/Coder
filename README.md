@@ -191,6 +191,8 @@ keyboard focus is.
 dotnet run --project Coder.Editor
 ```
 
+Pictures of the editor as it draws today are in the [editor gallery](docs/gallery/README.md).
+
 Documents are `.coder.yaml` files — the same YAML the serializer already round-trips, so anything the
 library can write, the editor can open. The code pane follows the document live and lists what is
 outstanding instead of generating while an operand is unfilled; clicking one of those selects the
