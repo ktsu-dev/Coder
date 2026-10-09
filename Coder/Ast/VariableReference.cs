@@ -37,8 +37,11 @@ public class VariableReference : Expression
 	/// <returns>A new instance with the same property values.</returns>
 	public override AstNode Clone()
 	{
-		VariableReference clone = new(Name)
+		// The parameterless constructor and an assignment, because the validating one would refuse
+		// the empty name an unfilled node legitimately holds, and a clone must not judge what it copies.
+		VariableReference clone = new()
 		{
+			Name = Name,
 			ExpectedType = ExpectedType
 		};
 
