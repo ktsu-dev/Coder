@@ -693,6 +693,18 @@ public class RustGeneratorTests
 	}
 
 	/// <summary>
+	/// Tests that braces in an assertion's message are doubled, because <c>assert!</c> reads its
+	/// message as a format string and a single brace would open a placeholder.
+	/// </summary>
+	[TestMethod]
+	public void CompileTimeAssertion_DoublesBracesInTheMessage()
+	{
+		CompileTimeAssertion assertion = new("true", "size {N} fits, brace {} here");
+
+		StringAssert.Contains(Generator.Generate(assertion), "\"size {{N}} fits, brace {{}} here\");", StringComparison.Ordinal);
+	}
+
+	/// <summary>
 	/// Tests that an alias is a type alias.
 	/// </summary>
 	[TestMethod]

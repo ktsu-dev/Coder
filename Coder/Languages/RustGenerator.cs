@@ -1383,6 +1383,10 @@ public class RustGenerator : StandardLanguageGenerator
 	/// <c>const _: () = assert!(…)</c>, which is Rust's own compile-time assertion and needs no
 	/// macro crate: a constant nobody names still has to be evaluated for the program to build, and
 	/// a failed <c>assert!</c> in that position is a compile error naming the message.
+	/// <para>
+	/// The message is <c>assert!</c>'s format string rather than a plain literal, so its braces are
+	/// doubled: a single <c>{N}</c> would be read as a placeholder naming a value that does not exist.
+	/// </para>
 	/// </remarks>
 	protected override void GenerateCompileTimeAssertion(CompileTimeAssertion assertion, CodeBlocker code)
 	{
@@ -1397,7 +1401,10 @@ public class RustGenerator : StandardLanguageGenerator
 		{
 			code.WriteLine(",");
 			code.Indent();
-			code.Write($"\"{EscapeString(assertion.Message)}\"");
+			string message = EscapeString(assertion.Message)
+				.Replace("{", "{{", StringComparison.Ordinal)
+				.Replace("}", "}}", StringComparison.Ordinal);
+			code.Write($"\"{message}\"");
 			code.Outdent();
 		}
 
