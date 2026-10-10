@@ -18,7 +18,7 @@ Selecting a node shows its own properties in the inspector, each with the contro
 
 ## Generated Python
 
-One document, seven languages. The preview regenerates as the graph is edited; Python writes the receiver as `self` and the types as annotations.
+One document, seven languages. The preview regenerates as the graph is edited; Python writes the receiver as `self` and the types as annotations. The method bodies still name the fields bare, because the AST has no way yet to say "this instance's `count`" ([#141](https://github.com/ktsu-dev/Coder/issues/141)).
 
 ![Generated Python](generated-python.png)
 
