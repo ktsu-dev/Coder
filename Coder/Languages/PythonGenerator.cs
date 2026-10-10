@@ -837,6 +837,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		"bool" => "bool",
 		"float" => "float",
 		"double" => "float",
+		"long" => "int",
 		"void" => "None",
 		_ => type.Name
 	};
