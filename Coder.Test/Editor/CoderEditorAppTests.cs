@@ -101,7 +101,7 @@ public sealed class CoderEditorAppTests
 
 		Assert.AreEqual("Counter", document.Name);
 
-		List<VariableDeclaration> fields = [.. document.Members.OfType<VariableDeclaration>()];
+		List<FieldDeclaration> fields = [.. document.Members.OfType<FieldDeclaration>()];
 		Assert.AreEqual(2, fields.Count, "the class should carry a couple of fields");
 		Assert.IsTrue(fields.TrueForAll(f => f.InitialValue is not null), "each field should be initialised");
 

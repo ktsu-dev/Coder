@@ -191,6 +191,8 @@ keyboard focus is.
 dotnet run --project Coder.Editor
 ```
 
+[![The Coder editor: a document as a node graph, with its properties and generated code beside it](docs/gallery/editing-a-document.png)](docs/gallery/README.md)
+
 Pictures of the editor as it draws today are in the [editor gallery](docs/gallery/README.md).
 
 Documents are `.coder.yaml` files — the same YAML the serializer already round-trips, so anything the

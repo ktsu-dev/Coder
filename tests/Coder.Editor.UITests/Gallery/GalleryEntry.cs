@@ -27,6 +27,13 @@ internal sealed record GalleryEntry(string Name, string Description, Action<Edit
 	/// </summary>
 	public Func<EditorUnderTest, Rectangle?>? Crop { get; init; }
 
+	/// <summary>
+	/// Gets the display this entry is drawn at, or null for <see cref="EditorGallery.Display"/>. A
+	/// picture of the whole graph is drawn on a larger one, because the graph is fitted to its canvas
+	/// and on the usual display that leaves node text too small to read.
+	/// </summary>
+	public (int Width, int Height)? Display { get; init; }
+
 	/// <summary>Gets the file name the picture is written under, without its extension.</summary>
 	public string Slug => MakeSlug(Name);
 
