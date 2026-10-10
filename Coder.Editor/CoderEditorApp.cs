@@ -141,8 +141,8 @@ public sealed class CoderEditorApp(
 	{
 		ClassDeclaration declaration = new("Counter");
 
-		declaration.Members.Add(new VariableDeclaration("count", "int", new LiteralExpression<int>(0)));
-		declaration.Members.Add(new VariableDeclaration("step", "int", new LiteralExpression<int>(1)));
+		declaration.Members.Add(new FieldDeclaration("count", "int") { InitialValue = new LiteralExpression<int>(0) });
+		declaration.Members.Add(new FieldDeclaration("step", "int") { InitialValue = new LiteralExpression<int>(1) });
 
 		FunctionDeclaration add = new("Add") { ReturnType = "int" };
 		add.Parameters.Add(new Parameter("amount", "int"));
@@ -340,8 +340,13 @@ public sealed class CoderEditorApp(
 			}
 
 			ImGui.Separator();
+
+			// Labelled ahead of the box, and hinted while empty: Open, Save and Export below all read
+			// it, and an empty field with its name trailing off to the right says none of that.
+			ImGui.TextUnformatted("Path");
+			ImGui.SameLine();
 			ImGui.SetNextItemWidth(320f);
-			ImGui.InputText("Path", ref pathBuffer, 512);
+			ImGui.InputTextWithHint("##path", "file to open, save or export to", ref pathBuffer, 512);
 
 			if (ImGui.MenuItem("Open") && pathBuffer.Length > 0)
 			{

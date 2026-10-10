@@ -80,7 +80,8 @@ public sealed class EditorGallery
 			new EditorSettings());
 		entry.Prepare?.Invoke(app);
 
-		using ImGuiAppHarness harness = ImGuiAppHarness.Start(app.BuildConfig(), new HarnessOptions { Width = Display.Width, Height = Display.Height });
+		(int width, int height) = entry.Display ?? Display;
+		using ImGuiAppHarness harness = ImGuiAppHarness.Start(app.BuildConfig(), new HarnessOptions { Width = width, Height = height });
 		Assert.IsTrue(GalleryFonts.Load(), "ImGuiApp's own font could not be found, so the pictures would not look like the application.");
 		harness.Mouse.MoveTo(-100f, -100f);
 		harness.Step(SettleFrames);
