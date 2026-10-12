@@ -272,6 +272,35 @@ public class GoGenerator : StandardLanguageGenerator
 		double.IsNaN(value) ? "math.NaN()" : value > 0 ? "math.Inf(1)" : "math.Inf(-1)";
 
 	/// <inheritdoc/>
+	protected override bool SpellsFloatingRemainderAsCall => true;
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// <c>math.Mod</c> takes and answers <c>float64</c> only, so a remainder taken in <c>float32</c>
+	/// converts its operands in and its answer back out. Go converts nothing implicitly, and an
+	/// operand already of the type converts to it at no cost.
+	/// </remarks>
+	protected override void WriteFloatingRemainder(Expression dividend, Expression divisor, string floatingType, CodeBlocker code)
+	{
+		Ensure.NotNull(code);
+		if (floatingType == "double")
+		{
+			code.Write("math.Mod(");
+			GenerateInternal(dividend, code);
+			code.Write(", ");
+			GenerateInternal(divisor, code);
+			code.Write(")");
+			return;
+		}
+
+		code.Write("float32(math.Mod(float64(");
+		GenerateInternal(dividend, code);
+		code.Write("), float64(");
+		GenerateInternal(divisor, code);
+		code.Write(")))");
+	}
+
+	/// <inheritdoc/>
 	/// <remarks>
 	/// Nothing: a Go file's imports are written with its package clause, by
 	/// <see cref="WriteFileDirectives"/>, because the two are one header and have to appear in that
@@ -389,7 +418,7 @@ public class GoGenerator : StandardLanguageGenerator
 	/// </summary>
 	/// <param name="file">The file being emitted.</param>
 	/// <returns>Each group's import lines, sorted by path, with the empty groups dropped.</returns>
-	private static List<List<string>> ImportGroups(SourceFile file)
+	private List<List<string>> ImportGroups(SourceFile file)
 	{
 		List<List<string>> groups = [[]];
 
@@ -411,7 +440,7 @@ public class GoGenerator : StandardLanguageGenerator
 			groups[0].Add(RuntimePackage);
 		}
 
-		if (ContainsNonFiniteDouble(file) && !groups.Any(group => group.Contains(MathPackage)))
+		if ((ContainsNonFiniteDouble(file) || ContainsFloatingRemainder(file)) && !groups.Any(group => group.Contains(MathPackage)))
 		{
 			groups[0].Add(MathPackage);
 		}

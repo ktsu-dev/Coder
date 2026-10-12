@@ -135,12 +135,40 @@ public class CppGenerator : CFamilyGenerator
 		{
 			yield return LimitsHeader;
 		}
+
+		if (ContainsFloatingRemainder(file))
+		{
+			yield return CMathHeader;
+		}
 	}
 
 	/// <summary>
 	/// The header that declares <c>std::numeric_limits</c>.
 	/// </summary>
 	private const string LimitsHeader = "<limits>";
+
+	/// <summary>
+	/// The header that declares <c>std::fmod</c>.
+	/// </summary>
+	private const string CMathHeader = "<cmath>";
+
+	/// <inheritdoc/>
+	protected override bool SpellsFloatingRemainderAsCall => true;
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// <c>std::fmod</c> is overloaded for every pairing of arithmetic types, so one spelling serves
+	/// <c>float</c> and <c>double</c> alike and the remainder keeps the operands' type.
+	/// </remarks>
+	protected override void WriteFloatingRemainder(Expression dividend, Expression divisor, string floatingType, CodeBlocker code)
+	{
+		Ensure.NotNull(code);
+		code.Write("std::fmod(");
+		GenerateInternal(dividend, code);
+		code.Write(", ");
+		GenerateInternal(divisor, code);
+		code.Write(")");
+	}
 
 	/// <inheritdoc/>
 	/// <remarks>
@@ -245,6 +273,7 @@ public class CppGenerator : CFamilyGenerator
 
 		// The line is ended before the scope opens, so C++'s brace lands on its own line.
 		code.WriteLine();
+		using IDisposable types = OpenStaticTypeScope(funcDecl);
 		WriteInitialiserList(funcDecl, code);
 
 		using Scope body = new(code);
@@ -716,6 +745,7 @@ public class CppGenerator : CFamilyGenerator
 	{
 		Ensure.NotNull(varDecl);
 		Ensure.NotNull(code);
+		RegisterStaticType(varDecl);
 
 		if (varDecl.IsConstant)
 		{

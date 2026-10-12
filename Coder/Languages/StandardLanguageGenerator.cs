@@ -130,6 +130,106 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 		type is { IsArray: false, Indirection: TypeIndirection.None, TypeArguments.Count: 0 }
 		&& IntegerTypeNames.Contains(type.Name);
 
+	/// <summary>
+	/// Reads the floating-point type a remainder of two operands is taken in.
+	/// </summary>
+	/// <param name="dividend">The left operand.</param>
+	/// <param name="divisor">The right operand.</param>
+	/// <returns><c>double</c> or <c>float</c>, or null when neither operand is known to be floating.</returns>
+	/// <remarks>
+	/// Either operand being floating is enough, because that is what makes the arithmetic floating in
+	/// every target: an integer beside a <c>double</c> is converted to it. A <c>double</c> on either
+	/// side makes it <c>double</c>, which is the usual arithmetic conversion's answer too.
+	/// </remarks>
+	protected string? FloatingRemainderType(Expression dividend, Expression divisor)
+	{
+		Ensure.NotNull(dividend);
+		Ensure.NotNull(divisor);
+		string? left = FloatingTypeName(StaticType(dividend));
+		string? right = FloatingTypeName(StaticType(divisor));
+		if (left is null && right is null)
+		{
+			return null;
+		}
+
+		return left == "double" || right == "double" ? "double" : "float";
+	}
+
+	private static string? FloatingTypeName(TypeReference? type) =>
+		type is { IsArray: false, Indirection: TypeIndirection.None, TypeArguments.Count: 0, Name: "float" or "double" }
+			? type.Name
+			: null;
+
+	/// <summary>
+	/// Gets whether the target spells a floating-point remainder as a call rather than as <c>%</c>.
+	/// </summary>
+	/// <remarks>
+	/// C, C++ and Go define <c>%</c> on integers only, so a remainder of floating operands has to be
+	/// <c>fmod</c> or <c>math.Mod</c> there. Every other target's <c>%</c> already takes them.
+	/// </remarks>
+	protected virtual bool SpellsFloatingRemainderAsCall => false;
+
+	/// <summary>
+	/// Writes the call that takes a floating-point remainder, for a target whose <c>%</c> cannot.
+	/// </summary>
+	/// <param name="dividend">The left operand.</param>
+	/// <param name="divisor">The right operand.</param>
+	/// <param name="floatingType">The type the remainder is taken in, from <see cref="FloatingRemainderType"/>.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <exception cref="NotSupportedException">The target spells the remainder as <c>%</c>.</exception>
+	protected virtual void WriteFloatingRemainder(Expression dividend, Expression divisor, string floatingType, CodeBlocker code) =>
+		throw new NotSupportedException($"{GetType().Name} spells a floating-point remainder as %.");
+
+	/// <summary>
+	/// Reports whether a file takes a remainder that <see cref="WriteFloatingRemainder"/> will write.
+	/// </summary>
+	/// <param name="file">The file being emitted.</param>
+	/// <returns>True when a <c>%</c> or <c>%=</c> in it has a floating-point operand.</returns>
+	/// <remarks>
+	/// The imports are written before anything they are for, so the question is asked of the AST
+	/// rather than of the output. Each function's parameters and locals are put in scope the way its
+	/// emitter puts them, which is what makes the answer agree with what is written; a file that
+	/// imports what it does not use does not compile in Go.
+	/// </remarks>
+	protected bool ContainsFloatingRemainder(SourceFile file)
+	{
+		Ensure.NotNull(file);
+		if (SelfAndDescendants(file).Any(IsFloatingRemainder))
+		{
+			return true;
+		}
+
+		foreach (FunctionDeclaration function in SelfAndDescendants(file).OfType<FunctionDeclaration>())
+		{
+			using IDisposable types = OpenStaticTypeScope(function);
+
+			// A local can take its type from another, so one pass per local settles every chain however
+			// the walk happens to order them.
+			VariableDeclaration[] locals = [.. SelfAndDescendants(function).OfType<VariableDeclaration>()];
+			for (int pass = 0; pass < locals.Length; pass++)
+			{
+				foreach (VariableDeclaration local in locals)
+				{
+					RegisterStaticType(local);
+				}
+			}
+
+			if (SelfAndDescendants(function).Any(IsFloatingRemainder))
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	private bool IsFloatingRemainder(AstNode node) => node switch
+	{
+		BinaryExpression { Operator: BinaryOperator.Modulo } binary => FloatingRemainderType(binary.Left, binary.Right) is not null,
+		AssignmentStatement { Operator: AssignmentOperator.ModuloAssign } assignment => FloatingRemainderType(assignment.Target, assignment.Value) is not null,
+		_ => false,
+	};
+
 	private static readonly HashSet<string> IntegerTypeNames = new(StringComparer.Ordinal)
 	{
 		"int", "long", "short", "byte", "sbyte", "uint", "ulong", "ushort",
@@ -946,7 +1046,39 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	protected virtual void GenerateBinary(BinaryExpression binary, CodeBlocker code)
 	{
 		Ensure.NotNull(binary);
+		if (SpellsFloatingRemainderAsCall
+			&& binary.Operator == BinaryOperator.Modulo
+			&& FloatingRemainderType(binary.Left, binary.Right) is string floatingType)
+		{
+			WriteFloatingRemainder(binary.Left, binary.Right, floatingType, code);
+			return;
+		}
+
 		GenerateBinaryExpression(binary, code, GetOperatorSpelling(binary.Operator));
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// A floating <c>x %= y</c> is written <c>x = fmod(x, y)</c> or its equivalent, for the target
+	/// whose <c>%</c> takes only integers and whose <c>%=</c> therefore does too.
+	/// </remarks>
+	protected override void GenerateAssignmentStatement(AssignmentStatement assignment, CodeBlocker code)
+	{
+		Ensure.NotNull(assignment);
+		Ensure.NotNull(code);
+
+		if (SpellsFloatingRemainderAsCall
+			&& assignment.Operator == AssignmentOperator.ModuloAssign
+			&& FloatingRemainderType(assignment.Target, assignment.Value) is string floatingType)
+		{
+			GenerateInternal(assignment.Target, code);
+			code.Write($" {GetAssignmentOperator(AssignmentOperator.Assign)} ");
+			WriteFloatingRemainder(assignment.Target, assignment.Value, floatingType, code);
+			EndStatement(code);
+			return;
+		}
+
+		base.GenerateAssignmentStatement(assignment, code);
 	}
 
 	/// <summary>
