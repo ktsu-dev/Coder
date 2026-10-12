@@ -102,6 +102,22 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	/// </remarks>
 	protected override string DocumentationPrefix => "//";
 
+	/// <summary>
+	/// The largest integer a JavaScript number holds exactly, <c>Number.MAX_SAFE_INTEGER</c>.
+	/// </summary>
+	private const long MaxSafeInteger = 9007199254740991;
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// A number is a double, which rounds any integer past <see cref="MaxSafeInteger"/>:
+	/// <c>9007199254740993</c> reads back as <c>9007199254740992</c>. Such a value is written as a BigInt
+	/// literal instead, which keeps it exact, and mixing it with number arithmetic throws a
+	/// <c>TypeError</c> rather than computing with a different value. A value in the safe range stays a
+	/// plain number.
+	/// </remarks>
+	protected override string FormatLong(long value) =>
+		value is > MaxSafeInteger or < -MaxSafeInteger ? $"{base.FormatLong(value)}n" : base.FormatLong(value);
+
 	/// <inheritdoc/>
 	protected override string? SpellImport(string import)
 	{
