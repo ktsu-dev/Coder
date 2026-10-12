@@ -124,6 +124,12 @@ public class PythonGenerator : StandardLanguageGenerator
 			return;
 		}
 
+		if (declaration.IsStatic)
+		{
+			GenerateStaticAccessors(declaration, annotation, result, code);
+			return;
+		}
+
 		if (declaration.CanRead)
 		{
 			code.WriteLine("@property");
@@ -147,6 +153,36 @@ public class PythonGenerator : StandardLanguageGenerator
 		{
 			code.WriteLine($"@{name}.setter");
 			code.Write($"def {name}(self, value{annotation}) -> None:");
+			WriteAccessorBody(declaration.SetterBody, code);
+		}
+	}
+
+	/// <summary>
+	/// Writes a static property with bodies as a getter and a setter on the class.
+	/// </summary>
+	/// <param name="declaration">The property to write.</param>
+	/// <param name="annotation">The value's type, spelled as a parameter annotation.</param>
+	/// <param name="result">The value's type, spelled as a return annotation.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// A <c>@property</c> works only on an instance: read from the class, it answers the property
+	/// object itself rather than calling the getter. Python has no static property, so this one
+	/// becomes the two <c>@staticmethod</c> functions C, Rust and Go already lower it to, named the
+	/// way they name them (<c>limit()</c> and <c>set_limit(value)</c>), and reachable from the class.
+	/// </remarks>
+	private void GenerateStaticAccessors(PropertyDeclaration declaration, string annotation, string result, CodeBlocker code)
+	{
+		if (declaration.CanRead)
+		{
+			code.WriteLine("@staticmethod");
+			code.Write($"def {declaration.GetterName(NamingStyle.Snake)}(){result}:");
+			WriteAccessorBody(declaration.GetterBody, code);
+		}
+
+		if (declaration.CanWrite)
+		{
+			code.WriteLine("@staticmethod");
+			code.Write($"def {declaration.SetterName(NamingStyle.Snake)}(value{annotation}) -> None:");
 			WriteAccessorBody(declaration.SetterBody, code);
 		}
 	}
