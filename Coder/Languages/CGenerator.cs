@@ -1032,6 +1032,12 @@ public class CGenerator : CFamilyGenerator
 	/// parameters are unspecified rather than one that takes none, which is the opposite of what the
 	/// entry point of a program with no arguments means.
 	/// </para>
+	/// <para>
+	/// A body that accepts arguments reads them as <c>args</c>, holding what the user typed and not the
+	/// program's path, which is what every other target binds (#86). C has no array that knows its
+	/// length, so <c>args_count</c> comes with it, and both are cast to <c>void</c> so a body that
+	/// reads neither does not warn.
+	/// </para>
 	/// </remarks>
 	protected override void GenerateEntryPoint(EntryPoint entryPoint, CodeBlocker code)
 	{
@@ -1045,6 +1051,14 @@ public class CGenerator : CFamilyGenerator
 		code.WriteLine(")");
 
 		using Scope body = new(code);
+		if (entryPoint.AcceptsArguments)
+		{
+			code.WriteLine("char** args = argv + 1;");
+			code.WriteLine("int args_count = argc - 1;");
+			code.WriteLine("(void)args;");
+			code.WriteLine("(void)args_count;");
+		}
+
 		foreach (AstNode statement in entryPoint.Body)
 		{
 			GenerateInternal(statement, code);
