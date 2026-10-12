@@ -128,10 +128,20 @@ public class CppGenerator : CFamilyGenerator
 		: "-std::numeric_limits<double>::infinity()";
 
 	/// <inheritdoc/>
+	/// <remarks>
+	/// The <c>float</c> specialisation, so an inferred local holding one is a <c>float</c> rather
+	/// than a <c>double</c>.
+	/// </remarks>
+	protected override string SpellNonFiniteSingle(float value) =>
+		float.IsNaN(value) ? "std::numeric_limits<float>::quiet_NaN()"
+		: value > 0 ? "std::numeric_limits<float>::infinity()"
+		: "-std::numeric_limits<float>::infinity()";
+
+	/// <inheritdoc/>
 	protected override IEnumerable<string> RequiredImports(SourceFile file)
 	{
 		Ensure.NotNull(file);
-		if (ContainsNonFiniteDouble(file))
+		if (ContainsNonFiniteLiteral(file))
 		{
 			yield return LimitsHeader;
 		}

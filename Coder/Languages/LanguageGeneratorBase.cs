@@ -162,7 +162,7 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 				return true;
 
 			case LiteralExpression<float> floatLit:
-				code.Write(FormatSingle(floatLit.Value));
+				code.Write(float.IsFinite(floatLit.Value) ? FormatSingle(floatLit.Value) : SpellNonFiniteSingle(floatLit.Value));
 				return true;
 
 			case LiteralExpression<long> longLit:
@@ -454,16 +454,21 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	}
 
 	/// <summary>
-	/// Reports whether a file holds a double literal that is not a finite number.
+	/// Reports whether a file holds a double or float literal that is not a finite number.
 	/// </summary>
 	/// <param name="file">The file being emitted.</param>
-	/// <returns>True if any double literal in the file is NaN or an infinity.</returns>
+	/// <returns>True if any double or float literal in the file is NaN or an infinity.</returns>
 	/// <remarks>
 	/// What a generator asks before deciding whether the file needs the import its spelling of
-	/// <see cref="SpellNonFiniteDouble"/> depends on.
+	/// <see cref="SpellNonFiniteDouble"/> and <see cref="SpellNonFiniteSingle"/> depend on.
 	/// </remarks>
-	protected static bool ContainsNonFiniteDouble(SourceFile file) =>
-		SelfAndDescendants(file).Any(node => node is LiteralExpression<double> literal && !double.IsFinite(literal.Value));
+	protected static bool ContainsNonFiniteLiteral(SourceFile file) =>
+		SelfAndDescendants(file).Any(node => node switch
+		{
+			LiteralExpression<double> literal => !double.IsFinite(literal.Value),
+			LiteralExpression<float> literal => !float.IsFinite(literal.Value),
+			_ => false,
+		});
 
 	/// <summary>
 	/// Reports whether a value is one the compiler evaluates, and so one a constant can hold.
@@ -1168,6 +1173,19 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// </remarks>
 	protected virtual string SpellNonFiniteDouble(double value) =>
 		double.IsNaN(value) ? "NaN" : value > 0 ? "Infinity" : "-Infinity";
+
+	/// <summary>
+	/// Spells a float that is NaN or an infinity.
+	/// </summary>
+	/// <param name="value">The value to spell, which is not finite.</param>
+	/// <returns>The language's name for the value.</returns>
+	/// <remarks>
+	/// The double's spelling, for the targets where that name already reads as a float or where
+	/// there is only one width: JavaScript and Python have a single floating-point type, and C's
+	/// <c>NAN</c> and <c>INFINITY</c> are <c>float</c> constants to begin with. A target whose name
+	/// for the double would widen the value, or fail to convert back, spells the float itself.
+	/// </remarks>
+	protected virtual string SpellNonFiniteSingle(float value) => SpellNonFiniteDouble(value);
 
 	/// <summary>
 	/// Formats a single-precision value so that every target reads it as floating-point.
