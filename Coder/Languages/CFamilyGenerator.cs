@@ -112,6 +112,36 @@ public abstract class CFamilyGenerator : StandardLanguageGenerator
 	/// </remarks>
 	protected override bool NeedsSeparation(AstNode previous, AstNode member) => !GroupsWith(previous, member);
 
+	/// <inheritdoc/>
+	/// <remarks>
+	/// A backslash at the end of a line is a line splice, and the preprocessor joins the next line
+	/// to it before it strips comments, so <c>/// Reads C:\data\</c> would swallow the declaration
+	/// written after it. Trailing whitespace does not stop the splice, and nor does the trigraph
+	/// <c>??/</c>, which is a backslash wherever trigraphs are on, so a line that ends in either has a
+	/// <c>.</c> written after it: the one change that ends the line on something that is not a splice
+	/// and leaves the text that was given in front of it as it was.
+	/// </remarks>
+	protected override void WriteComment(CodeBlocker code, string prefix, string text)
+	{
+		Ensure.NotNull(text);
+
+		string[] lines = text.Split(["\r\n", "\n", "\r"], StringSplitOptions.None);
+		base.WriteComment(code, prefix, string.Join("\n", lines.Select(EndWithoutSplice)));
+	}
+
+	/// <summary>
+	/// Ends a comment line on something the preprocessor does not read as a line splice.
+	/// </summary>
+	/// <param name="line">The line as it was given.</param>
+	/// <returns>The line, with a <c>.</c> after it when it would otherwise splice.</returns>
+	private static string EndWithoutSplice(string line)
+	{
+		string trimmed = line.TrimEnd();
+		return trimmed.EndsWith('\\') || trimmed.EndsWith("??/", StringComparison.Ordinal)
+			? $"{trimmed}."
+			: line;
+	}
+
 	/// <summary>
 	/// Spells a declaration of <paramref name="name"/> with that type.
 	/// </summary>
