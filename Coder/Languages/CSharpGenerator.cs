@@ -108,7 +108,9 @@ public class CSharpGenerator : LanguageGeneratorBase
 					: SpellNonFiniteDouble(doubleLit.Value));
 				break;
 			case LiteralExpression<float> floatLit:
-				code.Write($"{floatLit.Value.ToString(CultureInfo.InvariantCulture)}f");
+				code.Write(float.IsFinite(floatLit.Value)
+					? $"{floatLit.Value.ToString(CultureInfo.InvariantCulture)}f"
+					: SpellNonFiniteSingle(floatLit.Value));
 				break;
 			case LiteralExpression<long> longLit:
 				code.Write($"{longLit.Value.ToString(CultureInfo.InvariantCulture)}L");
@@ -305,6 +307,14 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// </remarks>
 	protected override string SpellNonFiniteDouble(double value) =>
 		double.IsNaN(value) ? "double.NaN" : value > 0 ? "double.PositiveInfinity" : "double.NegativeInfinity";
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// The constants on <see cref="float"/>, because C# does not narrow a <c>double</c> to a
+	/// <c>float</c> implicitly.
+	/// </remarks>
+	protected override string SpellNonFiniteSingle(float value) =>
+		float.IsNaN(value) ? "float.NaN" : value > 0 ? "float.PositiveInfinity" : "float.NegativeInfinity";
 
 	/// <summary>
 	/// Emits a namespace and its members.

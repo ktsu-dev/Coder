@@ -94,6 +94,50 @@ public class PythonGeneratedSourceImportsTests
 		});
 	}
 
+	/// <summary>
+	/// Tests that a static property with bodies is reachable from the class, rather than answering
+	/// the property object a <c>@property</c> read from the class gives (issue #180).
+	/// </summary>
+	[TestMethod]
+	public void StaticProperty_IsReachableFromTheClass()
+	{
+		string? python = ToolchainHarness.FindOnPath("--version", "python3", "python");
+		if (python is null)
+		{
+			Assert.Inconclusive("No Python interpreter on the path, so nothing was run.");
+			return;
+		}
+
+		ClassDeclaration counter = new("Counter");
+		counter.Members.Add(new PropertyDeclaration("Limit", "int")
+		{
+			IsStatic = true,
+			HasSetter = true,
+			GetterBody = { new ReturnStatement(new LiteralExpression<int>(10)) },
+		});
+		SourceFile file = new("counter");
+		file.Members.Add(counter);
+
+		string generated = new PythonGenerator().Generate(file);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			File.WriteAllText(Path.Combine(directory, "counter.py"), generated);
+			File.WriteAllText(
+				Path.Combine(directory, "driver.py"),
+				string.Join(
+					Environment.NewLine,
+					"from counter import Counter",
+					"assert Counter.limit() == 10, Counter.limit",
+					"assert Counter().limit() == 10",
+					"assert Counter.set_limit(3) is None",
+					string.Empty));
+
+			(int exitCode, string output) = ToolchainHarness.Run(python, "driver.py", directory);
+			Assert.AreEqual(0, exitCode, $"The static property was not reachable from the class:{Environment.NewLine}{output}{Environment.NewLine}{generated}");
+		});
+	}
+
 	[TestMethod]
 	public void MutableFields_ArePerInstanceAndEnumsImport()
 	{

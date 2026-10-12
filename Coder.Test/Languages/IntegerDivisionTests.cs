@@ -118,6 +118,85 @@ public class IntegerDivisionTests
 	}
 
 	/// <summary>
+	/// Tests that Python computes the C family's quotient and remainder for <c>long</c> operands too
+	/// large for a float to hold exactly, where going through true division rounds the quotient.
+	/// </summary>
+	[TestMethod]
+	public void Python_LongOperandsAbove2To53_MatchTheCFamily()
+	{
+		string? python = ToolchainHarness.FindOnPath("--version", "python3", "python");
+		if (python is null)
+		{
+			Assert.Inconclusive("No Python interpreter on the path, so nothing was run.");
+			return;
+		}
+
+		(long Left, long Right)[] operands =
+		[
+			(1700000000123456789L, 7L),
+			(-1700000000123456789L, 7L),
+			(1700000000123456789L, -7L),
+			(-1700000000123456789L, -7L),
+			(9007199254740993L, 1L),
+			(-9007199254740993L, 2L),
+			(long.MaxValue, 3L),
+			(long.MinValue + 1, 10L),
+		];
+
+		PythonGenerator generator = new();
+		StringBuilder module = new();
+
+		// The generator still annotates a long as the undefined name `long` (#109); binding it here
+		// keeps this test about the arithmetic.
+		module.AppendLine("long = int");
+		module.AppendLine("def counted(x):");
+		module.AppendLine("    return x");
+
+		foreach (BinaryOperator op in new[] { BinaryOperator.Divide, BinaryOperator.Modulo })
+		{
+			string name = op == BinaryOperator.Divide ? "div" : "mod";
+
+			FunctionDeclaration parameters = new($"{name}_long") { ReturnType = new TypeReference("long") };
+			parameters.Parameters.Add(new Parameter("a", "long"));
+			parameters.Parameters.Add(new Parameter("b", "long"));
+			parameters.Body.Add(new ReturnStatement(new BinaryExpression(
+				new VariableReference("a"), op, new VariableReference("b"))));
+			module.AppendLine(generator.Generate(parameters));
+
+			FunctionDeclaration call = new($"{name}_long_call") { ReturnType = new TypeReference("long") };
+			call.Parameters.Add(new Parameter("a", "long"));
+			call.Parameters.Add(new Parameter("b", "long"));
+			CallExpression counted = new("counted") { ExpectedType = "long" };
+			counted.Arguments.Add(new VariableReference("a"));
+			call.Body.Add(new ReturnStatement(new BinaryExpression(counted, op, new VariableReference("b"))));
+			module.AppendLine(generator.Generate(call));
+
+			FunctionDeclaration literal = new($"{name}_long_literal") { ReturnType = new TypeReference("long") };
+			literal.Body.Add(new VariableDeclaration("n", "long", new LiteralExpression<long>(1700000000123456789L)));
+			literal.Body.Add(new ReturnStatement(new BinaryExpression(
+				new VariableReference("n"), op, new LiteralExpression<int>(7))));
+			module.AppendLine(generator.Generate(literal));
+
+			long literalExpected = op == BinaryOperator.Divide ? 1700000000123456789L / 7 : 1700000000123456789L % 7;
+			module.AppendLine(CultureInfo.InvariantCulture, $"r = {name}_long_literal()");
+			module.AppendLine(CultureInfo.InvariantCulture, $"assert type(r) is int and r == {literalExpected}, f\"{name}_long_literal() = {{r!r}}, expected {literalExpected}\"");
+
+			foreach ((long left, long right) in operands)
+			{
+				long expected = op == BinaryOperator.Divide ? left / right : left % right;
+				foreach (string function in new[] { $"{name}_long", $"{name}_long_call" })
+				{
+					string arguments = string.Create(CultureInfo.InvariantCulture, $"{left}, {right}");
+					module.AppendLine(CultureInfo.InvariantCulture, $"r = {function}({arguments})");
+					module.AppendLine(CultureInfo.InvariantCulture, $"assert type(r) is int and r == {expected}, f\"{function}({arguments}) = {{r!r}}, expected {expected}\"");
+				}
+			}
+		}
+
+		Run(python, "check_long.py", module.ToString());
+	}
+
+	/// <summary>
 	/// Tests that JavaScript computes the C family's quotient and remainder.
 	/// </summary>
 	[TestMethod]

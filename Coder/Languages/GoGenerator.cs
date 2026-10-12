@@ -302,6 +302,13 @@ public class GoGenerator : StandardLanguageGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
+	/// The same functions converted, because they return <c>float64</c> and Go converts nothing
+	/// implicitly: a <c>float32</c> declared with <c>math.NaN()</c> does not compile.
+	/// </remarks>
+	protected override string SpellNonFiniteSingle(float value) => $"float32({SpellNonFiniteDouble(value)})";
+
+	/// <inheritdoc/>
+	/// <remarks>
 	/// Nothing: a Go file's imports are written with its package clause, by
 	/// <see cref="WriteFileDirectives"/>, because the two are one header and have to appear in that
 	/// order before anything else.
@@ -440,7 +447,7 @@ public class GoGenerator : StandardLanguageGenerator
 			groups[0].Add(RuntimePackage);
 		}
 
-		if ((ContainsNonFiniteDouble(file) || ContainsFloatingRemainder(file)) && !groups.Any(group => group.Contains(MathPackage)))
+		if ((ContainsNonFiniteLiteral(file) || ContainsFloatingRemainder(file)) && !groups.Any(group => group.Contains(MathPackage)))
 		{
 			groups[0].Add(MathPackage);
 		}

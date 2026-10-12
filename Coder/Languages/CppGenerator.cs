@@ -128,10 +128,20 @@ public class CppGenerator : CFamilyGenerator
 		: "-std::numeric_limits<double>::infinity()";
 
 	/// <inheritdoc/>
+	/// <remarks>
+	/// The <c>float</c> specialisation, so an inferred local holding one is a <c>float</c> rather
+	/// than a <c>double</c>.
+	/// </remarks>
+	protected override string SpellNonFiniteSingle(float value) =>
+		float.IsNaN(value) ? "std::numeric_limits<float>::quiet_NaN()"
+		: value > 0 ? "std::numeric_limits<float>::infinity()"
+		: "-std::numeric_limits<float>::infinity()";
+
+	/// <inheritdoc/>
 	protected override IEnumerable<string> RequiredImports(SourceFile file)
 	{
 		Ensure.NotNull(file);
-		if (ContainsNonFiniteDouble(file))
+		if (ContainsNonFiniteLiteral(file))
 		{
 			yield return LimitsHeader;
 		}
@@ -241,7 +251,9 @@ public class CppGenerator : CFamilyGenerator
 		GenerateParameterList(funcDecl.Parameters, code);
 		code.Write(")");
 
-		if (funcDecl.IsReadOnly)
+		// A static member function has no object to promise not to change, so C++ refuses `const` on
+		// one.
+		if (funcDecl.IsReadOnly && !funcDecl.IsStatic)
 		{
 			code.Write(" const");
 		}

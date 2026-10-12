@@ -177,7 +177,7 @@ public class CGenerator : CFamilyGenerator
 	protected override IEnumerable<string> RequiredImports(SourceFile file)
 	{
 		Ensure.NotNull(file);
-		if (ContainsNonFiniteDouble(file) || ContainsFloatingRemainder(file))
+		if (ContainsNonFiniteLiteral(file) || ContainsFloatingRemainder(file))
 		{
 			yield return MathHeader;
 		}

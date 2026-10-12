@@ -51,6 +51,55 @@ public class NonFiniteDoubleLiteralTests
 		Assert.AreEqual(expected, GeneratorFor(language).Generate(new LiteralExpression<double>(value)).Trim());
 
 	/// <summary>
+	/// Tests that each generator spells a NaN or infinite float in its own language, at single
+	/// precision where the language has a name for it.
+	/// </summary>
+	/// <param name="language">The generator's display name.</param>
+	/// <param name="value">The value to write.</param>
+	/// <param name="expected">What the generator should write.</param>
+	[TestMethod]
+	[DataRow("C#", float.NaN, "float.NaN")]
+	[DataRow("C#", float.PositiveInfinity, "float.PositiveInfinity")]
+	[DataRow("C#", float.NegativeInfinity, "float.NegativeInfinity")]
+	[DataRow("C++", float.NaN, "std::numeric_limits<float>::quiet_NaN()")]
+	[DataRow("C++", float.PositiveInfinity, "std::numeric_limits<float>::infinity()")]
+	[DataRow("C++", float.NegativeInfinity, "-std::numeric_limits<float>::infinity()")]
+	[DataRow("C", float.NaN, "NAN")]
+	[DataRow("C", float.PositiveInfinity, "INFINITY")]
+	[DataRow("C", float.NegativeInfinity, "-INFINITY")]
+	[DataRow("Go", float.NaN, "float32(math.NaN())")]
+	[DataRow("Go", float.PositiveInfinity, "float32(math.Inf(1))")]
+	[DataRow("Go", float.NegativeInfinity, "float32(math.Inf(-1))")]
+	[DataRow("Rust", float.NaN, "f32::NAN")]
+	[DataRow("Rust", float.PositiveInfinity, "f32::INFINITY")]
+	[DataRow("Rust", float.NegativeInfinity, "f32::NEG_INFINITY")]
+	[DataRow("Python", float.NaN, "float(\"nan\")")]
+	[DataRow("Python", float.PositiveInfinity, "float(\"inf\")")]
+	[DataRow("Python", float.NegativeInfinity, "float(\"-inf\")")]
+	[DataRow("JavaScript", float.NaN, "NaN")]
+	[DataRow("JavaScript", float.PositiveInfinity, "Infinity")]
+	[DataRow("JavaScript", float.NegativeInfinity, "-Infinity")]
+	public void ANonFiniteFloatIsSpelledInTheTargetLanguage(string language, float value, string expected) =>
+		Assert.AreEqual(expected, GeneratorFor(language).Generate(new LiteralExpression<float>(value)).Trim());
+
+	/// <summary>
+	/// Tests that a file whose only non-finite literal is a float still imports what its spelling
+	/// needs.
+	/// </summary>
+	/// <param name="language">The generator's display name.</param>
+	/// <param name="import">The line the file should carry.</param>
+	[TestMethod]
+	[DataRow("C", "#include <math.h>")]
+	[DataRow("C++", "#include <limits>")]
+	[DataRow("Go", "import \"math\"")]
+	public void AFileHoldingANonFiniteFloatImportsItsSpelling(string language, string import)
+	{
+		string code = GeneratorFor(language).Generate(FileReturningFloats("limits", float.NaN));
+
+		Assert.AreEqual(1, Occurrences(code, import), code);
+	}
+
+	/// <summary>
 	/// Tests that a file holding a non-finite double includes or imports what its spelling needs.
 	/// </summary>
 	/// <param name="language">The generator's display name.</param>
@@ -209,6 +258,75 @@ public class NonFiniteDoubleLiteralTests
 		CompileIn(new RustGenerator(), "limits.rs", "rustc", "--crate-type lib --edition 2021 -o limits.rlib limits.rs");
 	}
 
+	/// <summary>
+	/// Tests that a C file returning a NaN and both infinite floats compiles.
+	/// </summary>
+	[TestMethod]
+	public void GeneratedCFloats_Compile()
+	{
+		string? compiler = ToolchainHarness.FindOnPath("--version", "cc", "gcc", "clang");
+		if (compiler is null)
+		{
+			Assert.Inconclusive("No C compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		CompileIn(new CGenerator(), FloatFile(), "limits.c", compiler, "-std=c11 -Wall -Wextra -pedantic -Werror -c limits.c -o limits.o");
+	}
+
+	/// <summary>
+	/// Tests that a C++ file returning a NaN and both infinite floats compiles.
+	/// </summary>
+	[TestMethod]
+	public void GeneratedCppFloats_Compile()
+	{
+		string? compiler = ToolchainHarness.FindOnPath("--version", "c++", "g++", "clang++");
+		if (compiler is null)
+		{
+			Assert.Inconclusive("No C++ compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		CompileIn(new CppGenerator(), FloatFile(), "limits.cpp", compiler, "-std=c++20 -Wall -Wextra -pedantic -Werror -c limits.cpp -o limits.o");
+	}
+
+	/// <summary>
+	/// Tests that a Go file returning a NaN and both infinite floats, and declaring an inferred
+	/// local holding one, compiles.
+	/// </summary>
+	[TestMethod]
+	public void GeneratedGoFloats_Compile()
+	{
+		if (ToolchainHarness.FindOnPath("version", "go") is null)
+		{
+			Assert.Inconclusive("No Go toolchain on the path, so nothing was compiled.");
+			return;
+		}
+
+		CompileIn(
+			new GoGenerator(),
+			FloatFile(),
+			"limits.go",
+			"go",
+			"build ./...",
+			directory => File.WriteAllText(Path.Combine(directory, "go.mod"), "module limits\n\ngo 1.21\n"));
+	}
+
+	/// <summary>
+	/// Tests that a Rust file returning a NaN and both infinite floats compiles.
+	/// </summary>
+	[TestMethod]
+	public void GeneratedRustFloats_Compile()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "rustc") is null)
+		{
+			Assert.Inconclusive("No Rust compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		CompileIn(new RustGenerator(), FloatFile(), "limits.rs", "rustc", "--crate-type lib --edition 2021 -o limits.rlib limits.rs");
+	}
+
 	private static ILanguageGenerator GeneratorFor(string language) => language switch
 	{
 		"C#" => new CSharpGenerator(),
@@ -234,6 +352,39 @@ public class NonFiniteDoubleLiteralTests
 			function.Body.Add(new ReturnStatement(new LiteralExpression<double>(values[index])));
 			file.Members.Add(function);
 		}
+
+		return file;
+	}
+
+	/// <summary>
+	/// Builds a file with one function returning each of the given floats.
+	/// </summary>
+	private static SourceFile FileReturningFloats(string name, params float[] values)
+	{
+		SourceFile file = new(name);
+
+		for (int index = 0; index < values.Length; index++)
+		{
+			FunctionDeclaration function = new($"value{index}") { ReturnType = new TypeReference("float") };
+			function.Body.Add(new ReturnStatement(new LiteralExpression<float>(values[index])));
+			file.Members.Add(function);
+		}
+
+		return file;
+	}
+
+	/// <summary>
+	/// Builds a file returning a NaN and both infinite floats, and a function that holds one in an
+	/// inferred local, whose type is the one the spelling gives it.
+	/// </summary>
+	private static SourceFile FloatFile()
+	{
+		SourceFile file = FileReturningFloats("limits", float.NaN, float.PositiveInfinity, float.NegativeInfinity);
+
+		FunctionDeclaration inferred = new("inferred") { ReturnType = new TypeReference("float") };
+		inferred.Body.Add(new VariableDeclaration("ceiling", "float", new LiteralExpression<float>(float.PositiveInfinity)) { IsTypeInferred = true });
+		inferred.Body.Add(new ReturnStatement(new VariableReference("ceiling")));
+		file.Members.Add(inferred);
 
 		return file;
 	}
@@ -268,11 +419,26 @@ public class NonFiniteDoubleLiteralTests
 		string compiler,
 		string arguments,
 		Action<string>? prepare = null) =>
+		CompileIn(
+			generator,
+			FileReturning("limits", double.NaN, double.PositiveInfinity, double.NegativeInfinity),
+			fileName,
+			compiler,
+			arguments,
+			prepare);
+
+	private static void CompileIn(
+		ILanguageGenerator generator,
+		SourceFile file,
+		string fileName,
+		string compiler,
+		string arguments,
+		Action<string>? prepare = null) =>
 		ToolchainHarness.InTemporaryDirectory(directory =>
 		{
 			prepare?.Invoke(directory);
 
-			string code = generator.Generate(FileReturning("limits", double.NaN, double.PositiveInfinity, double.NegativeInfinity));
+			string code = generator.Generate(file);
 			File.WriteAllText(Path.Combine(directory, fileName), code);
 
 			(int exitCode, string output) = ToolchainHarness.Run(compiler, arguments, directory);

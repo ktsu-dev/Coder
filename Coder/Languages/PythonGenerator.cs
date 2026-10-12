@@ -124,6 +124,12 @@ public class PythonGenerator : StandardLanguageGenerator
 			return;
 		}
 
+		if (declaration.IsStatic)
+		{
+			GenerateStaticAccessors(declaration, annotation, result, code);
+			return;
+		}
+
 		if (declaration.CanRead)
 		{
 			code.WriteLine("@property");
@@ -147,6 +153,36 @@ public class PythonGenerator : StandardLanguageGenerator
 		{
 			code.WriteLine($"@{name}.setter");
 			code.Write($"def {name}(self, value{annotation}) -> None:");
+			WriteAccessorBody(declaration.SetterBody, code);
+		}
+	}
+
+	/// <summary>
+	/// Writes a static property with bodies as a getter and a setter on the class.
+	/// </summary>
+	/// <param name="declaration">The property to write.</param>
+	/// <param name="annotation">The value's type, spelled as a parameter annotation.</param>
+	/// <param name="result">The value's type, spelled as a return annotation.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// A <c>@property</c> works only on an instance: read from the class, it answers the property
+	/// object itself rather than calling the getter. Python has no static property, so this one
+	/// becomes the two <c>@staticmethod</c> functions C, Rust and Go already lower it to, named the
+	/// way they name them (<c>limit()</c> and <c>set_limit(value)</c>), and reachable from the class.
+	/// </remarks>
+	private void GenerateStaticAccessors(PropertyDeclaration declaration, string annotation, string result, CodeBlocker code)
+	{
+		if (declaration.CanRead)
+		{
+			code.WriteLine("@staticmethod");
+			code.Write($"def {declaration.GetterName(NamingStyle.Snake)}(){result}:");
+			WriteAccessorBody(declaration.GetterBody, code);
+		}
+
+		if (declaration.CanWrite)
+		{
+			code.WriteLine("@staticmethod");
+			code.Write($"def {declaration.SetterName(NamingStyle.Snake)}(value{annotation}) -> None:");
 			WriteAccessorBody(declaration.SetterBody, code);
 		}
 	}
@@ -939,13 +975,19 @@ public class PythonGenerator : StandardLanguageGenerator
 	/// the way the C family does: the quotient truncates toward zero and the remainder takes the sign
 	/// of the dividend, so <c>-7 / 2</c> is <c>-3</c> and <c>-7 % 2</c> is <c>-1</c>. Python's <c>/</c>
 	/// is true division and gives <c>-3.5</c>, a float, and its <c>//</c> and <c>%</c> floor, giving
-	/// <c>-4</c> and <c>1</c>. So when both operands are known to be integers the quotient is truncated
-	/// with <c>int()</c>, and the remainder is what is left once the truncated quotient is taken away.
+	/// <c>-4</c> and <c>1</c>. So when both operands are known to be integers the quotient is truncated,
+	/// and the remainder is what is left once the truncated quotient is taken away.
 	/// <para>
-	/// The remainder names each operand twice. An operand that is a literal or a variable reads the
-	/// same both times; anything else is bound once, as the parameters of a lambda called where it
-	/// stands, so a call is not made twice. <c>math.fmod</c> would say it in one call, but it needs an
-	/// import and an expression can be generated outside any file that could carry one.
+	/// The quotient is truncated in integer arithmetic only: <c>a // b</c> when the operands have the
+	/// same sign, where flooring and truncating agree, and <c>-(-a // b)</c> when they differ. Going
+	/// through <c>/</c> and <c>int()</c> instead would be exact for an <c>int</c> and not for a
+	/// <c>long</c>, because <c>/</c> gives a float, which rounds any quotient above 2^53 before it is
+	/// truncated. <c>math.fmod</c> is no better, being a float function too.
+	/// </para>
+	/// <para>
+	/// Both forms name each operand more than once. An operand that is a literal or a variable reads
+	/// the same every time; anything else is bound once, as the parameters of a lambda called where it
+	/// stands, so a call is not made twice.
 	/// </para>
 	/// </remarks>
 	protected override void GenerateBinary(BinaryExpression binary, CodeBlocker code)
@@ -959,31 +1001,59 @@ public class PythonGenerator : StandardLanguageGenerator
 			return;
 		}
 
-		if (binary.Operator == BinaryOperator.Divide)
-		{
-			code.Write("int(");
-			GenerateBinaryExpression(binary, code, "/");
-			code.Write(")");
-			return;
-		}
+		bool divide = binary.Operator == BinaryOperator.Divide;
 
 		if (IsReadTwiceSafely(binary.Left) && IsReadTwiceSafely(binary.Right))
 		{
-			code.Write("(");
-			GenerateInternal(binary.Left, code);
-			code.Write(" - ");
-			GenerateInternal(binary.Right, code);
-			code.Write(" * int(");
-			GenerateBinaryExpression(binary, code, "/");
-			code.Write("))");
+			WriteTruncated(code, divide, () => GenerateInternal(binary.Left, code), () => GenerateInternal(binary.Right, code));
 			return;
 		}
 
-		code.Write("(lambda a, b: a - b * int(a / b))(");
+		code.Write("(lambda a, b: ");
+		WriteTruncated(code, divide, () => code.Write("a"), () => code.Write("b"));
+		code.Write(")(");
 		GenerateInternal(binary.Left, code);
 		code.Write(", ");
 		GenerateInternal(binary.Right, code);
 		code.Write(")");
+	}
+
+	/// <summary>
+	/// Writes the C family's truncating quotient or remainder of two integers in integer arithmetic.
+	/// </summary>
+	/// <param name="code">The writer to emit into.</param>
+	/// <param name="divide">True for the quotient, false for the remainder.</param>
+	/// <param name="left">Writes the dividend, which is read more than once.</param>
+	/// <param name="right">Writes the divisor, which is read more than once.</param>
+	private static void WriteTruncated(CodeBlocker code, bool divide, Action left, Action right)
+	{
+		if (!divide)
+		{
+			code.Write("(");
+			left();
+			code.Write(" - ");
+			right();
+			code.Write(" * ");
+		}
+
+		code.Write("(");
+		left();
+		code.Write(" // ");
+		right();
+		code.Write(" if (");
+		left();
+		code.Write(" < 0) == (");
+		right();
+		code.Write(" < 0) else -(-");
+		left();
+		code.Write(" // ");
+		right();
+		code.Write("))");
+
+		if (!divide)
+		{
+			code.Write(")");
+		}
 	}
 
 	private static bool IsReadTwiceSafely(Expression operand) =>
