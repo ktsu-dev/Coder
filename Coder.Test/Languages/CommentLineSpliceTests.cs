@@ -99,8 +99,8 @@ public class CommentLineSpliceTests
 
 		ToolchainHarness.InTemporaryDirectory(directory =>
 		{
-			File.WriteAllText(Path.Combine(directory, header), generator.Generate(Exemplar()));
-			File.WriteAllText(Path.Combine(directory, driver), $$"""
+			File.WriteAllText(Path.Join(directory, header), generator.Generate(Exemplar()));
+			File.WriteAllText(Path.Join(directory, driver), $$"""
 				#include "{{header}}"
 
 				int main(void)
@@ -113,7 +113,7 @@ public class CommentLineSpliceTests
 			(int exitCode, string output) = ToolchainHarness.Run(compiler, arguments, directory);
 			Assert.AreEqual(0, exitCode, $"{compiler} rejected the generated source:{Environment.NewLine}{output}");
 
-			(int runExit, string runOutput) = ToolchainHarness.Run(Path.Combine(directory, "driver"), string.Empty, directory);
+			(int runExit, string runOutput) = ToolchainHarness.Run(Path.Join(directory, "driver"), string.Empty, directory);
 			Assert.AreEqual(0, runExit, $"describe() did not return 7.{Environment.NewLine}{runOutput}");
 		});
 	}
