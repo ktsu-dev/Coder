@@ -345,6 +345,14 @@ public class RustGenerator : StandardLanguageGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
+	/// The associated constants of <c>f32</c>, since Rust does not convert an <c>f64</c> to an
+	/// <c>f32</c> implicitly.
+	/// </remarks>
+	protected override string SpellNonFiniteSingle(float value) =>
+		float.IsNaN(value) ? "f32::NAN" : value > 0 ? "f32::INFINITY" : "f32::NEG_INFINITY";
+
+	/// <inheritdoc/>
+	/// <remarks>
 	/// Rust has modules, so a namespace is one — and a dotted name is nested modules rather than one
 	/// module with a long name, because that is what the name says and what a caller reaching into it
 	/// would have to write either way.
