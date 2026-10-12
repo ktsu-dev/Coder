@@ -1018,6 +1018,40 @@ public class PythonGenerator : StandardLanguageGenerator
 		code.Write(")");
 	}
 
+	/// <inheritdoc/>
+	/// <remarks>
+	/// <c>x /= y</c> and <c>x %= y</c> are Python's true division and floored remainder, the same as
+	/// the binary operators, so on integers they give <c>2.5</c> for <c>5 /= 2</c> and <c>1</c> for
+	/// <c>-7 %= 2</c> where the C family gives <c>2</c> and <c>-1</c>. When both sides are known to be
+	/// integers the assignment is written out as <c>x = x / y</c>, whose quotient or remainder
+	/// <see cref="GenerateBinary"/> truncates. Every other compound assignment, and one on operands
+	/// the AST does not know to be integers, is left as it is.
+	/// </remarks>
+	protected override void GenerateAssignmentStatement(AssignmentStatement assignment, CodeBlocker code)
+	{
+		Ensure.NotNull(assignment);
+		Ensure.NotNull(code);
+
+		BinaryOperator? op = assignment.Operator switch
+		{
+			AssignmentOperator.DivideAssign => BinaryOperator.Divide,
+			AssignmentOperator.ModuloAssign => BinaryOperator.Modulo,
+			_ => null,
+		};
+
+		BinaryExpression? binary = op is null ? null : new(assignment.Target, op.Value, assignment.Value);
+		if (binary is null || !IsIntegerArithmetic(binary))
+		{
+			base.GenerateAssignmentStatement(assignment, code);
+			return;
+		}
+
+		GenerateInternal(assignment.Target, code);
+		code.Write(" = ");
+		GenerateBinary(binary, code);
+		EndStatement(code);
+	}
+
 	/// <summary>
 	/// Writes the C family's truncating quotient or remainder of two integers in integer arithmetic.
 	/// </summary>
