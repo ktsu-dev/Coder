@@ -1699,7 +1699,7 @@ public class GoGenerator : StandardLanguageGenerator
 				return;
 
 			default:
-				GenerateInternal(condition, code);
+				WriteConditionOperand(condition, code);
 				return;
 		}
 	}
@@ -1710,18 +1710,46 @@ public class GoGenerator : StandardLanguageGenerator
 	/// </summary>
 	/// <param name="operand">The operand to write.</param>
 	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// A struct literal stands in the clause just as much when it is the receiver of a call, so
+	/// <c>if Point{1, 2}.Len() &gt; 0 {</c> ends the clause at the same brace (issue #185). A call
+	/// whose receiver chain starts at one is therefore written here rather than by the shared call
+	/// emitter, with the receiver going back through this method: <c>(Point{1, 2}).Len()</c>.
+	/// </remarks>
 	private void WriteConditionOperand(AstNode operand, CodeBlocker code)
 	{
-		if (operand is ConstructionExpression construction && IsCompositeLiteral(construction))
+		switch (operand)
 		{
-			code.Write("(");
-			GenerateInternal(operand, code);
-			code.Write(")");
-			return;
-		}
+			case ConstructionExpression construction when IsCompositeLiteral(construction):
+				code.Write("(");
+				GenerateInternal(operand, code);
+				code.Write(")");
+				return;
 
-		GenerateInternal(operand, code);
+			case CallExpression { Receiver: not null } call when StartsWithCompositeLiteral(call.Receiver):
+				WriteConditionOperand(call.Receiver, code);
+				code.Write($".{call.Callee}(");
+				GenerateArgumentList(call.Arguments, code);
+				code.Write(")");
+				return;
+
+			default:
+				GenerateInternal(operand, code);
+				return;
+		}
 	}
+
+	/// <summary>
+	/// Whether an expression is a struct literal, or a chain of calls whose first receiver is one.
+	/// </summary>
+	/// <param name="expression">The expression to inspect.</param>
+	/// <returns><see langword="true"/> if the expression's text would begin with a struct literal.</returns>
+	private static bool StartsWithCompositeLiteral(AstNode expression) => expression switch
+	{
+		ConstructionExpression construction => IsCompositeLiteral(construction),
+		CallExpression { Receiver: not null } call => StartsWithCompositeLiteral(call.Receiver),
+		_ => false,
+	};
 
 	/// <inheritdoc/>
 	/// <remarks>
