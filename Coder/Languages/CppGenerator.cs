@@ -213,7 +213,9 @@ public class CppGenerator : CFamilyGenerator
 		GenerateParameterList(funcDecl.Parameters, code);
 		code.Write(")");
 
-		if (funcDecl.IsReadOnly)
+		// A static member function has no object to promise not to change, so C++ refuses `const` on
+		// one.
+		if (funcDecl.IsReadOnly && !funcDecl.IsStatic)
 		{
 			code.Write(" const");
 		}

@@ -593,7 +593,10 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 				ReturnType = property.Type,
 				Visibility = property.Visibility,
 				IsStatic = property.IsStatic,
-				IsReadOnly = true,
+
+				// A getter leaves its instance alone, but a static one has no instance to leave alone,
+				// and C++ refuses `const` on a static member function.
+				IsReadOnly = !property.IsStatic,
 				Documentation = [.. property.Documentation],
 				Annotations = [.. property.Annotations.Select(CloneAnnotation)],
 				Body = [.. property.GetterBody.Select(statement => statement.Clone())],

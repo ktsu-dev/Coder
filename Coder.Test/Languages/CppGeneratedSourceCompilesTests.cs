@@ -89,6 +89,52 @@ public class CppGeneratedSourceCompilesTests
 	}
 
 	/// <summary>
+	/// Tests that a static property with a getter compiles and answers from the class.
+	/// </summary>
+	/// <remarks>
+	/// A getter is lowered to a <c>const</c> member function, and a static member function cannot be
+	/// <c>const</c>, so <c>static int limit() const</c> was rejected (issue #180).
+	/// </remarks>
+	[TestMethod]
+	public void AStaticPropertyGetterCompiles()
+	{
+		string? compiler = ToolchainHarness.FindOnPath("--version", Compilers);
+		if (compiler is null)
+		{
+			Assert.Inconclusive("No C++ compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		ClassDeclaration counter = new("Counter");
+		counter.Members.Add(new PropertyDeclaration("Limit", "int")
+		{
+			IsStatic = true,
+			GetterBody = { new ReturnStatement(new LiteralExpression<int>(10)) },
+		});
+		SourceFile file = new("counter");
+		file.Members.Add(counter);
+
+		string header = new CppGenerator().Generate(file);
+		Assert.Contains("static int limit()", header, StringComparison.Ordinal, header);
+		Assert.DoesNotContain("limit() const", header, StringComparison.Ordinal, header);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			File.WriteAllText(Path.Combine(directory, "counter.h"), header);
+			File.WriteAllText(
+				Path.Combine(directory, "driver.cpp"),
+				$"#include \"counter.h\"{Environment.NewLine}{Environment.NewLine}int main() {{ return Counter::limit() == 10 ? 0 : 1; }}{Environment.NewLine}");
+
+			(int exitCode, string output) = ToolchainHarness.Run(
+				compiler,
+				"-std=c++20 -Wall -Wextra -pedantic -Werror -c driver.cpp -o driver.o",
+				directory);
+
+			Assert.AreEqual(0, exitCode, $"{compiler} rejected the generated header:{Environment.NewLine}{output}{Environment.NewLine}{header}");
+		});
+	}
+
+	/// <summary>
 	/// Tests that a class's mutable static fields compile, with and without an initialiser.
 	/// </summary>
 	/// <remarks>
