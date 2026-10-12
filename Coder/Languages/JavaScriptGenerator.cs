@@ -516,6 +516,10 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	/// <remarks>
 	/// JavaScript assigns where C++ initialises, before the body's own statements and in the order
 	/// declared, which is what the initialiser means where there is no initialiser list.
+	/// <para>
+	/// One with no value value-initialises the member, as C++'s <c>x()</c> does. JavaScript has no
+	/// type to take a default from, so the member is created holding <c>undefined</c>.
+	/// </para>
 	/// </remarks>
 	private void WriteInitialiserAssignments(FunctionDeclaration method, MemberInitialiser? baseInitialiser, CodeBlocker code)
 	{
@@ -526,6 +530,10 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 			if (initialiser.Value is not null)
 			{
 				GenerateInternal(initialiser.Value, code);
+			}
+			else
+			{
+				code.Write("undefined");
 			}
 
 			EndStatement(code);

@@ -685,7 +685,8 @@ public class CSharpGenerator : LanguageGeneratorBase
 		using Scope body = new(code);
 
 		// C# assigns where C++ initialises. Written before the body's own statements and in the order
-		// declared, which is what the initialiser means where there is no initialiser list.
+		// declared, which is what the initialiser means where there is no initialiser list. One with no
+		// value value-initialises the member, as C++'s `x()` does, and `default` is C#'s spelling.
 		foreach (MemberInitialiser initialiser in function.Initialisers)
 		{
 			code.Write($"this.{initialiser.Name} = ");
@@ -693,6 +694,10 @@ public class CSharpGenerator : LanguageGeneratorBase
 			if (initialiser.Value is not null)
 			{
 				GenerateInternal(initialiser.Value, code);
+			}
+			else
+			{
+				code.Write("default");
 			}
 
 			EndStatement(code);

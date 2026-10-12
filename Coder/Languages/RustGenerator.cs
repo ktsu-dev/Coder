@@ -1058,6 +1058,11 @@ public class RustGenerator : StandardLanguageGenerator
 	/// A field initialised from a name of its own spelling is written as that name alone, which is
 	/// Rust's field-init shorthand and what anybody would have written by hand.
 	/// </para>
+	/// <para>
+	/// An initialiser with no value value-initialises its field, as C++'s <c>x()</c> does, which Rust
+	/// spells <c>Default::default()</c>. Leaving it out, as a braced list does, would leave the field
+	/// unnamed in a literal that has to name every one.
+	/// </para>
 	/// </remarks>
 	private void WriteConstructorBody(FunctionDeclaration funcDecl, CodeBlocker code)
 	{
@@ -1074,7 +1079,9 @@ public class RustGenerator : StandardLanguageGenerator
 		ConstructionExpression value = new(new TypeReference("Self"));
 		foreach (MemberInitialiser initialiser in funcDecl.Initialisers)
 		{
-			value.Arguments.Add(initialiser);
+			value.Arguments.Add(initialiser.Value is null
+				? new MemberInitialiser { Name = initialiser.Name, Value = new CallExpression("Default::default") }
+				: initialiser);
 		}
 
 		GenerateConstructionExpression(value, code);
