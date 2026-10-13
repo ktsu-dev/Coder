@@ -112,6 +112,13 @@ public class CppGenerator : CFamilyGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
+	/// A data member and a member function of one class may not share a name, so a getter that would
+	/// take its backing field's name is <c>get_count()</c> instead.
+	/// </remarks>
+	protected override bool MemberNamesMustDiffer => true;
+
+	/// <inheritdoc/>
+	/// <remarks>
 	/// Doubled brackets, which is the standard syntax rather than a compiler's own. An attribute
 	/// the compiler does not know is ignored with a warning rather than refused, which is what
 	/// makes writing a caller's attribute through safe here.
