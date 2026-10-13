@@ -731,6 +731,10 @@ public class PythonGenerator : StandardLanguageGenerator
 	/// <remarks>
 	/// Python assigns where C++ initialises, in the order declared, which is what the initialiser
 	/// means where there is no initialiser list to put it in.
+	/// <para>
+	/// One with no value value-initialises the member, as C++'s <c>x()</c> does. Python has no type
+	/// to take a default from, so the member is created holding <c>None</c>.
+	/// </para>
 	/// </remarks>
 	private void WriteInitialiserAssignments(FunctionDeclaration method, CodeBlocker code)
 	{
@@ -741,6 +745,10 @@ public class PythonGenerator : StandardLanguageGenerator
 			if (initialiser.Value is not null)
 			{
 				GenerateInternal(initialiser.Value, code);
+			}
+			else
+			{
+				code.Write("None");
 			}
 
 			code.WriteLine();
