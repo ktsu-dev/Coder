@@ -31,6 +31,15 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	internal bool EnforceConservation { get; set; }
 
 	/// <summary>
+	/// Gets the node the current <see cref="Generate"/> call was handed, or null outside one.
+	/// </summary>
+	/// <remarks>
+	/// What a generator can know about the rest of the document it is writing: a declaration elsewhere
+	/// in the same file can decide how a reference to it is spelled.
+	/// </remarks>
+	protected AstNode? GenerationRoot { get; private set; }
+
+	/// <summary>
 	/// Gets the indentation one level of nesting adds.
 	/// </summary>
 	/// <remarks>
@@ -75,6 +84,8 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 
 		HashSet<object>? previousItems = emittedPreambleItems;
 		Dictionary<object, object>? previousOrigins = preambleCloneOrigins;
+		AstNode? previousRoot = GenerationRoot;
+		GenerationRoot = astNode;
 		emittedPreambleItems = new HashSet<object>(ReferenceEqualityComparer.Instance);
 		preambleCloneOrigins = new Dictionary<object, object>(ReferenceEqualityComparer.Instance);
 
@@ -94,6 +105,7 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 		{
 			emittedPreambleItems = previousItems;
 			preambleCloneOrigins = previousOrigins;
+			GenerationRoot = previousRoot;
 		}
 	}
 
