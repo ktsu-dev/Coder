@@ -134,7 +134,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		{
 			code.WriteLine("@property");
 			code.Write($"def {name}(self){result}:");
-			WriteAccessorBody(declaration.GetterBody, code);
+			WriteAccessorBody(declaration, isSetter: false, code);
 		}
 
 		if (declaration.CanWrite && !declaration.CanRead)
@@ -144,7 +144,7 @@ public class PythonGenerator : StandardLanguageGenerator
 			// property is built from the setter alone instead.
 			string setter = $"_set_{name}";
 			code.Write($"def {setter}(self, value{annotation}) -> None:");
-			WriteAccessorBody(declaration.SetterBody, code);
+			WriteAccessorBody(declaration, isSetter: true, code);
 			code.WriteLine($"{name} = property(fset={setter})");
 			return;
 		}
@@ -153,7 +153,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		{
 			code.WriteLine($"@{name}.setter");
 			code.Write($"def {name}(self, value{annotation}) -> None:");
-			WriteAccessorBody(declaration.SetterBody, code);
+			WriteAccessorBody(declaration, isSetter: true, code);
 		}
 	}
 
@@ -176,28 +176,31 @@ public class PythonGenerator : StandardLanguageGenerator
 		{
 			code.WriteLine("@staticmethod");
 			code.Write($"def {declaration.GetterName(NamingStyle.Snake)}(){result}:");
-			WriteAccessorBody(declaration.GetterBody, code);
+			WriteAccessorBody(declaration, isSetter: false, code);
 		}
 
 		if (declaration.CanWrite)
 		{
 			code.WriteLine("@staticmethod");
 			code.Write($"def {declaration.SetterName(NamingStyle.Snake)}(value{annotation}) -> None:");
-			WriteAccessorBody(declaration.SetterBody, code);
+			WriteAccessorBody(declaration, isSetter: true, code);
 		}
 	}
 
 	/// <summary>
 	/// Writes an accessor's statements, indented under it.
 	/// </summary>
-	/// <param name="body">The statements to write.</param>
+	/// <param name="declaration">The property the accessor belongs to.</param>
+	/// <param name="isSetter">True to write the setter's body; false to write the getter's.</param>
 	/// <param name="code">The writer to emit into.</param>
 	/// <remarks>
 	/// An empty one is <c>pass</c>, for the reason an empty class is: Python's body is delimited by
 	/// indentation, so there is nothing to write that is nothing.
 	/// </remarks>
-	private void WriteAccessorBody(Collection<AstNode> body, CodeBlocker code)
+	private void WriteAccessorBody(PropertyDeclaration declaration, bool isSetter, CodeBlocker code)
 	{
+		Collection<AstNode> body = isSetter ? declaration.SetterBody : declaration.GetterBody;
+		using IDisposable types = OpenStaticTypeScope(declaration, isSetter);
 		code.WriteLine();
 
 		using IndentScope statements = new(code);
@@ -794,6 +797,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		code.WriteLine("):");
 
 		// Python's body is delimited by indentation alone, so there is no brace scope to open.
+		using (IDisposable types = OpenStaticTypeScope(entryPoint))
 		using (IndentScope body = new(code))
 		{
 			if (entryPoint.Body.Count == 0)

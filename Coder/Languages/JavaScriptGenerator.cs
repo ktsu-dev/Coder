@@ -2,7 +2,6 @@
 
 namespace ktsu.Coder.Languages;
 
-using System.Collections.ObjectModel;
 using System.Linq;
 using ktsu.Coder.Ast;
 using ktsu.CodeBlocker;
@@ -69,26 +68,28 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		if (declaration.CanRead)
 		{
 			code.Write($"{(declaration.IsStatic ? StaticKeyword : string.Empty)}get {name}() ");
-			WriteAccessorBody(declaration.GetterBody, code);
+			WriteAccessorBody(declaration, isSetter: false, code);
 		}
 
 		if (declaration.CanWrite)
 		{
 			code.Write($"{(declaration.IsStatic ? StaticKeyword : string.Empty)}set {name}(value) ");
-			WriteAccessorBody(declaration.SetterBody, code);
+			WriteAccessorBody(declaration, isSetter: true, code);
 		}
 	}
 
 	/// <summary>
 	/// Writes an accessor's statements, in a brace scope that hangs off the line it is on.
 	/// </summary>
-	/// <param name="body">The statements to write.</param>
+	/// <param name="declaration">The property the accessor belongs to.</param>
+	/// <param name="isSetter">True to write the setter's body; false to write the getter's.</param>
 	/// <param name="code">The writer to emit into.</param>
-	private void WriteAccessorBody(Collection<AstNode> body, CodeBlocker code)
+	private void WriteAccessorBody(PropertyDeclaration declaration, bool isSetter, CodeBlocker code)
 	{
+		using IDisposable types = OpenStaticTypeScope(declaration, isSetter);
 		using Scope statements = new(code);
 
-		foreach (AstNode statement in body)
+		foreach (AstNode statement in isSetter ? declaration.SetterBody : declaration.GetterBody)
 		{
 			GenerateInternal(statement, code);
 		}
@@ -614,6 +615,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		// The line is left open, so the scope's brace lands on it: JavaScript braces hang.
 		code.Write(") ");
 
+		using (IDisposable types = OpenStaticTypeScope(entryPoint))
 		using (Scope body = new(code))
 		{
 			foreach (AstNode statement in entryPoint.Body)
