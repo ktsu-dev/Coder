@@ -185,6 +185,14 @@ public class CSharpGenerator : LanguageGeneratorBase
 			WriteInexpressible(code, $"specialised for {string.Join(", ", classDecl.SpecialisationArguments)}");
 		}
 
+		// readonly is a modifier only a struct may carry (CS0106). A class or interface still makes the
+		// claim, so it is written down the way the targets with no word for it write it down.
+		bool isReadOnlyStruct = classDecl.IsReadOnly && classDecl.Kind == TypeDeclarationKind.Struct;
+		if (classDecl.IsReadOnly && !isReadOnlyStruct)
+		{
+			WriteTypePromises(classDecl, code, recordIsSpelled: true);
+		}
+
 		string keyword = classDecl.Kind switch
 		{
 			TypeDeclarationKind.Struct => "struct",
@@ -199,7 +207,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 		string[] modifiers =
 		[
 			SpellVisibility(classDecl.Visibility) ?? DefaultVisibility,
-			.. classDecl.IsReadOnly ? (string[])["readonly"] : [],
+			.. isReadOnlyStruct ? (string[])["readonly"] : [],
 			.. classDecl.IsPartial ? (string[])["partial"] : [],
 			.. classDecl.IsRecord ? (string[])["record"] : [],
 			keyword,
@@ -225,16 +233,25 @@ public class CSharpGenerator : LanguageGeneratorBase
 		WriteConstraintClauses(classDecl.TypeParameters, code);
 
 		using Scope members = new(code);
-		foreach (AstNode member in classDecl.Members)
+		bool enclosingIsReadOnlyStruct = inReadOnlyStruct;
+		inReadOnlyStruct = isReadOnlyStruct;
+		try
 		{
-			if (member is FunctionDeclaration method)
+			foreach (AstNode member in classDecl.Members)
 			{
-				GenerateFunction(method, code, classDecl.Name);
+				if (member is FunctionDeclaration method)
+				{
+					GenerateFunction(method, code, classDecl.Name);
+				}
+				else
+				{
+					GenerateInternal(member, code);
+				}
 			}
-			else
-			{
-				GenerateInternal(member, code);
-			}
+		}
+		finally
+		{
+			inReadOnlyStruct = enclosingIsReadOnlyStruct;
 		}
 	}
 
@@ -537,8 +554,10 @@ public class CSharpGenerator : LanguageGeneratorBase
 		code.Write($"{SpellVisibility(property.Visibility) ?? DefaultVisibility}{modifiers} {type} {property.Name ?? "Value"}");
 
 		// init rather than set where the declaration asked for it: the two differ only in when the
-		// call is legal, and nothing else here has a word for the difference.
-		string setter = property.SetterIsInitOnly ? "init" : "set";
+		// call is legal, and nothing else here has a word for the difference. A readonly struct asks
+		// for it too, for an instance property: nothing may modify the instance after it is made.
+		bool initOnlyForStruct = inReadOnlyStruct && !property.IsStatic && !property.SetterIsInitOnly && property.CanWrite;
+		string setter = property.SetterIsInitOnly || initOnlyForStruct ? "init" : "set";
 
 		if (property.IsAutomatic)
 		{
@@ -559,6 +578,11 @@ public class CSharpGenerator : LanguageGeneratorBase
 
 		if (property.CanWrite)
 		{
+			if (initOnlyForStruct)
+			{
+				WriteInexpressible(code, "readonly: set only while the instance is initialised");
+			}
+
 			code.Write(setter);
 			WriteAccessorBody(property.SetterBody, code);
 		}
@@ -607,6 +631,10 @@ public class CSharpGenerator : LanguageGeneratorBase
 		else if (field.IsStatic)
 		{
 			code.Write("static ");
+		}
+		else if (inReadOnlyStruct)
+		{
+			code.Write("readonly ");
 		}
 
 		code.Write($"{MapToCSType(field.Type ?? new TypeReference(UnknownTypeName))} {field.Name}");
@@ -820,6 +848,16 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// anybody asked for.
 	/// </remarks>
 	private const string DefaultVisibility = "public";
+
+	/// <summary>
+	/// Whether the members being written belong directly to a <c>readonly struct</c>.
+	/// </summary>
+	/// <remarks>
+	/// C# requires every instance field and automatic property of a readonly struct to be readonly
+	/// itself (CS8340, CS8341), so a member's spelling depends on the type it stands in. Set for the
+	/// members of one type at a time and restored afterwards, so a nested type answers for itself.
+	/// </remarks>
+	private bool inReadOnlyStruct;
 
 	/// <summary>
 	/// What a declaration that never said what type it is gets.
