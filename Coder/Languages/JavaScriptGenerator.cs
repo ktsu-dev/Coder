@@ -679,6 +679,33 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		code.Write(")");
 	}
 
+	/// <inheritdoc/>
+	/// <remarks>
+	/// <c>x /= y</c> is true division, the same as <c>/</c>, so on integers it gives <c>2.5</c> for
+	/// <c>5 /= 2</c> where the C family gives <c>2</c>. When both sides are known to be integers the
+	/// assignment is written out as <c>x = Math.trunc(x / y)</c> through <see cref="GenerateBinary"/>.
+	/// <c>%=</c> already matches the C family, and every other compound assignment is left as it is.
+	/// </remarks>
+	protected override void GenerateAssignmentStatement(AssignmentStatement assignment, CodeBlocker code)
+	{
+		Ensure.NotNull(assignment);
+		Ensure.NotNull(code);
+
+		BinaryExpression? binary = assignment.Operator == AssignmentOperator.DivideAssign
+			? new(assignment.Target, BinaryOperator.Divide, assignment.Value)
+			: null;
+		if (binary is null || !IsIntegerArithmetic(binary))
+		{
+			base.GenerateAssignmentStatement(assignment, code);
+			return;
+		}
+
+		GenerateInternal(assignment.Target, code);
+		code.Write(" = ");
+		GenerateBinary(binary, code);
+		EndStatement(code);
+	}
+
 	/// <summary>
 	/// Maps a binary operator to its JavaScript spelling.
 	/// </summary>
