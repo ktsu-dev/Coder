@@ -1066,6 +1066,11 @@ public class RustGenerator : StandardLanguageGenerator
 	/// A field initialised from a name of its own spelling is written as that name alone, which is
 	/// Rust's field-init shorthand and what anybody would have written by hand.
 	/// </para>
+	/// <para>
+	/// An initialiser with no value value-initialises its field, as C++'s <c>x()</c> does, which Rust
+	/// spells <c>Default::default()</c>. Leaving it out, as a braced list does, would leave the field
+	/// unnamed in a literal that has to name every one.
+	/// </para>
 	/// </remarks>
 	private void WriteConstructorBody(FunctionDeclaration funcDecl, CodeBlocker code)
 	{
@@ -1082,7 +1087,9 @@ public class RustGenerator : StandardLanguageGenerator
 		ConstructionExpression value = new(new TypeReference("Self"));
 		foreach (MemberInitialiser initialiser in funcDecl.Initialisers)
 		{
-			value.Arguments.Add(initialiser);
+			value.Arguments.Add(initialiser.Value is null
+				? new MemberInitialiser { Name = initialiser.Name, Value = new CallExpression("Default::default") }
+				: initialiser);
 		}
 
 		GenerateConstructionExpression(value, code);
@@ -1246,19 +1253,39 @@ public class RustGenerator : StandardLanguageGenerator
 		code.Write(varDecl.Name);
 
 		bool inferred = varDecl.IsTypeInferred || varDecl.Type is null;
-		if (!inferred || varDecl.InitialValue is null)
+		TypeReference? annotation = !inferred ? varDecl.Type
+			: varDecl.InitialValue is null ? new TypeReference(UnknownTypeName)
+			: KeptWidth(varDecl.InitialValue);
+
+		if (annotation is not null)
 		{
-			code.Write($": {SpellType(varDecl.Type ?? new TypeReference(UnknownTypeName))}");
+			code.Write($": {SpellType(annotation)}");
 		}
 
 		if (varDecl.InitialValue is not null)
 		{
 			code.Write(" = ");
-			WriteValue(varDecl.InitialValue, inferred ? null : varDecl.Type, code);
+			WriteValue(varDecl.InitialValue, annotation, code);
 		}
 
 		EndStatement(code);
 	}
+
+	/// <summary>
+	/// Reads the width an inferred local must be written with, because Rust would infer another.
+	/// </summary>
+	/// <param name="initialValue">The local's initialiser.</param>
+	/// <returns><c>long</c> or <c>float</c> when the initialiser establishes one; otherwise null.</returns>
+	/// <remarks>
+	/// Rust infers an unconstrained integer as <c>i32</c> and a float as <c>f64</c>, so a long or a
+	/// float that nothing later pins down would silently narrow or widen, and a long past
+	/// <c>i32</c>'s range does not compile at all. An <c>int</c> or a <c>double</c> is what Rust
+	/// infers anyway, so it is left to inference.
+	/// </remarks>
+	private TypeReference? KeptWidth(Expression initialValue) =>
+		StaticType(initialValue) is { IsArray: false, Indirection: TypeIndirection.None, TypeArguments.Count: 0, Name: "long" or "float" } width
+			? width
+			: null;
 
 	/// <inheritdoc/>
 	/// <remarks>

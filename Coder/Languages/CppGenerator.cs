@@ -150,7 +150,23 @@ public class CppGenerator : CFamilyGenerator
 		{
 			yield return CMathHeader;
 		}
+
+		if (SelfAndDescendants(file).OfType<EntryPoint>().Any(entryPoint => entryPoint.AcceptsArguments))
+		{
+			yield return VectorHeader;
+			yield return StringHeader;
+		}
 	}
+
+	/// <summary>
+	/// The header that declares <c>std::vector</c>, which an entry point's <c>args</c> is.
+	/// </summary>
+	private const string VectorHeader = "<vector>";
+
+	/// <summary>
+	/// The header that declares <c>std::string</c>, which each of an entry point's <c>args</c> is.
+	/// </summary>
+	private const string StringHeader = "<string>";
 
 	/// <summary>
 	/// The header that declares <c>std::numeric_limits</c>.
@@ -713,6 +729,11 @@ public class CppGenerator : CFamilyGenerator
 	/// C++'s <c>main</c> returns <c>int</c> whether or not the program means to hand back an exit
 	/// code, so <see cref="EntryPoint.ReturnsExitCode"/> changes nothing in the signature — a program
 	/// that returns nothing exits with zero, which the standard supplies by falling off the end.
+	/// <para>
+	/// A body that accepts arguments reads them as <c>args</c>, holding what the user typed and not the
+	/// program's path, which is what every other target binds (#86). C++ has no such name, so the first
+	/// line of <c>main</c> makes one from <c>argv</c>.
+	/// </para>
 	/// </remarks>
 	protected override void GenerateEntryPoint(EntryPoint entryPoint, CodeBlocker code)
 	{
@@ -730,6 +751,11 @@ public class CppGenerator : CFamilyGenerator
 		code.WriteLine(")");
 
 		using Scope body = new(code);
+		if (entryPoint.AcceptsArguments)
+		{
+			code.WriteLine("std::vector<std::string> args(argv + 1, argv + argc);");
+		}
+
 		foreach (AstNode statement in entryPoint.Body)
 		{
 			GenerateInternal(statement, code);
