@@ -166,7 +166,7 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 				return true;
 
 			case LiteralExpression<long> longLit:
-				code.Write(longLit.Value.ToString(CultureInfo.InvariantCulture));
+				code.Write(FormatLong(longLit.Value));
 				return true;
 
 			// Legacy support for AstLeafNode types
@@ -1186,6 +1186,18 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// for the double would widen the value, or fail to convert back, spells the float itself.
 	/// </remarks>
 	protected virtual string SpellNonFiniteSingle(float value) => SpellNonFiniteDouble(value);
+
+	/// <summary>
+	/// Spells a 64-bit integer literal.
+	/// </summary>
+	/// <param name="value">The literal's value.</param>
+	/// <returns>The value's decimal digits.</returns>
+	/// <remarks>
+	/// Every target but JavaScript holds the digits exactly: C, C++, Go and Rust in a 64-bit integer
+	/// type and Python in its arbitrary-precision <c>int</c>. JavaScript reads a plain number as a
+	/// double, so it spells a value the double cannot hold itself.
+	/// </remarks>
+	protected virtual string FormatLong(long value) => value.ToString(CultureInfo.InvariantCulture);
 
 	/// <summary>
 	/// Formats a single-precision value so that every target reads it as floating-point.
