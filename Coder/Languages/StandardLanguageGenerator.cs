@@ -211,6 +211,17 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	}
 
 	/// <summary>
+	/// Reads the type of a return statement from its enclosing function.
+	/// </summary>
+	/// <param name="statement">The return statement.</param>
+	/// <returns>The function's return type, or null when it has none.</returns>
+	protected TypeReference? StaticType(ReturnStatement statement)
+	{
+		Ensure.NotNull(statement);
+		return staticTypeScopes.TryPeek(out StaticTypeScope? scope) ? scope.ReturnType : null;
+	}
+
+	/// <summary>
 	/// The numeric types in the order a mixed operation widens to, narrowest first.
 	/// </summary>
 	private static readonly string[] NumericPromotionOrder = ["int", "long", "float", "double"];
@@ -239,17 +250,6 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	/// <returns>Its position, or -1 when it is not a plain numeric type.</returns>
 	private static int NumericRank(TypeReference? type) =>
 		type is null ? -1 : Array.IndexOf(NumericPromotionOrder, type.ToString());
-
-	/// <summary>
-	/// Reads the type of a return statement from its enclosing function.
-	/// </summary>
-	/// <param name="statement">The return statement.</param>
-	/// <returns>The function's return type, or null when it has none.</returns>
-	protected TypeReference? StaticType(ReturnStatement statement)
-	{
-		Ensure.NotNull(statement);
-		return staticTypeScopes.TryPeek(out StaticTypeScope? scope) ? scope.ReturnType : null;
-	}
 
 	private sealed record StaticTypeScope(Dictionary<string, TypeReference> Types, TypeReference? ReturnType);
 

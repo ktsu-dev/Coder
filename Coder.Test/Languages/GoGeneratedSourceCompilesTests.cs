@@ -266,7 +266,7 @@ public class GoGeneratedSourceCompilesTests
 		file.Members.Add(inferred);
 
 		string source = new GoGenerator().Generate(file);
-		StringAssert.Contains(source, "func() float64 {", StringComparison.Ordinal);
+		Assert.Contains("func() float64 {", source, StringComparison.Ordinal);
 		Assert.DoesNotContain("func() int {", source, StringComparison.Ordinal);
 
 		ToolchainHarness.InTemporaryDirectory(directory =>
