@@ -275,8 +275,8 @@ public class CGenerator : CFamilyGenerator
 	/// C constructs nothing on its own, so a constructor is a function that returns a value it built.
 	/// The initialiser list becomes the designated initialiser it already is — which is the one place
 	/// C is the better fit, since C's designators need not be in declaration order and C++20's do —
-	/// and a constructor with no initialisers starts from <c>{0}</c>, so every member of the returned
-	/// value has a value whether or not anyone named it.
+	/// and a constructor with no initialisers, and no member with a declared starting value, starts
+	/// from <c>{0}</c>, so every member of the returned value has a value whether or not anyone named it.
 	/// </remarks>
 	private void GenerateConstructorBody(FunctionDeclaration funcDecl, CodeBlocker code, string? enclosingType)
 	{
@@ -284,7 +284,15 @@ public class CGenerator : CFamilyGenerator
 
 		code.Write($"{typeName} {SelfParameterName} = ");
 
-		if (funcDecl.Initialisers.Count == 0)
+		// A member the declaration gave a starting value, and this constructor did not set, starts
+		// at that value, which is what the struct's `defaults to` note promises. A member named by
+		// neither is zeroed, as a designated initialiser leaves every member it does not name.
+		List<FieldDeclaration> defaulted = constructedType is null
+			? []
+			: [.. InstanceInitialised(constructedType, _ => true)
+				.Where(field => !funcDecl.Initialisers.Any(initialiser => initialiser.Name == field.Name))];
+
+		if (funcDecl.Initialisers.Count == 0 && defaulted.Count == 0)
 		{
 			// Not `{}`, which C only allows from C23. `{0}` is the spelling that zeroes a whole
 			// object in every dialect, whatever the first member's type is.
@@ -296,6 +304,11 @@ public class CGenerator : CFamilyGenerator
 			foreach (MemberInitialiser member in funcDecl.Initialisers)
 			{
 				initialiser.Arguments.Add(member);
+			}
+
+			foreach (FieldDeclaration field in defaulted)
+			{
+				initialiser.Arguments.Add(new MemberInitialiser(field.Name ?? string.Empty, (Expression)field.InitialValue!.DeepClone()));
 			}
 
 			WriteInitialiser(initialiser, code);
@@ -634,12 +647,27 @@ public class CGenerator : CFamilyGenerator
 		code.Outdent();
 		code.WriteLine($"}} {name};");
 
-		foreach (FunctionDeclaration function in functions)
+		ClassDeclaration? outerConstructed = constructedType;
+		constructedType = classDecl;
+		try
 		{
-			code.NewLine();
-			GenerateFunction(function, code, name);
+			foreach (FunctionDeclaration function in functions)
+			{
+				code.NewLine();
+				GenerateFunction(function, code, name);
+			}
+		}
+		finally
+		{
+			constructedType = outerConstructed;
 		}
 	}
+
+	/// <summary>
+	/// The struct whose functions are being written, which a constructor reads the declared starting
+	/// values of its members from.
+	/// </summary>
+	private ClassDeclaration? constructedType;
 
 	/// <summary>
 	/// Reports whether a member declares a type rather than data or behaviour.
