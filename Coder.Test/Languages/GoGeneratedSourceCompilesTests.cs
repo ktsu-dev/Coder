@@ -1,4 +1,4 @@
-// Copyright (c) 2023-2026 ktsu-dev contributors
+﻿// Copyright (c) 2023-2026 ktsu-dev contributors
 
 namespace ktsu.Coder.Test.Languages;
 
@@ -224,6 +224,59 @@ public class GoGeneratedSourceCompilesTests
 			Assert.AreEqual(0, exitCode, $"Go rejected the generated source:{Environment.NewLine}{output}");
 
 			(int formatted, string differs) = ToolchainHarness.Run("gofmt", "-l conditionals.go", directory);
+			Assert.AreEqual(0, formatted, $"gofmt did not run:{Environment.NewLine}{differs}");
+			Assert.AreEqual(string.Empty, differs.Trim(), "gofmt would rewrite the generated source.");
+		});
+	}
+
+	/// <summary>
+	/// Tests that mixing an integer and a floating operand types the whole as the floating one, so
+	/// the function literal a conditional argument becomes returns <c>float64</c>, and a local
+	/// inferred from <c>1 + 0.5</c> is known to be one where a later conditional uses it (issue #152).
+	/// </summary>
+	[TestMethod]
+	public void MixedIntegerAndFloatingOperands_PromoteToFloating()
+	{
+		if (ToolchainHarness.FindOnPath("version", "go") is null)
+		{
+			Assert.Inconclusive("No Go toolchain on the path, so nothing was compiled.");
+			return;
+		}
+
+		SourceFile file = new("promotion");
+
+		FunctionDeclaration half = new("half") { ReturnType = new TypeReference("double") };
+		half.Parameters.Add(new Parameter("v", "double"));
+		half.Body.Add(new ReturnStatement(new BinaryExpression(new VariableReference("v"), BinaryOperator.Divide, Literal.DecimalValue(2.0))));
+		file.Members.Add(half);
+
+		FunctionDeclaration argument = new("argument") { ReturnType = new TypeReference("double") };
+		argument.Parameters.Add(new Parameter("ready", "bool"));
+		CallExpression halfOfChoice = new("half");
+		halfOfChoice.Arguments.Add(new ConditionalExpression(new VariableReference("ready"), Literal.Number(1), Literal.DecimalValue(2.5)));
+		argument.Body.Add(new ReturnStatement(halfOfChoice));
+		file.Members.Add(argument);
+
+		FunctionDeclaration inferred = new("inferred") { ReturnType = new TypeReference("double") };
+		inferred.Parameters.Add(new Parameter("ready", "bool"));
+		inferred.Body.Add(new VariableDeclaration("x", initialValue: new BinaryExpression(Literal.Number(1), BinaryOperator.Add, Literal.DecimalValue(0.5))));
+		CallExpression halfOfLocal = new("half");
+		halfOfLocal.Arguments.Add(new ConditionalExpression(new VariableReference("ready"), new VariableReference("x"), Literal.Number(1)));
+		inferred.Body.Add(new ReturnStatement(halfOfLocal));
+		file.Members.Add(inferred);
+
+		string source = new GoGenerator().Generate(file);
+		StringAssert.Contains(source, "func() float64 {", StringComparison.Ordinal);
+		Assert.DoesNotContain("func() int {", source, StringComparison.Ordinal);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			File.WriteAllText(Path.Combine(directory, "go.mod"), Module);
+			File.WriteAllText(Path.Combine(directory, "promotion.go"), source);
+			(int exitCode, string output) = ToolchainHarness.Run("go", "build ./...", directory);
+			Assert.AreEqual(0, exitCode, $"Go rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+
+			(int formatted, string differs) = ToolchainHarness.Run("gofmt", "-l promotion.go", directory);
 			Assert.AreEqual(0, formatted, $"gofmt did not run:{Environment.NewLine}{differs}");
 			Assert.AreEqual(string.Empty, differs.Trim(), "gofmt would rewrite the generated source.");
 		});

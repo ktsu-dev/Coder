@@ -1,4 +1,4 @@
-// Copyright (c) 2023-2026 ktsu-dev contributors
+﻿// Copyright (c) 2023-2026 ktsu-dev contributors
 
 namespace ktsu.Coder.Languages;
 
@@ -1763,15 +1763,17 @@ public class GoGenerator : StandardLanguageGenerator
 	/// Where the statement around it could not take the lowering — nested inside another expression,
 	/// or passed as an argument — what is left is a function literal called where it stands, which is
 	/// the only expression Go has that can choose. It has to name what it answers with and the AST
-	/// does not say, so the type is read off whichever branch says what it is, and is <c>any</c> when
-	/// neither does — which is what this generator writes wherever a type was never given.
+	/// may not say, so the type is the conditional's own expected type if it has one, and otherwise is
+	/// read off its branches — the wider of the two when both are numbers, since <c>1</c> fits a
+	/// <c>float64</c> and <c>2.5</c> does not fit an <c>int</c> — and is <c>any</c> when neither says,
+	/// which is what this generator writes wherever a type was never given.
 	/// </remarks>
 	protected override void GenerateConditionalExpression(ConditionalExpression conditional, CodeBlocker code)
 	{
 		Ensure.NotNull(conditional);
 		Ensure.NotNull(code);
 
-		TypeReference? branchType = StaticType(conditional.WhenTrue) ?? StaticType(conditional.WhenFalse);
+		TypeReference? branchType = StaticType(conditional);
 		code.WriteLine($"func() {(branchType is null ? TypeMappings[UnknownTypeName] : SpellType(branchType))} {{");
 		code.Indent();
 		if (branchType is null)
