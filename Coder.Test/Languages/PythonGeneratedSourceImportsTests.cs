@@ -180,6 +180,65 @@ public class PythonGeneratedSourceImportsTests
 	}
 
 	/// <summary>
+	/// Tests that a subclass declaring no constructor still accepts its base's arguments: one with
+	/// nothing to initialise inherits the base's constructor, and one with an instance-initialised
+	/// field forwards to it (#149).
+	/// </summary>
+	[TestMethod]
+	public void SubclassWithoutConstructor_AcceptsTheBaseConstructorsArguments()
+	{
+		string? python = ToolchainHarness.FindOnPath("--version", "python3", "python");
+		if (python is null)
+		{
+			Assert.Inconclusive("No Python interpreter on the path, so nothing was run.");
+			return;
+		}
+
+		SourceFile file = new("inherited");
+
+		// Base(x): self.x = x
+		ClassDeclaration baseClass = new("Base");
+		FunctionDeclaration constructor = new("Base") { Kind = FunctionKind.Constructor };
+		constructor.Parameters.Add(new Parameter("x", "int"));
+		constructor.Body.Add(new AssignmentStatement(new VariableReference("self.x"), new VariableReference("x")));
+		baseClass.Members.Add(constructor);
+		file.Members.Add(baseClass);
+
+		file.Members.Add(new ClassDeclaration("Derived") { BaseType = "Base" });
+
+		ClassDeclaration tagged = new("Tagged") { BaseType = "Base" };
+		tagged.Members.Add(new FieldDeclaration("tags", TypeReference.Parse("list<int>"))
+		{
+			InitialValue = new ConstructionExpression(),
+		});
+		file.Members.Add(tagged);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string generated = new PythonGenerator().Generate(file);
+			File.WriteAllText(Path.Combine(directory, "inherited.py"), generated);
+			File.WriteAllText(
+				Path.Combine(directory, "driver.py"),
+				"""
+				import inherited
+
+				derived = inherited.Derived(5)
+				assert derived.x == 5, derived.x
+
+				first = inherited.Tagged(6)
+				second = inherited.Tagged(x=7)
+				assert first.x == 6, first.x
+				assert second.x == 7, second.x
+				first.tags.append(1)
+				assert second.tags == [], second.tags
+				""");
+
+			(int exitCode, string output) = ToolchainHarness.Run(python, "driver.py", directory);
+			Assert.AreEqual(0, exitCode, $"Python rejected the generated module:{Environment.NewLine}{output}{Environment.NewLine}{generated}");
+		});
+	}
+
+	/// <summary>
 	/// Tests that a module whose annotations name a class that does not exist yet can be loaded.
 	/// </summary>
 	/// <remarks>
