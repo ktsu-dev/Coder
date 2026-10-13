@@ -577,30 +577,21 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	/// </summary>
 	/// <param name="members">The type's members.</param>
 	/// <returns>The names, including the field an automatic property becomes.</returns>
-	private static HashSet<string> NamesOf(IEnumerable<AstNode> members)
-	{
-		HashSet<string> names = new(StringComparer.Ordinal);
-		foreach (AstNode member in members)
-		{
-			string? name = member switch
-			{
-				FieldDeclaration field => field.Name,
-				FunctionDeclaration function => function.Name,
-				ClassDeclaration type => type.Name,
-				EnumDeclaration enumeration => enumeration.Name,
-				UsingAlias alias => alias.Name,
-				PropertyDeclaration property when property.IsAutomatic => property.Name ?? "value",
-				_ => null,
-			};
-
-			if (name is not null)
-			{
-				names.Add(name);
-			}
-		}
-
-		return names;
-	}
+	private static HashSet<string> NamesOf(IEnumerable<AstNode> members) =>
+		new(
+			members
+				.Select(member => member switch
+				{
+					FieldDeclaration field => field.Name,
+					FunctionDeclaration function => function.Name,
+					ClassDeclaration type => type.Name,
+					EnumDeclaration enumeration => enumeration.Name,
+					UsingAlias alias => alias.Name,
+					PropertyDeclaration property when property.IsAutomatic => property.Name ?? "value",
+					_ => null,
+				})
+				.OfType<string>(),
+			StringComparer.Ordinal);
 
 	/// <summary>
 	/// Separates a property into the declarations it is made of.
