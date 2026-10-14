@@ -200,13 +200,14 @@ public class CSharpGenerator : LanguageGeneratorBase
 			_ => "class",
 		};
 
-		// In the order C# takes them: access, then the promise the type makes about itself, then
-		// the permission to declare the rest of it elsewhere, then what kind of type it is. A
-		// record is written before the keyword rather than instead of it, which is what makes
-		// `record struct` reachable.
+		// In the order C# takes them: access, then whether it can be instantiated, then the promise
+		// the type makes about itself, then the permission to declare the rest of it elsewhere, then
+		// what kind of type it is. A record is written before the keyword rather than instead of it,
+		// which is what makes `record struct` reachable.
 		string[] modifiers =
 		[
 			SpellVisibility(classDecl.Visibility) ?? DefaultVisibility,
+			.. IsAbstractClass(classDecl) ? (string[])["abstract"] : [],
 			.. isReadOnlyStruct ? (string[])["readonly"] : [],
 			.. classDecl.IsPartial ? (string[])["partial"] : [],
 			.. classDecl.IsRecord ? (string[])["record"] : [],
@@ -241,7 +242,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 			{
 				if (member is FunctionDeclaration method)
 				{
-					GenerateFunction(method, code, classDecl.Name);
+					GenerateFunction(method, code, classDecl);
 				}
 				else
 				{
@@ -781,7 +782,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// </summary>
 	/// <param name="function">The declaration to emit.</param>
 	/// <param name="code">The writer to emit into.</param>
-	/// <param name="enclosingType">The name of the type it belongs to, when it belongs to one.</param>
+	/// <param name="enclosingType">The type it belongs to, when it belongs to one.</param>
 	/// <remarks>
 	/// C# expresses a defaulted or deleted member by not declaring it: the compiler supplies the one
 	/// and the absence of the other is what makes a call fail to compile. So neither is emitted, and
@@ -793,22 +794,29 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// <c>= default</c> means there.
 	/// </para>
 	/// </remarks>
-	private void GenerateFunction(FunctionDeclaration function, CodeBlocker code, string? enclosingType)
+	private void GenerateFunction(FunctionDeclaration function, CodeBlocker code, ClassDeclaration? enclosingType)
 	{
 		WritePreamble(function, code, enclosingType is null ? PreambleSite.Function : PreambleSite.Method);
+
+		string name = SpellFunctionName(function, enclosingType?.Name);
 
 		if (function.Definition != FunctionDefinition.Provided
 			&& !(function.Kind == FunctionKind.Constructor && function.Definition == FunctionDefinition.Defaulted))
 		{
 			string state = function.Definition == FunctionDefinition.Defaulted ? "supplied by the language" : "deleted";
-			WriteInexpressible(code, $"{SpellFunctionName(function, enclosingType)} is {state}, which C# expresses by not declaring it.");
+			WriteInexpressible(code, $"{name} is {state}, which C# expresses by not declaring it.");
+			return;
+		}
+
+		if (!WriteMemberNotes(function, name, enclosingType, code))
+		{
 			return;
 		}
 
 		WriteFunctionAttributes(function, code);
-		WriteFunctionModifiers(function, code);
+		WriteFunctionModifiers(function, code, enclosingType);
 
-		code.Write(SpellFunctionName(function, enclosingType));
+		code.Write(name);
 		code.Write(SpellTypeParameters(function.TypeParameters));
 		code.Write("(");
 
@@ -836,7 +844,21 @@ public class CSharpGenerator : LanguageGeneratorBase
 		WriteConstraintClauses(function.TypeParameters, code);
 
 		using Scope body = new(code);
+		WriteInitialisers(function, code);
 
+		foreach (AstNode statement in function.Body)
+		{
+			GenerateInternal(statement, code);
+		}
+	}
+
+	/// <summary>
+	/// Writes a constructor's member initialisers as the assignments that open its body.
+	/// </summary>
+	/// <param name="function">The declaration being emitted.</param>
+	/// <param name="code">The writer to emit into.</param>
+	private void WriteInitialisers(FunctionDeclaration function, CodeBlocker code)
+	{
 		// C# assigns where C++ initialises. Written before the body's own statements and in the order
 		// declared, which is what the initialiser means where there is no initialiser list. One with no
 		// value value-initialises the member, as C++'s `x()` does, and `default` is C#'s spelling.
@@ -855,11 +877,34 @@ public class CSharpGenerator : LanguageGeneratorBase
 
 			EndStatement(code);
 		}
+	}
 
-		foreach (AstNode statement in function.Body)
+	/// <summary>
+	/// Writes down what a member asks for that C# cannot say where the member is.
+	/// </summary>
+	/// <param name="function">The declaration being emitted.</param>
+	/// <param name="name">The name it is written under.</param>
+	/// <param name="enclosingType">The type it belongs to, when it belongs to one.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <returns>False when the note stands in for the whole declaration, so nothing else is written.</returns>
+	private bool WriteMemberNotes(FunctionDeclaration function, string name, ClassDeclaration? enclosingType, CodeBlocker code)
+	{
+		// A struct cannot have a finalizer (CS0575), so the destructor is written down rather than
+		// declared, the way a member C# expresses by not declaring it is.
+		if (function.Kind == FunctionKind.Destructor && enclosingType?.Kind == TypeDeclarationKind.Struct)
 		{
-			GenerateInternal(statement, code);
+			WriteInexpressible(code, $"{name} is a destructor, which a C# struct cannot declare.");
+			return false;
 		}
+
+		// readonly is a modifier only an instance member of a struct may carry (CS0106). Anywhere else
+		// the member still makes the claim, so it is written down the way the type's own claim is.
+		if (function.IsReadOnly && !function.IsStatic && !IsReadOnlySpelled(function, enclosingType))
+		{
+			WriteInexpressible(code, $"readonly: {name} does not modify its instance");
+		}
+
+		return true;
 	}
 
 	/// <summary>
@@ -890,11 +935,16 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// </summary>
 	/// <param name="function">The declaration being emitted.</param>
 	/// <param name="code">The writer to emit into.</param>
-	private void WriteFunctionModifiers(FunctionDeclaration function, CodeBlocker code)
+	/// <param name="enclosingType">The type it belongs to, when it belongs to one.</param>
+	private void WriteFunctionModifiers(FunctionDeclaration function, CodeBlocker code, ClassDeclaration? enclosingType)
 	{
 		// A function nobody has given a visibility to is public: an inaccessible method is not what
-		// someone who wrote no modifier meant.
-		code.Write($"{SpellVisibility(function.Visibility) ?? DefaultVisibility} ");
+		// someone who wrote no modifier meant. A finalizer is the exception, because it takes no
+		// access modifier at all (CS0106): only the runtime calls it.
+		if (function.Kind != FunctionKind.Destructor)
+		{
+			code.Write($"{SpellVisibility(function.Visibility) ?? DefaultVisibility} ");
+		}
 
 		if (function.IsStatic
 			|| ReferenceEquals(function, heldMember)
@@ -904,16 +954,20 @@ public class CSharpGenerator : LanguageGeneratorBase
 			code.Write("static ");
 		}
 
+		// An interface member with no body is abstract already, and says so by having none.
 		if (function.IsAbstract)
 		{
-			code.Write("abstract ");
+			if (enclosingType?.Kind != TypeDeclarationKind.Interface)
+			{
+				code.Write("abstract ");
+			}
 		}
 		else if (function.IsVirtual)
 		{
 			code.Write("virtual ");
 		}
 
-		if (function.IsReadOnly)
+		if (IsReadOnlySpelled(function, enclosingType))
 		{
 			code.Write("readonly ");
 		}
@@ -924,6 +978,33 @@ public class CSharpGenerator : LanguageGeneratorBase
 			code.Write($"{MapToCSType(function.ReturnType ?? new TypeReference("void"))} ");
 		}
 	}
+
+	/// <summary>
+	/// Determines whether a declaration's <see cref="FunctionDeclaration.IsReadOnly"/> is spelled as
+	/// C#'s <c>readonly</c>.
+	/// </summary>
+	/// <param name="function">The declaration being emitted.</param>
+	/// <param name="enclosingType">The type it belongs to, when it belongs to one.</param>
+	/// <returns>True when the declaration is an instance member of a struct that claims it.</returns>
+	/// <remarks>
+	/// The claim is C++'s trailing <c>const</c>, which any member function may make. C# lets only an
+	/// instance member of a struct make it, so everywhere else <c>readonly</c> fails with CS0106.
+	/// </remarks>
+	private static bool IsReadOnlySpelled(FunctionDeclaration function, ClassDeclaration? enclosingType) =>
+		function.IsReadOnly && !function.IsStatic && enclosingType?.Kind == TypeDeclarationKind.Struct;
+
+	/// <summary>
+	/// Determines whether a class is written <c>abstract</c>.
+	/// </summary>
+	/// <param name="classDecl">The declaration being emitted.</param>
+	/// <returns>True when it is a class with a member that has no definition.</returns>
+	/// <remarks>
+	/// The AST says abstract of a member, as C++ does, and a C++ class with a pure virtual member is
+	/// abstract without saying so. C# requires the class to say it (CS0513).
+	/// </remarks>
+	private static bool IsAbstractClass(ClassDeclaration classDecl) =>
+		classDecl.Kind == TypeDeclarationKind.Class
+		&& classDecl.Members.OfType<FunctionDeclaration>().Any(member => member.IsAbstract);
 
 	/// <summary>
 	/// Spells the name a declaration is written under.
