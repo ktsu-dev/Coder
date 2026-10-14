@@ -12,7 +12,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 public static class ServiceCollectionExtensions
 {
 	/// <summary>
-	/// Adds all available language generators to the service collection.
+	/// Adds all available language generators, and an <see cref="ILanguageGeneratorResolver"/> over
+	/// them, to the service collection.
 	/// </summary>
 	/// <param name="services">The service collection to add services to.</param>
 	/// <returns>The service collection for method chaining.</returns>
@@ -29,6 +30,9 @@ public static class ServiceCollectionExtensions
 		services.TryAddEnumerable(ServiceDescriptor.Singleton<ILanguageGenerator, CGenerator>());
 		services.TryAddEnumerable(ServiceDescriptor.Singleton<ILanguageGenerator, RustGenerator>());
 		services.TryAddEnumerable(ServiceDescriptor.Singleton<ILanguageGenerator, GoGenerator>());
+
+		// One lookup by id or file extension, so consumers agree on case and the leading dot.
+		services.TryAddSingleton<ILanguageGeneratorResolver, LanguageGeneratorResolver>();
 
 		return services;
 	}
