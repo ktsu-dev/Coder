@@ -107,6 +107,96 @@ public class RustGeneratedSourceCompilesTests
 	}
 
 	/// <summary>
+	/// Tests that a string literal compiles in every other place an owned <c>String</c> receives one:
+	/// a constant, a constructor's initialiser, a struct literal's field, an assignment to a field,
+	/// and both branches of a conditional answering one.
+	/// </summary>
+	/// <remarks>
+	/// <c>String::from</c> is not a <c>const fn</c>, so a constant cannot be an owned <c>String</c>
+	/// at all: it is a <c>&amp;'static str</c>, and a table of them a slice of those.
+	/// </remarks>
+	[TestMethod]
+	public void StringLiteralsFillingStringFieldsAndConstants_Compile()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "rustc") is null)
+		{
+			Assert.Inconclusive("No Rust compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		ClassDeclaration person = new("Person") { Kind = TypeDeclarationKind.Struct };
+		person.Members.Add(new VariableDeclaration("name", "string"));
+		person.Members.Add(new FieldDeclaration("nickname", "str") { InitialValue = Literal.Text("none") });
+		person.Members.Add(new FieldDeclaration("DEFAULT", "string")
+		{
+			IsStatic = true,
+			IsConstant = true,
+			InitialValue = Literal.Text("d"),
+		});
+
+		FunctionDeclaration ctor = new("Person") { Kind = FunctionKind.Constructor };
+		ctor.Initialisers.Add(new MemberInitialiser("name", Literal.Text("Anon")));
+		person.Members.Add(ctor);
+
+		ConstructionExpression built = new(new TypeReference("Person"));
+		built.Arguments.Add(new MemberInitialiser("name", Literal.Text("x")));
+		built.Arguments.Add(new MemberInitialiser("nickname", Literal.Text("y")));
+		FunctionDeclaration make = new("make") { ReturnType = "Person", IsStatic = true };
+		make.Body.Add(new ReturnStatement(built));
+		person.Members.Add(make);
+
+		FunctionDeclaration rename = new("rename");
+		rename.Body.Add(new AssignmentStatement(new VariableReference("self.name"), Literal.Text("y")));
+		person.Members.Add(rename);
+
+		FunctionDeclaration pick = new("pick") { ReturnType = "string", IsStatic = true };
+		pick.Parameters.Add(new Parameter("c", "bool"));
+		pick.Body.Add(new ReturnStatement(new ConditionalExpression(new VariableReference("c"), Literal.Text("a"), Literal.Text("b"))));
+		person.Members.Add(pick);
+
+		// A struct built outside its own impl, so the field types come from the declaration rather
+		// than from the type whose functions are being written.
+		ConstructionExpression stranger = new(new TypeReference("Person"));
+		stranger.Arguments.Add(new MemberInitialiser("name", Literal.Text("z")));
+		stranger.Arguments.Add(new MemberInitialiser("nickname", Literal.Text("w")));
+		FunctionDeclaration meet = new("meet") { ReturnType = "Person" };
+		meet.Body.Add(new ReturnStatement(stranger));
+
+		ConstructionExpression names = new();
+		names.Arguments.Add(Literal.Text("a"));
+		names.Arguments.Add(Literal.Text("b"));
+
+		SourceFile file = new("owned_strings");
+		file.Members.Add(person);
+		file.Members.Add(meet);
+		file.Members.Add(new FieldDeclaration("GREETING", "string") { IsStatic = true, IsConstant = true, InitialValue = Literal.Text("hi") });
+		file.Members.Add(new FieldDeclaration("MOTTO", "str") { IsStatic = true, InitialValue = Literal.Text("go") });
+		file.Members.Add(new FieldDeclaration("NAMES", new TypeReference("string") { IsArray = true })
+		{
+			IsStatic = true,
+			IsConstant = true,
+			InitialValue = names,
+		});
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new RustGenerator().Generate(file);
+			string allowed = "#![allow(unused_parens, dead_code)]";
+
+			File.WriteAllText(
+				Path.Combine(directory, "owned_strings.rs"),
+				$"{allowed}{Environment.NewLine}{source}");
+
+			(int exitCode, string output) = ToolchainHarness.Run(
+				"rustc",
+				"--crate-type lib --edition 2021 -o owned_strings.rlib owned_strings.rs",
+				directory);
+
+			Assert.AreEqual(0, exitCode, $"rustc rejected the generated source:{Environment.NewLine}{source}{Environment.NewLine}{output}");
+		});
+	}
+
+	/// <summary>
 	/// Tests that bitwise complement and unary plus compile: Rust has neither <c>~</c> nor a unary
 	/// <c>+</c>, so both have to be spelled its way.
 	/// </summary>
