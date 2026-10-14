@@ -2,7 +2,15 @@
 
 Changes since v3.19.0:
 
+- Make string literals owned wherever Rust receives a String [patch] (Claude)
+- Lift C# member aliases out of their type and nest JS classes as statics [patch] (Claude)
+- Merge remote-tracking branch 'origin/main' into fix/127-csharp-member-modifiers (Claude)
+- Merge remote-tracking branch 'origin/main' into fix/167-c-static-fields-in-type (Claude)
+- Move a C# constructor's initialisers out of GenerateFunction (Claude)
+- Move a C# member's notes out of GenerateFunction (Claude)
 - Hold a C# namespace's fields and functions in a static class [patch] (Claude)
+- Write C# member modifiers only where C# allows them [patch] (Claude)
+- Declare a C type's static fields beside the struct, not inside it [patch] (Claude)
 - Keep float and long widths in Go, C and C++ inferred locals [patch] (Claude)
 - Project member names with Select in NamesOf (matt-edmondson)
 - Write readonly only on a C# struct, and make its instance members readonly [patch] (matt-edmondson)
