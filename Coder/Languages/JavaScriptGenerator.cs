@@ -175,6 +175,18 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		WriteInexpressible(code, $"asserted at build time: {assertion.Condition}");
 	}
 
+	/// <summary>
+	/// Emits an alias declared inside a class, as a static member of it.
+	/// </summary>
+	/// <param name="usingAlias">The alias to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	private void GenerateNestedAlias(UsingAlias usingAlias, CodeBlocker code)
+	{
+		WritePreamble(usingAlias, code, PreambleSite.Type);
+		code.Write($"static {usingAlias.Name} = {usingAlias.AliasedType?.Name ?? "Object"}");
+		EndStatement(code);
+	}
+
 	/// <inheritdoc/>
 	/// <remarks>
 	/// JavaScript has no types to alias. The name is bound to whatever the alias named, which is a
@@ -379,6 +391,47 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		Ensure.NotNull(classDecl);
 		Ensure.NotNull(code);
 
+		WriteClassHeading(classDecl, code, string.Empty);
+
+		// The line is left open, so the scope's brace lands on it: JavaScript braces hang.
+		code.Write(" ");
+
+		using Scope body = new(code);
+		WriteClassMembers(classDecl, code);
+	}
+
+	/// <summary>
+	/// Emits a class declared inside another, as a static member of it.
+	/// </summary>
+	/// <param name="classDecl">The declaration to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// A class body holds only methods and fields, so a class declaration there is a syntax error.
+	/// A static field holding a class expression is the same class reachable by the same name, which
+	/// is the shape <see cref="GenerateNestedEnum"/> already gives an enumeration.
+	/// </remarks>
+	private void GenerateNestedClass(ClassDeclaration classDecl, CodeBlocker code)
+	{
+		WriteClassHeading(classDecl, code, $"static {classDecl.Name ?? "UnnamedClass"} = ");
+		code.WriteLine(" {");
+
+		using (IndentScope members = new(code))
+		{
+			WriteClassMembers(classDecl, code);
+		}
+
+		code.WriteLine("};");
+	}
+
+	/// <summary>
+	/// Writes what comes before a class's body: what it promised, and the <c>class</c> line itself,
+	/// left open.
+	/// </summary>
+	/// <param name="classDecl">The declaration whose heading to write.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <param name="binding">What goes in front of the <c>class</c> keyword on its line.</param>
+	private void WriteClassHeading(ClassDeclaration classDecl, CodeBlocker code, string binding)
+	{
 		// C++ can attach a declaration to a type it does not own, by specialising a template on it.
 		// Nothing here can, so the fact is written down rather than lost: what follows is an
 		// ordinary declaration, and the comment says which type it was the declaration for.
@@ -399,17 +452,21 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 			WriteInexpressible(code, $"implements {string.Join(", ", classDecl.Interfaces.Select(contract => contract.Name))}");
 		}
 
-		code.Write($"class {classDecl.Name ?? "UnnamedClass"}");
+		code.Write($"{binding}class {classDecl.Name ?? "UnnamedClass"}");
 
 		if (classDecl.BaseType is TypeReference baseType)
 		{
 			code.Write($" extends {baseType.Name}");
 		}
+	}
 
-		// The line is left open, so the scope's brace lands on it: JavaScript braces hang.
-		code.Write(" ");
-
-		using Scope body = new(code);
+	/// <summary>
+	/// Writes a class's members, each in the shape a class body accepts.
+	/// </summary>
+	/// <param name="classDecl">The declaration whose members to write.</param>
+	/// <param name="code">The writer to emit into.</param>
+	private void WriteClassMembers(ClassDeclaration classDecl, CodeBlocker code)
+	{
 		foreach (AstNode member in classDecl.Members)
 		{
 			switch (member)
@@ -420,6 +477,16 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 
 				case EnumDeclaration nested:
 					GenerateNestedEnum(nested, code);
+					break;
+
+				case ClassDeclaration nested:
+					GenerateNestedClass(nested, code);
+					break;
+
+				// `const` is a statement keyword and a syntax error in a class body, so an alias is a
+				// static field bound to the same thing the namespace-scope spelling binds it to.
+				case UsingAlias alias:
+					GenerateNestedAlias(alias, code);
 					break;
 
 				case FieldDeclaration classField:

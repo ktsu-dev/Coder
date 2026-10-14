@@ -175,6 +175,12 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// </remarks>
 	private void GenerateClass(ClassDeclaration classDecl, CodeBlocker code)
 	{
+		bool aliasesWereHoisted = memberAliasesHoisted;
+		if (!aliasesWereHoisted)
+		{
+			WriteHoistedAliases(MemberAliases(classDecl), code);
+		}
+
 		WritePreamble(classDecl, code, PreambleSite.Type);
 
 		// C++ can attach a declaration to a type it does not own, by specialising a template on it.
@@ -236,6 +242,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 		using Scope members = new(code);
 		bool enclosingIsReadOnlyStruct = inReadOnlyStruct;
 		inReadOnlyStruct = isReadOnlyStruct;
+		memberAliasesHoisted = true;
 		try
 		{
 			foreach (AstNode member in classDecl.Members)
@@ -244,7 +251,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 				{
 					GenerateFunction(method, code, classDecl);
 				}
-				else
+				else if (member is not UsingAlias)
 				{
 					GenerateInternal(member, code);
 				}
@@ -253,7 +260,44 @@ public class CSharpGenerator : LanguageGeneratorBase
 		finally
 		{
 			inReadOnlyStruct = enclosingIsReadOnlyStruct;
+			memberAliasesHoisted = aliasesWereHoisted;
 		}
+	}
+
+	/// <summary>
+	/// Collects the aliases a type and the types nested in it declare as members.
+	/// </summary>
+	/// <param name="classDecl">The type.</param>
+	/// <returns>The aliases, outermost type first and each type's in the order declared.</returns>
+	/// <remarks>
+	/// C# has a using alias only at file or namespace scope, never inside a type (CS1513), so these are
+	/// written in the scope that encloses the type instead. The name then resolves everywhere the type
+	/// used it, which is what declaring it as a member was for.
+	/// </remarks>
+	private static IEnumerable<UsingAlias> MemberAliases(ClassDeclaration classDecl) =>
+		classDecl.Members.SelectMany(member => member switch
+		{
+			UsingAlias alias => [alias],
+			ClassDeclaration nested => MemberAliases(nested),
+			_ => [],
+		});
+
+	/// <summary>
+	/// Writes aliases ahead of the declarations they were lifted out of.
+	/// </summary>
+	/// <param name="aliases">The aliases to write.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <returns>Whether anything was written.</returns>
+	private bool WriteHoistedAliases(IEnumerable<UsingAlias> aliases, CodeBlocker code)
+	{
+		bool any = false;
+		foreach (UsingAlias alias in aliases)
+		{
+			GenerateUsingAlias(alias, code);
+			any = true;
+		}
+
+		return any;
 	}
 
 	/// <summary>
@@ -380,40 +424,59 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// and one at file scope with CS0106. Every other target has somewhere to put them, so the AST
 	/// allows them, and a static class is what C# has in their place — a reader names
 	/// <c>Geometry.twice</c> where C++ names <c>Geometry::twice</c>. The class is written where the
-	/// first of them was declared, and types, enums, aliases and nested namespaces stay where they
-	/// are.
+	/// first of them was declared, and types, enums and nested namespaces stay where they are. Aliases
+	/// come first, those of the scope's types with them, because C# takes them nowhere else.
 	/// </remarks>
 	private void GenerateScopeMembers(IEnumerable<AstNode> members, string holderName, CodeBlocker code)
 	{
 		AstNode[] declared = [.. members];
 		AstNode[] typeless = [.. declared.Where(IsTypelessMember)];
-		bool first = true;
 		bool holderWritten = false;
 
-		foreach (AstNode member in declared)
+		// Every alias the scope holds goes first, its own and those lifted out of its types: C# takes
+		// a using alias only ahead of everything else declared in a namespace or file (CS1529).
+		IEnumerable<UsingAlias> aliases = declared.SelectMany(member => member switch
 		{
-			bool isTypeless = IsTypelessMember(member);
-			if (isTypeless && holderWritten)
-			{
-				continue;
-			}
+			UsingAlias alias => [alias],
+			ClassDeclaration type => MemberAliases(type),
+			_ => [],
+		});
 
-			if (!first)
-			{
-				code.NewLine();
-			}
+		bool first = !WriteHoistedAliases(aliases, code);
 
-			first = false;
+		bool aliasesWereHoisted = memberAliasesHoisted;
+		memberAliasesHoisted = true;
+		try
+		{
+			foreach (AstNode member in declared)
+			{
+				bool isTypeless = IsTypelessMember(member);
+				if ((isTypeless && holderWritten) || member is UsingAlias)
+				{
+					continue;
+				}
 
-			if (isTypeless)
-			{
-				holderWritten = true;
-				GenerateMemberHolder(UnclaimedName(holderName, declared), typeless, code);
+				if (!first)
+				{
+					code.NewLine();
+				}
+
+				first = false;
+
+				if (isTypeless)
+				{
+					holderWritten = true;
+					GenerateMemberHolder(UnclaimedName(holderName, declared), typeless, code);
+				}
+				else
+				{
+					GenerateInternal(member, code);
+				}
 			}
-			else
-			{
-				GenerateInternal(member, code);
-			}
+		}
+		finally
+		{
+			memberAliasesHoisted = aliasesWereHoisted;
 		}
 	}
 
@@ -486,8 +549,8 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// <param name="code">The writer to emit into.</param>
 	/// <remarks>
 	/// C# has a using alias but only at file or namespace scope, never inside a type. One declared as
-	/// a member is therefore said rather than written, since a generated file that silently drops it
-	/// looks complete and is not.
+	/// a member is lifted to the scope enclosing its type rather than written where it stands; see
+	/// <see cref="MemberAliases"/>.
 	/// </remarks>
 	private void GenerateUsingAlias(UsingAlias usingAlias, CodeBlocker code)
 	{
@@ -1056,6 +1119,16 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// members of one type at a time and restored afterwards, so a nested type answers for itself.
 	/// </remarks>
 	private bool inReadOnlyStruct;
+
+	/// <summary>
+	/// Whether the aliases declared in the types being written have already been written in front of
+	/// them, by the scope that encloses those types or by an enclosing type.
+	/// </summary>
+	/// <remarks>
+	/// A type generated on its own has no enclosing scope to lift its aliases into, so it writes them
+	/// in front of itself; one inside a namespace, a file or another type leaves them to that.
+	/// </remarks>
+	private bool memberAliasesHoisted;
 
 	/// <summary>
 	/// The member of a namespace or file being written into the static class that holds it, which
