@@ -183,7 +183,7 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 			case ConstructionExpression { Type: not null } construction:
 				return construction.Type;
 			case ConditionalExpression conditional:
-				return StaticType(conditional.WhenTrue) ?? StaticType(conditional.WhenFalse);
+				return Promoted(StaticType(conditional.WhenTrue), StaticType(conditional.WhenFalse));
 			case BinaryExpression binary when binary.Operator is BinaryOperator.Equal
 				or BinaryOperator.NotEqual
 				or BinaryOperator.LessThan
@@ -194,7 +194,7 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 				or BinaryOperator.LogicalOr:
 				return new TypeReference("bool");
 			case BinaryExpression binary:
-				return StaticType(binary.Left) ?? StaticType(binary.Right);
+				return Promoted(StaticType(binary.Left), StaticType(binary.Right));
 			case VariableReference reference:
 				foreach (StaticTypeScope scope in staticTypeScopes)
 				{
@@ -220,6 +220,36 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 		Ensure.NotNull(statement);
 		return staticTypeScopes.TryPeek(out StaticTypeScope? scope) ? scope.ReturnType : null;
 	}
+
+	/// <summary>
+	/// The numeric types in the order a mixed operation widens to, narrowest first.
+	/// </summary>
+	private static readonly string[] NumericPromotionOrder = ["int", "long", "float", "double"];
+
+	/// <summary>
+	/// Combines the types of two operands, or of a conditional's two branches, into the type of the
+	/// whole.
+	/// </summary>
+	/// <param name="first">The first operand's type, if known.</param>
+	/// <param name="second">The second operand's type, if known.</param>
+	/// <returns>
+	/// The wider of two numeric types, so <c>1 + 0.5</c> and <c>ready ? 1 : 2.5</c> are a
+	/// <c>double</c> as they are in every C-family language; otherwise the first known type.
+	/// </returns>
+	protected static TypeReference? Promoted(TypeReference? first, TypeReference? second)
+	{
+		int firstRank = NumericRank(first);
+		int secondRank = NumericRank(second);
+		return firstRank >= 0 && secondRank > firstRank ? second : first ?? second;
+	}
+
+	/// <summary>
+	/// Reports where a type stands in <see cref="NumericPromotionOrder"/>.
+	/// </summary>
+	/// <param name="type">The type to place.</param>
+	/// <returns>Its position, or -1 when it is not a plain numeric type.</returns>
+	private static int NumericRank(TypeReference? type) =>
+		type is null ? -1 : Array.IndexOf(NumericPromotionOrder, type.ToString());
 
 	private sealed record StaticTypeScope(Dictionary<string, TypeReference> Types, TypeReference? ReturnType);
 
