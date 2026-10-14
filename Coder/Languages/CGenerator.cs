@@ -573,10 +573,13 @@ public class CGenerator : CFamilyGenerator
 		List<FunctionDeclaration> functions = isInterface
 			? []
 			: [.. classDecl.Members.OfType<FunctionDeclaration>()];
+		List<FieldDeclaration> staticFields = [.. classDecl.Members.OfType<FieldDeclaration>().Where(field => field.IsStatic)];
 		List<AstNode> fields =
 		[
 			.. classDecl.Members.Where(member =>
-				!IsTypeDeclaration(member) && (isInterface || member is not FunctionDeclaration)),
+				!IsTypeDeclaration(member)
+				&& (isInterface || member is not FunctionDeclaration)
+				&& member is not FieldDeclaration { IsStatic: true }),
 		];
 
 		foreach (AstNode nested in nestedTypes)
@@ -633,6 +636,16 @@ public class CGenerator : CFamilyGenerator
 
 		code.Outdent();
 		code.WriteLine($"}} {name};");
+
+		if (staticFields.Count > 0)
+		{
+			code.NewLine();
+		}
+
+		foreach (FieldDeclaration field in staticFields)
+		{
+			WriteFileScopeField(field, $"{name}_{field.Name ?? "Unnamed"}", code);
+		}
 
 		foreach (FunctionDeclaration function in functions)
 		{
@@ -990,6 +1003,24 @@ public class CGenerator : CFamilyGenerator
 			return;
 		}
 
+		WriteFileScopeField(field, field.Name ?? string.Empty, code);
+	}
+
+	/// <summary>
+	/// Writes a field as a declaration at file scope.
+	/// </summary>
+	/// <param name="field">The field to write.</param>
+	/// <param name="name">The name to declare it with.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// Where a namespace's fields go, and also where a type's static ones go: C has no static data
+	/// member, so a field that belongs to the type rather than to an instance is an object beside the
+	/// struct, named <c>Type_member</c> the way the type's functions are. Inside the struct it would
+	/// be one copy per instance, lose its initial value and change the struct's size — and a constant
+	/// table there is a flexible array member, which does not compile anywhere but last.
+	/// </remarks>
+	private void WriteFileScopeField(FieldDeclaration field, string name, CodeBlocker code)
+	{
 		WritePreamble(field, code, PreambleSite.Field);
 
 		TypeReference type = field.Type ?? new TypeReference(UnknownTypeName);
@@ -1011,7 +1042,7 @@ public class CGenerator : CFamilyGenerator
 			code.Write("static ");
 		}
 
-		code.Write(SpellDeclarator(type, field.Name ?? string.Empty));
+		code.Write(SpellDeclarator(type, name));
 
 		if (field.InitialValue is not null)
 		{
