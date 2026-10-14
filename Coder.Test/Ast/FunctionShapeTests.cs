@@ -103,15 +103,18 @@ public class FunctionShapeTests
 	}
 
 	/// <summary>
-	/// A trailing const says a call leaves the receiver unchanged, which C# spells readonly.
+	/// A trailing const says a call leaves the receiver unchanged, which C# spells readonly on the
+	/// one kind of member that may carry it, an instance member of a struct.
 	/// </summary>
 	[TestMethod]
 	public void ReadOnly_IsSpelledWhereALanguageHasIt()
 	{
 		FunctionDeclaration find = new("find") { ReturnType = "int", IsReadOnly = true };
+		ClassDeclaration index = new("Index") { Kind = TypeDeclarationKind.Struct };
+		index.Members.Add(find);
 
 		Assert.Contains("int find() const", new CppGenerator().Generate(find), StringComparison.Ordinal);
-		Assert.Contains("readonly int find(", new CSharpGenerator().Generate(find), StringComparison.Ordinal);
+		Assert.Contains("readonly int find(", new CSharpGenerator().Generate(index), StringComparison.Ordinal);
 	}
 
 	/// <summary>
