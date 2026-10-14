@@ -2,6 +2,8 @@
 
 Changes since v3.19.0:
 
+- Give C# operators the operand the AST leaves implicit [patch] (Claude)
+- Write down a Rust field's starting value when no constructor sets it [patch] (Claude)
 - Make string literals owned wherever Rust receives a String [patch] (Claude)
 - Lift C# member aliases out of their type and nest JS classes as statics [patch] (Claude)
 - Merge remote-tracking branch 'origin/main' into fix/127-csharp-member-modifiers (Claude)
