@@ -347,11 +347,88 @@ public class CSharpGenerator : LanguageGeneratorBase
 	{
 		WritePreamble(namespaceDecl, code, PreambleSite.Type);
 
-		code.WriteLine($"namespace {string.Join(".", NamespaceDeclaration.Split(namespaceDecl.Name))}");
+		IReadOnlyList<string> segments = NamespaceDeclaration.Split(namespaceDecl.Name);
+		code.WriteLine($"namespace {string.Join(".", segments)}");
 
 		using Scope members = new(code);
+		GenerateScopeMembers(namespaceDecl.Members, segments.Count > 0 ? segments[^1] : GlobalsClassName, code);
+	}
+
+	/// <inheritdoc/>
+	protected override void GenerateFileMembers(SourceFile file, CodeBlocker code)
+	{
+		Ensure.NotNull(file);
+		Ensure.NotNull(code);
+		GenerateScopeMembers(file.Members, GlobalsClassName, code);
+	}
+
+	/// <summary>
+	/// The name of the class that holds a file's fields and functions.
+	/// </summary>
+	private const string GlobalsClassName = "Globals";
+
+	/// <summary>
+	/// Emits the members of a namespace or a file, gathering the ones C# cannot declare there into a
+	/// static class.
+	/// </summary>
+	/// <param name="members">The members, in the order declared.</param>
+	/// <param name="holderName">What to call the class, unless a type beside it already has the name.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// C# has no field, function or variable outside a type: one in a namespace fails with CS0116,
+	/// and one at file scope with CS0106. Every other target has somewhere to put them, so the AST
+	/// allows them, and a static class is what C# has in their place — a reader names
+	/// <c>Geometry.twice</c> where C++ names <c>Geometry::twice</c>. The class is written where the
+	/// first of them was declared, and types, enums, aliases and nested namespaces stay where they
+	/// are.
+	/// </remarks>
+	private void GenerateScopeMembers(IEnumerable<AstNode> members, string holderName, CodeBlocker code)
+	{
+		AstNode[] declared = [.. members];
+		AstNode[] typeless = [.. declared.Where(IsTypelessMember)];
 		bool first = true;
-		foreach (AstNode member in namespaceDecl.Members)
+		bool holderWritten = false;
+
+		foreach (AstNode member in declared)
+		{
+			bool isTypeless = IsTypelessMember(member);
+			if (isTypeless && holderWritten)
+			{
+				continue;
+			}
+
+			if (!first)
+			{
+				code.NewLine();
+			}
+
+			first = false;
+
+			if (isTypeless)
+			{
+				holderWritten = true;
+				GenerateMemberHolder(UnclaimedName(holderName, declared), typeless, code);
+			}
+			else
+			{
+				GenerateInternal(member, code);
+			}
+		}
+	}
+
+	/// <summary>
+	/// Emits the static class that holds a scope's fields, functions and variables.
+	/// </summary>
+	/// <param name="name">The class's name.</param>
+	/// <param name="members">The members it holds, in the order declared.</param>
+	/// <param name="code">The writer to emit into.</param>
+	private void GenerateMemberHolder(string name, IEnumerable<AstNode> members, CodeBlocker code)
+	{
+		code.WriteLine($"{DefaultVisibility} static class {name}");
+
+		using Scope body = new(code);
+		bool first = true;
+		foreach (AstNode member in members)
 		{
 			if (!first)
 			{
@@ -359,8 +436,46 @@ public class CSharpGenerator : LanguageGeneratorBase
 			}
 
 			first = false;
-			GenerateInternal(member, code);
+
+			// A static class may hold only static members (CS0708), and the AST's member is static in
+			// every sense that matters already: there is no instance of a namespace for it to belong to.
+			heldMember = member;
+			try
+			{
+				GenerateInternal(member, code);
+			}
+			finally
+			{
+				heldMember = null;
+			}
 		}
+	}
+
+	/// <summary>
+	/// Determines whether a member of a namespace or file is one C# can declare only inside a type.
+	/// </summary>
+	/// <param name="member">The member.</param>
+	/// <returns>True for a field, a function or a variable.</returns>
+	private static bool IsTypelessMember(AstNode member) =>
+		member is FieldDeclaration or FunctionDeclaration or VariableDeclaration;
+
+	/// <summary>
+	/// Picks a name for the class holding a scope's members that no type beside it already has.
+	/// </summary>
+	/// <param name="name">The name wanted.</param>
+	/// <param name="siblings">Everything else declared in the scope.</param>
+	/// <returns>The name, or the name with a suffix when a sibling has it (CS0101).</returns>
+	private static string UnclaimedName(string name, IEnumerable<AstNode> siblings)
+	{
+		bool claimed = siblings.Any(sibling => sibling switch
+		{
+			ClassDeclaration type => string.Equals(type.Name, name, StringComparison.Ordinal),
+			EnumDeclaration type => string.Equals(type.Name, name, StringComparison.Ordinal),
+			UsingAlias alias => string.Equals(alias.Name, name, StringComparison.Ordinal),
+			_ => false,
+		});
+
+		return claimed ? $"{name}{GlobalsClassName}" : name;
 	}
 
 	/// <summary>
@@ -628,7 +743,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 		{
 			code.Write("static readonly ");
 		}
-		else if (field.IsStatic)
+		else if (field.IsStatic || ReferenceEquals(field, heldMember))
 		{
 			code.Write("static ");
 		}
@@ -775,13 +890,15 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// </summary>
 	/// <param name="function">The declaration being emitted.</param>
 	/// <param name="code">The writer to emit into.</param>
-	private static void WriteFunctionModifiers(FunctionDeclaration function, CodeBlocker code)
+	private void WriteFunctionModifiers(FunctionDeclaration function, CodeBlocker code)
 	{
 		// A function nobody has given a visibility to is public: an inaccessible method is not what
 		// someone who wrote no modifier meant.
 		code.Write($"{SpellVisibility(function.Visibility) ?? DefaultVisibility} ");
 
-		if (function.IsStatic || function.Kind is FunctionKind.Operator or FunctionKind.ConversionOperator)
+		if (function.IsStatic
+			|| ReferenceEquals(function, heldMember)
+			|| function.Kind is FunctionKind.Operator or FunctionKind.ConversionOperator)
 		{
 			// A C# operator is always static, whether or not the declaration thought to say so.
 			code.Write("static ");
@@ -858,6 +975,16 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// members of one type at a time and restored afterwards, so a nested type answers for itself.
 	/// </remarks>
 	private bool inReadOnlyStruct;
+
+	/// <summary>
+	/// The member of a namespace or file being written into the static class that holds it, which
+	/// is written static whether or not it says so.
+	/// </summary>
+	/// <remarks>
+	/// The member itself rather than a flag, because a function's body declares locals and a flag
+	/// would make them static too.
+	/// </remarks>
+	private AstNode? heldMember;
 
 	/// <summary>
 	/// What a declaration that never said what type it is gets.
@@ -949,8 +1076,10 @@ public class CSharpGenerator : LanguageGeneratorBase
 			: MapToCSType(varDecl.Type);
 
 		// A local has no access modifier and a field usually does, and the AST distinguishes the two
-		// by whether one was set: emitting it only when present keeps both correct.
-		if (SpellVisibility(varDecl.Visibility) is string modifier)
+		// by whether one was set: emitting it only when present keeps both correct. A variable of a
+		// namespace or file is a field of the class holding it, and as visible as the scope it was in.
+		bool isHeld = ReferenceEquals(varDecl, heldMember);
+		if ((isHeld ? SpellVisibility(varDecl.Visibility) ?? DefaultVisibility : SpellVisibility(varDecl.Visibility)) is string modifier)
 		{
 			code.Write($"{modifier} ");
 		}
@@ -958,11 +1087,17 @@ public class CSharpGenerator : LanguageGeneratorBase
 		// A C# constant must name its type and hold a compile-time value, so an inferred one, or one
 		// computed from a parameter or a call, stays a plain declaration rather than becoming source
 		// that does not compile. C# has no readonly local to say the rest with.
-		if (varDecl.IsConstant
+		bool isConst = varDecl.IsConstant
 			&& !string.Equals(type, "var", StringComparison.Ordinal)
-			&& IsCompileTimeValue(varDecl.InitialValue))
+			&& IsCompileTimeValue(varDecl.InitialValue);
+		if (isConst)
 		{
 			code.Write("const ");
+		}
+		else if (isHeld)
+		{
+			// A const is static already, and saying so as well is CS0504.
+			code.Write("static ");
 		}
 
 		code.Write($"{type} {varDecl.Name}");
