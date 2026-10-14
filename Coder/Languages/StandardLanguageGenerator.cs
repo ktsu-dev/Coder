@@ -95,6 +95,49 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	}
 
 	/// <summary>
+	/// Starts a scope for a property accessor's body and ends it when the returned guard is disposed.
+	/// </summary>
+	/// <param name="property">The property whose accessor is about to be generated.</param>
+	/// <param name="isSetter">True for the setter, whose <paramref name="valueName"/> parameter holds the property's type; false for the getter, which returns it.</param>
+	/// <param name="valueName">The name the target gives the setter's incoming value.</param>
+	/// <returns>The guard whose disposal ends the scope.</returns>
+	/// <remarks>
+	/// An accessor is a function the AST does not spell as a <see cref="FunctionDeclaration"/>, so
+	/// without this its body has no scope and a typed local or the setter's value is not known to be
+	/// an integer.
+	/// </remarks>
+	protected IDisposable OpenStaticTypeScope(PropertyDeclaration property, bool isSetter, string valueName = "value")
+	{
+		Ensure.NotNull(property);
+		Ensure.NotNull(valueName);
+		Dictionary<string, TypeReference> types = new(StringComparer.Ordinal);
+		if (isSetter && property.Type is TypeReference type)
+		{
+			types[valueName] = type;
+		}
+
+		staticTypeScopes.Push(new StaticTypeScope(types, isSetter ? null : property.Type));
+		return new StaticTypeScopeGuard(this);
+	}
+
+	/// <summary>
+	/// Starts a scope for an entry point's body and ends it when the returned guard is disposed.
+	/// </summary>
+	/// <param name="entryPoint">The entry point whose body is about to be generated.</param>
+	/// <returns>The guard whose disposal ends the scope.</returns>
+	/// <remarks>
+	/// The scope is what records the body's typed locals. An entry point that returns an exit code
+	/// returns an <c>int</c>.
+	/// </remarks>
+	protected IDisposable OpenStaticTypeScope(EntryPoint entryPoint)
+	{
+		Ensure.NotNull(entryPoint);
+		TypeReference? returnType = entryPoint.ReturnsExitCode ? new TypeReference("int") : null;
+		staticTypeScopes.Push(new StaticTypeScope(new Dictionary<string, TypeReference>(StringComparer.Ordinal), returnType));
+		return new StaticTypeScopeGuard(this);
+	}
+
+	/// <summary>
 	/// Ends the most recently opened function type scope.
 	/// </summary>
 	protected void PopStaticTypeScope() => staticTypeScopes.Pop();
@@ -130,6 +173,106 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 		type is { IsArray: false, Indirection: TypeIndirection.None, TypeArguments.Count: 0 }
 		&& IntegerTypeNames.Contains(type.Name);
 
+	/// <summary>
+	/// Reads the floating-point type a remainder of two operands is taken in.
+	/// </summary>
+	/// <param name="dividend">The left operand.</param>
+	/// <param name="divisor">The right operand.</param>
+	/// <returns><c>double</c> or <c>float</c>, or null when neither operand is known to be floating.</returns>
+	/// <remarks>
+	/// Either operand being floating is enough, because that is what makes the arithmetic floating in
+	/// every target: an integer beside a <c>double</c> is converted to it. A <c>double</c> on either
+	/// side makes it <c>double</c>, which is the usual arithmetic conversion's answer too.
+	/// </remarks>
+	protected string? FloatingRemainderType(Expression dividend, Expression divisor)
+	{
+		Ensure.NotNull(dividend);
+		Ensure.NotNull(divisor);
+		string? left = FloatingTypeName(StaticType(dividend));
+		string? right = FloatingTypeName(StaticType(divisor));
+		if (left is null && right is null)
+		{
+			return null;
+		}
+
+		return left == "double" || right == "double" ? "double" : "float";
+	}
+
+	private static string? FloatingTypeName(TypeReference? type) =>
+		type is { IsArray: false, Indirection: TypeIndirection.None, TypeArguments.Count: 0, Name: "float" or "double" }
+			? type.Name
+			: null;
+
+	/// <summary>
+	/// Gets whether the target spells a floating-point remainder as a call rather than as <c>%</c>.
+	/// </summary>
+	/// <remarks>
+	/// C, C++ and Go define <c>%</c> on integers only, so a remainder of floating operands has to be
+	/// <c>fmod</c> or <c>math.Mod</c> there. Every other target's <c>%</c> already takes them.
+	/// </remarks>
+	protected virtual bool SpellsFloatingRemainderAsCall => false;
+
+	/// <summary>
+	/// Writes the call that takes a floating-point remainder, for a target whose <c>%</c> cannot.
+	/// </summary>
+	/// <param name="dividend">The left operand.</param>
+	/// <param name="divisor">The right operand.</param>
+	/// <param name="floatingType">The type the remainder is taken in, from <see cref="FloatingRemainderType"/>.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <exception cref="NotSupportedException">The target spells the remainder as <c>%</c>.</exception>
+	protected virtual void WriteFloatingRemainder(Expression dividend, Expression divisor, string floatingType, CodeBlocker code) =>
+		throw new NotSupportedException($"{GetType().Name} spells a floating-point remainder as %.");
+
+	/// <summary>
+	/// Reports whether a file takes a remainder that <see cref="WriteFloatingRemainder"/> will write.
+	/// </summary>
+	/// <param name="file">The file being emitted.</param>
+	/// <returns>True when a <c>%</c> or <c>%=</c> in it has a floating-point operand.</returns>
+	/// <remarks>
+	/// The imports are written before anything they are for, so the question is asked of the AST
+	/// rather than of the output. Each function's parameters and locals are put in scope the way its
+	/// emitter puts them, which is what makes the answer agree with what is written; a file that
+	/// imports what it does not use does not compile in Go.
+	/// </remarks>
+	protected bool ContainsFloatingRemainder(SourceFile file)
+	{
+		Ensure.NotNull(file);
+		if (SelfAndDescendants(file).Any(IsFloatingRemainder))
+		{
+			return true;
+		}
+
+		foreach (FunctionDeclaration function in SelfAndDescendants(file).OfType<FunctionDeclaration>())
+		{
+			using IDisposable types = OpenStaticTypeScope(function);
+
+			// A local can take its type from another, so one pass per local settles every chain however
+			// the walk happens to order them.
+			VariableDeclaration[] locals = [.. SelfAndDescendants(function).OfType<VariableDeclaration>()];
+			for (int pass = 0; pass < locals.Length; pass++)
+			{
+				foreach (VariableDeclaration local in locals)
+				{
+					RegisterStaticType(local);
+				}
+			}
+
+			if (SelfAndDescendants(function).Any(IsFloatingRemainder))
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	private bool IsFloatingRemainder(AstNode node) => node switch
+	{
+		BinaryExpression { Operator: BinaryOperator.Modulo } binary => FloatingRemainderType(binary.Left, binary.Right) is not null,
+		AssignmentStatement { Operator: AssignmentOperator.ModuloAssign } assignment => FloatingRemainderType(assignment.Target, assignment.Value) is not null,
+		_ => false,
+	};
+
 	private static readonly HashSet<string> IntegerTypeNames = new(StringComparer.Ordinal)
 	{
 		"int", "long", "short", "byte", "sbyte", "uint", "ulong", "ushort",
@@ -152,6 +295,22 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 			}
 		}
 	}
+
+	/// <summary>
+	/// Reads the width an inferred local must be written with, because the target would infer another.
+	/// </summary>
+	/// <param name="initialValue">The local's initialiser.</param>
+	/// <returns><c>long</c> or <c>float</c> when the initialiser establishes one; otherwise null.</returns>
+	/// <remarks>
+	/// Rust and Go infer an unconstrained integer as their default integer and a float as a 64-bit one,
+	/// so a long or a float that nothing later pins down would silently narrow or widen — and in Go,
+	/// whose arithmetic never converts implicitly, a later <c>float32</c> operand does not compile. An
+	/// <c>int</c> or a <c>double</c> is what those targets infer anyway, so it is left to inference.
+	/// </remarks>
+	protected TypeReference? InferredLiteralWidth(Expression initialValue) =>
+		StaticType(initialValue) is { IsArray: false, Indirection: TypeIndirection.None, TypeArguments.Count: 0, Name: "long" or "float" } width
+			? width
+			: null;
 
 	/// <summary>
 	/// Reads the type an expression can establish from its own annotation, shape, or current scope.
@@ -1024,7 +1183,39 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	protected virtual void GenerateBinary(BinaryExpression binary, CodeBlocker code)
 	{
 		Ensure.NotNull(binary);
+		if (SpellsFloatingRemainderAsCall
+			&& binary.Operator == BinaryOperator.Modulo
+			&& FloatingRemainderType(binary.Left, binary.Right) is string floatingType)
+		{
+			WriteFloatingRemainder(binary.Left, binary.Right, floatingType, code);
+			return;
+		}
+
 		GenerateBinaryExpression(binary, code, GetOperatorSpelling(binary.Operator));
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// A floating <c>x %= y</c> is written <c>x = fmod(x, y)</c> or its equivalent, for the target
+	/// whose <c>%</c> takes only integers and whose <c>%=</c> therefore does too.
+	/// </remarks>
+	protected override void GenerateAssignmentStatement(AssignmentStatement assignment, CodeBlocker code)
+	{
+		Ensure.NotNull(assignment);
+		Ensure.NotNull(code);
+
+		if (SpellsFloatingRemainderAsCall
+			&& assignment.Operator == AssignmentOperator.ModuloAssign
+			&& FloatingRemainderType(assignment.Target, assignment.Value) is string floatingType)
+		{
+			GenerateInternal(assignment.Target, code);
+			code.Write($" {GetAssignmentOperator(AssignmentOperator.Assign)} ");
+			WriteFloatingRemainder(assignment.Target, assignment.Value, floatingType, code);
+			EndStatement(code);
+			return;
+		}
+
+		base.GenerateAssignmentStatement(assignment, code);
 	}
 
 	/// <summary>

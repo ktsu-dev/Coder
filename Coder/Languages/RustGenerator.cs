@@ -475,16 +475,25 @@ public class RustGenerator : StandardLanguageGenerator
 				WriteAssociatedField(field, code);
 			}
 
-			bool first = associated.Count == 0;
-			foreach (FunctionDeclaration function in inherent)
+			ClassDeclaration? outerConstructed = constructedType;
+			constructedType = classDecl;
+			try
 			{
-				if (!first)
+				bool first = associated.Count == 0;
+				foreach (FunctionDeclaration function in inherent)
 				{
-					code.NewLine();
-				}
+					if (!first)
+					{
+						code.NewLine();
+					}
 
-				first = false;
-				GenerateFunction(function, code, name);
+					first = false;
+					GenerateFunction(function, code, name);
+				}
+			}
+			finally
+			{
+				constructedType = outerConstructed;
 			}
 		}
 
@@ -628,6 +637,12 @@ public class RustGenerator : StandardLanguageGenerator
 	/// the struct: a struct's fields are what every instance holds and every constructor supplies.
 	/// </remarks>
 	private static bool IsAssociatedField(FieldDeclaration field) => field.IsStatic || field.IsConstant;
+
+	/// <summary>
+	/// The struct whose inherent functions are being written, which a constructor reads the declared
+	/// starting values of its fields from.
+	/// </summary>
+	private ClassDeclaration? constructedType;
 
 	/// <summary>
 	/// Writes a field that belongs to its type into the type's inherent impl block.
@@ -1079,7 +1094,15 @@ public class RustGenerator : StandardLanguageGenerator
 	{
 		WriteBody(funcDecl.Body, code);
 
-		if (funcDecl.Initialisers.Count == 0)
+		// A field the declaration gave a starting value, and this constructor did not set, starts
+		// at that value, as it does in every other target. Rust has no field initialisers, so the
+		// constructor's literal is the only place left to say it.
+		List<FieldDeclaration> defaulted = constructedType is null
+			? []
+			: [.. InstanceInitialised(constructedType, field => !IsAssociatedField(field))
+				.Where(field => !funcDecl.Initialisers.Any(initialiser => initialiser.Name == field.Name))];
+
+		if (funcDecl.Initialisers.Count == 0 && defaulted.Count == 0)
 		{
 			// There is nothing to build from, and Rust has no zero value to fall back on. Default is
 			// the one thing a type can ask for without naming its fields.
@@ -1095,8 +1118,33 @@ public class RustGenerator : StandardLanguageGenerator
 				: initialiser);
 		}
 
+		foreach (FieldDeclaration field in defaulted)
+		{
+			value.Arguments.Add(new MemberInitialiser(field.Name ?? string.Empty, (Expression)field.InitialValue!.DeepClone()));
+		}
+
+		// With no initialisers, the fields nobody gave a value still come from Default, as they
+		// did before any had a declared one: struct update syntax fills in the rest.
+		if (funcDecl.Initialisers.Count == 0 && !NamesEveryField(constructedType!, value))
+		{
+			value.Arguments.Add(new CallExpression("..Self::default"));
+		}
+
 		GenerateConstructionExpression(value, code);
 		code.WriteLine();
+	}
+
+	/// <summary>
+	/// Reports whether a struct literal names every field of the struct it builds.
+	/// </summary>
+	/// <param name="classDecl">The struct being built.</param>
+	/// <param name="value">The literal building it.</param>
+	/// <returns>True when no field is left for struct update syntax to fill in.</returns>
+	private static bool NamesEveryField(ClassDeclaration classDecl, ConstructionExpression value)
+	{
+		HashSet<string?> named = [.. value.Arguments.OfType<MemberInitialiser>().Select(initialiser => initialiser.Name)];
+		return classDecl.BaseType is null
+			&& classDecl.Members.OfType<FieldDeclaration>().Where(field => !IsAssociatedField(field)).All(field => named.Contains(field.Name));
 	}
 
 	/// <summary>
@@ -1403,7 +1451,7 @@ public class RustGenerator : StandardLanguageGenerator
 		bool inferred = varDecl.IsTypeInferred || varDecl.Type is null;
 		TypeReference? annotation = !inferred ? varDecl.Type
 			: varDecl.InitialValue is null ? new TypeReference(UnknownTypeName)
-			: KeptWidth(varDecl.InitialValue);
+			: InferredLiteralWidth(varDecl.InitialValue);
 
 		if (annotation is not null)
 		{
@@ -1418,22 +1466,6 @@ public class RustGenerator : StandardLanguageGenerator
 
 		EndStatement(code);
 	}
-
-	/// <summary>
-	/// Reads the width an inferred local must be written with, because Rust would infer another.
-	/// </summary>
-	/// <param name="initialValue">The local's initialiser.</param>
-	/// <returns><c>long</c> or <c>float</c> when the initialiser establishes one; otherwise null.</returns>
-	/// <remarks>
-	/// Rust infers an unconstrained integer as <c>i32</c> and a float as <c>f64</c>, so a long or a
-	/// float that nothing later pins down would silently narrow or widen, and a long past
-	/// <c>i32</c>'s range does not compile at all. An <c>int</c> or a <c>double</c> is what Rust
-	/// infers anyway, so it is left to inference.
-	/// </remarks>
-	private TypeReference? KeptWidth(Expression initialValue) =>
-		StaticType(initialValue) is { IsArray: false, Indirection: TypeIndirection.None, TypeArguments.Count: 0, Name: "long" or "float" } width
-			? width
-			: null;
 
 	/// <inheritdoc/>
 	/// <remarks>

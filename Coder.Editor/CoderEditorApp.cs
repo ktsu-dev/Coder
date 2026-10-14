@@ -32,7 +32,7 @@ public sealed class CoderEditorApp(
 	IEnumerable<ILanguageGenerator> generators,
 	EditorSettings settings)
 {
-	private readonly List<ILanguageGenerator> generators = [.. generators];
+	private readonly LanguageGeneratorResolver resolver = new(generators);
 	private string pathBuffer = string.Empty;
 
 	/// <summary>
@@ -384,7 +384,7 @@ public sealed class CoderEditorApp(
 	{
 		ImGui.TextUnformatted("Generated code");
 
-		foreach (ILanguageGenerator generator in generators)
+		foreach (ILanguageGenerator generator in resolver.Generators)
 		{
 			ImGui.SameLine();
 			if (ImGui.RadioButton(generator.DisplayName, string.Equals(Settings.PreviewLanguageId, generator.LanguageId, StringComparison.Ordinal)))
@@ -545,8 +545,8 @@ public sealed class CoderEditorApp(
 	/// Gets the generator whose output the pane is showing, or null when the remembered language is
 	/// one this build does not have.
 	/// </summary>
-	private ILanguageGenerator? PreviewGenerator => generators.FirstOrDefault(
-		g => string.Equals(g.LanguageId, Settings.PreviewLanguageId, StringComparison.Ordinal));
+	private ILanguageGenerator? PreviewGenerator =>
+		resolver.TryGetByLanguageId(Settings.PreviewLanguageId, out ILanguageGenerator? generator) ? generator : null;
 
 	private void DrawStatusBar()
 	{
