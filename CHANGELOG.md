@@ -1,20 +1,34 @@
-## v3.19.3 (patch)
+## v3.20.0 (minor)
 
-Changes since v3.19.2:
+Changes since v3.19.0:
 
+- Hold a C# namespace's fields and functions in a static class [patch] (Claude)
+- Keep float and long widths in Go, C and C++ inferred locals [patch] (Claude)
 - Project member names with Select in NamesOf (matt-edmondson)
 - Write readonly only on a C# struct, and make its instance members readonly [patch] (matt-edmondson)
 - Name a C++ getter get_count() when count() would clash with its field [patch] (matt-edmondson)
 - Keep the StaticType overloads adjacent and use Assert.Contains (Claude)
 - Promote mixed int and float operands to the wider type [patch] (Claude)
+- Apply declared field values in Rust and C constructors [patch] (Claude)
+- Add ILanguageGeneratorResolver to look up a generator by id or file extension [minor] (Claude)
+- Merge main into fix/174-floating-modulo (Claude)
 - Let a Python subclass without a constructor take its base's arguments [patch] (Claude)
 - Bind a Rust parameter or self mut when the body calls a mutating method on it [patch] (Claude)
+- Truncate integer division in Python and JavaScript accessor and entry point bodies [patch] (Claude)
 - Truncate integer /= and %= in Python and JavaScript the way the C family does [patch] (matt-edmondson)
 - Write a JavaScript long literal past the safe-integer range as a BigInt [patch] (matt-edmondson)
+- Merge main into fix/174-floating-modulo (matt-edmondson)
 - Annotate an inferred Rust local whose initialiser is a long or a float [patch] (Claude)
 - Bind args in a C or C++ main that accepts arguments [patch] (Claude)
+- Take a floating-point remainder with fmod or math.Mod in C, C++ and Go [patch] (Claude)
+- Write static properties that compile in C++ and are reachable from the class in Python [patch] (Claude)
 - Value-initialise a constructor initialiser that has no value [patch] (Claude)
 - Parenthesise a struct-literal call receiver in a Go if condition [patch] (Claude)
+- Build the splice test's paths with Path.Join (Claude)
+- Truncate Python integer division in integer arithmetic so long quotients stay exact [patch] (Claude)
+- Spell NaN and infinite float literals in every target language [patch] (Claude)
+- End a C/C++ comment line that would splice on a non-splice character [patch] (Claude)
+- Make the editor gallery readable and the sample document honest (Claude)
 
 ## v3.19.2 (patch)
 
