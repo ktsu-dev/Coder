@@ -616,6 +616,7 @@ public class RustGenerator : StandardLanguageGenerator
 
 				case FieldDeclaration field when !IsAssociatedField(field):
 					WritePreamble(field, code, PreambleSite.Field);
+					WriteUnconstructedDefault(classDecl, field, code);
 					WriteStructMember(field.Name, field.Type, field.Visibility, code);
 					break;
 
@@ -625,6 +626,41 @@ public class RustGenerator : StandardLanguageGenerator
 		}
 
 		insideType--;
+	}
+
+	/// <summary>
+	/// Says what a field starts at when the type has no constructor to start it there.
+	/// </summary>
+	/// <param name="classDecl">The type the field belongs to.</param>
+	/// <param name="field">The field being written.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// A constructor builds a field it does not set from its declared value, so a type with one
+	/// needs no note. A type without one has nothing to carry the value, and leaving it out would
+	/// look like the declaration never asked for one — Go and C say the same thing for the same
+	/// reason.
+	/// </remarks>
+	private void WriteUnconstructedDefault(ClassDeclaration classDecl, FieldDeclaration field, CodeBlocker code)
+	{
+		if (field.InitialValue is not Expression initialValue
+			|| classDecl.Members.OfType<FunctionDeclaration>().Any(function => function.Kind == FunctionKind.Constructor))
+		{
+			return;
+		}
+
+		WriteInexpressible(code, $"{field.Name} defaults to {GenerateExpression(initialValue)}: Rust has no field initialisers, and no constructor sets it");
+	}
+
+	/// <summary>
+	/// Writes an expression to a string, for the places a comment has to quote one.
+	/// </summary>
+	/// <param name="expression">The expression to write.</param>
+	/// <returns>Its Rust source.</returns>
+	private string GenerateExpression(Expression expression)
+	{
+		using CodeBlocker inline = CodeBlocker.Create(IndentString);
+		GenerateInternal(expression, inline);
+		return inline.ToString().TrimEnd('\r', '\n');
 	}
 
 	/// <summary>
@@ -691,9 +727,9 @@ public class RustGenerator : StandardLanguageGenerator
 	/// <param name="visibility">What the declaration said about who may see it.</param>
 	/// <param name="code">The writer to emit into.</param>
 	/// <remarks>
-	/// A field's initial value is not written, and unlike C that is not a gap to apologise for: a
-	/// Rust struct is built by naming every field at once, so what a field starts at is the
-	/// constructor's business rather than the declaration's.
+	/// A field's initial value is not written here: a Rust struct is built by naming every field at
+	/// once, so what a field starts at is the constructor's business rather than the declaration's.
+	/// Where there is no constructor, <see cref="WriteUnconstructedDefault"/> says so instead.
 	/// </remarks>
 	private static void WriteStructMember(string? name, TypeReference? type, Visibility visibility, CodeBlocker code) =>
 		code.WriteLine($"{SpellVisibilityKeyword(visibility)}{name}: {SpellType(type ?? new TypeReference(UnknownTypeName))},");

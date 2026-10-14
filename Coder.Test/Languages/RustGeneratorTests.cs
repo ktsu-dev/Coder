@@ -842,6 +842,47 @@ public class RustGeneratorTests
 	}
 
 	/// <summary>
+	/// Tests that a field's declared starting value is written down when the type has no constructor
+	/// to apply it, rather than dropped without a word, as Go and C already do.
+	/// </summary>
+	[TestMethod]
+	public void FieldInitialValue_WithoutAConstructor_IsANote()
+	{
+		string generated = Generator.Generate(Counter(withConstructor: false));
+
+		StringAssert.Contains(generated, "// count defaults to 0: Rust has no field initialisers, and no constructor sets it", StringComparison.Ordinal);
+		StringAssert.Contains(generated, "// step defaults to 1: Rust has no field initialisers, and no constructor sets it", StringComparison.Ordinal);
+	}
+
+	/// <summary>
+	/// Tests that a type with a constructor carries no such note, since the constructor builds a
+	/// field it does not set from its declared value.
+	/// </summary>
+	[TestMethod]
+	public void FieldInitialValue_WithAConstructor_IsNotANote()
+		=> Assert.IsFalse(Generator.Generate(Counter(withConstructor: true)).Contains("defaults to", StringComparison.Ordinal));
+
+	/// <summary>
+	/// Builds the editor's sample type: two fields with declared starting values and one method.
+	/// </summary>
+	/// <param name="withConstructor">Whether the type also declares a constructor.</param>
+	/// <returns>The declaration.</returns>
+	private static ClassDeclaration Counter(bool withConstructor)
+	{
+		ClassDeclaration counter = new("Counter");
+		counter.Members.Add(new FieldDeclaration("count", new TypeReference("int")) { InitialValue = Literal.Number(0) });
+		counter.Members.Add(new FieldDeclaration("step", new TypeReference("int")) { InitialValue = Literal.Number(1) });
+		counter.Members.Add(new FunctionDeclaration("increment") { Visibility = Visibility.Public });
+
+		if (withConstructor)
+		{
+			counter.Members.Add(new FunctionDeclaration("Counter") { Kind = FunctionKind.Constructor, Visibility = Visibility.Public });
+		}
+
+		return counter;
+	}
+
+	/// <summary>
 	/// Writes one expression on its own, for the assertions that are about the expression rather than
 	/// about the declaration holding it.
 	/// </summary>
