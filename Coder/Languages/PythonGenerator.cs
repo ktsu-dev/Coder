@@ -554,8 +554,10 @@ public class PythonGenerator : StandardLanguageGenerator
 			bool hasConstructor = classDecl.Members
 				.OfType<FunctionDeclaration>()
 				.Any(member => member.Kind == FunctionKind.Constructor);
-			bool synthesiseConstructor = !hasConstructor
-				&& (classDecl.BaseType is not null || instanceInitialisedFields.Count > 0);
+			// Python inherits a constructor, so a class with nothing of its own to initialise writes
+			// none and takes whatever its base takes. One written for a subclass would hide the base's
+			// and refuse its arguments.
+			bool synthesiseConstructor = !hasConstructor && instanceInitialisedFields.Count > 0;
 
 			if (classDecl.Members.Count == 0 && !synthesiseConstructor)
 			{
@@ -580,11 +582,14 @@ public class PythonGenerator : StandardLanguageGenerator
 
 			if (synthesiseConstructor)
 			{
-				code.WriteLine("def __init__(self):");
+				// A subclass's constructor passes on whatever it is given, so it still accepts what the
+				// base's constructor does and only adds the initialisers.
+				bool forwards = classDecl.BaseType is not null;
+				code.WriteLine(forwards ? "def __init__(self, *args, **kwargs):" : "def __init__(self):");
 				using IndentScope body = new(code);
-				if (classDecl.BaseType is not null)
+				if (forwards)
 				{
-					code.WriteLine("super().__init__()");
+					code.WriteLine("super().__init__(*args, **kwargs)");
 				}
 
 				WriteConstructorPrologue(classDecl, code, NeedsConstruction, WriteInstanceInitialiser);
