@@ -1038,12 +1038,25 @@ public class RustGenerator : StandardLanguageGenerator
 	/// map to the owned <c>String</c>, so a literal received as one is written
 	/// <c>String::from("…")</c>. Rust converts neither way on its own. Where the receiving type is
 	/// borrowed, or not declared, the literal stays bare, which is what those positions want.
+	/// <para>
+	/// A conditional answers what its branches do, so each branch is written for the same type.
+	/// </para>
 	/// </remarks>
 	private void WriteValue(AstNode value, TypeReference? target, CodeBlocker code)
 	{
-		bool owned = value is LiteralExpression<string>
-			&& target is not null
-			&& SpellType(target) == TypeMappings["string"];
+		if (value is ConditionalExpression conditional && IsOwnedString(target))
+		{
+			code.Write("(if ");
+			GenerateInternal(conditional.Condition, code);
+			code.Write(" { ");
+			WriteValue(conditional.WhenTrue, target, code);
+			code.Write(" } else { ");
+			WriteValue(conditional.WhenFalse, target, code);
+			code.Write(" })");
+			return;
+		}
+
+		bool owned = value is LiteralExpression<string> && IsOwnedString(target);
 
 		if (owned)
 		{
@@ -1057,6 +1070,74 @@ public class RustGenerator : StandardLanguageGenerator
 			code.Write(")");
 		}
 	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// A value assigned to a field of <c>self</c> is written for the type the field was declared
+	/// with, so a string literal assigned to a String field is made into one.
+	/// </remarks>
+	protected override void GenerateAssignmentStatement(AssignmentStatement assignment, CodeBlocker code)
+	{
+		Ensure.NotNull(assignment);
+		Ensure.NotNull(code);
+
+		if (assignment.Operator == AssignmentOperator.Assign
+			&& assignment.Target is VariableReference { Name: string target }
+			&& target.StartsWith(SelfFieldPrefix, StringComparison.Ordinal)
+			&& InstanceFieldType(constructedType, target[SelfFieldPrefix.Length..]) is TypeReference fieldType)
+		{
+			GenerateInternal(assignment.Target, code);
+			code.Write($" {GetAssignmentOperator(AssignmentOperator.Assign)} ");
+			WriteValue(assignment.Value, fieldType, code);
+			EndStatement(code);
+			return;
+		}
+
+		base.GenerateAssignmentStatement(assignment, code);
+	}
+
+	/// <summary>
+	/// How a body names a field of the instance its function was called on.
+	/// </summary>
+	private const string SelfFieldPrefix = "self.";
+
+	/// <summary>
+	/// Reports whether a type is spelled as Rust's owned <c>String</c>.
+	/// </summary>
+	/// <param name="type">The type, or null where none is declared.</param>
+	/// <returns>True for <c>str</c> and <c>string</c> as a plain value.</returns>
+	private static bool IsOwnedString(TypeReference? type) =>
+		type is not null && SpellType(type) == TypeMappings["string"];
+
+	/// <summary>
+	/// Finds the declared type of an instance field of a type.
+	/// </summary>
+	/// <param name="type">The type, or null where it is not declared in the document.</param>
+	/// <param name="name">The field's name.</param>
+	/// <returns>The field's type, or null where the field or its type is not declared.</returns>
+	private static TypeReference? InstanceFieldType(ClassDeclaration? type, string? name) =>
+		type?.Members
+			.Select(member => member switch
+			{
+				FieldDeclaration field when !IsAssociatedField(field) && field.Name == name => field.Type,
+				VariableDeclaration field when field.Name == name => field.Type,
+				_ => null,
+			})
+			.FirstOrDefault(found => found is not null);
+
+	/// <summary>
+	/// Finds the declaration of a type a struct literal builds.
+	/// </summary>
+	/// <param name="type">The type the literal names.</param>
+	/// <returns>The declaration, or null where the document does not declare it.</returns>
+	/// <remarks>
+	/// <c>Self</c> is the type whose functions are being written. Any other name is looked up in the
+	/// document, so a literal built outside the type's own impl is written for its fields too.
+	/// </remarks>
+	private ClassDeclaration? BuiltType(TypeReference type) =>
+		type.Name == "Self" || type.Name == constructedType?.Name
+			? constructedType
+			: DeclaredTypes(GenerationRoot).FirstOrDefault(declared => declared.Name == type.Name);
 
 	/// <summary>
 	/// Writes a function's statements.
@@ -1533,16 +1614,20 @@ public class RustGenerator : StandardLanguageGenerator
 	/// </summary>
 	/// <param name="type">The declared type.</param>
 	/// <returns>The type as Rust writes it in that position.</returns>
+	/// <remarks>
+	/// A string is the borrowed <c>&amp;'static str</c> rather than the owned <c>String</c> it is
+	/// everywhere else: <c>String::from</c> is not a <c>const fn</c>, so no constant or static can
+	/// hold a <c>String</c> built from a literal, and the literal itself is a <c>&amp;'static str</c>.
+	/// The lifetime is spelled because an associated constant may not leave it out.
+	/// </remarks>
 	private static string SpellStorageType(TypeReference type)
 	{
-		if (!type.IsArray)
-		{
-			return SpellType(type);
-		}
-
 		TypeReference element = type.Clone();
 		element.IsArray = false;
-		return $"&[{SpellType(element)}]";
+
+		string spelled = IsOwnedString(element) ? "&'static str" : SpellType(element);
+
+		return type.IsArray ? $"&[{spelled}]" : spelled;
 	}
 
 	/// <inheritdoc/>
@@ -1681,13 +1766,30 @@ public class RustGenerator : StandardLanguageGenerator
 		if (construction.Arguments.Any(argument => argument is MemberInitialiser))
 		{
 			code.Write($"{type} ");
-			WriteElementList(construction, code, "{", "}", "{}");
+
+			ClassDeclaration? outerLiteral = literalType;
+			literalType = BuiltType(construction.Type);
+			try
+			{
+				WriteElementList(construction, code, "{", "}", "{}");
+			}
+			finally
+			{
+				literalType = outerLiteral;
+			}
+
 			return;
 		}
 
 		code.Write(type);
 		WriteCallArguments(construction, code);
 	}
+
+	/// <summary>
+	/// The type whose struct literal is being written, where the document declares it, which says
+	/// what each field named in the literal receives.
+	/// </summary>
+	private ClassDeclaration? literalType;
 
 	/// <summary>
 	/// Writes the arguments of a construction that names none of its members.
@@ -1730,6 +1832,26 @@ public class RustGenerator : StandardLanguageGenerator
 			&& string.Equals(designated.Name, reference.Name, StringComparison.Ordinal))
 		{
 			code.Write(reference.Name);
+			return;
+		}
+
+		// A field is written for the type it was declared with, so a string literal filling a
+		// String field is made into one, as it is where a function returns one.
+		if (argument is MemberInitialiser { Value: AstNode value } field
+			&& InstanceFieldType(literalType, field.Name) is TypeReference fieldType)
+		{
+			ClassDeclaration? outerLiteral = literalType;
+			literalType = null;
+			try
+			{
+				WriteDesignator(field.Name ?? string.Empty, code);
+				WriteValue(value, fieldType, code);
+			}
+			finally
+			{
+				literalType = outerLiteral;
+			}
+
 			return;
 		}
 
