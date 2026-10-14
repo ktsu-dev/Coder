@@ -95,6 +95,49 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	}
 
 	/// <summary>
+	/// Starts a scope for a property accessor's body and ends it when the returned guard is disposed.
+	/// </summary>
+	/// <param name="property">The property whose accessor is about to be generated.</param>
+	/// <param name="isSetter">True for the setter, whose <paramref name="valueName"/> parameter holds the property's type; false for the getter, which returns it.</param>
+	/// <param name="valueName">The name the target gives the setter's incoming value.</param>
+	/// <returns>The guard whose disposal ends the scope.</returns>
+	/// <remarks>
+	/// An accessor is a function the AST does not spell as a <see cref="FunctionDeclaration"/>, so
+	/// without this its body has no scope and a typed local or the setter's value is not known to be
+	/// an integer.
+	/// </remarks>
+	protected IDisposable OpenStaticTypeScope(PropertyDeclaration property, bool isSetter, string valueName = "value")
+	{
+		Ensure.NotNull(property);
+		Ensure.NotNull(valueName);
+		Dictionary<string, TypeReference> types = new(StringComparer.Ordinal);
+		if (isSetter && property.Type is TypeReference type)
+		{
+			types[valueName] = type;
+		}
+
+		staticTypeScopes.Push(new StaticTypeScope(types, isSetter ? null : property.Type));
+		return new StaticTypeScopeGuard(this);
+	}
+
+	/// <summary>
+	/// Starts a scope for an entry point's body and ends it when the returned guard is disposed.
+	/// </summary>
+	/// <param name="entryPoint">The entry point whose body is about to be generated.</param>
+	/// <returns>The guard whose disposal ends the scope.</returns>
+	/// <remarks>
+	/// The scope is what records the body's typed locals. An entry point that returns an exit code
+	/// returns an <c>int</c>.
+	/// </remarks>
+	protected IDisposable OpenStaticTypeScope(EntryPoint entryPoint)
+	{
+		Ensure.NotNull(entryPoint);
+		TypeReference? returnType = entryPoint.ReturnsExitCode ? new TypeReference("int") : null;
+		staticTypeScopes.Push(new StaticTypeScope(new Dictionary<string, TypeReference>(StringComparer.Ordinal), returnType));
+		return new StaticTypeScopeGuard(this);
+	}
+
+	/// <summary>
 	/// Ends the most recently opened function type scope.
 	/// </summary>
 	protected void PopStaticTypeScope() => staticTypeScopes.Pop();
