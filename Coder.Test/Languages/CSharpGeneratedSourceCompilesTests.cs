@@ -1,4 +1,4 @@
-// Copyright (c) 2023-2026 ktsu-dev contributors
+﻿// Copyright (c) 2023-2026 ktsu-dev contributors
 
 namespace ktsu.Coder.Test.Languages;
 
@@ -84,6 +84,61 @@ public class CSharpGeneratedSourceCompilesTests
 
 			(int exitCode, string output) = ToolchainHarness.Run("dotnet", "build -nologo", directory);
 			Assert.AreEqual(0, exitCode, $"C# rejected the generated source:{Environment.NewLine}{output}");
+		});
+	}
+
+	/// <summary>
+	/// The consumer of the generated operators, which uses each the way C# code would.
+	/// </summary>
+	/// <remarks>
+	/// <c>a + b</c> is what catches a binary operator written as a unary one: the declaration
+	/// compiles either way, and only a call site with two operands refuses it.
+	/// </remarks>
+	private const string OperatorDriver = """
+		public static class OperatorDriver
+		{
+			public static double Use()
+			{
+				Point a = new Point(1, 2);
+				Point b = new Point(3);
+				Point sum = a + b;
+				Point negated = -a;
+				double converted = a;
+				return converted + (double)sum + (double)negated;
+			}
+		}
+		""";
+
+	/// <summary>
+	/// Tests that a type's binary, unary and conversion operators compile, and that a caller can use
+	/// each with the operands the declaration describes.
+	/// </summary>
+	[TestMethod]
+	public void Operators_Compile()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "dotnet") is null)
+		{
+			Assert.Inconclusive("No dotnet on the path, so nothing was compiled.");
+			return;
+		}
+
+		ClassDeclaration point = CompiledExemplar.Point();
+		point.Members.Add(CompiledExemplar.Plus());
+		point.Members.Add(CompiledExemplar.Negate());
+		point.Members.Add(CompiledExemplar.ToDouble("self.x"));
+
+		SourceFile file = new("Generated");
+		file.Members.Add(point);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new CSharpGenerator().Generate(file);
+			File.WriteAllText(Path.Combine(directory, "Generated.csproj"), Project);
+			File.WriteAllText(Path.Combine(directory, "Driver.cs"), OperatorDriver);
+			File.WriteAllText(Path.Combine(directory, "Generated.cs"), source);
+
+			(int exitCode, string output) = ToolchainHarness.Run("dotnet", "build -nologo", directory);
+			Assert.AreEqual(0, exitCode, $"C# rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
 		});
 	}
 }

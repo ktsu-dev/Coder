@@ -883,9 +883,15 @@ public class CSharpGenerator : LanguageGeneratorBase
 		code.Write(SpellTypeParameters(function.TypeParameters));
 		code.Write("(");
 
+		bool takesOperand = TakesImplicitOperand(function, enclosingType);
+		if (takesOperand)
+		{
+			code.Write($"{enclosingType!.Name}{SpellTypeParameters(enclosingType.TypeParameters)} {OperandParameterName}");
+		}
+
 		for (int i = 0; i < function.Parameters.Count; i++)
 		{
-			if (i > 0)
+			if (i > 0 || takesOperand)
 			{
 				code.Write(", ");
 			}
@@ -1043,6 +1049,30 @@ public class CSharpGenerator : LanguageGeneratorBase
 	}
 
 	/// <summary>
+	/// What the operand an operator acts on is called, once C# has to name it.
+	/// </summary>
+	/// <remarks>
+	/// <c>self</c>, as the C lowering names its receiver, so a body that reads <c>self.x</c> means the
+	/// same thing in both.
+	/// </remarks>
+	private const string OperandParameterName = "self";
+
+	/// <summary>
+	/// Determines whether a declaration's operand is one C# has to write as a parameter.
+	/// </summary>
+	/// <param name="function">The declaration being emitted.</param>
+	/// <param name="enclosingType">The type it belongs to, when it belongs to one.</param>
+	/// <returns>True when it is an operator or a conversion that belongs to a type.</returns>
+	/// <remarks>
+	/// The AST's operators are members, as C++'s and Rust's are: <c>operator+(rhs)</c> is binary, and
+	/// the instance it belongs to is the left-hand operand. A C# operator is static and takes every
+	/// operand explicitly, so written as declared a binary operator would become a unary one and a
+	/// unary operator or a conversion would take nothing at all (CS1019).
+	/// </remarks>
+	private static bool TakesImplicitOperand(FunctionDeclaration function, ClassDeclaration? enclosingType) =>
+		enclosingType is not null && function.Kind is FunctionKind.Operator or FunctionKind.ConversionOperator;
+
+	/// <summary>
 	/// Determines whether a declaration's <see cref="FunctionDeclaration.IsReadOnly"/> is spelled as
 	/// C#'s <c>readonly</c>.
 	/// </summary>
@@ -1051,10 +1081,14 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// <returns>True when the declaration is an instance member of a struct that claims it.</returns>
 	/// <remarks>
 	/// The claim is C++'s trailing <c>const</c>, which any member function may make. C# lets only an
-	/// instance member of a struct make it, so everywhere else <c>readonly</c> fails with CS0106.
+	/// instance member of a struct make it, so everywhere else <c>readonly</c> fails with CS0106. An
+	/// operator is static in C# whether or not the declaration says so, so it never can.
 	/// </remarks>
 	private static bool IsReadOnlySpelled(FunctionDeclaration function, ClassDeclaration? enclosingType) =>
-		function.IsReadOnly && !function.IsStatic && enclosingType?.Kind == TypeDeclarationKind.Struct;
+		function.IsReadOnly
+		&& !function.IsStatic
+		&& function.Kind is not (FunctionKind.Operator or FunctionKind.ConversionOperator)
+		&& enclosingType?.Kind == TypeDeclarationKind.Struct;
 
 	/// <summary>
 	/// Determines whether a class is written <c>abstract</c>.
