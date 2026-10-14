@@ -27,6 +27,30 @@ public class CppGeneratorTests
 	}
 
 	/// <summary>
+	/// Tests that a getter whose invented name would match its backing field takes a <c>get</c>
+	/// prefix instead, and that a getter with no such neighbour keeps the plain name.
+	/// </summary>
+	[TestMethod]
+	public void PropertyGetter_ClashingWithAField_IsPrefixed()
+	{
+		string code = Generator.Generate(CppGeneratedSourceCompilesTests.CounterOverBackingField());
+
+		Assert.Contains("int count = 0;", code, StringComparison.Ordinal, code);
+		Assert.Contains("int get_count() const", code, StringComparison.Ordinal, code);
+		Assert.Contains("void set_count(int value)", code, StringComparison.Ordinal, code);
+		Assert.DoesNotContain("int count() const", code, StringComparison.Ordinal, code);
+
+		ClassDeclaration unclashed = new("Counter");
+		unclashed.Members.Add(new PropertyDeclaration("Limit", "int")
+		{
+			GetterBody = { new ReturnStatement(new LiteralExpression<int>(10)) },
+		});
+
+		string plain = Generator.Generate(unclashed);
+		Assert.Contains("int limit() const", plain, StringComparison.Ordinal, plain);
+	}
+
+	/// <summary>
 	/// Tests that a function with no return type declared becomes void, with the brace on its own line.
 	/// </summary>
 	[TestMethod]

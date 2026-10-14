@@ -512,7 +512,7 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 		Ensure.NotNull(code);
 
 		bool first = true;
-		foreach (AstNode lowered in Separate(declaration))
+		foreach (AstNode lowered in Separate(declaration, []))
 		{
 			if (!first)
 			{
@@ -533,6 +533,18 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	/// inventing it in the wrong convention is how generated code announces itself.
 	/// </remarks>
 	protected virtual NamingStyle MemberNaming => NamingStyle.Camel;
+
+	/// <summary>
+	/// Gets a value indicating whether a data member and a member function of one type need
+	/// different names in this target.
+	/// </summary>
+	/// <remarks>
+	/// The question a separated property's getter has to ask, because its name is invented: a
+	/// property <c>Count</c> over a field <c>count</c> becomes <c>count()</c> in snake case, and C++
+	/// refuses a function beside a field of the same name where Rust allows it and C prefixes it out
+	/// of the way. A target that answers yes has a colliding getter spelled with a <c>get</c> prefix.
+	/// </remarks>
+	protected virtual bool MemberNamesMustDiffer => false;
 
 	/// <summary>
 	/// A type's members, with every property separated into the declarations it is made of.
@@ -570,11 +582,13 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 
 		separated.Members.Clear();
 
+		HashSet<string> taken = MemberNamesMustDiffer ? NamesOf(classDecl.Members) : [];
+
 		foreach (AstNode member in classDecl.Members)
 		{
 			if (member is PropertyDeclaration property)
 			{
-				foreach (AstNode part in Separate(property))
+				foreach (AstNode part in Separate(property, taken))
 				{
 					separated.Members.Add(part);
 				}
@@ -589,11 +603,34 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	}
 
 	/// <summary>
+	/// The names a type's members already hold before any property is separated into functions.
+	/// </summary>
+	/// <param name="members">The type's members.</param>
+	/// <returns>The names, including the field an automatic property becomes.</returns>
+	private static HashSet<string> NamesOf(IEnumerable<AstNode> members) =>
+		new(
+			members
+				.Select(member => member switch
+				{
+					FieldDeclaration field => field.Name,
+					FunctionDeclaration function => function.Name,
+					ClassDeclaration type => type.Name,
+					EnumDeclaration enumeration => enumeration.Name,
+					UsingAlias alias => alias.Name,
+					PropertyDeclaration property when property.IsAutomatic => property.Name ?? "value",
+					_ => null,
+				})
+				.OfType<string>(),
+			StringComparer.Ordinal);
+
+	/// <summary>
 	/// Separates a property into the declarations it is made of.
 	/// </summary>
 	/// <param name="property">The property to separate.</param>
+	/// <param name="taken">The member names already in use where they must differ, which an invented
+	/// getter name is added to; empty where the target lets a field and a function share a name.</param>
 	/// <returns>A field, or the accessors, in the order they should be written.</returns>
-	private IEnumerable<AstNode> Separate(PropertyDeclaration property)
+	private IEnumerable<AstNode> Separate(PropertyDeclaration property, HashSet<string> taken)
 	{
 		if (property.IsAutomatic)
 		{
@@ -618,7 +655,15 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 
 		if (property.CanRead)
 		{
-			FunctionDeclaration getter = new(property.GetterName(MemberNaming))
+			string getterName = property.GetterName(MemberNaming);
+			if (MemberNamesMustDiffer && taken.Contains(getterName))
+			{
+				getterName = NameStyles.Spell($"get {property.Name ?? "value"}", MemberNaming);
+			}
+
+			taken.Add(getterName);
+
+			FunctionDeclaration getter = new(getterName)
 			{
 				ReturnType = property.Type,
 				Visibility = property.Visibility,

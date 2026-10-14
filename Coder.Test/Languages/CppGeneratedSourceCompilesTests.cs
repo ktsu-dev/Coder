@@ -135,6 +135,69 @@ public class CppGeneratedSourceCompilesTests
 	}
 
 	/// <summary>
+	/// Tests that a property with bodies over a same-named backing field compiles, and a driver can
+	/// call both accessors.
+	/// </summary>
+	/// <remarks>
+	/// Field <c>count</c> and property <c>Count</c> is the ordinary C# shape, and the getter's
+	/// snake-case name was <c>count()</c>, which C++ refuses beside the field <c>count</c> (issue #140).
+	/// </remarks>
+	[TestMethod]
+	public void APropertyOverASameNamedBackingFieldCompiles()
+	{
+		string? compiler = ToolchainHarness.FindOnPath("--version", Compilers);
+		if (compiler is null)
+		{
+			Assert.Inconclusive("No C++ compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		SourceFile file = new("counter");
+		file.Members.Add(CounterOverBackingField());
+		string header = new CppGenerator().Generate(file);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			File.WriteAllText(Path.Combine(directory, "counter.h"), header);
+			File.WriteAllText(
+				Path.Combine(directory, "driver.cpp"),
+				$"#include \"counter.h\"{Environment.NewLine}{Environment.NewLine}int main() {{ Counter c; c.set_count(3); return c.get_count() == 3 ? 0 : 1; }}{Environment.NewLine}");
+
+			(int exitCode, string output) = ToolchainHarness.Run(
+				compiler,
+				"-std=c++20 -Wall -Wextra -pedantic -Werror -c driver.cpp -o driver.o",
+				directory);
+
+			Assert.AreEqual(0, exitCode, $"{compiler} rejected the generated header:{Environment.NewLine}{output}{Environment.NewLine}{header}");
+		});
+	}
+
+	/// <summary>
+	/// A class holding a private field <c>count</c> and a public property <c>Count</c> whose
+	/// accessors read and write it.
+	/// </summary>
+	/// <returns>The class.</returns>
+	internal static ClassDeclaration CounterOverBackingField()
+	{
+		ClassDeclaration counter = new("Counter");
+		counter.Members.Add(new FieldDeclaration("count", new TypeReference("int"))
+		{
+			Visibility = Visibility.Private,
+			InitialValue = new LiteralExpression<int>(0),
+		});
+
+		PropertyDeclaration property = new("Count", new TypeReference("int"))
+		{
+			Visibility = Visibility.Public,
+			HasSetter = true,
+		};
+		property.GetterBody.Add(new ReturnStatement(new VariableReference("count")));
+		property.SetterBody.Add(new AssignmentStatement(new VariableReference("count"), new VariableReference("value")));
+		counter.Members.Add(property);
+		return counter;
+	}
+
+	/// <summary>
 	/// Tests that a class's mutable static fields compile, with and without an initialiser.
 	/// </summary>
 	/// <remarks>
