@@ -177,16 +177,34 @@ public class CGenerator : CFamilyGenerator
 	protected override IEnumerable<string> RequiredImports(SourceFile file)
 	{
 		Ensure.NotNull(file);
-		if (ContainsNonFiniteLiteral(file))
+		if (ContainsNonFiniteLiteral(file) || ContainsFloatingRemainder(file))
 		{
 			yield return MathHeader;
 		}
 	}
 
 	/// <summary>
-	/// The header that declares <c>NAN</c> and <c>INFINITY</c>.
+	/// The header that declares <c>NAN</c>, <c>INFINITY</c>, <c>fmod</c> and <c>fmodf</c>.
 	/// </summary>
 	private const string MathHeader = "<math.h>";
+
+	/// <inheritdoc/>
+	protected override bool SpellsFloatingRemainderAsCall => true;
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// <c>fmodf</c> for a remainder taken in <c>float</c>, so the result is not widened to
+	/// <c>double</c> and narrowed back, and <c>fmod</c> otherwise.
+	/// </remarks>
+	protected override void WriteFloatingRemainder(Expression dividend, Expression divisor, string floatingType, CodeBlocker code)
+	{
+		Ensure.NotNull(code);
+		code.Write(floatingType == "float" ? "fmodf(" : "fmod(");
+		GenerateInternal(dividend, code);
+		code.Write(", ");
+		GenerateInternal(divisor, code);
+		code.Write(")");
+	}
 
 	/// <inheritdoc/>
 	/// <remarks>
@@ -251,6 +269,7 @@ public class CGenerator : CFamilyGenerator
 		// The line is ended before the scope opens, so C's brace lands on its own line.
 		code.WriteLine();
 
+		using IDisposable types = OpenStaticTypeScope(funcDecl);
 		using Scope body = new(code);
 
 		if (funcDecl.Kind == FunctionKind.Constructor)
@@ -1101,6 +1120,7 @@ public class CGenerator : CFamilyGenerator
 	{
 		Ensure.NotNull(varDecl);
 		Ensure.NotNull(code);
+		RegisterStaticType(varDecl);
 
 		if (varDecl.IsConstant)
 		{
