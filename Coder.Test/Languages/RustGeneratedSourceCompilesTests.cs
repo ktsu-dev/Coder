@@ -213,6 +213,129 @@ public class RustGeneratedSourceCompilesTests
 	}
 
 	/// <summary>
+	/// Tests that a by-value parameter, and an operator's <c>self</c>, that the body calls a mutating
+	/// method on are bound <c>mut</c>, since the method borrows its receiver <c>&amp;mut</c> (#186).
+	/// </summary>
+	[TestMethod]
+	public void CallingAMutatingMethodOnAParameterOrSelf_BindsItMut()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "rustc") is null)
+		{
+			Assert.Inconclusive("No Rust compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		SourceFile file = new("calls");
+		file.Members.Add(MutablePoint());
+
+		// shift(p: Point) { p.bump(); }
+		FunctionDeclaration shift = new("shift");
+		shift.Parameters.Add(new Parameter("p", "Point"));
+		shift.Body.Add(new ExpressionStatement(new CallExpression(new VariableReference("p"), "bump")));
+		file.Members.Add(shift);
+
+		// shifted(p: Point) -> int { return p.bumped(); }, where the call is nested in the return.
+		FunctionDeclaration shifted = new("shifted") { ReturnType = "int" };
+		shifted.Parameters.Add(new Parameter("p", "Point"));
+		shifted.Body.Add(new ReturnStatement(new BinaryExpression(
+			new CallExpression(new VariableReference("p"), "bumped"), BinaryOperator.Add, Literal.Number(1))));
+		file.Members.Add(shifted);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new RustGenerator().Generate(file);
+
+			Assert.Contains("fn add(mut self, rhs: Point)", source, StringComparison.Ordinal, source);
+			Assert.Contains("pub fn shift(mut p: Point)", source, StringComparison.Ordinal, source);
+			Assert.Contains("pub fn shifted(mut p: Point)", source, StringComparison.Ordinal, source);
+
+			File.WriteAllText(Path.Combine(directory, "calls.rs"), $"#![allow(unused_parens, dead_code)]{Environment.NewLine}{source}");
+
+			(int exitCode, string output) = ToolchainHarness.Run(
+				"rustc",
+				"--crate-type lib --edition 2021 -o calls.rlib calls.rs",
+				directory);
+
+			Assert.AreEqual(0, exitCode, $"rustc rejected the generated source:{Environment.NewLine}{source}{Environment.NewLine}{output}");
+		});
+	}
+
+	/// <summary>
+	/// Tests that a by-value parameter the body calls only read-only methods on is not bound
+	/// <c>mut</c>, since a <c>mut</c> nothing needs is a warning in Rust (#186).
+	/// </summary>
+	[TestMethod]
+	public void CallingOnlyReadOnlyMethodsOnAParameter_BindsNothingMut()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "rustc") is null)
+		{
+			Assert.Inconclusive("No Rust compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		SourceFile file = new("reads");
+		file.Members.Add(MutablePoint());
+
+		// peek(p: Point) -> int { return p.get(); }
+		FunctionDeclaration peek = new("peek") { ReturnType = "int" };
+		peek.Parameters.Add(new Parameter("p", "Point"));
+		peek.Body.Add(new ReturnStatement(new CallExpression(new VariableReference("p"), "get")));
+		file.Members.Add(peek);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new RustGenerator().Generate(file);
+
+			Assert.Contains("pub fn peek(p: Point)", source, StringComparison.Ordinal, source);
+
+			// unused_mut is denied, so a needless mut anywhere fails the build.
+			File.WriteAllText(Path.Combine(directory, "reads.rs"), $"#![allow(unused_parens, dead_code)]{Environment.NewLine}#![deny(unused_mut)]{Environment.NewLine}{source}");
+
+			(int exitCode, string output) = ToolchainHarness.Run(
+				"rustc",
+				"--crate-type lib --edition 2021 -o reads.rlib reads.rs",
+				directory);
+
+			Assert.AreEqual(0, exitCode, $"rustc rejected the generated source:{Environment.NewLine}{source}{Environment.NewLine}{output}");
+		});
+	}
+
+	/// <summary>
+	/// A struct with a mutating method, a read-only one, and an arithmetic operator that calls the
+	/// mutating one on <c>self</c>.
+	/// </summary>
+	private static ClassDeclaration MutablePoint()
+	{
+		ClassDeclaration point = new("Point") { Kind = TypeDeclarationKind.Struct };
+		point.Members.Add(new VariableDeclaration("x", "int"));
+
+		// bump(&mut self) { self.x = 1; }
+		FunctionDeclaration bump = new("bump");
+		bump.Body.Add(new AssignmentStatement(new VariableReference("self.x"), Literal.Number(1)));
+		point.Members.Add(bump);
+
+		// bumped(&mut self) -> int { self.x = 2; return self.x; }
+		FunctionDeclaration bumped = new("bumped") { ReturnType = "int" };
+		bumped.Body.Add(new AssignmentStatement(new VariableReference("self.x"), Literal.Number(2)));
+		bumped.Body.Add(new ReturnStatement(new VariableReference("self.x")));
+		point.Members.Add(bumped);
+
+		// get(&self) -> int { return self.x; }
+		FunctionDeclaration get = new("get") { ReturnType = "int", IsReadOnly = true };
+		get.Body.Add(new ReturnStatement(new VariableReference("self.x")));
+		point.Members.Add(get);
+
+		// self + rhs: self.bump(); return self;
+		FunctionDeclaration plus = new("+") { Kind = FunctionKind.Operator, ReturnType = "Point" };
+		plus.Parameters.Add(new Parameter("rhs", "Point"));
+		plus.Body.Add(new ExpressionStatement(new CallExpression(new VariableReference("self"), "bump")));
+		plus.Body.Add(new ReturnStatement(new VariableReference("self")));
+		point.Members.Add(plus);
+
+		return point;
+	}
+
+	/// <summary>
 	/// Tests that an operator whose body assigns nothing still takes its operands as they are, since
 	/// a <c>mut</c> nothing needs is a warning in Rust.
 	/// </summary>

@@ -789,7 +789,10 @@ public class RustGenerator : StandardLanguageGenerator
 		// own to change, but only if it is bound mut, as a parameter is.
 		HashSet<string> reassigned = op.ReturnsBool
 			? []
-			: ReassignedNames(funcDecl.Body, [SelfName, .. funcDecl.Parameters.Select(OperandName)]);
+			: ReassignedNames(funcDecl.Body, [
+				new(SelfName, new TypeReference(typeName)),
+				.. funcDecl.Parameters.Select(parameter => new KeyValuePair<string, TypeReference?>(OperandName(parameter), parameter.Type)),
+			]);
 		string self = op.ReturnsBool ? "&self" : reassigned.Contains(SelfName) ? $"mut {SelfName}" : SelfName;
 		code.Write($"fn {op.Method}({self}");
 
@@ -1152,28 +1155,44 @@ public class RustGenerator : StandardLanguageGenerator
 	/// </summary>
 	/// <param name="funcDecl">The function to inspect.</param>
 	/// <returns>The names of the parameters to declare <c>mut</c>.</returns>
-	private static HashSet<string> ReassignedParameters(FunctionDeclaration funcDecl) =>
-		ReassignedNames(funcDecl.Body, funcDecl.Parameters.Select(parameter => parameter.Name).OfType<string>());
+	private HashSet<string> ReassignedParameters(FunctionDeclaration funcDecl) =>
+		ReassignedNames(funcDecl.Body, funcDecl.Parameters
+			.Where(parameter => parameter.Name is not null)
+			.Select(parameter => new KeyValuePair<string, TypeReference?>(parameter.Name!, parameter.Type)));
 
 	/// <summary>
-	/// Finds which of the given bindings a body assigns to, or assigns a field of, before any local
-	/// takes the name over.
+	/// Finds which of the given bindings a body assigns to, assigns a field of, or calls a mutating
+	/// method on, before any local takes the name over.
 	/// </summary>
 	/// <param name="body">The statements to inspect.</param>
-	/// <param name="candidates">The names bound on entry: parameters, and <c>self</c> where it is taken by value.</param>
+	/// <param name="candidates">The names bound on entry, with their types: parameters, and <c>self</c> where it is taken by value.</param>
 	/// <returns>The names to declare <c>mut</c>.</returns>
 	/// <remarks>
 	/// Member access is a dotted <see cref="VariableReference"/>, so <c>p.x = …</c> names <c>p</c> by
 	/// the text before its first dot — and Rust asks for <c>mut p</c> to assign through a field of a
 	/// value just as it does to assign the whole of it.
 	/// <para>
+	/// A method call borrows its receiver, and a method that is not
+	/// <see cref="FunctionDeclaration.IsReadOnly"/> takes <c>&amp;mut self</c>, so calling one on a
+	/// binding held by value needs that binding <c>mut</c> too. A binding held through a reference or
+	/// pointer is reborrowed instead and needs nothing. A call is left out only when the method is
+	/// declared in the document being generated and every overload of it is read-only: an unneeded
+	/// <c>mut</c> is a warning, and a missing one is an error.
+	/// </para>
+	/// <para>
 	/// A local declared with a parameter's name shadows it from there on, so an assignment after
-	/// that point is to the local, which is already <c>let mut</c>, and not to the parameter.
+	/// that point is to the local, which is already <c>let mut</c>, and not to the parameter. Its own
+	/// initialiser is evaluated before it binds, so that still refers to the parameter.
 	/// </para>
 	/// </remarks>
-	private static HashSet<string> ReassignedNames(IEnumerable<AstNode> body, IEnumerable<string> candidates)
+	private HashSet<string> ReassignedNames(IEnumerable<AstNode> body, IEnumerable<KeyValuePair<string, TypeReference?>> candidates)
 	{
-		HashSet<string> bound = new(candidates, StringComparer.Ordinal);
+		Dictionary<string, TypeReference?> bound = new(StringComparer.Ordinal);
+		foreach (KeyValuePair<string, TypeReference?> candidate in candidates)
+		{
+			bound[candidate.Key] = candidate.Value;
+		}
+
 		HashSet<string> reassigned = new(StringComparer.Ordinal);
 
 		foreach (AstNode statement in body)
@@ -1181,11 +1200,25 @@ public class RustGenerator : StandardLanguageGenerator
 			switch (statement)
 			{
 				case VariableDeclaration local:
+					CollectMutatingCalls(local.InitialValue, bound, reassigned);
 					bound.Remove(local.Name);
 					break;
 
-				case AssignmentStatement { Target: VariableReference target } when bound.Contains(RootOf(target.Name)):
-					reassigned.Add(RootOf(target.Name));
+				case AssignmentStatement assignment:
+					if (assignment.Target is VariableReference target && bound.ContainsKey(RootOf(target.Name)))
+					{
+						reassigned.Add(RootOf(target.Name));
+					}
+
+					CollectMutatingCalls(assignment.Value, bound, reassigned);
+					break;
+
+				case ExpressionStatement expression:
+					CollectMutatingCalls(expression.Expression, bound, reassigned);
+					break;
+
+				case ReturnStatement result:
+					CollectMutatingCalls(result.Expression, bound, reassigned);
 					break;
 
 				default:
@@ -1194,6 +1227,121 @@ public class RustGenerator : StandardLanguageGenerator
 		}
 
 		return reassigned;
+	}
+
+	/// <summary>
+	/// Adds to <paramref name="reassigned"/> every by-value binding an expression calls a mutating
+	/// method on.
+	/// </summary>
+	/// <param name="node">The expression to search, at any depth.</param>
+	/// <param name="bound">The bindings still in scope, with their types.</param>
+	/// <param name="reassigned">The names found so far.</param>
+	private void CollectMutatingCalls(AstNode? node, Dictionary<string, TypeReference?> bound, HashSet<string> reassigned)
+	{
+		switch (node)
+		{
+			case CallExpression call:
+				if (call.Receiver is VariableReference receiver)
+				{
+					string root = RootOf(receiver.Name);
+					if (bound.TryGetValue(root, out TypeReference? type)
+						&& type is not { Indirection: not TypeIndirection.None }
+						&& !(root == receiver.Name && type is not null && IsReadOnlyMethod(type.Name, call.Callee)))
+					{
+						reassigned.Add(root);
+					}
+				}
+				else
+				{
+					CollectMutatingCalls(call.Receiver, bound, reassigned);
+				}
+
+				foreach (AstNode argument in call.Arguments)
+				{
+					CollectMutatingCalls(argument, bound, reassigned);
+				}
+
+				break;
+
+			case BinaryExpression binary:
+				CollectMutatingCalls(binary.Left, bound, reassigned);
+				CollectMutatingCalls(binary.Right, bound, reassigned);
+				break;
+
+			case UnaryExpression unary:
+				CollectMutatingCalls(unary.Operand, bound, reassigned);
+				break;
+
+			case ConditionalExpression conditional:
+				CollectMutatingCalls(conditional.Condition, bound, reassigned);
+				CollectMutatingCalls(conditional.WhenTrue, bound, reassigned);
+				CollectMutatingCalls(conditional.WhenFalse, bound, reassigned);
+				break;
+
+			case ConstructionExpression construction:
+				foreach (AstNode argument in construction.Arguments)
+				{
+					CollectMutatingCalls(argument, bound, reassigned);
+				}
+
+				break;
+
+			case MemberInitialiser initialiser:
+				CollectMutatingCalls(initialiser.Value, bound, reassigned);
+				break;
+
+			default:
+				break;
+		}
+	}
+
+	/// <summary>
+	/// Reports whether a type declared in the document being generated has an instance method of the
+	/// given name, every overload of which is read-only.
+	/// </summary>
+	/// <param name="typeName">The name of the type the method is called on.</param>
+	/// <param name="method">The method's name.</param>
+	/// <returns>True only when the method is found and none of its overloads takes <c>&amp;mut self</c>.</returns>
+	private bool IsReadOnlyMethod(string typeName, string method)
+	{
+		List<FunctionDeclaration> overloads = [.. DeclaredTypes(GenerationRoot)
+			.Where(type => type.Name == typeName)
+			.SelectMany(type => type.Members.OfType<FunctionDeclaration>())
+			.Where(function => function.Name == method && !function.IsStatic)];
+		return overloads.Count > 0 && overloads.All(function => function.IsReadOnly);
+	}
+
+	/// <summary>
+	/// Lists every type declared in a node, at any depth.
+	/// </summary>
+	/// <param name="node">A file, namespace or type, or anything else, which declares none.</param>
+	/// <returns>The type declarations found.</returns>
+	private static IEnumerable<ClassDeclaration> DeclaredTypes(AstNode? node)
+	{
+		IEnumerable<AstNode> members;
+		switch (node)
+		{
+			case SourceFile file:
+				members = file.Members;
+				break;
+			case NamespaceDeclaration namespaceDecl:
+				members = namespaceDecl.Members;
+				break;
+			case ClassDeclaration classDecl:
+				yield return classDecl;
+				members = classDecl.Members;
+				break;
+			default:
+				yield break;
+		}
+
+		foreach (AstNode member in members)
+		{
+			foreach (ClassDeclaration type in DeclaredTypes(member))
+			{
+				yield return type;
+			}
+		}
 	}
 
 	/// <summary>
