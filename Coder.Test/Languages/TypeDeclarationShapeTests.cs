@@ -317,6 +317,83 @@ public class TypeDeclarationShapeTests
 	}
 
 	/// <summary>
+	/// A readonly struct makes each of its instance members readonly too, because C# requires it
+	/// (CS8340 for a field, CS8341 for an automatic property), and leaves its static members alone
+	/// (issue #176).
+	/// </summary>
+	[TestMethod]
+	public void CSharp_AReadOnlyStructMakesItsInstanceMembersReadOnly()
+	{
+		ClassDeclaration velocity = new("Velocity") { Kind = TypeDeclarationKind.Struct, IsReadOnly = true };
+		velocity.Members.Add(new FieldDeclaration("x", "double"));
+		velocity.Members.Add(new FieldDeclaration("count", "int") { IsStatic = true });
+		velocity.Members.Add(new PropertyDeclaration("Y", "double") { HasSetter = true });
+		velocity.Members.Add(new PropertyDeclaration("Z", "double"));
+		velocity.Members.Add(new PropertyDeclaration("Shared", "double") { IsStatic = true, HasSetter = true });
+
+		PropertyDeclaration withBody = new("W", "double")
+		{
+			GetterBody = { new ReturnStatement(new VariableReference("x")) },
+			SetterBody = { new AssignmentStatement(new VariableReference("x"), new VariableReference("value")) },
+		};
+		velocity.Members.Add(withBody);
+
+		string code = Generate(new CSharpGenerator(), velocity);
+
+		StringAssert.Contains(code, "public readonly struct Velocity");
+		StringAssert.Contains(code, $"public readonly double x;{NewLine}");
+		StringAssert.Contains(code, $"public static int count;{NewLine}");
+		StringAssert.Contains(code, "public double Y { get; init; }");
+		StringAssert.Contains(code, "public double Z { get; }");
+		StringAssert.Contains(code, "public static double Shared { get; set; }");
+		StringAssert.Contains(code, "// readonly: set only while the instance is initialised");
+		StringAssert.Contains(code, $"init{NewLine}");
+		Assert.DoesNotContain("set;", code.Replace("public static double Shared { get; set; }", string.Empty, StringComparison.Ordinal), code);
+	}
+
+	/// <summary>
+	/// <c>readonly</c> is a modifier only a struct may carry (CS0106), so a readonly class or interface
+	/// writes the promise down as the targets with no word for it do, and its members are written as
+	/// they would be in any class (issue #176).
+	/// </summary>
+	/// <param name="kind">The kind of type.</param>
+	[TestMethod]
+	[DataRow(TypeDeclarationKind.Class)]
+	[DataRow(TypeDeclarationKind.Interface)]
+	public void CSharp_AReadOnlyClassOrInterfaceWritesThePromiseDown(TypeDeclarationKind kind)
+	{
+		ClassDeclaration mass = new("Mass") { Kind = kind, IsReadOnly = true };
+		mass.Members.Add(new PropertyDeclaration("Kg", "double") { HasSetter = true });
+
+		string code = Generate(new CSharpGenerator(), mass);
+
+		Assert.DoesNotContain("readonly class", code, code);
+		Assert.DoesNotContain("readonly interface", code, code);
+		StringAssert.Contains(code, "// readonly: no member of this type modifies it");
+		StringAssert.Contains(code, "public double Kg { get; set; }");
+	}
+
+	/// <summary>
+	/// A type nested in a readonly struct answers for itself: its members are not made readonly
+	/// because the struct around it is.
+	/// </summary>
+	[TestMethod]
+	public void CSharp_ATypeNestedInAReadOnlyStructAnswersForItself()
+	{
+		ClassDeclaration inner = new("Inner") { Kind = TypeDeclarationKind.Class };
+		inner.Members.Add(new FieldDeclaration("total", "int"));
+
+		ClassDeclaration outer = new("Outer") { Kind = TypeDeclarationKind.Struct, IsReadOnly = true };
+		outer.Members.Add(inner);
+		outer.Members.Add(new FieldDeclaration("x", "int"));
+
+		string code = Generate(new CSharpGenerator(), outer);
+
+		StringAssert.Contains(code, $"public int total;{NewLine}");
+		StringAssert.Contains(code, $"public readonly int x;{NewLine}");
+	}
+
+	/// <summary>
 	/// Rust asks for the record's members with derive, which is what derive is for.
 	/// </summary>
 	[TestMethod]
