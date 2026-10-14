@@ -1451,7 +1451,7 @@ public class RustGenerator : StandardLanguageGenerator
 		bool inferred = varDecl.IsTypeInferred || varDecl.Type is null;
 		TypeReference? annotation = !inferred ? varDecl.Type
 			: varDecl.InitialValue is null ? new TypeReference(UnknownTypeName)
-			: KeptWidth(varDecl.InitialValue);
+			: InferredLiteralWidth(varDecl.InitialValue);
 
 		if (annotation is not null)
 		{
@@ -1466,22 +1466,6 @@ public class RustGenerator : StandardLanguageGenerator
 
 		EndStatement(code);
 	}
-
-	/// <summary>
-	/// Reads the width an inferred local must be written with, because Rust would infer another.
-	/// </summary>
-	/// <param name="initialValue">The local's initialiser.</param>
-	/// <returns><c>long</c> or <c>float</c> when the initialiser establishes one; otherwise null.</returns>
-	/// <remarks>
-	/// Rust infers an unconstrained integer as <c>i32</c> and a float as <c>f64</c>, so a long or a
-	/// float that nothing later pins down would silently narrow or widen, and a long past
-	/// <c>i32</c>'s range does not compile at all. An <c>int</c> or a <c>double</c> is what Rust
-	/// infers anyway, so it is left to inference.
-	/// </remarks>
-	private TypeReference? KeptWidth(Expression initialValue) =>
-		StaticType(initialValue) is { IsArray: false, Indirection: TypeIndirection.None, TypeArguments.Count: 0, Name: "long" or "float" } width
-			? width
-			: null;
 
 	/// <inheritdoc/>
 	/// <remarks>

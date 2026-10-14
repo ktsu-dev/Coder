@@ -1288,12 +1288,23 @@ public class GoGenerator : StandardLanguageGenerator
 
 		bool inferred = varDecl.IsTypeInferred || varDecl.Type is null;
 
+		// `:=` gives an untyped constant Go's default type, so a long or a float would come out an
+		// `int` or a `float64` — and Go never converts between those implicitly. Such a declaration
+		// says its width instead, the same as one that was given a type.
+		TypeReference? width = inferred && varDecl.InitialValue is not null ? InferredLiteralWidth(varDecl.InitialValue) : null;
+		if (width is not null)
+		{
+			inferred = false;
+		}
+
+		TypeReference type = width ?? varDecl.Type ?? new TypeReference(UnknownTypeName);
+
 		// A declaration that says its type is the third statement a conditional can be lowered into,
 		// and the only one that knows what the branches are: `var x T` first, then the choice
 		// assigning to it. Without this the expression form would have to name a type nobody gave it.
 		if (!inferred && varDecl.InitialValue is ConditionalExpression chosen)
 		{
-			code.Write($"var {varDecl.Name} {SpellType(varDecl.Type!)}");
+			code.Write($"var {varDecl.Name} {SpellType(type)}");
 			EndStatement(code);
 
 			WriteConditionalBranch(chosen, code, bothArms: true, branch =>
@@ -1318,8 +1329,6 @@ public class GoGenerator : StandardLanguageGenerator
 
 		WriteStorageKeyword(varDecl.Name, varDecl.IsConstant, varDecl.InitialValue, code);
 		code.Write(varDecl.Name);
-
-		TypeReference type = varDecl.Type ?? new TypeReference(UnknownTypeName);
 
 		if (!inferred || varDecl.InitialValue is null)
 		{

@@ -297,6 +297,22 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	}
 
 	/// <summary>
+	/// Reads the width an inferred local must be written with, because the target would infer another.
+	/// </summary>
+	/// <param name="initialValue">The local's initialiser.</param>
+	/// <returns><c>long</c> or <c>float</c> when the initialiser establishes one; otherwise null.</returns>
+	/// <remarks>
+	/// Rust and Go infer an unconstrained integer as their default integer and a float as a 64-bit one,
+	/// so a long or a float that nothing later pins down would silently narrow or widen — and in Go,
+	/// whose arithmetic never converts implicitly, a later <c>float32</c> operand does not compile. An
+	/// <c>int</c> or a <c>double</c> is what those targets infer anyway, so it is left to inference.
+	/// </remarks>
+	protected TypeReference? InferredLiteralWidth(Expression initialValue) =>
+		StaticType(initialValue) is { IsArray: false, Indirection: TypeIndirection.None, TypeArguments.Count: 0, Name: "long" or "float" } width
+			? width
+			: null;
+
+	/// <summary>
 	/// Reads the type an expression can establish from its own annotation, shape, or current scope.
 	/// </summary>
 	/// <param name="expression">The expression to inspect.</param>

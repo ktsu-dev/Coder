@@ -168,7 +168,7 @@ public class LiteralRoundTripTests
 	[TestMethod]
 	public void SharedGenerators_KeepAWholeNumberFloatFloatingPoint()
 	{
-		Assert.AreEqual("3.0", new CGenerator().Generate(Literal.SingleValue(3.0f)).Trim());
+		Assert.AreEqual("3.0f", new CGenerator().Generate(Literal.SingleValue(3.0f)).Trim());
 		Assert.AreEqual("0.1", new PythonGenerator().Generate(Literal.SingleValue(0.1f)).Trim());
 	}
 
