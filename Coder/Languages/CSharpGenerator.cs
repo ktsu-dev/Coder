@@ -729,7 +729,21 @@ public class CSharpGenerator : LanguageGeneratorBase
 		WriteConstraintClauses(function.TypeParameters, code);
 
 		using Scope body = new(code);
+		WriteInitialisers(function, code);
 
+		foreach (AstNode statement in function.Body)
+		{
+			GenerateInternal(statement, code);
+		}
+	}
+
+	/// <summary>
+	/// Writes a constructor's member initialisers as the assignments that open its body.
+	/// </summary>
+	/// <param name="function">The declaration being emitted.</param>
+	/// <param name="code">The writer to emit into.</param>
+	private void WriteInitialisers(FunctionDeclaration function, CodeBlocker code)
+	{
 		// C# assigns where C++ initialises. Written before the body's own statements and in the order
 		// declared, which is what the initialiser means where there is no initialiser list. One with no
 		// value value-initialises the member, as C++'s `x()` does, and `default` is C#'s spelling.
@@ -747,11 +761,6 @@ public class CSharpGenerator : LanguageGeneratorBase
 			}
 
 			EndStatement(code);
-		}
-
-		foreach (AstNode statement in function.Body)
-		{
-			GenerateInternal(statement, code);
 		}
 	}
 
