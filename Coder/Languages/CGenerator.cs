@@ -1094,8 +1094,8 @@ public class CGenerator : CFamilyGenerator
 	/// <remarks>
 	/// A constant local is <c>const</c>, which is all it needs to be: unlike a file-scope one it has
 	/// no linkage to collide with. There is no <c>auto</c> to fall back on — C's is a storage class,
-	/// not a deduced type — so an inferred declaration is written with the type it was given, or an
-	/// untyped pointer when it was given none.
+	/// not a deduced type — so an inferred declaration is written with the type it was given, then the
+	/// type its initialiser is known to have, and an untyped pointer only when neither says.
 	/// </remarks>
 	protected override void GenerateVariableDeclaration(VariableDeclaration varDecl, CodeBlocker code)
 	{
@@ -1107,7 +1107,10 @@ public class CGenerator : CFamilyGenerator
 			code.Write("const ");
 		}
 
-		code.Write(SpellDeclarator(varDecl.Type ?? new TypeReference(UnknownTypeName), varDecl.Name));
+		TypeReference type = varDecl.Type
+			?? (varDecl.InitialValue is Expression initialValue ? StaticType(initialValue) : null)
+			?? new TypeReference(UnknownTypeName);
+		code.Write(SpellDeclarator(type, varDecl.Name));
 
 		if (varDecl.InitialValue is not null)
 		{

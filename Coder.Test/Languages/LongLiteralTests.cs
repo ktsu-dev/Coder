@@ -50,16 +50,18 @@ public class LongLiteralTests
 		Assert.AreEqual(expected, new JavaScriptGenerator().Generate(new LiteralExpression<long>(value)).Trim());
 
 	/// <summary>
-	/// Tests that the other targets still write the digits alone, since each holds them exactly.
+	/// Tests that the other targets still write the digits exactly, since each holds them exactly.
+	/// C and C++ add <c>LL</c>, so a deduced or promoted type is the 64-bit one (issue #151).
 	/// </summary>
 	/// <param name="language">The generator to ask.</param>
+	/// <param name="expected">What the target should be given.</param>
 	[TestMethod]
-	[DataRow("python")]
-	[DataRow("go")]
-	[DataRow("rust")]
-	[DataRow("cpp")]
-	[DataRow("c")]
-	public void OtherTargets_AreUnchanged(string language)
+	[DataRow("python", "9007199254740993")]
+	[DataRow("go", "9007199254740993")]
+	[DataRow("rust", "9007199254740993")]
+	[DataRow("cpp", "9007199254740993LL")]
+	[DataRow("c", "9007199254740993LL")]
+	public void OtherTargets_KeepTheExactDigits(string language, string expected)
 	{
 		ILanguageGenerator generator = language switch
 		{
@@ -70,7 +72,7 @@ public class LongLiteralTests
 			_ => new CGenerator(),
 		};
 
-		Assert.AreEqual("9007199254740993", generator.Generate(new LiteralExpression<long>(MaxSafeInteger + 2)).Trim());
+		Assert.AreEqual(expected, generator.Generate(new LiteralExpression<long>(MaxSafeInteger + 2)).Trim());
 	}
 
 	/// <summary>

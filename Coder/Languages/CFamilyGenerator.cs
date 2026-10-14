@@ -202,6 +202,20 @@ public abstract class CFamilyGenerator : StandardLanguageGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
+	/// <c>f</c>, because an unsuffixed literal is a <c>double</c> in both languages: <c>auto a = 0.1;</c>
+	/// deduces a <c>double</c>, and <c>a * 0.5</c> computes in double precision before it narrows.
+	/// </remarks>
+	protected override string SingleLiteralSuffix => "f";
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// <c>LL</c>, which is what <c>long</c> maps to. An unsuffixed literal takes the narrowest type that
+	/// holds it, so <c>auto b = 5;</c> deduces an <c>int</c> and arithmetic on it overflows as one.
+	/// </remarks>
+	protected override string FormatLong(long value) => $"{base.FormatLong(value)}LL";
+
+	/// <inheritdoc/>
+	/// <remarks>
 	/// Adds one escape to the shared ones: a <c>?</c> that follows another <c>?</c> is written <c>\?</c>.
 	/// C up to C17, and C++ before C++17, replace a trigraph such as <c>??!</c> or <c>??/</c> even inside
 	/// a string literal, so <c>"what??!"</c> would read as <c>what|</c> and <c>??/</c> would become a
