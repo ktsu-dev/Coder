@@ -664,6 +664,22 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 		}
 
 		WriteImports(file, code);
+		GenerateFileMembers(file, code);
+	}
+
+	/// <summary>
+	/// Emits the declarations a file holds, after its header and imports.
+	/// </summary>
+	/// <param name="file">The file being emitted.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// Overridable for the one target that cannot write every declaration where the file puts it: C#
+	/// has no field or function outside a type, so it gathers those into one.
+	/// </remarks>
+	protected virtual void GenerateFileMembers(SourceFile file, CodeBlocker code)
+	{
+		Ensure.NotNull(file);
+		Ensure.NotNull(code);
 
 		AstNode? previous = null;
 		foreach (AstNode member in file.Members)
