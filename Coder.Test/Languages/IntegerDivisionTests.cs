@@ -236,6 +236,125 @@ public class IntegerDivisionTests
 	}
 
 	/// <summary>
+	/// A class whose property accessors divide: the setter records <c>value / 2</c> and
+	/// <c>value % 2</c>, and the getter returns a typed local divided by 2.
+	/// </summary>
+	private static ClassDeclaration AccessorBox()
+	{
+		PropertyDeclaration half = new("half", new TypeReference("int"));
+		half.GetterBody.Add(new VariableDeclaration("a", "int", new CallExpression("seed")));
+		half.GetterBody.Add(new ReturnStatement(new BinaryExpression(
+			new VariableReference("a"), BinaryOperator.Divide, new LiteralExpression<int>(2))));
+		foreach (BinaryOperator op in new[] { BinaryOperator.Divide, BinaryOperator.Modulo })
+		{
+			CallExpression record = new("record");
+			record.Arguments.Add(new BinaryExpression(new VariableReference("value"), op, new LiteralExpression<int>(2)));
+			half.SetterBody.Add(new ExpressionStatement(record));
+		}
+
+		ClassDeclaration box = new("Box");
+		box.Members.Add(half);
+		return box;
+	}
+
+	/// <summary>
+	/// An entry point that records a typed local divided by 2, and its remainder.
+	/// </summary>
+	private static EntryPoint DividingEntryPoint()
+	{
+		EntryPoint entryPoint = new();
+		entryPoint.Body.Add(new VariableDeclaration("a", "int", new CallExpression("seed")));
+		foreach (BinaryOperator op in new[] { BinaryOperator.Divide, BinaryOperator.Modulo })
+		{
+			CallExpression record = new("record");
+			record.Arguments.Add(new BinaryExpression(new VariableReference("a"), op, new LiteralExpression<int>(2)));
+			entryPoint.Body.Add(new ExpressionStatement(record));
+		}
+
+		return entryPoint;
+	}
+
+	/// <summary>
+	/// Tests that Python truncates integer division in a property's setter and getter, and in an
+	/// entry point, the way it does in a function (#191).
+	/// </summary>
+	[TestMethod]
+	public void Python_AccessorAndEntryPointBodies_MatchTheCFamily()
+	{
+		string? python = ToolchainHarness.FindOnPath("--version", "python3", "python");
+		if (python is null)
+		{
+			Assert.Inconclusive("No Python interpreter on the path, so nothing was run.");
+			return;
+		}
+
+		PythonGenerator generator = new();
+		StringBuilder module = new();
+		module.AppendLine("recorded = []");
+		module.AppendLine("SEED = -7");
+		module.AppendLine("def record(x):");
+		module.AppendLine("    recorded.append(x)");
+		module.AppendLine("def seed():");
+		module.AppendLine("    return SEED");
+		module.AppendLine(generator.Generate(AccessorBox()));
+		module.AppendLine("b = Box()");
+		foreach (int value in new[] { -7, 7 })
+		{
+			string expected = string.Create(CultureInfo.InvariantCulture, $"[{value / 2}, {value % 2}]");
+			module.AppendLine("recorded.clear()");
+			module.AppendLine(CultureInfo.InvariantCulture, $"b.half = {value}");
+			module.AppendLine(CultureInfo.InvariantCulture, $"assert recorded == {expected}, f\"setter({value}) recorded {{recorded!r}}, expected {expected}\"");
+		}
+
+		module.AppendLine(CultureInfo.InvariantCulture, $"assert b.half == {-7 / 2}, f\"getter = {{b.half!r}}, expected {-7 / 2}\"");
+		module.AppendLine("recorded.clear()");
+		module.AppendLine(generator.Generate(DividingEntryPoint()));
+		string entryExpected = string.Create(CultureInfo.InvariantCulture, $"[{-7 / 2}, {-7 % 2}]");
+		module.AppendLine(CultureInfo.InvariantCulture, $"assert recorded == {entryExpected}, f\"entry point recorded {{recorded!r}}, expected {entryExpected}\"");
+
+		Run(python, "check_accessors.py", module.ToString());
+	}
+
+	/// <summary>
+	/// Tests that JavaScript truncates integer division in a property's setter and getter, and in an
+	/// entry point, the way it does in a function (#191).
+	/// </summary>
+	[TestMethod]
+	public void JavaScript_AccessorAndEntryPointBodies_MatchTheCFamily()
+	{
+		string? node = ToolchainHarness.FindOnPath("--version", "node");
+		if (node is null)
+		{
+			Assert.Inconclusive("No JavaScript runtime on the path, so nothing was run.");
+			return;
+		}
+
+		JavaScriptGenerator generator = new();
+		StringBuilder module = new();
+		module.AppendLine("const recorded = [];");
+		module.AppendLine("function record(x) { recorded.push(x); }");
+		module.AppendLine("function seed() { return -7; }");
+		module.AppendLine("function check(actual, expected, what) { if (JSON.stringify(actual) !== JSON.stringify(expected)) { throw new Error(`${what} = ${JSON.stringify(actual)}, expected ${JSON.stringify(expected)}`); } }");
+		module.AppendLine(generator.Generate(AccessorBox()));
+		module.AppendLine("const b = new Box();");
+		foreach (int value in new[] { -7, 7 })
+		{
+			string expected = string.Create(CultureInfo.InvariantCulture, $"[{value / 2}, {value % 2}]");
+			module.AppendLine("recorded.length = 0;");
+			module.AppendLine(CultureInfo.InvariantCulture, $"b.half = {value};");
+			module.AppendLine(CultureInfo.InvariantCulture, $"check(recorded, {expected}, \"setter({value})\");");
+		}
+
+		module.AppendLine(CultureInfo.InvariantCulture, $"check(b.half, {-7 / 2}, \"getter\");");
+		module.AppendLine("recorded.length = 0;");
+		module.AppendLine(generator.Generate(DividingEntryPoint()));
+		string entryExpected = string.Create(CultureInfo.InvariantCulture, $"[{-7 / 2}, {-7 % 2}]");
+		module.AppendLine(CultureInfo.InvariantCulture, $"check(recorded, {entryExpected}, \"entry point\");");
+
+		Run(node, "check_accessors.js", module.ToString());
+	}
+
+	/// <summary>
 	/// Tests that a division the AST does not know to be on integers is left as true division.
 	/// </summary>
 	/// <param name="language">The generator to ask.</param>

@@ -177,16 +177,34 @@ public class CGenerator : CFamilyGenerator
 	protected override IEnumerable<string> RequiredImports(SourceFile file)
 	{
 		Ensure.NotNull(file);
-		if (ContainsNonFiniteLiteral(file))
+		if (ContainsNonFiniteLiteral(file) || ContainsFloatingRemainder(file))
 		{
 			yield return MathHeader;
 		}
 	}
 
 	/// <summary>
-	/// The header that declares <c>NAN</c> and <c>INFINITY</c>.
+	/// The header that declares <c>NAN</c>, <c>INFINITY</c>, <c>fmod</c> and <c>fmodf</c>.
 	/// </summary>
 	private const string MathHeader = "<math.h>";
+
+	/// <inheritdoc/>
+	protected override bool SpellsFloatingRemainderAsCall => true;
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// <c>fmodf</c> for a remainder taken in <c>float</c>, so the result is not widened to
+	/// <c>double</c> and narrowed back, and <c>fmod</c> otherwise.
+	/// </remarks>
+	protected override void WriteFloatingRemainder(Expression dividend, Expression divisor, string floatingType, CodeBlocker code)
+	{
+		Ensure.NotNull(code);
+		code.Write(floatingType == "float" ? "fmodf(" : "fmod(");
+		GenerateInternal(dividend, code);
+		code.Write(", ");
+		GenerateInternal(divisor, code);
+		code.Write(")");
+	}
 
 	/// <inheritdoc/>
 	/// <remarks>
@@ -251,6 +269,7 @@ public class CGenerator : CFamilyGenerator
 		// The line is ended before the scope opens, so C's brace lands on its own line.
 		code.WriteLine();
 
+		using IDisposable types = OpenStaticTypeScope(funcDecl);
 		using Scope body = new(code);
 
 		if (funcDecl.Kind == FunctionKind.Constructor)
@@ -275,8 +294,8 @@ public class CGenerator : CFamilyGenerator
 	/// C constructs nothing on its own, so a constructor is a function that returns a value it built.
 	/// The initialiser list becomes the designated initialiser it already is — which is the one place
 	/// C is the better fit, since C's designators need not be in declaration order and C++20's do —
-	/// and a constructor with no initialisers starts from <c>{0}</c>, so every member of the returned
-	/// value has a value whether or not anyone named it.
+	/// and a constructor with no initialisers, and no member with a declared starting value, starts
+	/// from <c>{0}</c>, so every member of the returned value has a value whether or not anyone named it.
 	/// </remarks>
 	private void GenerateConstructorBody(FunctionDeclaration funcDecl, CodeBlocker code, string? enclosingType)
 	{
@@ -284,7 +303,15 @@ public class CGenerator : CFamilyGenerator
 
 		code.Write($"{typeName} {SelfParameterName} = ");
 
-		if (funcDecl.Initialisers.Count == 0)
+		// A member the declaration gave a starting value, and this constructor did not set, starts
+		// at that value, which is what the struct's `defaults to` note promises. A member named by
+		// neither is zeroed, as a designated initialiser leaves every member it does not name.
+		List<FieldDeclaration> defaulted = constructedType is null
+			? []
+			: [.. InstanceInitialised(constructedType, _ => true)
+				.Where(field => !funcDecl.Initialisers.Any(initialiser => initialiser.Name == field.Name))];
+
+		if (funcDecl.Initialisers.Count == 0 && defaulted.Count == 0)
 		{
 			// Not `{}`, which C only allows from C23. `{0}` is the spelling that zeroes a whole
 			// object in every dialect, whatever the first member's type is.
@@ -296,6 +323,11 @@ public class CGenerator : CFamilyGenerator
 			foreach (MemberInitialiser member in funcDecl.Initialisers)
 			{
 				initialiser.Arguments.Add(member);
+			}
+
+			foreach (FieldDeclaration field in defaulted)
+			{
+				initialiser.Arguments.Add(new MemberInitialiser(field.Name ?? string.Empty, (Expression)field.InitialValue!.DeepClone()));
 			}
 
 			WriteInitialiser(initialiser, code);
@@ -634,12 +666,27 @@ public class CGenerator : CFamilyGenerator
 		code.Outdent();
 		code.WriteLine($"}} {name};");
 
-		foreach (FunctionDeclaration function in functions)
+		ClassDeclaration? outerConstructed = constructedType;
+		constructedType = classDecl;
+		try
 		{
-			code.NewLine();
-			GenerateFunction(function, code, name);
+			foreach (FunctionDeclaration function in functions)
+			{
+				code.NewLine();
+				GenerateFunction(function, code, name);
+			}
+		}
+		finally
+		{
+			constructedType = outerConstructed;
 		}
 	}
+
+	/// <summary>
+	/// The struct whose functions are being written, which a constructor reads the declared starting
+	/// values of its members from.
+	/// </summary>
+	private ClassDeclaration? constructedType;
 
 	/// <summary>
 	/// Reports whether a member declares a type rather than data or behaviour.
@@ -1094,20 +1141,24 @@ public class CGenerator : CFamilyGenerator
 	/// <remarks>
 	/// A constant local is <c>const</c>, which is all it needs to be: unlike a file-scope one it has
 	/// no linkage to collide with. There is no <c>auto</c> to fall back on — C's is a storage class,
-	/// not a deduced type — so an inferred declaration is written with the type it was given, or an
-	/// untyped pointer when it was given none.
+	/// not a deduced type — so an inferred declaration is written with the type it was given, then the
+	/// type its initialiser is known to have, and an untyped pointer only when neither says.
 	/// </remarks>
 	protected override void GenerateVariableDeclaration(VariableDeclaration varDecl, CodeBlocker code)
 	{
 		Ensure.NotNull(varDecl);
 		Ensure.NotNull(code);
+		RegisterStaticType(varDecl);
 
 		if (varDecl.IsConstant)
 		{
 			code.Write("const ");
 		}
 
-		code.Write(SpellDeclarator(varDecl.Type ?? new TypeReference(UnknownTypeName), varDecl.Name));
+		TypeReference type = varDecl.Type
+			?? (varDecl.InitialValue is Expression initialValue ? StaticType(initialValue) : null)
+			?? new TypeReference(UnknownTypeName);
+		code.Write(SpellDeclarator(type, varDecl.Name));
 
 		if (varDecl.InitialValue is not null)
 		{

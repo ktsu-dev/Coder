@@ -272,6 +272,35 @@ public class GoGenerator : StandardLanguageGenerator
 		double.IsNaN(value) ? "math.NaN()" : value > 0 ? "math.Inf(1)" : "math.Inf(-1)";
 
 	/// <inheritdoc/>
+	protected override bool SpellsFloatingRemainderAsCall => true;
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// <c>math.Mod</c> takes and answers <c>float64</c> only, so a remainder taken in <c>float32</c>
+	/// converts its operands in and its answer back out. Go converts nothing implicitly, and an
+	/// operand already of the type converts to it at no cost.
+	/// </remarks>
+	protected override void WriteFloatingRemainder(Expression dividend, Expression divisor, string floatingType, CodeBlocker code)
+	{
+		Ensure.NotNull(code);
+		if (floatingType == "double")
+		{
+			code.Write("math.Mod(");
+			GenerateInternal(dividend, code);
+			code.Write(", ");
+			GenerateInternal(divisor, code);
+			code.Write(")");
+			return;
+		}
+
+		code.Write("float32(math.Mod(float64(");
+		GenerateInternal(dividend, code);
+		code.Write("), float64(");
+		GenerateInternal(divisor, code);
+		code.Write(")))");
+	}
+
+	/// <inheritdoc/>
 	/// <remarks>
 	/// The same functions converted, because they return <c>float64</c> and Go converts nothing
 	/// implicitly: a <c>float32</c> declared with <c>math.NaN()</c> does not compile.
@@ -396,7 +425,7 @@ public class GoGenerator : StandardLanguageGenerator
 	/// </summary>
 	/// <param name="file">The file being emitted.</param>
 	/// <returns>Each group's import lines, sorted by path, with the empty groups dropped.</returns>
-	private static List<List<string>> ImportGroups(SourceFile file)
+	private List<List<string>> ImportGroups(SourceFile file)
 	{
 		List<List<string>> groups = [[]];
 
@@ -418,7 +447,7 @@ public class GoGenerator : StandardLanguageGenerator
 			groups[0].Add(RuntimePackage);
 		}
 
-		if (ContainsNonFiniteLiteral(file) && !groups.Any(group => group.Contains(MathPackage)))
+		if ((ContainsNonFiniteLiteral(file) || ContainsFloatingRemainder(file)) && !groups.Any(group => group.Contains(MathPackage)))
 		{
 			groups[0].Add(MathPackage);
 		}
@@ -1259,12 +1288,23 @@ public class GoGenerator : StandardLanguageGenerator
 
 		bool inferred = varDecl.IsTypeInferred || varDecl.Type is null;
 
+		// `:=` gives an untyped constant Go's default type, so a long or a float would come out an
+		// `int` or a `float64` — and Go never converts between those implicitly. Such a declaration
+		// says its width instead, the same as one that was given a type.
+		TypeReference? width = inferred && varDecl.InitialValue is not null ? InferredLiteralWidth(varDecl.InitialValue) : null;
+		if (width is not null)
+		{
+			inferred = false;
+		}
+
+		TypeReference type = width ?? varDecl.Type ?? new TypeReference(UnknownTypeName);
+
 		// A declaration that says its type is the third statement a conditional can be lowered into,
 		// and the only one that knows what the branches are: `var x T` first, then the choice
 		// assigning to it. Without this the expression form would have to name a type nobody gave it.
 		if (!inferred && varDecl.InitialValue is ConditionalExpression chosen)
 		{
-			code.Write($"var {varDecl.Name} {SpellType(varDecl.Type!)}");
+			code.Write($"var {varDecl.Name} {SpellType(type)}");
 			EndStatement(code);
 
 			WriteConditionalBranch(chosen, code, bothArms: true, branch =>
@@ -1289,8 +1329,6 @@ public class GoGenerator : StandardLanguageGenerator
 
 		WriteStorageKeyword(varDecl.Name, varDecl.IsConstant, varDecl.InitialValue, code);
 		code.Write(varDecl.Name);
-
-		TypeReference type = varDecl.Type ?? new TypeReference(UnknownTypeName);
 
 		if (!inferred || varDecl.InitialValue is null)
 		{

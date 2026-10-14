@@ -174,7 +174,7 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 				return true;
 
 			case LiteralExpression<float> floatLit:
-				code.Write(float.IsFinite(floatLit.Value) ? FormatSingle(floatLit.Value) : SpellNonFiniteSingle(floatLit.Value));
+				code.Write(float.IsFinite(floatLit.Value) ? FormatSingle(floatLit.Value) + SingleLiteralSuffix : SpellNonFiniteSingle(floatLit.Value));
 				return true;
 
 			case LiteralExpression<long> longLit:
@@ -664,6 +664,22 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 		}
 
 		WriteImports(file, code);
+		GenerateFileMembers(file, code);
+	}
+
+	/// <summary>
+	/// Emits the declarations a file holds, after its header and imports.
+	/// </summary>
+	/// <param name="file">The file being emitted.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// Overridable for the one target that cannot write every declaration where the file puts it: C#
+	/// has no field or function outside a type, so it gathers those into one.
+	/// </remarks>
+	protected virtual void GenerateFileMembers(SourceFile file, CodeBlocker code)
+	{
+		Ensure.NotNull(file);
+		Ensure.NotNull(code);
 
 		AstNode? previous = null;
 		foreach (AstNode member in file.Members)
@@ -1210,6 +1226,16 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// double, so it spells a value the double cannot hold itself.
 	/// </remarks>
 	protected virtual string FormatLong(long value) => value.ToString(CultureInfo.InvariantCulture);
+
+	/// <summary>
+	/// Gets what a finite single-precision literal is written with after its digits.
+	/// </summary>
+	/// <remarks>
+	/// Nothing by default: Go, Rust, Python and JavaScript either have no single-precision literal or
+	/// take the width from where the value lands. C and C++ read an unsuffixed literal as a
+	/// <c>double</c>, so an <c>auto</c> local or an operand beside a <c>float</c> would quietly widen.
+	/// </remarks>
+	protected virtual string SingleLiteralSuffix => string.Empty;
 
 	/// <summary>
 	/// Formats a single-precision value so that every target reads it as floating-point.
