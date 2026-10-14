@@ -693,19 +693,9 @@ public class CSharpGenerator : LanguageGeneratorBase
 			return;
 		}
 
-		// A struct cannot have a finalizer (CS0575), so the destructor is written down rather than
-		// declared, the way a member C# expresses by not declaring it is.
-		if (function.Kind == FunctionKind.Destructor && enclosingType?.Kind == TypeDeclarationKind.Struct)
+		if (!WriteMemberNotes(function, name, enclosingType, code))
 		{
-			WriteInexpressible(code, $"{name} is a destructor, which a C# struct cannot declare.");
 			return;
-		}
-
-		// readonly is a modifier only an instance member of a struct may carry (CS0106). Anywhere else
-		// the member still makes the claim, so it is written down the way the type's own claim is.
-		if (function.IsReadOnly && !function.IsStatic && !IsReadOnlySpelled(function, enclosingType))
-		{
-			WriteInexpressible(code, $"readonly: {name} does not modify its instance");
 		}
 
 		WriteFunctionAttributes(function, code);
@@ -763,6 +753,34 @@ public class CSharpGenerator : LanguageGeneratorBase
 		{
 			GenerateInternal(statement, code);
 		}
+	}
+
+	/// <summary>
+	/// Writes down what a member asks for that C# cannot say where the member is.
+	/// </summary>
+	/// <param name="function">The declaration being emitted.</param>
+	/// <param name="name">The name it is written under.</param>
+	/// <param name="enclosingType">The type it belongs to, when it belongs to one.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <returns>False when the note stands in for the whole declaration, so nothing else is written.</returns>
+	private bool WriteMemberNotes(FunctionDeclaration function, string name, ClassDeclaration? enclosingType, CodeBlocker code)
+	{
+		// A struct cannot have a finalizer (CS0575), so the destructor is written down rather than
+		// declared, the way a member C# expresses by not declaring it is.
+		if (function.Kind == FunctionKind.Destructor && enclosingType?.Kind == TypeDeclarationKind.Struct)
+		{
+			WriteInexpressible(code, $"{name} is a destructor, which a C# struct cannot declare.");
+			return false;
+		}
+
+		// readonly is a modifier only an instance member of a struct may carry (CS0106). Anywhere else
+		// the member still makes the claim, so it is written down the way the type's own claim is.
+		if (function.IsReadOnly && !function.IsStatic && !IsReadOnlySpelled(function, enclosingType))
+		{
+			WriteInexpressible(code, $"readonly: {name} does not modify its instance");
+		}
+
+		return true;
 	}
 
 	/// <summary>
