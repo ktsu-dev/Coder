@@ -1673,6 +1673,12 @@ public class RustGenerator : StandardLanguageGenerator
 	/// do. A fixed underlying type is <c>#[repr]</c>, which is the guarantee rather than a comment
 	/// about one. An enumeration with no variants has no representation to fix, and rustc rejects
 	/// <c>#[repr]</c> on one (E0084), so it is left off.
+	/// <para>
+	/// Every enumeration derives the traits a value of it needs to be compared, copied and printed.
+	/// The reason a plain struct derives nothing, that one of its fields might not implement them,
+	/// cannot apply to a fieldless enumeration, and without them <c>a == b</c> is E0369, a record
+	/// holding one is E0277, and reading one out of <c>&amp;self</c> is E0507.
+	/// </para>
 	/// </remarks>
 	protected override void GenerateEnumDeclaration(EnumDeclaration enumDecl, CodeBlocker code)
 	{
@@ -1686,6 +1692,7 @@ public class RustGenerator : StandardLanguageGenerator
 			code.WriteLine($"#[repr({SpellType(underlying)})]");
 		}
 
+		code.WriteLine("#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]");
 		code.Write($"{SpellVisibilityOf(enumDecl)}enum {enumDecl.Name ?? "UnnamedEnum"} ");
 
 		using Scope body = new(code);
