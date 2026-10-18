@@ -613,6 +613,7 @@ public class GoGeneratedSourceCompilesTests
 		circle.Members.Add(Released());
 
 		file.Members.Add(CompiledExemplar.Colour());
+		file.Members.Add(CompiledExemplar.Widths());
 		file.Members.Add(point);
 		file.Members.Add(CompiledExemplar.Shape());
 		file.Members.Add(circle);

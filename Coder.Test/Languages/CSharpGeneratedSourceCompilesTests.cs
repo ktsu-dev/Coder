@@ -129,6 +129,7 @@ public class CSharpGeneratedSourceCompilesTests
 
 		SourceFile file = new("Generated");
 		file.Members.Add(point);
+		file.Members.Add(CompiledExemplar.Widths());
 
 		ToolchainHarness.InTemporaryDirectory(directory =>
 		{

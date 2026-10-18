@@ -268,6 +268,7 @@ public class CGeneratedSourceCompilesTests
 
 		file.Members.Add(CompiledExemplar.Colour());
 		file.Members.Add(CompiledExemplar.Point());
+		file.Members.Add(CompiledExemplar.Widths());
 		file.Members.Add(CompiledExemplar.Shape());
 		file.Members.Add(CompiledExemplar.OriginAlias());
 		file.Members.Add(CompiledExemplar.OriginTable());
