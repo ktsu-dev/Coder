@@ -256,11 +256,99 @@ public class CSharpGenerator : LanguageGeneratorBase
 					GenerateInternal(member, code);
 				}
 			}
+
+			foreach (FunctionDeclaration partner in MissingComparisonPartners(classDecl))
+			{
+				GenerateFunction(partner, code, classDecl);
+			}
 		}
 		finally
 		{
 			inReadOnlyStruct = enclosingIsReadOnlyStruct;
 			memberAliasesHoisted = aliasesWereHoisted;
+		}
+	}
+
+	/// <summary>
+	/// The comparison operators C# requires to be declared together, each with its partner.
+	/// </summary>
+	private static readonly Dictionary<string, (string Partner, BinaryOperator Operator)> ComparisonPartners = new(StringComparer.Ordinal)
+	{
+		["=="] = ("!=", BinaryOperator.Equal),
+		["!="] = ("==", BinaryOperator.NotEqual),
+		["<"] = (">", BinaryOperator.LessThan),
+		[">"] = ("<", BinaryOperator.GreaterThan),
+		["<="] = (">=", BinaryOperator.LessThanOrEqual),
+		[">="] = ("<=", BinaryOperator.GreaterThanOrEqual),
+	};
+
+	/// <summary>
+	/// Builds the partner of each comparison operator a type declares without one.
+	/// </summary>
+	/// <param name="classDecl">The type.</param>
+	/// <returns>The operators to write after the type's own members.</returns>
+	/// <remarks>
+	/// C# requires <c>==</c> with <c>!=</c>, <c>&lt;</c> with <c>&gt;</c> and <c>&lt;=</c> with
+	/// <c>&gt;=</c> (CS0216). C++20 and Go accept one side alone and Rust's <c>PartialEq</c> supplies
+	/// <c>!=</c>, so declaring one side is a natural AST to write. An equality partner negates the
+	/// declared operator, which works whatever the right-hand operand is. An ordering partner swaps
+	/// the operands of the declared one, which only resolves when the right-hand operand is the type
+	/// itself, so one compared against another type is left as declared.
+	/// </remarks>
+	private static IEnumerable<FunctionDeclaration> MissingComparisonPartners(ClassDeclaration classDecl)
+	{
+		if (classDecl.Kind == TypeDeclarationKind.Interface)
+		{
+			yield break;
+		}
+
+		List<FunctionDeclaration> comparisons = [.. classDecl.Members
+			.OfType<FunctionDeclaration>()
+			.Where(function => function.Kind == FunctionKind.Operator
+				&& !function.IsFriend
+				&& function.Parameters.Count == 1
+				&& function.Name is not null
+				&& ComparisonPartners.ContainsKey(function.Name))];
+
+		foreach (FunctionDeclaration declared in comparisons)
+		{
+			(string partnerName, BinaryOperator op) = ComparisonPartners[declared.Name!];
+			Parameter operand = declared.Parameters[0];
+			string operandType = operand.Type?.ToString() ?? string.Empty;
+
+			bool partnerDeclared = comparisons.Any(function =>
+				function.Name == partnerName
+				&& (function.Parameters[0].Type?.ToString() ?? string.Empty) == operandType);
+			if (partnerDeclared || declared.Definition != FunctionDefinition.Provided || declared.IsAbstract)
+			{
+				continue;
+			}
+
+			VariableReference self = new(OperandParameterName);
+			VariableReference other = new(operand.Name ?? string.Empty);
+			Expression answer;
+			if (op is BinaryOperator.Equal or BinaryOperator.NotEqual)
+			{
+				answer = new UnaryExpression(UnaryOperator.LogicalNot, new BinaryExpression(self, op, other));
+			}
+			else if (operand.Type?.Name == classDecl.Name && operand.Type?.TypeArguments.Count == classDecl.TypeParameters.Count)
+			{
+				answer = new BinaryExpression(other, op, self);
+			}
+			else
+			{
+				continue;
+			}
+
+			FunctionDeclaration partner = new(partnerName)
+			{
+				Kind = FunctionKind.Operator,
+				ReturnType = declared.ReturnType?.Clone(),
+				Visibility = declared.Visibility,
+			};
+			partner.Parameters.Add((Parameter)operand.Clone());
+			partner.Body.Add(new ReturnStatement(answer));
+			yield return partner;
 		}
 	}
 
