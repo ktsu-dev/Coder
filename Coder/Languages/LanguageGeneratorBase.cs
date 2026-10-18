@@ -162,7 +162,7 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 				return true;
 
 			case LiteralExpression<int> intLit:
-				code.Write(intLit.Value.ToString(CultureInfo.InvariantCulture));
+				code.Write(FormatInt(intLit.Value));
 				return true;
 
 			case LiteralExpression<bool> boolLit:
@@ -187,7 +187,7 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 				return true;
 
 			case AstLeafNode<int> intLeaf:
-				code.Write(intLeaf.Value.ToString(CultureInfo.InvariantCulture));
+				code.Write(FormatInt(intLeaf.Value));
 				return true;
 
 			case AstLeafNode<bool> boolLeaf:
@@ -1214,6 +1214,17 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// for the double would widen the value, or fail to convert back, spells the float itself.
 	/// </remarks>
 	protected virtual string SpellNonFiniteSingle(float value) => SpellNonFiniteDouble(value);
+
+	/// <summary>
+	/// Spells a 32-bit integer literal.
+	/// </summary>
+	/// <param name="value">The literal's value.</param>
+	/// <returns>The value's decimal digits.</returns>
+	/// <remarks>
+	/// Every target reads the digits back as the same value. C and C++ are the exception for
+	/// <see cref="int.MinValue"/> alone, which they spell themselves.
+	/// </remarks>
+	protected virtual string FormatInt(int value) => value.ToString(CultureInfo.InvariantCulture);
 
 	/// <summary>
 	/// Spells a 64-bit integer literal.
