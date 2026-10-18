@@ -11,8 +11,9 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 /// <c>%</c> takes only integers, and that the file includes or imports what the call needs.
 /// </summary>
 /// <remarks>
-/// C, C++ and Go reject <c>a % b</c> and <c>x %= y</c> on a <c>double</c> or a <c>float</c>. C#, Rust
-/// and JavaScript accept them, and an integer remainder is <c>%</c> everywhere.
+/// C, C++ and Go reject <c>a % b</c> and <c>x %= y</c> on a <c>double</c> or a <c>float</c>. Python
+/// accepts them but floors, so <c>-7.5 % 2.0</c> is <c>0.5</c> rather than <c>-1.5</c>. C#, Rust and
+/// JavaScript accept them and truncate.
 /// </remarks>
 [TestClass]
 public class FloatingRemainderTests
@@ -29,6 +30,7 @@ public class FloatingRemainderTests
 	[DataRow("C", "return fmod(a, b);", "return fmodf(a, b);", "x = fmod(x, b);")]
 	[DataRow("C++", "return std::fmod(a, b);", "return std::fmod(a, b);", "x = std::fmod(x, b);")]
 	[DataRow("Go", "return math.Mod(a, b)", "return float32(math.Mod(float64(a), float64(b)))", "x = math.Mod(x, b)")]
+	[DataRow("Python", "return math.fmod(a, b)", "return math.fmod(a, b)", "x = math.fmod(x, b)")]
 	public void AFloatingRemainderIsACall(string language, string doubleRemainder, string floatRemainder, string compoundRemainder)
 	{
 		string code = GeneratorFor(language).Generate(FileOfRemainders());
@@ -67,6 +69,7 @@ public class FloatingRemainderTests
 	[DataRow("C", "#include <math.h>")]
 	[DataRow("C++", "#include <cmath>")]
 	[DataRow("Go", "\"math\"")]
+	[DataRow("Python", "import math")]
 	public void OnlyAFloatingRemainderImportsItsCall(string language, string import)
 	{
 		string floating = GeneratorFor(language).Generate(FileOfRemainders());
@@ -115,6 +118,35 @@ public class FloatingRemainderTests
 		}
 	}
 
+	/// <summary>
+	/// Tests that Python's floating remainder, and its floating <c>%=</c>, take the dividend's sign
+	/// the way the C family's <c>fmod</c> does.
+	/// </summary>
+	[TestMethod]
+	public void Python_FloatingRemainderMatchesTheCFamily()
+	{
+		string? python = ToolchainHarness.FindOnPath("--version", "python3", "python");
+		if (python is null)
+		{
+			Assert.Inconclusive("No Python interpreter on the path, so nothing was run.");
+			return;
+		}
+
+		string source = new PythonGenerator().Generate(FileOfRemainders())
+			+ Environment.NewLine
+			+ "assert wrap(-7.5, 2.0) == -1.5, wrap(-7.5, 2.0)" + Environment.NewLine
+			+ "assert wrap(7.5, -2.0) == 1.5, wrap(7.5, -2.0)" + Environment.NewLine
+			+ "assert wrapf(-7.5, 2.0) == -1.5, wrapf(-7.5, 2.0)" + Environment.NewLine
+			+ "assert accumulate(-7.5, 2.0) == -1.5, accumulate(-7.5, 2.0)" + Environment.NewLine;
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			File.WriteAllText(Path.Combine(directory, "check.py"), source);
+			(int exitCode, string output) = ToolchainHarness.Run(python, "check.py", directory);
+			Assert.AreEqual(0, exitCode, $"{output}{Environment.NewLine}{source}");
+		});
+	}
+
 	private static (string[] Commands, string AskVersion, string FileName, string Arguments) ToolchainFor(string language) => language switch
 	{
 		"C" => (["cc", "gcc", "clang"], "--version", "remainders.c", "-std=c11 -Wall -Wextra -pedantic -Werror -c remainders.c -o remainders.o"),
@@ -127,6 +159,7 @@ public class FloatingRemainderTests
 		"C++" => new CppGenerator(),
 		"C" => new CGenerator(),
 		"Go" => new GoGenerator(),
+		"Python" => new PythonGenerator(),
 		_ => throw new ArgumentOutOfRangeException(nameof(language), language, null),
 	};
 
