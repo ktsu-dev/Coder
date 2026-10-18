@@ -973,8 +973,32 @@ public class CSharpGenerator : LanguageGeneratorBase
 			WriteInexpressible(code, $"readonly: {name} does not modify its instance");
 		}
 
+		// C++ lets a member operator be private, protected or virtual; a C# operator is public and
+		// static and nothing else, so what it asked for is written down rather than lost.
+		if (IsOperator(function))
+		{
+			if (function.Visibility is not (Visibility.Unspecified or Visibility.Public))
+			{
+				WriteInexpressible(code, $"{SpellVisibility(function.Visibility)}: {name} is public, as every C# operator is");
+			}
+
+			if (enclosingType?.Kind != TypeDeclarationKind.Interface && (function.IsVirtual || function.IsAbstract))
+			{
+				string modifier = function.IsAbstract ? "abstract" : "virtual";
+				WriteInexpressible(code, $"{modifier}: {name} is static, which a C# operator outside an interface cannot override");
+			}
+		}
+
 		return true;
 	}
+
+	/// <summary>
+	/// Gets whether a declaration is one C# requires to be <c>public static</c>.
+	/// </summary>
+	/// <param name="function">The declaration being emitted.</param>
+	/// <returns>True for an operator or a conversion operator.</returns>
+	private static bool IsOperator(FunctionDeclaration function) =>
+		function.Kind is FunctionKind.Operator or FunctionKind.ConversionOperator;
 
 	/// <summary>
 	/// Writes the attributes a declaration earns.
@@ -1010,28 +1034,37 @@ public class CSharpGenerator : LanguageGeneratorBase
 		// A function nobody has given a visibility to is public: an inaccessible method is not what
 		// someone who wrote no modifier meant. A finalizer is the exception, because it takes no
 		// access modifier at all (CS0106): only the runtime calls it.
-		if (function.Kind != FunctionKind.Destructor)
+		// A user-defined operator must be public as well as static (CS0558), whatever it declared.
+		if (IsOperator(function))
+		{
+			code.Write("public ");
+		}
+		else if (function.Kind != FunctionKind.Destructor)
 		{
 			code.Write($"{SpellVisibility(function.Visibility) ?? DefaultVisibility} ");
 		}
 
 		if (function.IsStatic
 			|| ReferenceEquals(function, heldMember)
-			|| function.Kind is FunctionKind.Operator or FunctionKind.ConversionOperator)
+			|| IsOperator(function))
 		{
 			// A C# operator is always static, whether or not the declaration thought to say so.
 			code.Write("static ");
 		}
 
+		// An operator outside an interface can be neither virtual nor abstract (CS0106); the note
+		// written above the declaration says what was dropped.
+		bool canOverride = !IsOperator(function) || enclosingType?.Kind == TypeDeclarationKind.Interface;
+
 		// An interface member with no body is abstract already, and says so by having none.
 		if (function.IsAbstract)
 		{
-			if (enclosingType?.Kind != TypeDeclarationKind.Interface)
+			if (canOverride && enclosingType?.Kind != TypeDeclarationKind.Interface)
 			{
 				code.Write("abstract ");
 			}
 		}
-		else if (function.IsVirtual)
+		else if (function.IsVirtual && canOverride)
 		{
 			code.Write("virtual ");
 		}
