@@ -141,4 +141,48 @@ public class CSharpGeneratedSourceCompilesTests
 			Assert.AreEqual(0, exitCode, $"C# rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
 		});
 	}
+
+	/// <summary>
+	/// Tests that operators declared private, protected or virtual, which C++ allows, still compile
+	/// as the public static operators C# requires, with what was dropped written down (#260).
+	/// </summary>
+	[TestMethod]
+	public void OperatorsDeclaredPrivateOrVirtual_Compile()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "dotnet") is null)
+		{
+			Assert.Inconclusive("No dotnet on the path, so nothing was compiled.");
+			return;
+		}
+
+		FunctionDeclaration plus = CompiledExemplar.Plus();
+		plus.Visibility = Visibility.Private;
+		FunctionDeclaration negate = CompiledExemplar.Negate();
+		negate.IsVirtual = true;
+		FunctionDeclaration toDouble = CompiledExemplar.ToDouble("self.x");
+		toDouble.Visibility = Visibility.Protected;
+
+		ClassDeclaration point = CompiledExemplar.Point();
+		point.Members.Add(plus);
+		point.Members.Add(negate);
+		point.Members.Add(toDouble);
+
+		SourceFile file = new("Generated");
+		file.Members.Add(point);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new CSharpGenerator().Generate(file);
+			Assert.Contains("// private: operator + is public, as every C# operator is", source, StringComparison.Ordinal, source);
+			Assert.Contains("// virtual: operator - is static", source, StringComparison.Ordinal, source);
+			Assert.Contains("// protected: ", source, StringComparison.Ordinal, source);
+
+			File.WriteAllText(Path.Combine(directory, "Generated.csproj"), Project);
+			File.WriteAllText(Path.Combine(directory, "Driver.cs"), OperatorDriver);
+			File.WriteAllText(Path.Combine(directory, "Generated.cs"), source);
+
+			(int exitCode, string output) = ToolchainHarness.Run("dotnet", "build -nologo", directory);
+			Assert.AreEqual(0, exitCode, $"C# rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+		});
+	}
 }
