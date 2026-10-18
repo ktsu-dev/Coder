@@ -2,6 +2,9 @@
 
 Changes since v3.19.0:
 
+- Keep CSharpMemberModifierTests.cs without a byte order mark (Claude)
+- Rename member references in C, Go, Rust and JavaScript enum values [patch] (Claude)
+- Write C# operators public static, noting a dropped visibility or virtual [patch] (Claude)
 - Write a Go method's type parameters down instead of on the method [patch] (Claude)
 - Write nothing from Export when the generator refused the document [patch] (Claude)
 - Write C and C++ minimum integers as a subtraction [patch] (Claude)
