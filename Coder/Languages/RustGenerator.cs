@@ -1686,7 +1686,12 @@ public class RustGenerator : StandardLanguageGenerator
 			code.WriteLine($"#[repr({SpellType(underlying)})]");
 		}
 
-		code.Write($"{SpellVisibilityOf(enumDecl)}enum {enumDecl.Name ?? "UnnamedEnum"} ");
+		string name = enumDecl.Name ?? "UnnamedEnum";
+		code.Write($"{SpellVisibilityOf(enumDecl)}enum {name} ");
+
+		// A variant is not a value in a discriminant, so one naming another is cast to the
+		// discriminant's type: Perm::Read as i32, or as isize where no representation is fixed.
+		string discriminant = enumDecl.UnderlyingType is TypeReference fixedType ? SpellType(fixedType) : "isize";
 
 		using Scope body = new(code);
 		foreach (EnumMember member in enumDecl.Members)
@@ -1695,7 +1700,7 @@ public class RustGenerator : StandardLanguageGenerator
 
 			if (member.Value is not null)
 			{
-				code.Write($" = {member.Value}");
+				code.Write($" = {RenameSiblingMembers(enumDecl, member.Value, sibling => $"{name}::{sibling} as {discriminant}")}");
 			}
 
 			// A trailing comma on the last variant too, so adding one after it is a one-line diff.

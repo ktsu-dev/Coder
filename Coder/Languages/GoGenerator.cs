@@ -1511,7 +1511,7 @@ public class GoGenerator : StandardLanguageGenerator
 
 			if (member.Value is not null)
 			{
-				value = $"{name} = {member.Value}";
+				value = $"{name} = {RenameSiblingMembers(enumDecl, member.Value, sibling => Prefixed(name, sibling))}";
 				counting = false;
 			}
 			else if (previous is null)

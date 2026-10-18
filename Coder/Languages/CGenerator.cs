@@ -993,7 +993,7 @@ public class CGenerator : CFamilyGenerator
 
 			if (member.Value is not null)
 			{
-				code.Write($" = {member.Value}");
+				code.Write($" = {RenameSiblingMembers(enumDecl, member.Value, sibling => SpellEnumMember(name, sibling))}");
 			}
 
 			// A trailing comma on the last member too, so adding one after it is a one-line diff.
