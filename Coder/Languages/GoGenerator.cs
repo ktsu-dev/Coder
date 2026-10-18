@@ -961,18 +961,61 @@ public class GoGenerator : StandardLanguageGenerator
 			return;
 		}
 
+		// A declaration with no definition is a requirement, which only an interface can hold: there
+		// is nowhere on a struct for one to be implemented.
+		if (!insideInterface && funcDecl.IsAbstract)
+		{
+			WriteInexpressible(code, $"{name} has no body: only an interface may require one");
+			return;
+		}
+
+		HashSet<string> enclosingParameters = writtenDownParameters;
+		if (WritesTypeParametersDown(funcDecl, enclosingType))
+		{
+			WriteTypeParametersDown(funcDecl.TypeParameters, code);
+			writtenDownParameters = [.. enclosingParameters, .. funcDecl.TypeParameters.Select(parameter => parameter.Name)];
+		}
+
+		try
+		{
+			GenerateFunctionShape(funcDecl, name, code, enclosingType);
+		}
+		finally
+		{
+			writtenDownParameters = enclosingParameters;
+		}
+	}
+
+	/// <summary>
+	/// Reports whether a function's type parameters are written down rather than written.
+	/// </summary>
+	/// <param name="funcDecl">The declaration being emitted.</param>
+	/// <param name="enclosingType">The name of the type it belongs to, when it belongs to one.</param>
+	/// <returns>True for a method or an interface method that has type parameters.</returns>
+	/// <remarks>
+	/// Go has generic functions and generic types, and no generic methods: <c>func (self *Box)
+	/// Get[V any]()</c> is "method must have no type parameters", and an interface method is refused
+	/// the same way. Such a method is treated the way a generic type is: the parameters are written
+	/// down and every mention of them is <c>any</c> (issue #241). A constructor has a type but no
+	/// receiver, because it becomes the free <c>New</c> function, so it keeps its parameters.
+	/// </remarks>
+	private bool WritesTypeParametersDown(FunctionDeclaration funcDecl, string? enclosingType) =>
+		funcDecl.TypeParameters.Count > 0
+		&& (insideInterface || (enclosingType is not null && funcDecl.Kind != FunctionKind.Constructor));
+
+	/// <summary>
+	/// Emits a function's signature and, outside an interface, its receiver and body.
+	/// </summary>
+	/// <param name="funcDecl">The declaration to emit.</param>
+	/// <param name="name">The name it is written under.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <param name="enclosingType">The name of the type it belongs to, when it belongs to one.</param>
+	private void GenerateFunctionShape(FunctionDeclaration funcDecl, string name, CodeBlocker code, string? enclosingType)
+	{
 		if (insideInterface)
 		{
 			WriteSignature(funcDecl, name, code, enclosingType);
 			code.WriteLine();
-			return;
-		}
-
-		// A declaration with no definition is a requirement, which only an interface can hold: there
-		// is nowhere on a struct for one to be implemented.
-		if (funcDecl.IsAbstract)
-		{
-			WriteInexpressible(code, $"{name} has no body: only an interface may require one");
 			return;
 		}
 
@@ -1014,7 +1057,8 @@ public class GoGenerator : StandardLanguageGenerator
 	/// <param name="enclosingType">The name of the type it belongs to, when it belongs to one.</param>
 	private void WriteSignature(FunctionDeclaration funcDecl, string name, CodeBlocker code, string? enclosingType)
 	{
-		code.Write($"{name}{SpellTypeParameters(funcDecl.TypeParameters)}(");
+		string typeParameters = WritesTypeParametersDown(funcDecl, enclosingType) ? string.Empty : SpellTypeParameters(funcDecl.TypeParameters);
+		code.Write($"{name}{typeParameters}(");
 		GenerateParameterList(funcDecl.Parameters, code);
 		code.Write(")");
 
