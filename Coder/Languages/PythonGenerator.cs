@@ -268,6 +268,39 @@ public class PythonGenerator : StandardLanguageGenerator
 		{
 			yield return "from enum import Enum";
 		}
+
+		if (ContainsFloatingRemainder(file))
+		{
+			yield return MathModule;
+		}
+	}
+
+	/// <summary>
+	/// The module that defines <c>math.fmod</c>.
+	/// </summary>
+	private const string MathModule = "math";
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// Python's <c>%</c> takes floats, but it floors and the result takes the divisor's sign, so
+	/// <c>-7.5 % 2.0</c> is <c>0.5</c> where the C family's <c>fmod</c> gives <c>-1.5</c>. An integer
+	/// remainder is truncated by <see cref="GenerateBinary"/> before the base class is asked.
+	/// </remarks>
+	protected override bool SpellsFloatingRemainderAsCall => true;
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// <c>math.fmod</c> truncates, matching C's <c>fmod</c>. Python has one floating type, so a
+	/// remainder taken in <c>float</c> is written the same as one taken in <c>double</c>.
+	/// </remarks>
+	protected override void WriteFloatingRemainder(Expression dividend, Expression divisor, string floatingType, CodeBlocker code)
+	{
+		Ensure.NotNull(code);
+		code.Write("math.fmod(");
+		GenerateInternal(dividend, code);
+		code.Write(", ");
+		GenerateInternal(divisor, code);
+		code.Write(")");
 	}
 
 	private static bool ContainsEnum(IEnumerable<AstNode> nodes)

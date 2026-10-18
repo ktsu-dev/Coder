@@ -208,7 +208,9 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	/// </summary>
 	/// <remarks>
 	/// C, C++ and Go define <c>%</c> on integers only, so a remainder of floating operands has to be
-	/// <c>fmod</c> or <c>math.Mod</c> there. Every other target's <c>%</c> already takes them.
+	/// <c>fmod</c> or <c>math.Mod</c> there. Python's <c>%</c> takes floats but floors, so it writes
+	/// <c>math.fmod</c> to keep the dividend's sign. C#, JavaScript and Rust's <c>%</c> already
+	/// truncates on floating operands.
 	/// </remarks>
 	protected virtual bool SpellsFloatingRemainderAsCall => false;
 
