@@ -1330,4 +1330,56 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 			offset++;
 		}
 	}
+
+	/// <summary>
+	/// Rewrites the references a member's value makes to the members beside it, so they name what the
+	/// generator called those members rather than what the AST did.
+	/// </summary>
+	/// <param name="enumDecl">The enumeration the value belongs to.</param>
+	/// <param name="value">The value's text, as the AST holds it.</param>
+	/// <param name="spell">Gives what a member is called where the value is written, or null to leave
+	/// a reference to it as it is.</param>
+	/// <returns>The value with every whole-word reference to a member rewritten.</returns>
+	/// <remarks>
+	/// A value may name another member (<c>ReadWrite = Read | Write</c>), and a language that prefixes
+	/// or scopes its members would otherwise be handed a name it never declared. Only a bare word is a
+	/// reference: one following <c>.</c> or <c>::</c> is already qualified by whoever wrote it. The
+	/// renaming is the generator's own, so it cannot collide with a name the caller chose.
+	/// </remarks>
+	protected static string RenameSiblingMembers(EnumDeclaration enumDecl, string value, Func<string, string?> spell)
+	{
+		Ensure.NotNull(enumDecl);
+		Ensure.NotNull(value);
+		Ensure.NotNull(spell);
+
+		HashSet<string> members = [.. enumDecl.Members.Select(member => member.Name).OfType<string>()];
+		StringBuilder rewritten = new(value.Length);
+		int index = 0;
+
+		while (index < value.Length)
+		{
+			char current = value[index];
+			bool startsWord = (char.IsLetter(current) || current == '_')
+				&& (index == 0 || !(char.IsLetterOrDigit(value[index - 1]) || value[index - 1] is '_' or '.' or ':'));
+
+			if (!startsWord)
+			{
+				rewritten.Append(current);
+				index++;
+				continue;
+			}
+
+			int end = index;
+			while (end < value.Length && (char.IsLetterOrDigit(value[end]) || value[end] == '_'))
+			{
+				end++;
+			}
+
+			string word = value[index..end];
+			rewritten.Append(members.Contains(word) && spell(word) is string spelled ? spelled : word);
+			index = end;
+		}
+
+		return rewritten.ToString();
+	}
 }
