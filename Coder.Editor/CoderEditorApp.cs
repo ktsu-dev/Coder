@@ -61,6 +61,15 @@ public sealed class CoderEditorApp(
 	public string GeneratedCode { get; private set; } = string.Empty;
 
 	/// <summary>
+	/// Gets why the last regeneration produced no code, or null if it succeeded.
+	/// </summary>
+	/// <remarks>
+	/// The pane shows the reason in place of the code, so <see cref="GeneratedCode"/> alone cannot
+	/// tell the two apart, and <see cref="Export"/> has to know which one it would be writing.
+	/// </remarks>
+	public string? GenerationError { get; private set; }
+
+	/// <summary>
 	/// Gets a value indicating whether the document has been edited since it was last written.
 	/// </summary>
 	/// <remarks>
@@ -524,6 +533,11 @@ public sealed class CoderEditorApp(
 		}
 
 		Regenerate();
+		if (GenerationError is not null)
+		{
+			Status = $"Nothing written: {GenerationError}";
+			return null;
+		}
 
 		// The document's own extension is two parts, so it is trimmed rather than replaced.
 		string stem = documentPath.EndsWith(DocumentStore.Extension, StringComparison.OrdinalIgnoreCase)
@@ -582,6 +596,7 @@ public sealed class CoderEditorApp(
 		DocumentPath = null;
 		Status = status;
 		GeneratedCode = string.Empty;
+		GenerationError = null;
 	}
 
 	/// <summary>
@@ -645,17 +660,20 @@ public sealed class CoderEditorApp(
 
 		if (generator is null)
 		{
-			GeneratedCode = $"No generator for '{Settings.PreviewLanguageId}'.";
+			GenerationError = $"No generator for '{Settings.PreviewLanguageId}'.";
+			GeneratedCode = GenerationError;
 			return;
 		}
 
 		try
 		{
 			GeneratedCode = generator.Generate(Editor.Graph.Root);
+			GenerationError = null;
 		}
 		catch (NotSupportedException ex)
 		{
-			GeneratedCode = $"{generator.DisplayName} cannot generate this document yet: {ex.Message}";
+			GenerationError = $"{generator.DisplayName} cannot generate this document yet: {ex.Message}";
+			GeneratedCode = GenerationError;
 		}
 	}
 }
