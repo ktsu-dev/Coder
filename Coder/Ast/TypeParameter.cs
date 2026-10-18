@@ -105,7 +105,11 @@ public sealed class TypeParameter : IEquatable<TypeParameter>
 					break;
 
 				case ',' when depth == 0:
-					yield return text[start..index];
+					if (!string.IsNullOrWhiteSpace(text[start..index]))
+					{
+						yield return text[start..index];
+					}
+
 					start = index + 1;
 					break;
 
@@ -114,7 +118,10 @@ public sealed class TypeParameter : IEquatable<TypeParameter>
 			}
 		}
 
-		yield return text[start..];
+		if (!string.IsNullOrWhiteSpace(text[start..]))
+		{
+			yield return text[start..];
+		}
 	}
 
 	/// <inheritdoc />
