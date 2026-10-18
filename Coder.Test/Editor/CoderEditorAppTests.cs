@@ -472,6 +472,31 @@ public sealed class CoderEditorAppTests
 	}
 
 	/// <summary>
+	/// Tests that a document the previewed generator refuses is not written out, and that a good
+	/// export already at that path is left alone (issue #248).
+	/// </summary>
+	/// <remarks>
+	/// The pane shows the refusal in place of the code, and Export used to write that text to disk and
+	/// report "Wrote". A property is a member rather than a document, so every generator refuses one
+	/// as a root, and <see cref="AstGraph.Validate"/> has nothing to say about it.
+	/// </remarks>
+	[TestMethod]
+	public void Export_RefusesADocumentTheGeneratorCannotGenerate()
+	{
+		DocumentStore store = NewStore();
+		CoderEditorApp app = NewApp(store);
+		string document = WriteDocument(store, new PropertyDeclaration("Count", "int"), PathIn("member"));
+		string previous = Path.Combine(root, "member.cs");
+		File.WriteAllText(previous, "// a good export");
+		Assert.IsTrue(app.Open(document), app.Status);
+
+		Assert.IsNull(app.Export(document));
+		Assert.IsNotNull(app.GenerationError);
+		StringAssert.Contains(app.Status, "Nothing written", StringComparison.Ordinal);
+		Assert.AreEqual("// a good export", File.ReadAllText(previous));
+	}
+
+	/// <summary>
 	/// Tests that the generated code can be put on the clipboard, and that there is nothing to copy
 	/// before anything has been generated.
 	/// </summary>
