@@ -180,6 +180,11 @@ public class GoGenerator : StandardLanguageGenerator
 	private bool insideInterface;
 
 	/// <summary>
+	/// How many function bodies are being written, so a local can be told from a package-level variable.
+	/// </summary>
+	private int bodyDepth;
+
+	/// <summary>
 	/// The names the type being written was written <em>down</em> over.
 	/// </summary>
 	/// <remarks>
@@ -1286,9 +1291,17 @@ public class GoGenerator : StandardLanguageGenerator
 	/// <param name="code">The writer to emit into.</param>
 	private void WriteBody(IEnumerable<AstNode> statements, CodeBlocker code)
 	{
-		foreach (AstNode statement in statements)
+		bodyDepth++;
+		try
 		{
-			GenerateInternal(statement, code);
+			foreach (AstNode statement in statements)
+			{
+				GenerateInternal(statement, code);
+			}
+		}
+		finally
+		{
+			bodyDepth--;
 		}
 	}
 
@@ -1323,11 +1336,35 @@ public class GoGenerator : StandardLanguageGenerator
 	/// slice or anything built while running — so a declaration that starts at one of those is a
 	/// <c>var</c> with a note, rather than a <c>const</c> the compiler refuses.
 	/// </para>
+	/// <para>
+	/// A local is followed by <c>_ = name</c>, the same as the entry point's <c>args</c>: Go refuses a
+	/// local nothing reads, and a body is free to declare one it never reads or only assigns to. The
+	/// line is written after every local rather than only the unread ones, because whether a later
+	/// statement reads the name is not something the generator can tell from the text it writes.
+	/// A package-level declaration gets none, since Go allows an unread one there and refuses a
+	/// statement outside a function.
+	/// </para>
 	/// </remarks>
 	protected override void GenerateVariableDeclaration(VariableDeclaration varDecl, CodeBlocker code)
 	{
 		Ensure.NotNull(varDecl);
 		Ensure.NotNull(code);
+
+		WriteVariableDeclaration(varDecl, code);
+
+		if (bodyDepth > 0)
+		{
+			code.WriteLine($"_ = {varDecl.Name}");
+		}
+	}
+
+	/// <summary>
+	/// Writes a variable declaration itself, without what keeps Go from refusing it as unread.
+	/// </summary>
+	/// <param name="varDecl">The declaration to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	private void WriteVariableDeclaration(VariableDeclaration varDecl, CodeBlocker code)
+	{
 		RegisterStaticType(varDecl);
 
 		bool inferred = varDecl.IsTypeInferred || varDecl.Type is null;
