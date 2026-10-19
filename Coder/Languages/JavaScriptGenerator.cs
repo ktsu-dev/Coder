@@ -802,13 +802,16 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		Ensure.NotNull(assignment);
 		Ensure.NotNull(code);
 
-		BinaryExpression? binary = assignment.Operator == AssignmentOperator.DivideAssign
-			? new(assignment.Target, BinaryOperator.Divide, assignment.Value)
-			: BitwiseOperatorOf(assignment.Operator) is BinaryOperator bitwise
-				&& IsBooleanBitwise(bitwise, assignment.Target, assignment.Value)
-				? new(assignment.Target, bitwise, assignment.Value)
-				: null;
-		if (binary is null || (binary.Operator == BinaryOperator.Divide && !IsIntegerArithmetic(binary)))
+		BinaryOperator? spelledOut = assignment.Operator == AssignmentOperator.DivideAssign
+			? BinaryOperator.Divide
+			: BitwiseOperatorOf(assignment.Operator);
+		BinaryExpression? binary = spelledOut is BinaryOperator op
+			? new(assignment.Target, op, assignment.Value)
+			: null;
+		bool writtenOut = binary is not null && (binary.Operator == BinaryOperator.Divide
+			? IsIntegerArithmetic(binary)
+			: IsBooleanBitwise(binary.Operator, binary.Left, binary.Right));
+		if (binary is null || !writtenOut)
 		{
 			base.GenerateAssignmentStatement(assignment, code);
 			return;
