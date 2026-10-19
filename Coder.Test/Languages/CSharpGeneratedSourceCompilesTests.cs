@@ -185,4 +185,63 @@ public class CSharpGeneratedSourceCompilesTests
 			Assert.AreEqual(0, exitCode, $"C# rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
 		});
 	}
+
+	/// <summary>
+	/// The consumer of the generated shifts, which passes a <c>long</c> count to each.
+	/// </summary>
+	private const string ShiftDriver = """
+		public static class ShiftDriver
+		{
+			public static long Use() => Globals.sh(1L, 3L) + Globals.shAssign(2L) + Globals.shLiteral(1L);
+		}
+		""";
+
+	/// <summary>
+	/// Tests that a shift and a shift-assignment by a <c>long</c> count compile, which C#'s
+	/// <c>int</c>-count shift operators reject unless the count is cast, and that an <c>int</c>
+	/// literal count is still written bare (#271).
+	/// </summary>
+	[TestMethod]
+	public void ShiftsByALongCount_Compile()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "dotnet") is null)
+		{
+			Assert.Inconclusive("No dotnet on the path, so nothing was compiled.");
+			return;
+		}
+
+		FunctionDeclaration sh = new("sh") { ReturnType = "long" };
+		sh.Parameters.Add(new Parameter("x", "long"));
+		sh.Parameters.Add(new Parameter("n", "long"));
+		sh.Body.Add(new ReturnStatement(new BinaryExpression(new VariableReference("x"), BinaryOperator.LeftShift, new VariableReference("n"))));
+
+		FunctionDeclaration shAssign = new("shAssign") { ReturnType = "long" };
+		shAssign.Parameters.Add(new Parameter("n", "long"));
+		shAssign.Body.Add(new VariableDeclaration("k", "long", Literal.BigNumberValue(3)));
+		shAssign.Body.Add(new AssignmentStatement(new VariableReference("k"), new VariableReference("n"), AssignmentOperator.LeftShiftAssign));
+		shAssign.Body.Add(new AssignmentStatement(new VariableReference("k"), new VariableReference("n"), AssignmentOperator.RightShiftAssign));
+		shAssign.Body.Add(new ReturnStatement(new BinaryExpression(new VariableReference("k"), BinaryOperator.RightShift, new VariableReference("n"))));
+
+		FunctionDeclaration shLiteral = new("shLiteral") { ReturnType = "long" };
+		shLiteral.Parameters.Add(new Parameter("x", "long"));
+		shLiteral.Body.Add(new ReturnStatement(new BinaryExpression(new VariableReference("x"), BinaryOperator.LeftShift, Literal.Number(3))));
+
+		SourceFile file = new("Generated");
+		file.Members.Add(sh);
+		file.Members.Add(shAssign);
+		file.Members.Add(shLiteral);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new CSharpGenerator().Generate(file);
+			Assert.Contains("(x << 3)", source, StringComparison.Ordinal, source);
+
+			File.WriteAllText(Path.Combine(directory, "Generated.csproj"), Project);
+			File.WriteAllText(Path.Combine(directory, "Driver.cs"), ShiftDriver);
+			File.WriteAllText(Path.Combine(directory, "Generated.cs"), source);
+
+			(int exitCode, string output) = ToolchainHarness.Run("dotnet", "build -nologo", directory);
+			Assert.AreEqual(0, exitCode, $"C# rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+		});
+	}
 }
