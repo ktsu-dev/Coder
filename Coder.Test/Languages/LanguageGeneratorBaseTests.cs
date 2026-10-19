@@ -75,11 +75,16 @@ public class LanguageGeneratorBaseTests
 	/// </summary>
 	/// <param name="op">The operator under test.</param>
 	/// <param name="expected">Its expected spelling.</param>
+	/// <remarks>
+	/// C# casts a shift's count, since its shift operators take an <c>int</c> one and <c>b</c> may be
+	/// a <c>long</c> (#271); the operator itself is still spelled the C-family way.
+	/// </remarks>
 	[TestMethod]
 	[DynamicData(nameof(CFamilyBinaryOperators))]
 	public void CFamilyGenerators_SpellEveryBinaryOperator(BinaryOperator op, string expected)
 	{
-		Assert.AreEqual($"(a {expected} b)", Binary(CSharp, op), $"C# should spell {op} as {expected}");
+		string csharpRight = op is BinaryOperator.LeftShift or BinaryOperator.RightShift ? "(int)(b)" : "b";
+		Assert.AreEqual($"(a {expected} {csharpRight})", Binary(CSharp, op), $"C# should spell {op} as {expected}");
 		Assert.AreEqual($"(a {expected} b)", Binary(Cpp, op), $"C++ should spell {op} as {expected}");
 	}
 

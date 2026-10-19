@@ -57,7 +57,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 				GenerateReturnStatement(returnStmt, code);
 				break;
 			case BinaryExpression binaryExpr:
-				GenerateBinaryExpression(binaryExpr, code, GetBinaryOperator(binaryExpr.Operator));
+				GenerateBinary(binaryExpr, code);
 				break;
 			case UnaryExpression unaryExpr:
 				GenerateUnaryExpression(unaryExpr, code, GetUnaryOperator(unaryExpr.Operator));
@@ -155,6 +155,67 @@ public class CSharpGenerator : LanguageGeneratorBase
 
 				break;
 		}
+	}
+
+	/// <summary>
+	/// Emits a binary expression, casting a shift's count to <c>int</c>.
+	/// </summary>
+	/// <param name="binary">The expression to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// C#'s shift operators take an <c>int</c> count and a <c>long</c> does not convert to one, so
+	/// <c>x &lt;&lt; n</c> with a <c>long</c> <c>n</c> fails with CS0019 where every other target accepts it.
+	/// There is no static-type scope here to tell the two apart, so any count that is not an
+	/// <c>int</c> literal is cast. That changes no result: an <c>int</c> cast to <c>int</c> is itself,
+	/// and C# masks a <c>long</c> count to its low six bits, which the cast keeps.
+	/// </remarks>
+	private void GenerateBinary(BinaryExpression binary, CodeBlocker code)
+	{
+		if (!IsShift(binary.Operator) || IsIntLiteral(binary.Right))
+		{
+			GenerateBinaryExpression(binary, code, GetBinaryOperator(binary.Operator));
+			return;
+		}
+
+		code.Write("(");
+		GenerateInternal(binary.Left, code);
+		code.Write($" {GetBinaryOperator(binary.Operator)} ");
+		WriteShiftCount(binary.Right, code);
+		code.Write(")");
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// <c>&lt;&lt;=</c> and <c>&gt;&gt;=</c> take an <c>int</c> count for the same reason a shift does, so their
+	/// count is cast the same way; see <see cref="GenerateBinary"/>.
+	/// </remarks>
+	protected override void GenerateAssignmentStatement(AssignmentStatement assignment, CodeBlocker code)
+	{
+		Ensure.NotNull(assignment);
+		Ensure.NotNull(code);
+
+		if (assignment.Operator is not (AssignmentOperator.LeftShiftAssign or AssignmentOperator.RightShiftAssign)
+			|| IsIntLiteral(assignment.Value))
+		{
+			base.GenerateAssignmentStatement(assignment, code);
+			return;
+		}
+
+		GenerateInternal(assignment.Target, code);
+		code.Write($" {GetAssignmentOperator(assignment.Operator)} ");
+		WriteShiftCount(assignment.Value, code);
+		EndStatement(code);
+	}
+
+	private static bool IsShift(BinaryOperator op) => op is BinaryOperator.LeftShift or BinaryOperator.RightShift;
+
+	private static bool IsIntLiteral(Expression expression) => expression is LiteralExpression<int>;
+
+	private void WriteShiftCount(Expression count, CodeBlocker code)
+	{
+		code.Write("(int)(");
+		GenerateInternal(count, code);
+		code.Write(")");
 	}
 
 	/// <summary>
