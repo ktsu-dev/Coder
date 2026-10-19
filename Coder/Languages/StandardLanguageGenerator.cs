@@ -374,6 +374,17 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	}
 
 	/// <summary>
+	/// Reads the type of a return statement from its enclosing function.
+	/// </summary>
+	/// <param name="statement">The return statement.</param>
+	/// <returns>The function's return type, or null when it has none.</returns>
+	protected TypeReference? StaticType(ReturnStatement statement)
+	{
+		Ensure.NotNull(statement);
+		return staticTypeScopes.TryPeek(out StaticTypeScope? scope) ? scope.ReturnType : null;
+	}
+
+	/// <summary>
 	/// Reads the return type of the one function a receiver-less call can name.
 	/// </summary>
 	/// <param name="callee">The name the call is written with.</param>
@@ -397,17 +408,6 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 			.Where(function => function.Name == callee)
 			.Take(2)];
 		return matches.Length == 1 ? matches[0].ReturnType : null;
-	}
-
-	/// <summary>
-	/// Reads the type of a return statement from its enclosing function.
-	/// </summary>
-	/// <param name="statement">The return statement.</param>
-	/// <returns>The function's return type, or null when it has none.</returns>
-	protected TypeReference? StaticType(ReturnStatement statement)
-	{
-		Ensure.NotNull(statement);
-		return staticTypeScopes.TryPeek(out StaticTypeScope? scope) ? scope.ReturnType : null;
 	}
 
 	/// <summary>
