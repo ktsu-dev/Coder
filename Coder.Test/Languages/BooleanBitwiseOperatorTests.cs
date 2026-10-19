@@ -107,7 +107,7 @@ public class BooleanBitwiseOperatorTests
 			}
 		}
 
-		return expected.ToString().Trim();
+		return expected.ToString().Trim().ReplaceLineEndings("\n");
 	}
 
 	private static string Spell(bool value) => value ? "true" : "false";
