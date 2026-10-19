@@ -93,6 +93,58 @@ public sealed class DocumentStoreTests
 	}
 
 	/// <summary>
+	/// Tests that a save the filesystem refuses permission for is reported, and leaves the document.
+	/// </summary>
+	[TestMethod]
+	public void Save_ThatIsRefusedPermission_IsReportedAndLeavesTheExistingDocument()
+	{
+		string path = PathIn("widget");
+		Assert.IsTrue(NewStore(new NativeFileSystemProvider()).Save(new ClassDeclaration("Original"), path).Success);
+		byte[] before = File.ReadAllBytes(path);
+
+		DocumentResult result = NewStore(FailingWrites.Over(new NativeFileSystemProvider(), () => new UnauthorizedAccessException("Access denied.")))
+			.Save(new ClassDeclaration("Replacement"), path);
+
+		Assert.IsFalse(result.Success);
+		StringAssert.Contains(result.Error, "Access denied.", StringComparison.Ordinal);
+		CollectionAssert.AreEqual(before, File.ReadAllBytes(path));
+		Assert.AreEqual(0, TemporaryFiles().Length);
+	}
+
+	/// <summary>
+	/// Tests that an export the filesystem refuses permission for is reported rather than thrown.
+	/// </summary>
+	[TestMethod]
+	public void Export_ThatIsRefusedPermission_IsReported()
+	{
+		string path = Path.Combine(root, "Widget.cs");
+
+		DocumentResult result = NewStore(FailingWrites.Over(new NativeFileSystemProvider(), () => new UnauthorizedAccessException("Access denied.")))
+			.Export("class Replacement { }", path);
+
+		Assert.IsFalse(result.Success);
+		StringAssert.Contains(result.Error, "Access denied.", StringComparison.Ordinal);
+		Assert.IsFalse(File.Exists(path));
+	}
+
+	/// <summary>
+	/// Tests that when the temporary file cannot be removed either, the write's own failure is still
+	/// the one reported, rather than the cleanup's.
+	/// </summary>
+	[TestMethod]
+	public void Save_WhoseCleanupAlsoFails_ReportsTheWriteFailure()
+	{
+		string path = PathIn("widget");
+
+		DocumentResult result = NewStore(FailingWrites.Over(new NativeFileSystemProvider(), failDeletes: true))
+			.Save(new ClassDeclaration("Replacement"), path);
+
+		Assert.IsFalse(result.Success);
+		StringAssert.Contains(result.Error, "not enough space", StringComparison.Ordinal);
+		Assert.IsFalse(File.Exists(path));
+	}
+
+	/// <summary>
 	/// Tests that a save that succeeds replaces the document and leaves nothing else beside it.
 	/// </summary>
 	[TestMethod]
@@ -112,7 +164,8 @@ public sealed class DocumentStoreTests
 	}
 
 	/// <summary>
-	/// Forwards every call to a real filesystem, except that writing text fails halfway through.
+	/// Forwards every call to a real filesystem, except that writing text fails halfway through and,
+	/// when asked, deleting a file fails too.
 	/// </summary>
 	/// <remarks>
 	/// Public and unsealed because <see cref="DispatchProxy"/> derives from it at run time.
@@ -120,19 +173,27 @@ public sealed class DocumentStoreTests
 	public class FailingWrites : DispatchProxy
 	{
 		private object target = null!;
+		private Func<Exception> writeFailure = null!;
+		private bool failDeletes;
 
 		/// <summary>
 		/// Wraps a filesystem so that its text writes fail partway.
 		/// </summary>
 		/// <param name="fileSystem">The filesystem to forward to.</param>
+		/// <param name="writeFailure">What a write throws once it has written half; a full disk when omitted.</param>
+		/// <param name="failDeletes">Whether deleting a file fails too.</param>
 		/// <returns>The wrapped filesystem.</returns>
-		public static IFileSystemProvider Over(IFileSystemProvider fileSystem) => Wrap(fileSystem);
+		public static IFileSystemProvider Over(IFileSystemProvider fileSystem, Func<Exception>? writeFailure = null, bool failDeletes = false) =>
+			Wrap(fileSystem, writeFailure ?? (() => new IOException("There is not enough space on the disk.")), failDeletes);
 
-		private static T Wrap<T>(T target)
+		private static T Wrap<T>(T target, Func<Exception> writeFailure, bool failDeletes)
 			where T : class
 		{
 			T proxy = Create<T, FailingWrites>();
-			((FailingWrites)(object)proxy).target = target;
+			FailingWrites failing = (FailingWrites)(object)proxy;
+			failing.target = target;
+			failing.writeFailure = writeFailure;
+			failing.failDeletes = failDeletes;
 			return proxy;
 		}
 
@@ -144,7 +205,12 @@ public sealed class DocumentStoreTests
 			if (target is IFile file && targetMethod.Name == nameof(IFile.WriteAllText) && args is [string path, string text, ..])
 			{
 				file.WriteAllText(path, text[..(text.Length / 2)]);
-				throw new IOException("There is not enough space on the disk.");
+				throw writeFailure();
+			}
+
+			if (target is IFile && failDeletes && targetMethod.Name == nameof(IFile.Delete))
+			{
+				throw new IOException("The file is in use.");
 			}
 
 			object? result;
@@ -158,7 +224,7 @@ public sealed class DocumentStoreTests
 				throw;
 			}
 
-			return result is IFile inner ? Wrap(inner) : result;
+			return result is IFile inner ? Wrap(inner, writeFailure, failDeletes) : result;
 		}
 	}
 }

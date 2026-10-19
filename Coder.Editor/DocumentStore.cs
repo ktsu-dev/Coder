@@ -171,11 +171,7 @@ public sealed class DocumentStore(
 				fileSystem.File.Delete(path);
 			}
 		}
-		catch (IOException)
-		{
-			// The write's own failure is the one worth reporting.
-		}
-		catch (UnauthorizedAccessException)
+		catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
 		{
 			// The write's own failure is the one worth reporting.
 		}
