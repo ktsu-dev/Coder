@@ -545,7 +545,16 @@ public class CSharpGenerator : LanguageGeneratorBase
 		code.WriteLine($"namespace {string.Join(".", segments)}");
 
 		using Scope members = new(code);
-		GenerateScopeMembers(namespaceDecl.Members, segments.Count > 0 ? segments[^1] : GlobalsClassName, code);
+		int enclosing = namespacePath.Count;
+		namespacePath.AddRange(segments);
+		try
+		{
+			GenerateScopeMembers(namespaceDecl.Members, segments.Count > 0 ? segments[^1] : GlobalsClassName, code);
+		}
+		finally
+		{
+			namespacePath.RemoveRange(enclosing, namespacePath.Count - enclosing);
+		}
 	}
 
 	/// <inheritdoc/>
@@ -562,6 +571,11 @@ public class CSharpGenerator : LanguageGeneratorBase
 	private const string GlobalsClassName = "Globals";
 
 	/// <summary>
+	/// The segments of the namespaces enclosing what is being written, outermost first.
+	/// </summary>
+	private readonly List<string> namespacePath = [];
+
+	/// <summary>
 	/// Emits the members of a namespace or a file, gathering the ones C# cannot declare there into a
 	/// static class.
 	/// </summary>
@@ -575,6 +589,12 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// <c>Geometry.twice</c> where C++ names <c>Geometry::twice</c>. The class is written where the
 	/// first of them was declared, and types, enums and nested namespaces stay where they are. Aliases
 	/// come first, those of the scope's types with them, because C# takes them nowhere else.
+	/// <para>
+	/// Every other target lets a type call a function or read a field declared beside it by its bare
+	/// name, and the AST writes it that way, so a scope that holds types as well as the class also
+	/// imports it with <c>using static</c>; without it a method calling <c>helper()</c> fails with
+	/// CS0103 (#279). The import is fully qualified because it is resolved from the scope it is in.
+	/// </para>
 	/// </remarks>
 	private void GenerateScopeMembers(IEnumerable<AstNode> members, string holderName, CodeBlocker code)
 	{
@@ -592,6 +612,14 @@ public class CSharpGenerator : LanguageGeneratorBase
 		});
 
 		bool first = !WriteHoistedAliases(aliases, code);
+
+		string holder = UnclaimedName(holderName, declared);
+		if (typeless.Length > 0 && declared.Any(member => !IsTypelessMember(member) && member is not UsingAlias))
+		{
+			// A using directive, like an alias, goes ahead of everything else declared (CS1529).
+			code.WriteLine($"using static global::{string.Join(".", [.. namespacePath, holder])};");
+			first = false;
+		}
 
 		bool aliasesWereHoisted = memberAliasesHoisted;
 		memberAliasesHoisted = true;
@@ -615,7 +643,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 				if (isTypeless)
 				{
 					holderWritten = true;
-					GenerateMemberHolder(UnclaimedName(holderName, declared), typeless, code);
+					GenerateMemberHolder(holder, typeless, code);
 				}
 				else
 				{

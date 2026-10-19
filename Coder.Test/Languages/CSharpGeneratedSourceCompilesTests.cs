@@ -244,4 +244,56 @@ public class CSharpGeneratedSourceCompilesTests
 			Assert.AreEqual(0, exitCode, $"C# rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
 		});
 	}
+
+	/// <summary>
+	/// Tests that a class method calling a function, or reading a constant field, declared beside it by
+	/// its bare name compiles, both at file scope and inside nested namespaces, and when a type beside
+	/// them has already claimed the holder's name (#279).
+	/// </summary>
+	[TestMethod]
+	public void ClassMethodsReachingTheirScopesMembers_Compile()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "dotnet") is null)
+		{
+			Assert.Inconclusive("No dotnet on the path, so nothing was compiled.");
+			return;
+		}
+
+		SourceFile file = new("Generated");
+		AddMembersAndAUser(file.Members, "helper", "Box");
+		file.Members.Add(new ClassDeclaration("Globals"));
+
+		NamespaceDeclaration outer = new("Outer");
+		NamespaceDeclaration geometry = new("Inner.Geometry");
+		AddMembersAndAUser(geometry.Members, "twice", "Shape");
+		outer.Members.Add(geometry);
+		file.Members.Add(outer);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new CSharpGenerator().Generate(file);
+			Assert.Contains("using static global::GlobalsGlobals;", source, StringComparison.Ordinal, source);
+			Assert.Contains("using static global::Outer.Inner.Geometry.Geometry;", source, StringComparison.Ordinal, source);
+
+			File.WriteAllText(Path.Combine(directory, "Generated.csproj"), Project);
+			File.WriteAllText(Path.Combine(directory, "Generated.cs"), source);
+
+			(int exitCode, string output) = ToolchainHarness.Run("dotnet", "build -nologo", directory);
+			Assert.AreEqual(0, exitCode, $"C# rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+		});
+
+		static void AddMembersAndAUser(ICollection<AstNode> members, string function, string type)
+		{
+			FunctionDeclaration free = new(function) { ReturnType = "int" };
+			free.Body.Add(new ReturnStatement(Literal.Number(3)));
+			members.Add(free);
+			members.Add(new FieldDeclaration("Limit", "int") { IsConstant = true, InitialValue = Literal.Number(4) });
+
+			ClassDeclaration user = new(type);
+			FunctionDeclaration size = new("size") { ReturnType = "int" };
+			size.Body.Add(new ReturnStatement(new BinaryExpression(new CallExpression(function), BinaryOperator.Add, new VariableReference("Limit"))));
+			user.Members.Add(size);
+			members.Add(user);
+		}
+	}
 }
