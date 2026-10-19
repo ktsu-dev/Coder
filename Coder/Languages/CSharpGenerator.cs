@@ -380,13 +380,16 @@ public class CSharpGenerator : LanguageGeneratorBase
 			bool partnerDeclared = comparisons.Any(function =>
 				function.Name == partnerName
 				&& (function.Parameters[0].Type?.ToString() ?? string.Empty) == operandType);
-			if (partnerDeclared || declared.Definition != FunctionDefinition.Provided || declared.IsAbstract)
+			// An operand with no name, which a half-edited document holds, leaves the partner nothing
+			// to refer to.
+			if (partnerDeclared || declared.Definition != FunctionDefinition.Provided || declared.IsAbstract
+				|| string.IsNullOrWhiteSpace(operand.Name))
 			{
 				continue;
 			}
 
 			VariableReference self = new(OperandParameterName);
-			VariableReference other = new(operand.Name ?? string.Empty);
+			VariableReference other = new(operand.Name);
 			Expression answer;
 			if (op is BinaryOperator.Equal or BinaryOperator.NotEqual)
 			{

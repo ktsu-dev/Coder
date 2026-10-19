@@ -652,7 +652,8 @@ public sealed class CoderEditorApp(
 	/// <remarks>
 	/// A generator refuses a node it cannot emit, and a document mid-edit can hold one, so the
 	/// refusal is shown in the pane rather than thrown out of a draw call — a frame that throws takes
-	/// the application down.
+	/// the application down. Any other failure is shown the same way, because a generator bug met by
+	/// a half-edited document must not take the user's unsaved work with it.
 	/// </remarks>
 	public void Regenerate()
 	{
@@ -673,6 +674,11 @@ public sealed class CoderEditorApp(
 		catch (NotSupportedException ex)
 		{
 			GenerationError = $"{generator.DisplayName} cannot generate this document yet: {ex.Message}";
+			GeneratedCode = GenerationError;
+		}
+		catch (Exception ex) when (ex is not OutOfMemoryException)
+		{
+			GenerationError = $"{generator.DisplayName} failed on this document: {ex.Message}";
 			GeneratedCode = GenerationError;
 		}
 	}

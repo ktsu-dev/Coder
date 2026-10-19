@@ -118,6 +118,24 @@ public class CSharpComparisonPairTests
 		});
 	}
 
+	/// <summary>
+	/// Tests that an operator whose operand has no name, as a half-edited document can have, is
+	/// generated without a partner rather than throwing.
+	/// </summary>
+	[TestMethod]
+	public void AnUnnamedOperandGetsNoPartnerRatherThanThrowing()
+	{
+		FunctionDeclaration equals = new("==") { Kind = FunctionKind.Operator, ReturnType = "bool" };
+		equals.Parameters.Add(new Parameter { Type = "Point" });
+		equals.Body.Add(new ReturnStatement(new LiteralExpression<bool>(true)));
+		ClassDeclaration point = PointWith(equals);
+
+		string code = new CSharpGenerator().Generate(point);
+
+		StringAssert.Contains(code, "operator ==(", StringComparison.Ordinal);
+		Assert.IsFalse(code.Contains("operator !=(", StringComparison.Ordinal), code);
+	}
+
 	private static ClassDeclaration PointWith(params FunctionDeclaration[] operators)
 	{
 		ClassDeclaration point = new("Point") { Kind = TypeDeclarationKind.Struct };

@@ -344,6 +344,40 @@ public sealed class CoderEditorAppTests
 	}
 
 	/// <summary>
+	/// Tests that a generator failing with something other than a refusal is reported in the pane
+	/// rather than thrown out of a draw call, which would take the application down.
+	/// </summary>
+	[TestMethod]
+	public void Preview_ReportsAGeneratorThatThrows()
+	{
+		CoderEditorApp app = new(NewStore(), [new ThrowingGenerator()], new EditorSettings { PreviewLanguageId = ThrowingGenerator.Id });
+
+		app.Regenerate();
+
+		Assert.IsNotNull(app.GenerationError);
+		StringAssert.Contains(app.GenerationError, "the generator broke", StringComparison.Ordinal);
+		Assert.AreEqual(app.GenerationError, app.GeneratedCode);
+	}
+
+	/// <summary>
+	/// A generator with a bug in it.
+	/// </summary>
+	private sealed class ThrowingGenerator : ILanguageGenerator
+	{
+		public const string Id = "throwing";
+
+		public string LanguageId => Id;
+
+		public string DisplayName => "Throwing";
+
+		public string FileExtension => "txt";
+
+		public string Generate(AstNode astNode) => throw new InvalidOperationException("the generator broke");
+
+		public bool CanGenerate(AstNode astNode) => true;
+	}
+
+	/// <summary>
 	/// Tests that starting a new document discards the old one and forgets its path.
 	/// </summary>
 	[TestMethod]
