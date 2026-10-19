@@ -312,9 +312,9 @@ public class CGenerator : CFamilyGenerator
 		// A member the declaration gave a starting value, and this constructor did not set, starts
 		// at that value, which is what the struct's `defaults to` note promises. A member named by
 		// neither is zeroed, as a designated initialiser leaves every member it does not name.
-		List<FieldDeclaration> defaulted = constructedType is null
+		List<MemberInitialiser> defaulted = constructedType is null
 			? []
-			: [.. InstanceInitialised(constructedType, _ => true)
+			: [.. InstanceDefaults(constructedType)
 				.Where(field => !funcDecl.Initialisers.Any(initialiser => initialiser.Name == field.Name))];
 
 		if (funcDecl.Initialisers.Count == 0 && defaulted.Count == 0)
@@ -331,9 +331,9 @@ public class CGenerator : CFamilyGenerator
 				initialiser.Arguments.Add(member);
 			}
 
-			foreach (FieldDeclaration field in defaulted)
+			foreach (MemberInitialiser field in defaulted)
 			{
-				initialiser.Arguments.Add(new MemberInitialiser(field.Name ?? string.Empty, (Expression)field.InitialValue!.DeepClone()));
+				initialiser.Arguments.Add(new MemberInitialiser(field.Name ?? string.Empty, (Expression)field.Value!.DeepClone()));
 			}
 
 			WriteInitialiser(initialiser, code);

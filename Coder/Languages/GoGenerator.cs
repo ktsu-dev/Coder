@@ -643,9 +643,8 @@ public class GoGenerator : StandardLanguageGenerator
 			WriteStorage(Join(name, field.Name ?? UnnamedMember), field, code);
 		}
 
-		IReadOnlyList<FieldDeclaration> outerDefaults = _instanceFieldDefaults;
-		_instanceFieldDefaults = [.. classDecl.Members.OfType<FieldDeclaration>()
-			.Where(field => !IsPackageLevelField(field) && field.InitialValue is not null)];
+		IReadOnlyList<MemberInitialiser> outerDefaults = _instanceFieldDefaults;
+		_instanceFieldDefaults = InstanceDefaults(classDecl);
 		try
 		{
 			foreach (FunctionDeclaration function in classDecl.Members.OfType<FunctionDeclaration>())
@@ -664,7 +663,7 @@ public class GoGenerator : StandardLanguageGenerator
 	/// The instance fields of the struct whose functions are being written that say what they
 	/// start at, which its constructors set because a Go struct field cannot say so itself.
 	/// </summary>
-	private IReadOnlyList<FieldDeclaration> _instanceFieldDefaults = [];
+	private IReadOnlyList<MemberInitialiser> _instanceFieldDefaults = [];
 
 	/// <summary>
 	/// Reports whether a field belongs to its type rather than to each value of it, and so is
@@ -813,11 +812,11 @@ public class GoGenerator : StandardLanguageGenerator
 			switch (member)
 			{
 				case VariableDeclaration field:
-					yield return Field(field.Name, field.Type, field.Visibility);
+					yield return Field(field.Name, field.Type, field.Visibility, initialValue: field.InitialValue);
 					break;
 
 				case FieldDeclaration field when !IsPackageLevelField(field):
-					yield return Field(field.Name, field.Type, field.Visibility, field);
+					yield return Field(field.Name, field.Type, field.Visibility, field, field.InitialValue);
 					break;
 
 				default:
@@ -833,8 +832,9 @@ public class GoGenerator : StandardLanguageGenerator
 	/// <param name="type">The field's type.</param>
 	/// <param name="visibility">What the declaration said about who may see it.</param>
 	/// <param name="declaration">The source declaration, when this is an AST field.</param>
+	/// <param name="initialValue">What the declaration says the field starts at, if anything.</param>
 	/// <returns>The line.</returns>
-	private AlignedLine Field(string? name, TypeReference? type, Visibility visibility, FieldDeclaration? declaration = null)
+	private AlignedLine Field(string? name, TypeReference? type, Visibility visibility, FieldDeclaration? declaration = null, Expression? initialValue = null)
 	{
 		List<(string Prefix, string Text)> notes = [];
 
@@ -843,7 +843,7 @@ public class GoGenerator : StandardLanguageGenerator
 			notes.Add((CommentPrefix, note));
 		}
 
-		if (declaration?.InitialValue is Expression initialValue)
+		if (initialValue is not null)
 		{
 			notes.Add((CommentPrefix, $"defaults to {GenerateExpression(initialValue)}: Go has no field initialisers, so only a constructor sets it"));
 		}
@@ -1274,10 +1274,10 @@ public class GoGenerator : StandardLanguageGenerator
 
 		// A field the declaration gave a starting value, and this constructor did not set, starts
 		// at that value rather than at its zero, as it would in every other target.
-		foreach (FieldDeclaration field in _instanceFieldDefaults
+		foreach (MemberInitialiser field in _instanceFieldDefaults
 			.Where(field => !funcDecl.Initialisers.Any(initialiser => initialiser.Name == field.Name)))
 		{
-			value.Arguments.Add(new MemberInitialiser(field.Name ?? UnnamedMember, (Expression)field.InitialValue!.DeepClone()));
+			value.Arguments.Add(new MemberInitialiser(string.IsNullOrEmpty(field.Name) ? UnnamedMember : field.Name, (Expression)field.Value!.DeepClone()));
 		}
 
 		code.Write("return ");
