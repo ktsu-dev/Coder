@@ -1128,6 +1128,7 @@ public class CGenerator : CFamilyGenerator
 		// The line is ended before the scope opens, so C's brace lands on its own line.
 		code.WriteLine(")");
 
+		using IDisposable types = OpenStaticTypeScope(entryPoint);
 		using Scope body = new(code);
 		if (entryPoint.AcceptsArguments)
 		{
