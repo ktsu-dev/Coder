@@ -183,6 +183,75 @@ public class GoGeneratedSourceCompilesTests
 		});
 	}
 
+	/// <summary>
+	/// Tests that a negative-zero literal keeps its sign in a returned value, a typed local and a
+	/// package-level constant, by running the generated code rather than reading it.
+	/// </summary>
+	/// <remarks>
+	/// Go evaluates constant expressions exactly, and exact arithmetic has no negative zero, so the
+	/// <c>-0.0</c> every other target writes is positive zero in Go: <c>1/negZero()</c> was
+	/// <c>+Inf</c> (issue #286).
+	/// </remarks>
+	[TestMethod]
+	public void NegativeZeroLiterals_KeepTheirSignWhenRun()
+	{
+		if (ToolchainHarness.FindOnPath("version", "go") is null)
+		{
+			Assert.Inconclusive("No Go toolchain on the path, so nothing was compiled.");
+			return;
+		}
+
+		SourceFile file = new("main");
+		ClassDeclaration zeros = new("Zeros") { Kind = TypeDeclarationKind.Struct };
+		zeros.Members.Add(new FieldDeclaration("Double", new TypeReference("double")) { IsConstant = true, InitialValue = new LiteralExpression<double>(-0.0) });
+		zeros.Members.Add(new FieldDeclaration("Single", new TypeReference("float")) { IsConstant = true, InitialValue = new LiteralExpression<float>(-0.0f) });
+		file.Members.Add(zeros);
+
+		FunctionDeclaration returned = new("returned") { ReturnType = new TypeReference("double") };
+		returned.Body.Add(new ReturnStatement(new LiteralExpression<double>(-0.0)));
+		file.Members.Add(returned);
+
+		FunctionDeclaration local = new("local") { ReturnType = new TypeReference("float") };
+		local.Body.Add(new VariableDeclaration("z", "float", new LiteralExpression<float>(-0.0f)));
+		local.Body.Add(new ReturnStatement(new VariableReference("z")));
+		file.Members.Add(local);
+
+		const string driver = """
+			package main
+
+			import (
+				"fmt"
+				"math"
+			)
+
+			func main() {
+				fmt.Println(
+					math.Signbit(returned()),
+					math.Signbit(float64(local())),
+					math.Signbit(ZerosDouble),
+					math.Signbit(float64(ZerosSingle)),
+					1/returned())
+			}
+
+			""";
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string generated = new GoGenerator().Generate(file);
+			File.WriteAllText(Path.Combine(directory, "go.mod"), Module);
+			File.WriteAllText(Path.Combine(directory, "driver.go"), driver);
+			File.WriteAllText(Path.Combine(directory, "zeros.go"), generated);
+
+			(int exitCode, string output) = ToolchainHarness.Run("go", "run .", directory);
+			Assert.AreEqual(0, exitCode, $"go rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{generated}");
+			Assert.AreEqual("true true true true -Inf", output.Trim(), generated);
+
+			(int formatted, string differs) = ToolchainHarness.Run("gofmt", "-l zeros.go", directory);
+			Assert.AreEqual(0, formatted, $"gofmt did not run:{Environment.NewLine}{differs}");
+			Assert.AreEqual(string.Empty, differs.Trim(), "gofmt would rewrite the generated source.");
+		});
+	}
+
 	[TestMethod]
 	public void ConditionalExpressions_InferParameterTypesAndLowerNestedReturns()
 	{
