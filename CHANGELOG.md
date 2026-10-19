@@ -2,6 +2,10 @@
 
 Changes since v3.19.0:
 
+- Keep the StaticType overloads adjacent (Sonar S4136) (Claude)
+- Type a call by its declared callee so Python and JavaScript truncate twice(a) / 4 [patch] (Claude)
+- Follow a Go local with `_ = name` so an unread one compiles [patch] (Claude)
+- Cast a C# shift count to int so a long count compiles [patch] (Claude)
 - Keep CSharpMemberModifierTests.cs without a byte order mark (Claude)
 - Rename member references in C, Go, Rust and JavaScript enum values [patch] (Claude)
 - Write C# operators public static, noting a dropped visibility or virtual [patch] (Claude)
