@@ -641,6 +641,44 @@ public class TypeDeclarationShapeTests
 		Assert.AreEqual("U", TypeParameter.Parse("U").ToString());
 	}
 
+	/// <summary>
+	/// A half-typed constraint list reads as the constraints it does name, and no empty ones.
+	/// </summary>
+	/// <param name="written">The parameter as typed.</param>
+	/// <param name="expected">What it should read back as.</param>
+	/// <param name="constraints">How many constraints it holds.</param>
+	/// <remarks>
+	/// A trailing colon or comma is ordinary input in the editor's inspector. An empty entry would
+	/// otherwise become a constraint naming no type, which C# writes as <c>where T : </c>.
+	/// </remarks>
+	[TestMethod]
+	[DataRow("T :", "T", 0)]
+	[DataRow("V : ", "V", 0)]
+	[DataRow("U : IFoo,", "U : IFoo", 1)]
+	[DataRow("U : IFoo,, IBar", "U : IFoo, IBar", 2)]
+	public void TypeParameter_ParseSkipsEmptyConstraints(string written, string expected, int constraints)
+	{
+		TypeParameter parameter = TypeParameter.Parse(written);
+
+		Assert.HasCount(constraints, parameter.Constraints);
+		Assert.AreEqual(expected, parameter.ToString());
+	}
+
+	/// <summary>
+	/// A trailing colon does not leave C# a <c>where</c> clause with nothing after it.
+	/// </summary>
+	[TestMethod]
+	public void CSharp_WritesNoWhereClauseForAnEmptyConstraintList()
+	{
+		ClassDeclaration box = new("Box");
+		box.TypeParameters.Add(TypeParameter.Parse("T :"));
+
+		string code = Generate(new CSharpGenerator(), box);
+
+		StringAssert.Contains(code, "class Box<T>");
+		Assert.DoesNotContain("where", code);
+	}
+
 	// ------------------------------------------------------------------ Annotations
 
 	/// <summary>

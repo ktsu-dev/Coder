@@ -211,8 +211,23 @@ public abstract class CFamilyGenerator : StandardLanguageGenerator
 	/// <remarks>
 	/// <c>LL</c>, which is what <c>long</c> maps to. An unsuffixed literal takes the narrowest type that
 	/// holds it, so <c>auto b = 5;</c> deduces an <c>int</c> and arithmetic on it overflows as one.
+	/// <para>
+	/// <see cref="long.MinValue"/> is written as a subtraction. Neither language has a negative
+	/// literal: <c>-9223372036854775808LL</c> negates <c>9223372036854775808LL</c>, which does not fit
+	/// in a <c>long long</c>, so gcc rejects it as "so large that it is unsigned" (issue #247).
+	/// </para>
 	/// </remarks>
-	protected override string FormatLong(long value) => $"{base.FormatLong(value)}LL";
+	protected override string FormatLong(long value) =>
+		value == long.MinValue ? $"({base.FormatLong(long.MinValue + 1)}LL - 1)" : $"{base.FormatLong(value)}LL";
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// <see cref="int.MinValue"/> is written as a subtraction, for the reason <see cref="FormatLong"/>
+	/// gives: <c>2147483648</c> does not fit in an <c>int</c>, so <c>-2147483648</c> is a <c>long</c>,
+	/// and <c>auto y = -2147483648;</c> deduces one (issue #247).
+	/// </remarks>
+	protected override string FormatInt(int value) =>
+		value == int.MinValue ? $"({base.FormatInt(int.MinValue + 1)} - 1)" : base.FormatInt(value);
 
 	/// <inheritdoc/>
 	/// <remarks>

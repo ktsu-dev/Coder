@@ -256,11 +256,99 @@ public class CSharpGenerator : LanguageGeneratorBase
 					GenerateInternal(member, code);
 				}
 			}
+
+			foreach (FunctionDeclaration partner in MissingComparisonPartners(classDecl))
+			{
+				GenerateFunction(partner, code, classDecl);
+			}
 		}
 		finally
 		{
 			inReadOnlyStruct = enclosingIsReadOnlyStruct;
 			memberAliasesHoisted = aliasesWereHoisted;
+		}
+	}
+
+	/// <summary>
+	/// The comparison operators C# requires to be declared together, each with its partner.
+	/// </summary>
+	private static readonly Dictionary<string, (string Partner, BinaryOperator Operator)> ComparisonPartners = new(StringComparer.Ordinal)
+	{
+		["=="] = ("!=", BinaryOperator.Equal),
+		["!="] = ("==", BinaryOperator.NotEqual),
+		["<"] = (">", BinaryOperator.LessThan),
+		[">"] = ("<", BinaryOperator.GreaterThan),
+		["<="] = (">=", BinaryOperator.LessThanOrEqual),
+		[">="] = ("<=", BinaryOperator.GreaterThanOrEqual),
+	};
+
+	/// <summary>
+	/// Builds the partner of each comparison operator a type declares without one.
+	/// </summary>
+	/// <param name="classDecl">The type.</param>
+	/// <returns>The operators to write after the type's own members.</returns>
+	/// <remarks>
+	/// C# requires <c>==</c> with <c>!=</c>, <c>&lt;</c> with <c>&gt;</c> and <c>&lt;=</c> with
+	/// <c>&gt;=</c> (CS0216). C++20 and Go accept one side alone and Rust's <c>PartialEq</c> supplies
+	/// <c>!=</c>, so declaring one side is a natural AST to write. An equality partner negates the
+	/// declared operator, which works whatever the right-hand operand is. An ordering partner swaps
+	/// the operands of the declared one, which only resolves when the right-hand operand is the type
+	/// itself, so one compared against another type is left as declared.
+	/// </remarks>
+	private static IEnumerable<FunctionDeclaration> MissingComparisonPartners(ClassDeclaration classDecl)
+	{
+		if (classDecl.Kind == TypeDeclarationKind.Interface)
+		{
+			yield break;
+		}
+
+		List<FunctionDeclaration> comparisons = [.. classDecl.Members
+			.OfType<FunctionDeclaration>()
+			.Where(function => function.Kind == FunctionKind.Operator
+				&& !function.IsFriend
+				&& function.Parameters.Count == 1
+				&& function.Name is not null
+				&& ComparisonPartners.ContainsKey(function.Name))];
+
+		foreach (FunctionDeclaration declared in comparisons)
+		{
+			(string partnerName, BinaryOperator op) = ComparisonPartners[declared.Name!];
+			Parameter operand = declared.Parameters[0];
+			string operandType = operand.Type?.ToString() ?? string.Empty;
+
+			bool partnerDeclared = comparisons.Any(function =>
+				function.Name == partnerName
+				&& (function.Parameters[0].Type?.ToString() ?? string.Empty) == operandType);
+			if (partnerDeclared || declared.Definition != FunctionDefinition.Provided || declared.IsAbstract)
+			{
+				continue;
+			}
+
+			VariableReference self = new(OperandParameterName);
+			VariableReference other = new(operand.Name ?? string.Empty);
+			Expression answer;
+			if (op is BinaryOperator.Equal or BinaryOperator.NotEqual)
+			{
+				answer = new UnaryExpression(UnaryOperator.LogicalNot, new BinaryExpression(self, op, other));
+			}
+			else if (operand.Type?.Name == classDecl.Name && operand.Type?.TypeArguments.Count == classDecl.TypeParameters.Count)
+			{
+				answer = new BinaryExpression(other, op, self);
+			}
+			else
+			{
+				continue;
+			}
+
+			FunctionDeclaration partner = new(partnerName)
+			{
+				Kind = FunctionKind.Operator,
+				ReturnType = declared.ReturnType?.Clone(),
+				Visibility = declared.Visibility,
+			};
+			partner.Parameters.Add((Parameter)operand.Clone());
+			partner.Body.Add(new ReturnStatement(answer));
+			yield return partner;
 		}
 	}
 
@@ -973,8 +1061,32 @@ public class CSharpGenerator : LanguageGeneratorBase
 			WriteInexpressible(code, $"readonly: {name} does not modify its instance");
 		}
 
+		// C++ lets a member operator be private, protected or virtual; a C# operator is public and
+		// static and nothing else, so what it asked for is written down rather than lost.
+		if (IsOperator(function))
+		{
+			if (function.Visibility is not (Visibility.Unspecified or Visibility.Public))
+			{
+				WriteInexpressible(code, $"{SpellVisibility(function.Visibility)}: {name} is public, as every C# operator is");
+			}
+
+			if (enclosingType?.Kind != TypeDeclarationKind.Interface && (function.IsVirtual || function.IsAbstract))
+			{
+				string modifier = function.IsAbstract ? "abstract" : "virtual";
+				WriteInexpressible(code, $"{modifier}: {name} is static, which a C# operator outside an interface cannot override");
+			}
+		}
+
 		return true;
 	}
+
+	/// <summary>
+	/// Gets whether a declaration is one C# requires to be <c>public static</c>.
+	/// </summary>
+	/// <param name="function">The declaration being emitted.</param>
+	/// <returns>True for an operator or a conversion operator.</returns>
+	private static bool IsOperator(FunctionDeclaration function) =>
+		function.Kind is FunctionKind.Operator or FunctionKind.ConversionOperator;
 
 	/// <summary>
 	/// Writes the attributes a declaration earns.
@@ -1010,28 +1122,37 @@ public class CSharpGenerator : LanguageGeneratorBase
 		// A function nobody has given a visibility to is public: an inaccessible method is not what
 		// someone who wrote no modifier meant. A finalizer is the exception, because it takes no
 		// access modifier at all (CS0106): only the runtime calls it.
-		if (function.Kind != FunctionKind.Destructor)
+		// A user-defined operator must be public as well as static (CS0558), whatever it declared.
+		if (IsOperator(function))
+		{
+			code.Write("public ");
+		}
+		else if (function.Kind != FunctionKind.Destructor)
 		{
 			code.Write($"{SpellVisibility(function.Visibility) ?? DefaultVisibility} ");
 		}
 
 		if (function.IsStatic
 			|| ReferenceEquals(function, heldMember)
-			|| function.Kind is FunctionKind.Operator or FunctionKind.ConversionOperator)
+			|| IsOperator(function))
 		{
 			// A C# operator is always static, whether or not the declaration thought to say so.
 			code.Write("static ");
 		}
 
+		// An operator outside an interface can be neither virtual nor abstract (CS0106); the note
+		// written above the declaration says what was dropped.
+		bool canOverride = !IsOperator(function) || enclosingType?.Kind == TypeDeclarationKind.Interface;
+
 		// An interface member with no body is abstract already, and says so by having none.
 		if (function.IsAbstract)
 		{
-			if (enclosingType?.Kind != TypeDeclarationKind.Interface)
+			if (canOverride && enclosingType?.Kind != TypeDeclarationKind.Interface)
 			{
 				code.Write("abstract ");
 			}
 		}
-		else if (function.IsVirtual)
+		else if (function.IsVirtual && canOverride)
 		{
 			code.Write("virtual ");
 		}

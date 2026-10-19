@@ -136,4 +136,28 @@ public class CSharpMemberModifierTests
 		Assert.Contains("// ~Vec is a destructor, which a C# struct cannot declare.", code, StringComparison.Ordinal, code);
 		Assert.DoesNotContain("~Vec()", code, StringComparison.Ordinal, code);
 	}
+
+	/// <summary>
+	/// Tests that an abstract operator in a class is written as the public static operator C#
+	/// requires, with neither abstract nor its declared visibility, and a note saying so (#260).
+	/// </summary>
+	[TestMethod]
+	public void AbstractProtectedOperatorInAClass_IsPublicStaticWithANote()
+	{
+		ClassDeclaration shape = new("Shape");
+		FunctionDeclaration plus = CompiledExemplar.Plus();
+		plus.ReturnType = "Shape";
+		plus.Parameters[0].Type = "Shape";
+		plus.IsAbstract = true;
+		plus.Visibility = Visibility.Protected;
+		shape.Members.Add(plus);
+
+		string code = new CSharpGenerator().Generate(shape);
+
+		Assert.Contains("public static Shape operator +(", code, StringComparison.Ordinal, code);
+		Assert.DoesNotContain("abstract Shape", code, StringComparison.Ordinal, code);
+		Assert.DoesNotContain("protected static", code, StringComparison.Ordinal, code);
+		Assert.Contains("// abstract: operator + is static", code, StringComparison.Ordinal, code);
+		Assert.Contains("// protected: operator + is public", code, StringComparison.Ordinal, code);
+	}
 }

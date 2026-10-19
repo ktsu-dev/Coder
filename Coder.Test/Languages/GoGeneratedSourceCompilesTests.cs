@@ -453,6 +453,80 @@ public class GoGeneratedSourceCompilesTests
 	}
 
 	/// <summary>
+	/// Tests that a generic method and a generic interface method compile, run and are formatted,
+	/// and that a free generic function keeps its type parameters.
+	/// </summary>
+	/// <remarks>
+	/// Go has no generic methods, so <c>func (self *Box) Get[V any](x V) int</c> was "method must have
+	/// no type parameters", and an interface method was refused the same way. A method's parameters
+	/// are now written down and typed <c>any</c>, as a generic type's are (issue #241).
+	/// </remarks>
+	[TestMethod]
+	public void GenericMethods_CompileAndRun()
+	{
+		if (ToolchainHarness.FindOnPath("version", "go") is null)
+		{
+			Assert.Inconclusive("No Go toolchain on the path, so nothing was compiled.");
+			return;
+		}
+
+		SourceFile file = new("main");
+
+		ClassDeclaration getter = new("Getter") { Kind = TypeDeclarationKind.Interface };
+		FunctionDeclaration required = new("Get") { ReturnType = "int", Visibility = Visibility.Public, IsAbstract = true };
+		required.TypeParameters.Add(TypeParameter.Parse("V"));
+		required.Parameters.Add(new Parameter("x", "V"));
+		getter.Members.Add(required);
+		file.Members.Add(getter);
+
+		ClassDeclaration box = new("Box") { Kind = TypeDeclarationKind.Struct };
+		box.Interfaces.Add(TypeReference.Parse("Getter"));
+		box.Members.Add(new FieldDeclaration("n", "int"));
+		FunctionDeclaration get = new("Get") { ReturnType = "int", Visibility = Visibility.Public };
+		get.TypeParameters.Add(TypeParameter.Parse("V"));
+		get.Parameters.Add(new Parameter("x", "V"));
+		get.Body.Add(new ReturnStatement(new LiteralExpression<int>(1)));
+		box.Members.Add(get);
+		file.Members.Add(box);
+
+		FunctionDeclaration identity = new("Id") { ReturnType = "V", Visibility = Visibility.Public };
+		identity.TypeParameters.Add(TypeParameter.Parse("V"));
+		identity.Parameters.Add(new Parameter("x", "V"));
+		identity.Body.Add(new ReturnStatement(new VariableReference("x")));
+		file.Members.Add(identity);
+
+		string source = new GoGenerator().Generate(file);
+		StringAssert.Contains(source, "func Id[V any](x V) V", StringComparison.Ordinal);
+
+		const string driver = """
+			package main
+
+			import "fmt"
+
+			func main() {
+				var getter Getter = &Box{}
+				fmt.Println(getter.Get("a"), Id(2))
+			}
+
+			""";
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			File.WriteAllText(Path.Combine(directory, "go.mod"), Module);
+			File.WriteAllText(Path.Combine(directory, "driver.go"), driver);
+			File.WriteAllText(Path.Combine(directory, "box.go"), source);
+
+			(int exitCode, string output) = ToolchainHarness.Run("go", "run .", directory);
+			Assert.AreEqual(0, exitCode, $"go rejected the generated source:{Environment.NewLine}{source}{Environment.NewLine}{output}");
+			Assert.AreEqual("1 2", output.Trim());
+
+			(int formatted, string differs) = ToolchainHarness.Run("gofmt", "-l box.go", directory);
+			Assert.AreEqual(0, formatted, $"gofmt did not run:{Environment.NewLine}{differs}");
+			Assert.AreEqual(string.Empty, differs.Trim(), "gofmt would rewrite the generated source.");
+		});
+	}
+
+	/// <summary>
 	/// Tests that the arguments an entry point is handed are the ones the user typed, without the
 	/// program's own path that Go puts first — which is what they are in every other target.
 	/// </summary>

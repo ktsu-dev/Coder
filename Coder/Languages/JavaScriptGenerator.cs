@@ -2,6 +2,9 @@
 
 namespace ktsu.Coder.Languages;
 
+using System;
+using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using ktsu.Coder.Ast;
 using ktsu.CodeBlocker;
@@ -154,11 +157,29 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	/// </summary>
 	/// <param name="enumDecl">The declaration whose members to write.</param>
 	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// An object literal cannot read its own properties while it is being built, so a value naming a
+	/// member before it is given that member's value instead, which is what the reference meant.
+	/// </remarks>
 	private static void WriteEnumMembers(EnumDeclaration enumDecl, CodeBlocker code)
 	{
+		Dictionary<string, string> written = new(StringComparer.Ordinal);
+
 		foreach ((EnumMember member, string value) in enumDecl.Members.Zip(EnumMemberValues(enumDecl)))
 		{
-			code.WriteLine($"{member.Name ?? "UNNAMED"}: {value},");
+			string resolved = RenameSiblingMembers(
+				enumDecl,
+				value,
+				sibling => written.TryGetValue(sibling, out string? earlier) ? earlier : null);
+
+			code.WriteLine($"{member.Name ?? "UNNAMED"}: {resolved},");
+
+			if (member.Name is not null)
+			{
+				written.TryAdd(
+					member.Name,
+					long.TryParse(resolved, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out _) ? resolved : $"({resolved})");
+			}
 		}
 	}
 
