@@ -721,4 +721,50 @@ public class GoGeneratedSourceCompilesTests
 	/// <returns>The declaration.</returns>
 	private static ClassDeclaration DescribesPoint() =>
 		new("Describe") { SpecialisationArguments = { new TypeReference("Point") } };
+
+	/// <summary>
+	/// Tests that a local nothing reads, and one that is only assigned to, compile, which Go refuses
+	/// as "declared and not used" unless something reads them, and that the output is still what
+	/// <c>gofmt</c> writes (#272).
+	/// </summary>
+	[TestMethod]
+	public void UnreadLocals_Compile()
+	{
+		if (ToolchainHarness.FindOnPath("version", "go") is null)
+		{
+			Assert.Inconclusive("No Go toolchain on the path, so nothing was compiled.");
+			return;
+		}
+
+		SourceFile file = new("locals");
+		FunctionDeclaration unused = new("unused") { ReturnType = new TypeReference("int") };
+		unused.Body.Add(new VariableDeclaration("t", "int", Literal.Number(3)));
+		unused.Body.Add(new ReturnStatement(Literal.Number(1)));
+		file.Members.Add(unused);
+
+		FunctionDeclaration writeOnly = new("writeOnly") { ReturnType = new TypeReference("int") };
+		writeOnly.Body.Add(new VariableDeclaration("w", initialValue: Literal.Number(1)) { IsTypeInferred = true });
+		writeOnly.Body.Add(new AssignmentStatement(new VariableReference("w"), Literal.Number(2)));
+		writeOnly.Body.Add(new VariableDeclaration("z", "int"));
+		writeOnly.Body.Add(new ReturnStatement(Literal.Number(0)));
+		file.Members.Add(writeOnly);
+
+		FunctionDeclaration read = new("read") { ReturnType = new TypeReference("int") };
+		read.Body.Add(new VariableDeclaration("r", "int", Literal.Number(4)));
+		read.Body.Add(new ReturnStatement(new VariableReference("r")));
+		file.Members.Add(read);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new GoGenerator().Generate(file);
+			File.WriteAllText(Path.Combine(directory, "go.mod"), Module);
+			File.WriteAllText(Path.Combine(directory, "locals.go"), source);
+			(int exitCode, string output) = ToolchainHarness.Run("go", "build ./...", directory);
+			Assert.AreEqual(0, exitCode, $"Go rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+
+			(int formatted, string differs) = ToolchainHarness.Run("gofmt", "-l locals.go", directory);
+			Assert.AreEqual(0, formatted, $"gofmt did not run:{Environment.NewLine}{differs}");
+			Assert.AreEqual(string.Empty, differs.Trim(), $"gofmt would rewrite the generated source.{Environment.NewLine}{source}");
+		});
+	}
 }
