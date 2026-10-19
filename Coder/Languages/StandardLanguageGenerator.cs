@@ -169,6 +169,44 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 		return IsIntegerType(StaticType(binary.Left)) && IsIntegerType(StaticType(binary.Right));
 	}
 
+	/// <summary>
+	/// Reads whether a bitwise <c>&amp;</c>, <c>|</c> or <c>^</c> is applied to two operands statically
+	/// known to be <c>bool</c>.
+	/// </summary>
+	/// <param name="op">The operator.</param>
+	/// <param name="left">The left operand.</param>
+	/// <param name="right">The right operand.</param>
+	/// <returns>True for a bitwise operator whose operands are both known to be <c>bool</c>.</returns>
+	/// <remarks>
+	/// C#, C, C++, Rust and Python apply these to booleans and give a boolean, evaluating both sides.
+	/// Go defines them on integers only and JavaScript coerces to a number, so those targets respell
+	/// them (#268). An operand of unknown type is not assumed to be a <c>bool</c>.
+	/// </remarks>
+	protected bool IsBooleanBitwise(BinaryOperator op, Expression left, Expression right)
+	{
+		Ensure.NotNull(left);
+		Ensure.NotNull(right);
+		return op is BinaryOperator.BitwiseAnd or BinaryOperator.BitwiseOr or BinaryOperator.BitwiseXor
+			&& IsBoolType(StaticType(left))
+			&& IsBoolType(StaticType(right));
+	}
+
+	/// <summary>
+	/// Reads the binary operator a bitwise compound assignment applies.
+	/// </summary>
+	/// <param name="op">The compound assignment operator.</param>
+	/// <returns>The bitwise operator, or null for any other assignment.</returns>
+	protected static BinaryOperator? BitwiseOperatorOf(AssignmentOperator op) => op switch
+	{
+		AssignmentOperator.BitwiseAndAssign => BinaryOperator.BitwiseAnd,
+		AssignmentOperator.BitwiseOrAssign => BinaryOperator.BitwiseOr,
+		AssignmentOperator.BitwiseXorAssign => BinaryOperator.BitwiseXor,
+		_ => null,
+	};
+
+	private static bool IsBoolType(TypeReference? type) =>
+		type is { IsArray: false, Indirection: TypeIndirection.None, TypeArguments.Count: 0, Name: "bool" };
+
 	private static bool IsIntegerType(TypeReference? type) =>
 		type is { IsArray: false, Indirection: TypeIndirection.None, TypeArguments.Count: 0 }
 		&& IntegerTypeNames.Contains(type.Name);
@@ -345,6 +383,8 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 				return construction.Type;
 			case CallExpression { Receiver: null } call:
 				return DeclaredReturnType(call.Callee);
+			case UnaryExpression { Operator: UnaryOperator.LogicalNot }:
+				return new TypeReference("bool");
 			case ConditionalExpression conditional:
 				return Promoted(StaticType(conditional.WhenTrue), StaticType(conditional.WhenFalse));
 			case BinaryExpression binary when binary.Operator is BinaryOperator.Equal

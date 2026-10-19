@@ -752,11 +752,30 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	/// true division, giving <c>-3.5</c>, so when both operands are known to be integers the quotient
 	/// is truncated with <c>Math.trunc</c> — not <c>Math.floor</c>, which would give <c>-4</c>.
 	/// JavaScript's <c>%</c> already takes the sign of the dividend, the same as the C family's.
+	/// <para>
+	/// <c>&amp;</c>, <c>|</c> and <c>^</c> on two booleans coerce them to numbers and give <c>0</c> or
+	/// <c>1</c>, so <c>===</c> against <c>true</c> fails (#268). <c>^</c> is written <c>!==</c>, and
+	/// <c>&amp;</c> and <c>|</c> are wrapped in <c>Boolean(...)</c>; both still evaluate each side.
+	/// </para>
 	/// </remarks>
 	protected override void GenerateBinary(BinaryExpression binary, CodeBlocker code)
 	{
 		Ensure.NotNull(binary);
 		Ensure.NotNull(code);
+
+		if (IsBooleanBitwise(binary.Operator, binary.Left, binary.Right))
+		{
+			if (binary.Operator == BinaryOperator.BitwiseXor)
+			{
+				GenerateBinaryExpression(binary, code, "!==");
+				return;
+			}
+
+			code.Write("Boolean(");
+			GenerateBinaryExpression(binary, code, GetOperatorSpelling(binary.Operator));
+			code.Write(")");
+			return;
+		}
 
 		if (binary.Operator != BinaryOperator.Divide || !IsIntegerArithmetic(binary))
 		{
@@ -774,7 +793,9 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	/// <c>x /= y</c> is true division, the same as <c>/</c>, so on integers it gives <c>2.5</c> for
 	/// <c>5 /= 2</c> where the C family gives <c>2</c>. When both sides are known to be integers the
 	/// assignment is written out as <c>x = Math.trunc(x / y)</c> through <see cref="GenerateBinary"/>.
-	/// <c>%=</c> already matches the C family, and every other compound assignment is left as it is.
+	/// <c>&amp;=</c>, <c>|=</c> and <c>^=</c> on booleans are written out the same way, so the target
+	/// is left holding a boolean rather than a number. <c>%=</c> already matches the C family, and
+	/// every other compound assignment is left as it is.
 	/// </remarks>
 	protected override void GenerateAssignmentStatement(AssignmentStatement assignment, CodeBlocker code)
 	{
@@ -783,8 +804,11 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 
 		BinaryExpression? binary = assignment.Operator == AssignmentOperator.DivideAssign
 			? new(assignment.Target, BinaryOperator.Divide, assignment.Value)
-			: null;
-		if (binary is null || !IsIntegerArithmetic(binary))
+			: BitwiseOperatorOf(assignment.Operator) is BinaryOperator bitwise
+				&& IsBooleanBitwise(bitwise, assignment.Target, assignment.Value)
+				? new(assignment.Target, bitwise, assignment.Value)
+				: null;
+		if (binary is null || (binary.Operator == BinaryOperator.Divide && !IsIntegerArithmetic(binary)))
 		{
 			base.GenerateAssignmentStatement(assignment, code);
 			return;
