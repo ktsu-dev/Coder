@@ -379,12 +379,12 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 				return new TypeReference("double");
 			case LiteralExpression<bool>:
 				return new TypeReference("bool");
+			case UnaryExpression { Operator: UnaryOperator.LogicalNot }:
+				return new TypeReference("bool");
 			case ConstructionExpression { Type: not null } construction:
 				return construction.Type;
 			case CallExpression { Receiver: null } call:
 				return DeclaredReturnType(call.Callee);
-			case UnaryExpression { Operator: UnaryOperator.LogicalNot }:
-				return new TypeReference("bool");
 			case ConditionalExpression conditional:
 				return Promoted(StaticType(conditional.WhenTrue), StaticType(conditional.WhenFalse));
 			case BinaryExpression binary when binary.Operator is BinaryOperator.Equal
