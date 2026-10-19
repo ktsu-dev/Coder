@@ -284,7 +284,7 @@ public class GoGenerator : StandardLanguageGenerator
 	/// </remarks>
 	protected override string SpellNonFiniteDouble(double value) =>
 		double.IsNaN(value) ? "math.NaN()"
-		: value == 0 ? "math.Copysign(0, -1)"
+		: IsNegativeZero(value) ? "math.Copysign(0, -1)"
 		: value > 0 ? "math.Inf(1)" : "math.Inf(-1)";
 
 	/// <inheritdoc/>
@@ -1533,7 +1533,18 @@ public class GoGenerator : StandardLanguageGenerator
 	/// <param name="value">The value, widened to a double when it is a float.</param>
 	/// <returns>True when it is NaN, an infinity or negative zero.</returns>
 	private static bool IsCalledFor(double value) =>
-		!double.IsFinite(value) || (value == 0 && double.IsNegative(value));
+		!double.IsFinite(value) || IsNegativeZero(value);
+
+	/// <summary>
+	/// Reports whether a value is negative zero.
+	/// </summary>
+	/// <param name="value">The value to test.</param>
+	/// <returns>True when its bits are negative zero's.</returns>
+	/// <remarks>
+	/// Compared by bits, because <c>-0.0 == 0.0</c> is true and the sign is the whole point.
+	/// </remarks>
+	private static bool IsNegativeZero(double value) =>
+		BitConverter.DoubleToInt64Bits(value) == BitConverter.DoubleToInt64Bits(double.NegativeZero);
 
 	/// <summary>
 	/// Writes what a declaration starts at, giving a bare list the declaration's own type.
