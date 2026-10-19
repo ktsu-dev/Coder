@@ -343,6 +343,8 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 				return new TypeReference("bool");
 			case ConstructionExpression { Type: not null } construction:
 				return construction.Type;
+			case CallExpression { Receiver: null } call:
+				return DeclaredReturnType(call.Callee);
 			case ConditionalExpression conditional:
 				return Promoted(StaticType(conditional.WhenTrue), StaticType(conditional.WhenFalse));
 			case BinaryExpression binary when binary.Operator is BinaryOperator.Equal
@@ -369,6 +371,32 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 			default:
 				return null;
 		}
+	}
+
+	/// <summary>
+	/// Reads the return type of the one function a receiver-less call can name.
+	/// </summary>
+	/// <param name="callee">The name the call is written with.</param>
+	/// <returns>The function's return type, or null when no function or more than one has the name.</returns>
+	/// <remarks>
+	/// A call's result is otherwise of unknown type, so <c>twice(a) / 4</c> would be true division in
+	/// Python and JavaScript even though <c>twice</c> is declared <c>int</c> beside it (#273). Only a
+	/// name that exactly one <see cref="FunctionDeclaration"/> in what is being generated has is
+	/// resolved: an overload or a namesake elsewhere could return something else, and a callee
+	/// declared outside the tree says nothing here, so both keep the type unknown.
+	/// </remarks>
+	private TypeReference? DeclaredReturnType(string callee)
+	{
+		if (GenerationRoot is null || string.IsNullOrEmpty(callee))
+		{
+			return null;
+		}
+
+		FunctionDeclaration[] matches = [.. SelfAndDescendants(GenerationRoot)
+			.OfType<FunctionDeclaration>()
+			.Where(function => function.Name == callee)
+			.Take(2)];
+		return matches.Length == 1 ? matches[0].ReturnType : null;
 	}
 
 	/// <summary>
