@@ -282,10 +282,13 @@ public class GoGenerator : StandardLanguageGenerator
 	/// holds one. Negative zero is <c>math.Copysign(0, -1)</c>, the one way to reach it that is not
 	/// constant arithmetic.
 	/// </remarks>
-	protected override string SpellNonFiniteDouble(double value) =>
-		double.IsNaN(value) ? "math.NaN()"
-		: IsNegativeZero(value) ? "math.Copysign(0, -1)"
-		: value > 0 ? "math.Inf(1)" : "math.Inf(-1)";
+	protected override string SpellNonFiniteDouble(double value) => value switch
+	{
+		double.NaN => "math.NaN()",
+		double.PositiveInfinity => "math.Inf(1)",
+		double.NegativeInfinity => "math.Inf(-1)",
+		_ => "math.Copysign(0, -1)",
+	};
 
 	/// <inheritdoc/>
 	protected override bool SpellsFloatingRemainderAsCall => true;
