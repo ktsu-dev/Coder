@@ -674,4 +674,36 @@ public class RustGeneratedSourceCompilesTests
 	/// <returns>The type.</returns>
 	private static TypeReference BorrowedString() =>
 		new("str") { Indirection = TypeIndirection.Reference, IsReadOnly = true };
+
+	/// <summary>
+	/// Tests that numbers of different widths meeting in an operator, an initialiser, an assignment,
+	/// a return and a call argument compile, which Rust only allows once the narrower is converted
+	/// (issue #238).
+	/// </summary>
+	[TestMethod]
+	public void MixedNumericWidths_Compile()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "rustc") is null)
+		{
+			Assert.Inconclusive("No Rust compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new RustGenerator().Generate(NumericWideningTests.Widening());
+			string allowed = "#![allow(unused_parens, dead_code, unused_variables, unused_mut, unused_assignments)]";
+
+			File.WriteAllText(
+				Path.Combine(directory, "widening.rs"),
+				$"{allowed}{Environment.NewLine}{source}");
+
+			(int exitCode, string output) = ToolchainHarness.Run(
+				"rustc",
+				"--crate-type lib --edition 2021 -o widening.rlib widening.rs",
+				directory);
+
+			Assert.AreEqual(0, exitCode, $"rustc rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+		});
+	}
 }

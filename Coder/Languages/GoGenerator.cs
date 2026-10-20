@@ -1573,7 +1573,36 @@ public class GoGenerator : StandardLanguageGenerator
 			code.Write(SpellType(declared));
 		}
 
+		GenerateWidenedTo(value, declared, code);
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// Go converts no number to another on its own, so <c>a + b</c> on an <c>int64</c> and an
+	/// <c>int</c>, or a <c>float64</c> initialised from an <c>int</c>, does not compile (#238).
+	/// </remarks>
+	protected override bool WidensNumbersExplicitly => true;
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// A conversion, <c>float64(b)</c>. A number literal is left as it is: Go's literals are untyped
+	/// constants, which take the type they meet.
+	/// </remarks>
+	protected override void WriteWidened(Expression value, TypeReference wider, CodeBlocker code)
+	{
+		Ensure.NotNull(value);
+		Ensure.NotNull(wider);
+		Ensure.NotNull(code);
+
+		if (value is LiteralExpression<int> or LiteralExpression<long> or LiteralExpression<float> or LiteralExpression<double>)
+		{
+			GenerateInternal(value, code);
+			return;
+		}
+
+		code.Write($"{SpellType(wider)}(");
 		GenerateInternal(value, code);
+		code.Write(")");
 	}
 
 	/// <inheritdoc/>

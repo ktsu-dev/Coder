@@ -837,4 +837,33 @@ public class GoGeneratedSourceCompilesTests
 			Assert.AreEqual(string.Empty, differs.Trim(), $"gofmt would rewrite the generated source.{Environment.NewLine}{source}");
 		});
 	}
+
+	/// <summary>
+	/// Tests that numbers of different widths meeting in an operator, an initialiser, an assignment,
+	/// a return and a call argument compile, which Go only allows once the narrower is converted,
+	/// and that the result is still what <c>gofmt</c> writes (issue #238).
+	/// </summary>
+	[TestMethod]
+	public void MixedNumericWidths_Compile()
+	{
+		if (ToolchainHarness.FindOnPath("version", "go") is null)
+		{
+			Assert.Inconclusive("No Go toolchain on the path, so nothing was compiled.");
+			return;
+		}
+
+		string source = new GoGenerator().Generate(NumericWideningTests.Widening());
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			File.WriteAllText(Path.Combine(directory, "go.mod"), Module);
+			File.WriteAllText(Path.Combine(directory, "widening.go"), source);
+			(int exitCode, string output) = ToolchainHarness.Run("go", "build ./...", directory);
+			Assert.AreEqual(0, exitCode, $"Go rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+
+			(int formatted, string differs) = ToolchainHarness.Run("gofmt", "-l widening.go", directory);
+			Assert.AreEqual(0, formatted, $"gofmt did not run:{Environment.NewLine}{differs}");
+			Assert.AreEqual(string.Empty, differs.Trim(), "gofmt would rewrite the generated source.");
+		});
+	}
 }
