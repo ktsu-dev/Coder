@@ -1172,8 +1172,12 @@ public class GoGenerator : StandardLanguageGenerator
 	/// <param name="funcDecl">The declaration to test.</param>
 	/// <param name="enclosingType">The name of the type it belongs to, when it belongs to one.</param>
 	/// <returns>True when it takes a receiver.</returns>
+	/// <remarks>
+	/// A friend is declared beside the type rather than as a member of it and names every operand
+	/// itself, so it is a function of the type's name rather than a method on it.
+	/// </remarks>
 	private static bool TakesReceiver(FunctionDeclaration funcDecl, string? enclosingType) =>
-		enclosingType is not null && !funcDecl.IsStatic && funcDecl.Kind != FunctionKind.Constructor;
+		enclosingType is not null && !funcDecl.IsStatic && !funcDecl.IsFriend && funcDecl.Kind != FunctionKind.Constructor;
 
 	/// <summary>
 	/// Spells the name a declaration is written under.
@@ -1215,13 +1219,14 @@ public class GoGenerator : StandardLanguageGenerator
 	/// <returns>The method name.</returns>
 	/// <remarks>
 	/// A declaration with no operand beside the instance is the unary reading of its symbol, which is
-	/// the only thing that tells <c>-a</c> from <c>a - b</c>.
+	/// the only thing that tells <c>-a</c> from <c>a - b</c>. A friend names its first operand itself,
+	/// so for one the unary reading is a single declared parameter.
 	/// </remarks>
 	private static string OperatorName(FunctionDeclaration funcDecl)
 	{
 		string symbol = funcDecl.Name ?? string.Empty;
 
-		if (funcDecl.Parameters.Count == 0 && UnaryOperatorNames.TryGetValue(symbol, out string? unary))
+		if (funcDecl.Parameters.Count == (funcDecl.IsFriend ? 1 : 0) && UnaryOperatorNames.TryGetValue(symbol, out string? unary))
 		{
 			return unary;
 		}
@@ -2254,10 +2259,22 @@ public class GoGenerator : StandardLanguageGenerator
 	/// pointer is — except where the type is already a view of something else. A string, a slice and
 	/// a map each hold a pointer already, so a pointer to one is a pointer to a pointer and nobody
 	/// means that.
+	/// <para>
+	/// An interface is a view too, and the costliest one to miss: it already holds a pointer to
+	/// whatever implements it, and the method set of a pointer to an interface is empty, so a
+	/// parameter spelled <c>*Shape</c> compiles and then cannot be called through (#298). A type
+	/// naming an interface declared in the file therefore drops its indirection whichever one it
+	/// asked for.
+	/// </para>
 	/// </remarks>
 	private string SpellType(TypeReference type)
 	{
 		string core = SpellCoreType(type);
+
+		if (!type.IsArray && NamesInterface(type))
+		{
+			return core;
+		}
 
 		return type.Indirection switch
 		{
@@ -2266,6 +2283,16 @@ public class GoGenerator : StandardLanguageGenerator
 			_ => core,
 		};
 	}
+
+	/// <summary>
+	/// Reports whether a type names an interface declared in what is being generated.
+	/// </summary>
+	/// <param name="type">The type to look up.</param>
+	/// <returns>True when the name is an interface's.</returns>
+	private bool NamesInterface(TypeReference type) =>
+		GenerationRoot is not null && SelfAndDescendants(GenerationRoot)
+			.OfType<ClassDeclaration>()
+			.Any(declared => declared.Kind == TypeDeclarationKind.Interface && declared.Name == type.Name);
 
 	/// <summary>
 	/// Reports whether a type is already a view of what it holds.

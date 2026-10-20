@@ -355,6 +355,9 @@ public class YamlSerializer
 	/// <summary>The key a node's members are written under.</summary>
 	private const string MembersKey = "members";
 
+	/// <summary>The key a node's keyed children are written under.</summary>
+	private const string ChildrenKey = "children";
+
 	private static void SerializeCompileTimeAssertion(CompileTimeAssertion assertion, Dictionary<string, object> nodeData)
 	{
 		if (assertion.Condition != null)
@@ -825,16 +828,33 @@ public class YamlSerializer
 		}
 	}
 
+	/// <summary>
+	/// Writes a node's keyed children under one <c>children</c> mapping, each under its exact key.
+	/// </summary>
+	/// <remarks>
+	/// They used to be written into the node's own mapping with the key lowercased, so a child keyed
+	/// <c>Name</c> or <c>Body</c> replaced the property of that name, and a mixed-case key came back
+	/// lowercased (ktsu-dev/Coder#250).
+	/// </remarks>
 	private static void SerializeCompositeChildren(AstCompositeNode compositeNode, Dictionary<string, object> nodeData)
 	{
+		Dictionary<string, object> childrenData = [];
 		foreach ((string key, AstNode childNode) in compositeNode.Children)
 		{
-			if (!key.Equals("Expression", StringComparison.OrdinalIgnoreCase)) // Already handled above
+			// A return statement keeps its expression as a keyed child, and has already written it.
+			if (compositeNode is ReturnStatement && key == "Expression")
 			{
-				Dictionary<string, object> childData = [];
-				SerializeNode(childNode, childData);
-				nodeData[key.ToLowerInvariant()] = childData;
+				continue;
 			}
+
+			Dictionary<string, object> childData = [];
+			SerializeNode(childNode, childData);
+			childrenData[key] = childData;
+		}
+
+		if (childrenData.Count > 0)
+		{
+			nodeData[ChildrenKey] = childrenData;
 		}
 	}
 
