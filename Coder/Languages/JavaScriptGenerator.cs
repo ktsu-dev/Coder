@@ -380,6 +380,9 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		using IDisposable types = OpenStaticTypeScope(funcDecl);
 		WritePreamble(funcDecl, code, PreambleSite.Function);
 
+		// JavaScript has no generics, so what a function is written over is written down.
+		WriteTypeParametersDown(funcDecl.TypeParameters, code);
+
 		code.Write($"function {funcDecl.Name ?? "unnamedFunction"}(");
 		GenerateParameterList(funcDecl.Parameters, code);
 
@@ -563,6 +566,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	{
 		using IDisposable types = OpenStaticTypeScope(method);
 		WritePreamble(method, code, PreambleSite.Method);
+		WriteTypeParametersDown(method.TypeParameters, code);
 
 		if (method.Definition != FunctionDefinition.Provided)
 		{
