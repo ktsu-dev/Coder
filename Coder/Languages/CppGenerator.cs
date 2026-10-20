@@ -739,6 +739,13 @@ public class CppGenerator : CFamilyGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
+	/// The linker looks for <c>main</c> only at file scope; <c>App::main</c> is an ordinary function
+	/// nothing calls.
+	/// </remarks>
+	protected override bool EntryPointsLeaveNamespaces => true;
+
+	/// <inheritdoc/>
+	/// <remarks>
 	/// C++'s <c>main</c> returns <c>int</c> whether or not the program means to hand back an exit
 	/// code, so <see cref="EntryPoint.ReturnsExitCode"/> changes nothing in the signature — a program
 	/// that returns nothing exits with zero, which the standard supplies by falling off the end.
@@ -765,6 +772,13 @@ public class CppGenerator : CFamilyGenerator
 
 		using IDisposable types = OpenStaticTypeScope(entryPoint);
 		using Scope body = new(code);
+		if (NamespacesLeftBy(entryPoint) is [_, ..] namespaces)
+		{
+			// Written at file scope, where the linker looks for it, so the names declared beside it in
+			// its namespace are brought back in (#128).
+			code.WriteLine($"using namespace {string.Join("::", namespaces)};");
+		}
+
 		if (entryPoint.AcceptsArguments)
 		{
 			code.WriteLine("std::vector<std::string> args(argv + 1, argv + argc);");

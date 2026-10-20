@@ -277,7 +277,7 @@ public static class AstFields
 				new("Name", AstFieldKind.Text, parameter.Name ?? string.Empty),
 				new("Type", AstFieldKind.Text, parameter.Type?.ToString() ?? string.Empty),
 				new("Optional", AstFieldKind.Flag, Spell(parameter.IsOptional)),
-				new("Default", AstFieldKind.Text, parameter.DefaultValue ?? string.Empty),
+				new("Default", AstFieldKind.Text, Parameter.FormatDefaultValue(parameter.DefaultValue) ?? string.Empty),
 			],
 
 			VariableDeclaration varDecl =>
@@ -505,7 +505,7 @@ public static class AstFields
 			(Parameter parameter, "Name") => Assign(() => parameter.Name = OrNull(value)),
 			(Parameter parameter, "Type") => Assign(() => parameter.Type = OrNull(value)),
 			(Parameter parameter, "Optional") => AssignFlag(value, optional => parameter.IsOptional = optional),
-			(Parameter parameter, "Default") => Assign(() => parameter.DefaultValue = OrNull(value)),
+			(Parameter parameter, "Default") => Assign(() => parameter.DefaultValue = Parameter.ParseDefaultValue(value)),
 
 			(VariableDeclaration varDecl, "Name") => value.Length > 0 && Assign(() => varDecl.Name = value),
 			(VariableDeclaration varDecl, "Type") => Assign(() => varDecl.Type = OrNull(value)),

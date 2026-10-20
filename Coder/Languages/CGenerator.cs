@@ -244,11 +244,15 @@ public class CGenerator : CFamilyGenerator
 		if (funcDecl.Definition == FunctionDefinition.Deleted)
 		{
 			WritePreamble(funcDecl, code, enclosingType is null ? PreambleSite.Function : PreambleSite.Method);
+			WriteTypeParametersDown(funcDecl.TypeParameters, code);
 			WriteInexpressible(code, $"{SpellFunctionName(funcDecl, enclosingType)} is deleted: C cannot refuse a call");
 			return;
 		}
 
 		WritePreamble(funcDecl, code, enclosingType is null ? PreambleSite.Function : PreambleSite.Method);
+
+		// C has no generics, so what a function is written over is written down, as for a type.
+		WriteTypeParametersDown(funcDecl.TypeParameters, code);
 
 		// Internal linkage is the only privacy C has, and it is what a private function wants: the
 		// declaration is visible to this translation unit and to nothing else.
@@ -424,13 +428,14 @@ public class CGenerator : CFamilyGenerator
 	/// A static member acts on no instance and a constructor has none to act on yet, so neither takes
 	/// one. <see cref="FunctionDeclaration.IsReadOnly"/> — a member function that does not modify
 	/// what it is called on — becomes a pointer to <c>const</c>, which is exactly what it says and is
-	/// the only place C has to say it.
+	/// the only place C has to say it. A friend is declared beside the type rather than as a member
+	/// of it and names every operand itself, so it takes no instance either.
 	/// </remarks>
 	private static List<Parameter> ParametersOf(FunctionDeclaration funcDecl, string? enclosingType)
 	{
 		List<Parameter> parameters = [];
 
-		if (enclosingType is not null && !funcDecl.IsStatic && funcDecl.Kind != FunctionKind.Constructor)
+		if (enclosingType is not null && !funcDecl.IsStatic && !funcDecl.IsFriend && funcDecl.Kind != FunctionKind.Constructor)
 		{
 			parameters.Add(SelfParameter(enclosingType, funcDecl.IsReadOnly));
 		}
@@ -777,6 +782,7 @@ public class CGenerator : CFamilyGenerator
 	private void GenerateFunctionPointer(FunctionDeclaration funcDecl, CodeBlocker code)
 	{
 		WritePreamble(funcDecl, code, PreambleSite.Function);
+		WriteTypeParametersDown(funcDecl.TypeParameters, code);
 
 		List<Parameter> parameters = [];
 		if (!funcDecl.IsStatic)
@@ -1169,10 +1175,7 @@ public class CGenerator : CFamilyGenerator
 
 		code.Write(name.Length == 0 ? MapToCType(type) : SpellDeclarator(type, name));
 
-		if (parameter.IsOptional && !string.IsNullOrEmpty(parameter.DefaultValue))
-		{
-			code.Write($" /* = {parameter.DefaultValue} */");
-		}
+		AppendDefaultValueComment(parameter, code);
 	}
 
 	/// <inheritdoc/>
