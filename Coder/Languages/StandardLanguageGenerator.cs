@@ -382,6 +382,8 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 				return construction.Type;
 			case CallExpression { Receiver: null } call:
 				return DeclaredReturnType(call.Callee);
+			case CallExpression { Receiver: Expression receiver } call:
+				return DeclaredMethodReturnType(StaticType(receiver), call.Callee);
 			case ConditionalExpression conditional:
 				return Promoted(StaticType(conditional.WhenTrue), StaticType(conditional.WhenFalse));
 			case BinaryExpression binary when binary.Operator is BinaryOperator.Equal
@@ -441,6 +443,44 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 		}
 
 		FunctionDeclaration[] matches = [.. SelfAndDescendants(GenerationRoot)
+			.OfType<FunctionDeclaration>()
+			.Where(function => function.Name == callee)
+			.Take(2)];
+		return matches.Length == 1 ? matches[0].ReturnType : null;
+	}
+
+	/// <summary>
+	/// Reads the return type of the one method a call on a receiver of a known type can name.
+	/// </summary>
+	/// <param name="receiverType">The receiver's type, or null when it is unknown.</param>
+	/// <param name="callee">The name the call is written with.</param>
+	/// <returns>
+	/// The method's return type, or null when the receiver's type is unknown, is not exactly one class
+	/// in what is being generated, or that class has no method or more than one with the name.
+	/// </returns>
+	/// <remarks>
+	/// The receiver-less case (#273) left <c>b.size() / 2</c> of unknown type, so Python and JavaScript
+	/// still divided it truly although <c>Box.size</c> is declared <c>int</c> (#280). Only the class's
+	/// own members are looked at: a method it inherits, an overload, or a class declared outside the
+	/// tree could return something else, so each keeps the type unknown.
+	/// </remarks>
+	private TypeReference? DeclaredMethodReturnType(TypeReference? receiverType, string callee)
+	{
+		if (GenerationRoot is null || receiverType is null or { IsArray: true } || string.IsNullOrEmpty(callee))
+		{
+			return null;
+		}
+
+		ClassDeclaration[] classes = [.. SelfAndDescendants(GenerationRoot)
+			.OfType<ClassDeclaration>()
+			.Where(declaration => declaration.Name == receiverType.Name)
+			.Take(2)];
+		if (classes.Length != 1)
+		{
+			return null;
+		}
+
+		FunctionDeclaration[] matches = [.. classes[0].Members
 			.OfType<FunctionDeclaration>()
 			.Where(function => function.Name == callee)
 			.Take(2)];
