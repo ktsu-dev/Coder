@@ -102,15 +102,15 @@ public sealed class DocumentStore(
 		try
 		{
 			EnsureDirectoryOf(path);
-			fileSystem.File.WriteAllText(path, code);
+			WriteInPlaceOf(path, code);
 		}
 		catch (IOException ex)
 		{
-			return DocumentResult.Failed($"Could not write {path}: {ex.Message}");
+			return DocumentResult.Failed(CouldNotWrite(path, ex));
 		}
 		catch (UnauthorizedAccessException ex)
 		{
-			return DocumentResult.Failed($"Could not write {path}: {ex.Message}");
+			return DocumentResult.Failed(CouldNotWrite(path, ex));
 		}
 
 		// Nothing was loaded, so the result carries the path alone: what the caller wants to know is
@@ -132,6 +132,61 @@ public sealed class DocumentStore(
 	}
 
 	/// <summary>
+	/// Writes a file so that a write which fails part of the way through leaves what was there before.
+	/// </summary>
+	/// <param name="path">The file to write.</param>
+	/// <param name="text">What to write into it.</param>
+	/// <remarks>
+	/// Writing over the file itself truncates it before the first byte goes in, so a full disk, a
+	/// crash or a sync drive dropping out midway destroys the last good copy along with the new one.
+	/// The text goes into a file of its own beside the target, in the same directory so the move is a
+	/// rename rather than a copy, and only a complete file replaces the old one. A temporary file that
+	/// could not be completed is removed rather than left for the user to find.
+	/// </remarks>
+	private void WriteInPlaceOf(string path, string text)
+	{
+		string temporary = $"{path}.{Guid.NewGuid():N}.tmp";
+		try
+		{
+			fileSystem.File.WriteAllText(temporary, text);
+			fileSystem.File.Move(temporary, path, overwrite: true);
+		}
+		catch
+		{
+			DeleteIfPresent(temporary);
+			throw;
+		}
+	}
+
+	/// <summary>
+	/// Removes a file left behind by a write that did not finish, without masking why it did not.
+	/// </summary>
+	/// <param name="path">The file to remove.</param>
+	private void DeleteIfPresent(string path)
+	{
+		try
+		{
+			if (fileSystem.File.Exists(path))
+			{
+				fileSystem.File.Delete(path);
+			}
+		}
+		catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+		{
+			// The write's own failure is the one worth reporting.
+		}
+	}
+
+	/// <summary>
+	/// Phrases a failed write for the status bar.
+	/// </summary>
+	/// <param name="path">The file that could not be written.</param>
+	/// <param name="ex">Why it could not.</param>
+	/// <returns>The message, which says the file on disk was not touched, because it was not.</returns>
+	private static string CouldNotWrite(string path, Exception ex) =>
+		$"Could not write {path}: {ex.Message} Any existing file there was left as it was.";
+
+	/// <summary>
 	/// Writes a document.
 	/// </summary>
 	/// <param name="root">The AST to write.</param>
@@ -145,15 +200,15 @@ public sealed class DocumentStore(
 		try
 		{
 			EnsureDirectoryOf(path);
-			fileSystem.File.WriteAllText(path, serializer.Serialize(root));
+			WriteInPlaceOf(path, serializer.Serialize(root));
 		}
 		catch (IOException ex)
 		{
-			return DocumentResult.Failed($"Could not write {path}: {ex.Message}");
+			return DocumentResult.Failed(CouldNotWrite(path, ex));
 		}
 		catch (UnauthorizedAccessException ex)
 		{
-			return DocumentResult.Failed($"Could not write {path}: {ex.Message}");
+			return DocumentResult.Failed(CouldNotWrite(path, ex));
 		}
 
 		return DocumentResult.Loaded(root, path);
