@@ -82,7 +82,7 @@ public class ParameterDefaultValueTests
 		ToolchainHarness.InTemporaryDirectory(directory =>
 		{
 			File.WriteAllText(
-				Path.Combine(directory, "driver.py"),
+				Path.Join(directory, "driver.py"),
 				new PythonGenerator().Generate(Describe()) + "\nassert describe() is False\nassert describe(True) is True\n");
 
 			(int exitCode, string output) = ToolchainHarness.Run(python, "driver.py", directory);
@@ -108,7 +108,7 @@ public class ParameterDefaultValueTests
 		ToolchainHarness.InTemporaryDirectory(directory =>
 		{
 			File.WriteAllText(
-				Path.Combine(directory, "driver.js"),
+				Path.Join(directory, "driver.js"),
 				new JavaScriptGenerator().Generate(Describe())
 					+ "\nif (describe() !== false || describe(true) !== true) { process.exit(1); }\n");
 
@@ -134,7 +134,7 @@ public class ParameterDefaultValueTests
 		ToolchainHarness.InTemporaryDirectory(directory =>
 		{
 			File.WriteAllText(
-				Path.Combine(directory, "driver.cpp"),
+				Path.Join(directory, "driver.cpp"),
 				new CppGenerator().Generate(Describe()) + "\nint main()\n{\n\treturn describe() ? 1 : 0;\n}\n");
 
 			(int exitCode, string output) = ToolchainHarness.Run(compiler, "-std=c++20 -Wall -Wextra -pedantic -c driver.cpp -o driver.o", directory);
