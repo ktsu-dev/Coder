@@ -4,6 +4,7 @@ namespace ktsu.Coder.Languages;
 
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Linq;
 using ktsu.Coder.Ast;
@@ -594,6 +595,12 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 		Ensure.NotNull(node);
 		Ensure.NotNull(code);
 
+		if (IsRootHoldingEntryPoint(node))
+		{
+			GenerateWithEntryPointsAfter(node, code);
+			return;
+		}
+
 		switch (node)
 		{
 			case ClassDeclaration classDecl:
@@ -605,7 +612,7 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 				break;
 
 			case SourceFile file:
-				GenerateSourceFile(file, code);
+				GenerateSourceFile(WithEntryPointsAtFileScope(file), code);
 				break;
 
 			case NamespaceDeclaration namespaceDecl:
@@ -1047,6 +1054,205 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 
 			setter.Parameters.Add(new Parameter("value") { Type = property.Type ?? new TypeReference("object") });
 			yield return setter;
+		}
+	}
+
+	/// <summary>
+	/// Gets a value indicating whether an entry point declared in a namespace is written at file scope.
+	/// </summary>
+	/// <remarks>
+	/// True for a language whose toolchain looks for its entry point only at file scope and whose
+	/// namespaces are real scopes: C++ does not link a <c>main</c> declared in a namespace, and Rust
+	/// does not find one declared in a module (#128). The languages that write a namespace's members
+	/// straight into the file have nothing to move.
+	/// </remarks>
+	protected virtual bool EntryPointsLeaveNamespaces => false;
+
+	/// <summary>
+	/// Whether the root being generated is the copy with its entry points taken out.
+	/// </summary>
+	private bool generatingView;
+
+	/// <summary>
+	/// The namespaces each entry point written at file scope was declared in, outermost first.
+	/// </summary>
+	private Dictionary<EntryPoint, IReadOnlyList<string>> relocatedEntryPoints = new(ReferenceEqualityComparer.Instance);
+
+	/// <summary>
+	/// Gets the namespaces an entry point was declared in before it was moved to file scope.
+	/// </summary>
+	/// <param name="entryPoint">The entry point being written.</param>
+	/// <returns>The namespace names, outermost first, or nothing when it was declared outside one.</returns>
+	/// <remarks>
+	/// The body was written expecting the names declared beside it to be in scope, so a generator
+	/// that moved it out of its namespace brings that namespace's names back into the body.
+	/// </remarks>
+	protected IReadOnlyList<string> NamespacesLeftBy(EntryPoint entryPoint) =>
+		relocatedEntryPoints.TryGetValue(entryPoint, out IReadOnlyList<string>? path) ? path : [];
+
+	/// <summary>
+	/// Determines whether a node is a type or namespace generated on its own with an entry point in it.
+	/// </summary>
+	/// <param name="node">The node being dispatched.</param>
+	/// <returns>True when its entry points have to be written after it, at file scope.</returns>
+	private bool IsRootHoldingEntryPoint(AstNode node) =>
+		!generatingView && ReferenceEquals(node, GenerationRoot) && HoldsEntryPoint(node);
+
+	/// <summary>
+	/// Determines whether a type or namespace has an entry point anywhere inside it.
+	/// </summary>
+	/// <param name="node">The node to search.</param>
+	/// <returns>True when one does.</returns>
+	private static bool HoldsEntryPoint(AstNode node) =>
+		node is ClassDeclaration or NamespaceDeclaration && SelfAndDescendants(node).OfType<EntryPoint>().Any();
+
+	/// <summary>
+	/// Returns a file whose entry points all stand where the toolchain looks for them.
+	/// </summary>
+	/// <param name="file">The file as the document declared it.</param>
+	/// <returns>The file itself when nothing moves, otherwise a copy with the entry points last.</returns>
+	/// <remarks>
+	/// No language here other than C# finds an entry point inside a type: C++ does not link a member
+	/// <c>main</c>, C cannot put a function in a struct, and Rust and Go route a type's members by
+	/// what they are and dropped an entry point without a word. So an entry point in a type, and in a
+	/// language that asks for it one in a namespace too, is written at file scope after everything
+	/// else (#128). The containers are copies holding the document's own members, so the members
+	/// still meet every check by identity.
+	/// </remarks>
+	private SourceFile WithEntryPointsAtFileScope(SourceFile file)
+	{
+		relocatedEntryPoints = new(ReferenceEqualityComparer.Instance);
+		if (!file.Members.Any(HoldsEntryPoint))
+		{
+			return file;
+		}
+
+		Dictionary<EntryPoint, IReadOnlyList<string>> relocated = new(ReferenceEqualityComparer.Instance);
+		List<EntryPoint> moved = [];
+		List<AstNode> kept = WithoutEntryPoints(file.Members, [], moveHere: false, relocated, moved);
+		relocatedEntryPoints = relocated;
+
+		SourceFile copy = (SourceFile)file.Clone();
+		copy.Members.Clear();
+		foreach (AstNode member in kept.Concat(moved))
+		{
+			copy.Members.Add(member);
+		}
+
+		return copy;
+	}
+
+	/// <summary>
+	/// Emits a type or namespace generated on its own, then the entry points it holds at file scope.
+	/// </summary>
+	/// <param name="root">The type or namespace being generated.</param>
+	/// <param name="code">The writer to emit into.</param>
+	private void GenerateWithEntryPointsAfter(AstNode root, CodeBlocker code)
+	{
+		Dictionary<EntryPoint, IReadOnlyList<string>> relocated = new(ReferenceEqualityComparer.Instance);
+		List<EntryPoint> moved = [];
+		AstNode view = WithoutEntryPoints([root], [], moveHere: false, relocated, moved)[0];
+		relocatedEntryPoints = relocated;
+
+		generatingView = true;
+		try
+		{
+			GenerateInternal(view, code);
+		}
+		finally
+		{
+			generatingView = false;
+		}
+
+		foreach (EntryPoint entryPoint in moved)
+		{
+			code.NewLine();
+			GenerateInternal(entryPoint, code);
+		}
+	}
+
+	/// <summary>
+	/// Copies a run of members, leaving out the entry points that belong at file scope.
+	/// </summary>
+	/// <param name="members">The members as declared.</param>
+	/// <param name="namespaces">The namespaces enclosing them, outermost first.</param>
+	/// <param name="moveHere">Whether an entry point standing directly among them is moved.</param>
+	/// <param name="relocated">Where each moved entry point is recorded with its namespaces.</param>
+	/// <param name="moved">The moved entry points, in the order declared.</param>
+	/// <returns>The members that stay, with any container that lost an entry point copied.</returns>
+	private List<AstNode> WithoutEntryPoints(
+		IEnumerable<AstNode> members,
+		IReadOnlyList<string> namespaces,
+		bool moveHere,
+		Dictionary<EntryPoint, IReadOnlyList<string>> relocated,
+		List<EntryPoint> moved)
+	{
+		List<AstNode> kept = [];
+		foreach (AstNode member in members)
+		{
+			int before = moved.Count;
+			switch (member)
+			{
+				case EntryPoint entryPoint when moveHere:
+					relocated[entryPoint] = namespaces;
+					moved.Add(entryPoint);
+					continue;
+
+				case ClassDeclaration classDecl when HoldsEntryPoint(classDecl):
+				{
+					List<AstNode> inner = WithoutEntryPoints(classDecl.Members, namespaces, moveHere: true, relocated, moved);
+					if (moved.Count == before)
+					{
+						break;
+					}
+
+					ClassDeclaration copy = (ClassDeclaration)classDecl.Clone();
+					for (int index = 0; index < classDecl.Annotations.Count; index++)
+					{
+						RememberAnnotationClone(copy.Annotations[index], classDecl.Annotations[index]);
+					}
+
+					Refill(copy.Members, inner);
+					kept.Add(copy);
+					continue;
+				}
+
+				case NamespaceDeclaration namespaceDecl when HoldsEntryPoint(namespaceDecl):
+				{
+					IReadOnlyList<string> inside = [.. namespaces, .. NamespaceDeclaration.Split(namespaceDecl.Name)];
+					List<AstNode> inner = WithoutEntryPoints(namespaceDecl.Members, inside, EntryPointsLeaveNamespaces, relocated, moved);
+					if (moved.Count == before)
+					{
+						break;
+					}
+
+					NamespaceDeclaration copy = (NamespaceDeclaration)namespaceDecl.Clone();
+					Refill(copy.Members, inner);
+					kept.Add(copy);
+					continue;
+				}
+
+				default:
+					break;
+			}
+
+			kept.Add(member);
+		}
+
+		return kept;
+	}
+
+	/// <summary>
+	/// Replaces what a collection holds.
+	/// </summary>
+	/// <param name="target">The collection to refill.</param>
+	/// <param name="members">What it should hold.</param>
+	private static void Refill(Collection<AstNode> target, IEnumerable<AstNode> members)
+	{
+		target.Clear();
+		foreach (AstNode member in members)
+		{
+			target.Add(member);
 		}
 	}
 

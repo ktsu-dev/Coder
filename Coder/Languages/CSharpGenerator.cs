@@ -652,8 +652,8 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// <param name="holderName">What to call the class, unless a type beside it already has the name.</param>
 	/// <param name="code">The writer to emit into.</param>
 	/// <remarks>
-	/// C# has no field, function or variable outside a type: one in a namespace fails with CS0116,
-	/// and one at file scope with CS0106. Every other target has somewhere to put them, so the AST
+	/// C# has no field, function, variable or entry point outside a type: one in a namespace fails
+	/// with CS0116, and one at file scope with CS0106 (#128). Every other target has somewhere to put them, so the AST
 	/// allows them, and a static class is what C# has in their place — a reader names
 	/// <c>Geometry.twice</c> where C++ names <c>Geometry::twice</c>. The class is written where the
 	/// first of them was declared, and types, enums and nested namespaces stay where they are. Aliases
@@ -765,9 +765,9 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// Determines whether a member of a namespace or file is one C# can declare only inside a type.
 	/// </summary>
 	/// <param name="member">The member.</param>
-	/// <returns>True for a field, a function or a variable.</returns>
+	/// <returns>True for a field, a function, a variable or an entry point.</returns>
 	private static bool IsTypelessMember(AstNode member) =>
-		member is FieldDeclaration or FunctionDeclaration or VariableDeclaration;
+		member is FieldDeclaration or FunctionDeclaration or VariableDeclaration or EntryPoint;
 
 	/// <summary>
 	/// Picks a name for the class holding a scope's members that no type beside it already has.
@@ -1631,7 +1631,8 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// <remarks>
 	/// Always <c>static</c>, and named with the capital C# gives it. The method is emitted on its own
 	/// rather than wrapped in a class, because a C# entry point is an ordinary member of whatever
-	/// class the document puts it in — including one this generator emits around it.
+	/// class the document puts it in — including the static class this generator writes around one
+	/// declared in a namespace or a file (#128).
 	/// </remarks>
 	private void GenerateEntryPoint(EntryPoint entryPoint, CodeBlocker code)
 	{

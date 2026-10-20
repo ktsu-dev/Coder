@@ -1948,6 +1948,7 @@ public class RustGenerator : StandardLanguageGenerator
 
 			using (Scope helper = new(code))
 			{
+				WriteModuleImport(entryPoint, code);
 				WriteBody(entryPoint.Body, code);
 			}
 
@@ -1963,12 +1964,39 @@ public class RustGenerator : StandardLanguageGenerator
 
 		using Scope body = new(code);
 
+		WriteModuleImport(entryPoint, code);
 		if (entryPoint.AcceptsArguments)
 		{
 			code.WriteLine($"let args: Vec<String> = {collect};");
 		}
 
 		WriteBody(entryPoint.Body, code);
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// The compiler looks for <c>main</c> only at the crate root; one in a module is an ordinary
+	/// private function and the crate fails with E0601.
+	/// </remarks>
+	protected override bool EntryPointsLeaveNamespaces => true;
+
+	/// <summary>
+	/// Brings the names of the module an entry point was declared in into its body.
+	/// </summary>
+	/// <param name="entryPoint">The entry point being written.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// The entry point is written at the crate root, where the compiler looks for it, and the body
+	/// still names what was declared beside it (#128). A <c>use</c> inside the function reaches the
+	/// module without adding anything to the crate root's own names.
+	/// </remarks>
+	private void WriteModuleImport(EntryPoint entryPoint, CodeBlocker code)
+	{
+		if (NamespacesLeftBy(entryPoint) is [_, ..] modules)
+		{
+			code.WriteLine("#[allow(unused_imports)]");
+			code.WriteLine($"use self::{string.Join("::", modules)}::*;");
+		}
 	}
 
 	/// <summary>
