@@ -1100,14 +1100,38 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	/// A default value is how every target language expresses <see cref="Parameter.IsOptional"/>;
 	/// none of them has separate syntax for it.
 	/// </remarks>
-	protected static void AppendDefaultValue(Parameter parameter, CodeBlocker code)
+	protected void AppendDefaultValue(Parameter parameter, CodeBlocker code)
 	{
 		Ensure.NotNull(parameter);
 		Ensure.NotNull(code);
 
-		if (parameter.IsOptional && !string.IsNullOrEmpty(parameter.DefaultValue))
+		if (parameter.IsOptional && parameter.DefaultValue is Expression value)
 		{
-			code.Write($" = {parameter.DefaultValue}");
+			code.Write(" = ");
+			GenerateInternal(value, code);
+		}
+	}
+
+	/// <summary>
+	/// Appends a parameter's default value as a comment, for a language with no default arguments.
+	/// </summary>
+	/// <param name="parameter">The parameter whose default to note.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// A <c>*/</c> in the value would end the comment early and leave the rest of it as source, so
+	/// it is broken apart.
+	/// </remarks>
+	protected void AppendDefaultValueComment(Parameter parameter, CodeBlocker code)
+	{
+		Ensure.NotNull(parameter);
+		Ensure.NotNull(code);
+
+		if (parameter.IsOptional && parameter.DefaultValue is Expression value)
+		{
+			using CodeBlocker inline = CodeBlocker.Create(IndentString);
+			GenerateInternal(value, inline);
+			string spelled = inline.ToString().TrimEnd('\r', '\n').Replace("*/", "* /", StringComparison.Ordinal);
+			code.Write($" /* = {spelled} */");
 		}
 	}
 

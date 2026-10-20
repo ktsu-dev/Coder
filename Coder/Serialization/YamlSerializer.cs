@@ -808,9 +808,18 @@ public class YamlSerializer
 		{
 			nodeData["isOptional"] = param.IsOptional;
 
-			if (param.DefaultValue != null)
+			// A literal or a name is written as the scalar text it always was, so a document reads
+			// the same before and after defaults became expressions. Anything else has no text form
+			// and is written as the node it is.
+			if (Parameter.FormatDefaultValue(param.DefaultValue) is string text)
 			{
-				nodeData["defaultValue"] = param.DefaultValue;
+				nodeData["defaultValue"] = text;
+			}
+			else if (param.DefaultValue != null)
+			{
+				Dictionary<string, object> defaultData = [];
+				SerializeNode(param.DefaultValue, defaultData);
+				nodeData["defaultValue"] = defaultData;
 			}
 		}
 	}

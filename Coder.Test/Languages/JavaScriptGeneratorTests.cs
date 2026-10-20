@@ -72,7 +72,7 @@ public class JavaScriptGeneratorTests
 	{
 		FunctionDeclaration function = new("greet");
 		function.Parameters.Add(new Parameter("name", "str"));
-		function.Parameters.Add(new Parameter("loud", "bool") { IsOptional = true, DefaultValue = "false" });
+		function.Parameters.Add(new Parameter("loud", "bool") { IsOptional = true, DefaultValue = Literal.Bool(false) });
 
 		string code = Generator.Generate(function);
 

@@ -1169,10 +1169,7 @@ public class CGenerator : CFamilyGenerator
 
 		code.Write(name.Length == 0 ? MapToCType(type) : SpellDeclarator(type, name));
 
-		if (parameter.IsOptional && !string.IsNullOrEmpty(parameter.DefaultValue))
-		{
-			code.Write($" /* = {parameter.DefaultValue} */");
-		}
+		AppendDefaultValueComment(parameter, code);
 	}
 
 	/// <inheritdoc/>

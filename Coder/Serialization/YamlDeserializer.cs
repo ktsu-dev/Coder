@@ -321,7 +321,7 @@ public partial class YamlDeserializer
 		return entryPoint;
 	}
 
-	private static void DeserializeFunctionParameters(FunctionDeclaration funcDecl, Dictionary<object, object> dict)
+	private void DeserializeFunctionParameters(FunctionDeclaration funcDecl, Dictionary<object, object> dict)
 	{
 		if (!dict.TryGetValue("parameters", out object? paramsObj) || paramsObj is not List<object> paramsList)
 		{
@@ -1131,7 +1131,7 @@ public partial class YamlDeserializer
 		}
 	}
 
-	private static Parameter DeserializeParameter(object? nodeData)
+	private Parameter DeserializeParameter(object? nodeData)
 	{
 		Parameter param = new();
 		if (nodeData is Dictionary<object, object> dict)
@@ -1143,7 +1143,11 @@ public partial class YamlDeserializer
 			{
 				param.IsOptional = isOptional;
 
-				param.DefaultValue = ReadString(dict, "defaultValue");
+				param.DefaultValue = dict.TryGetValue("defaultValue", out object? defaultObj)
+					&& defaultObj is Dictionary<object, object> defaultDict
+					&& defaultDict.Count > 0
+					? DeserializeNode(defaultDict.First().Key.ToString() ?? string.Empty, defaultDict.First().Value) as Expression
+					: Parameter.ParseDefaultValue(ReadString(dict, "defaultValue"));
 			}
 
 			// Parse metadata if present

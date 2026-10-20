@@ -34,7 +34,7 @@ functionDeclaration:
     - name: "include_debug"
       type: "bool"
       isOptional: true
-      defaultValue: "False"
+      defaultValue: false
   body:
     - returnStatement:
         leaf:
