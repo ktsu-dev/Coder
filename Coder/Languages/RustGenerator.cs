@@ -595,9 +595,14 @@ public class RustGenerator : StandardLanguageGenerator
 		// besides C# that has a word for it rather than a comment about it. Clone is the copy,
 		// PartialEq the comparison, Debug the readable form. Written last of the lines above the
 		// struct, so that it sits against the item it applies to rather than behind the notes.
+		// A record that declares its own == already implements PartialEq, and a second
+		// implementation does not compile (E0119), so the declared one is what it compares by.
 		if (classDecl.IsRecord)
 		{
-			code.WriteLine("#[derive(Clone, Debug, PartialEq)]");
+			bool declaresEquality = classDecl.Members
+				.OfType<FunctionDeclaration>()
+				.Any(function => function.Kind == FunctionKind.Operator && function.Name == "==");
+			code.WriteLine(declaresEquality ? "#[derive(Clone, Debug)]" : "#[derive(Clone, Debug, PartialEq)]");
 		}
 
 		code.Write($"{SpellVisibilityOf(classDecl)}struct {name}{SpellParameterDeclarations(classDecl.TypeParameters)} ");

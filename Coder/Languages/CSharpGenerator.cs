@@ -457,7 +457,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 			// An operand with no name, which a half-edited document holds, leaves the partner nothing
 			// to refer to.
 			if (partnerDeclared || declared.Definition != FunctionDefinition.Provided || declared.IsAbstract
-				|| string.IsNullOrWhiteSpace(operand.Name))
+				|| string.IsNullOrWhiteSpace(operand.Name) || RecordSynthesises(declared, classDecl))
 			{
 				continue;
 			}
@@ -469,7 +469,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 			{
 				answer = new UnaryExpression(UnaryOperator.LogicalNot, new BinaryExpression(self, op, other));
 			}
-			else if (operand.Type?.Name == classDecl.Name && operand.Type?.TypeArguments.Count == classDecl.TypeParameters.Count)
+			else if (IsTheType(operand.Type, classDecl))
 			{
 				answer = new BinaryExpression(other, op, self);
 			}
@@ -1332,6 +1332,14 @@ public class CSharpGenerator : LanguageGeneratorBase
 			WriteInexpressible(code, $"readonly: {name} does not modify its instance");
 		}
 
+		// A record already has == and != against itself, compiled from every field, so declaring
+		// either again is a second member with the same signature (CS0111).
+		if (enclosingType is not null && RecordSynthesises(function, enclosingType))
+		{
+			WriteInexpressible(code, $"{name} is synthesised by the record, which compares every field.");
+			return false;
+		}
+
 		// C++ lets a member operator be private, protected or virtual; a C# operator is public and
 		// static and nothing else, so what it asked for is written down rather than lost.
 		if (IsOperator(function))
@@ -1350,6 +1358,32 @@ public class CSharpGenerator : LanguageGeneratorBase
 
 		return true;
 	}
+
+	/// <summary>
+	/// Gets whether a declaration is an equality operator a C# record already declares.
+	/// </summary>
+	/// <param name="function">The declaration being emitted.</param>
+	/// <param name="enclosingType">The type it belongs to.</param>
+	/// <returns>True for <c>==</c> or <c>!=</c> comparing a record with itself.</returns>
+	/// <remarks>
+	/// One compared against another type is not synthesised, so it is still declared, and still
+	/// given its partner.
+	/// </remarks>
+	private static bool RecordSynthesises(FunctionDeclaration function, ClassDeclaration enclosingType) =>
+		enclosingType.IsRecord
+		&& function.Kind == FunctionKind.Operator
+		&& function.Name is "==" or "!="
+		&& function.Parameters.Count == 1
+		&& IsTheType(function.Parameters[0].Type, enclosingType);
+
+	/// <summary>
+	/// Gets whether a type reference names the type being declared.
+	/// </summary>
+	/// <param name="type">The reference.</param>
+	/// <param name="classDecl">The type being declared.</param>
+	/// <returns>True when the name matches and the arguments are as many as its parameters.</returns>
+	private static bool IsTheType(TypeReference? type, ClassDeclaration classDecl) =>
+		type is not null && type.Name == classDecl.Name && type.TypeArguments.Count == classDecl.TypeParameters.Count;
 
 	/// <summary>
 	/// Gets whether a declaration is one C# requires to be <c>public static</c>.
