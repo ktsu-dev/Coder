@@ -184,6 +184,54 @@ public class GoGeneratedSourceCompilesTests
 	}
 
 	/// <summary>
+	/// Tests that an interface taken by reference or by pointer is passed as the interface itself,
+	/// and that a call through it reaches the implementation when run.
+	/// </summary>
+	/// <remarks>
+	/// The method set of a pointer to an interface is empty, so <c>s *Shape</c> made <c>s.Area()</c>
+	/// an error, and no implementer converts to one either (issue #298).
+	/// </remarks>
+	[TestMethod]
+	public void InterfaceParameters_AreCalledThroughWhenRun()
+	{
+		if (ToolchainHarness.FindOnPath("version", "go") is null)
+		{
+			Assert.Inconclusive("No Go toolchain on the path, so nothing was compiled.");
+			return;
+		}
+
+		SourceFile file = CompiledExemplar.Measured();
+		file.Members.Add(CompiledExemplar.Measures("measurePointer", "Shape*"));
+
+		const string driver = """
+			package main
+
+			import "fmt"
+
+			func main() {
+				square := Square{side: 2}
+				fmt.Println(measure(square), measureMutable(square), measurePointer(square))
+			}
+
+			""";
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			File.WriteAllText(Path.Combine(directory, "go.mod"), Module);
+			File.WriteAllText(Path.Combine(directory, "driver.go"), driver);
+			File.WriteAllText(Path.Combine(directory, "measured.go"), new GoGenerator().Generate(file));
+
+			(int exitCode, string output) = ToolchainHarness.Run("go", "run .", directory);
+			Assert.AreEqual(0, exitCode, $"go rejected the generated source:{Environment.NewLine}{output}");
+			Assert.AreEqual("4 4 4", output.Trim());
+
+			(int formatted, string differs) = ToolchainHarness.Run("gofmt", "-l measured.go", directory);
+			Assert.AreEqual(0, formatted, $"gofmt did not run:{Environment.NewLine}{differs}");
+			Assert.AreEqual(string.Empty, differs.Trim(), "gofmt would rewrite the generated source.");
+		});
+	}
+
+	/// <summary>
 	/// Tests that a negative-zero literal keeps its sign in a returned value, a typed local and a
 	/// package-level constant, by running the generated code rather than reading it.
 	/// </summary>

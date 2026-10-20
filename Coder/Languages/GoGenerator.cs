@@ -2259,10 +2259,22 @@ public class GoGenerator : StandardLanguageGenerator
 	/// pointer is — except where the type is already a view of something else. A string, a slice and
 	/// a map each hold a pointer already, so a pointer to one is a pointer to a pointer and nobody
 	/// means that.
+	/// <para>
+	/// An interface is a view too, and the costliest one to miss: it already holds a pointer to
+	/// whatever implements it, and the method set of a pointer to an interface is empty, so a
+	/// parameter spelled <c>*Shape</c> compiles and then cannot be called through (#298). A type
+	/// naming an interface declared in the file therefore drops its indirection whichever one it
+	/// asked for.
+	/// </para>
 	/// </remarks>
 	private string SpellType(TypeReference type)
 	{
 		string core = SpellCoreType(type);
+
+		if (!type.IsArray && NamesInterface(type))
+		{
+			return core;
+		}
 
 		return type.Indirection switch
 		{
@@ -2271,6 +2283,16 @@ public class GoGenerator : StandardLanguageGenerator
 			_ => core,
 		};
 	}
+
+	/// <summary>
+	/// Reports whether a type names an interface declared in what is being generated.
+	/// </summary>
+	/// <param name="type">The type to look up.</param>
+	/// <returns>True when the name is an interface's.</returns>
+	private bool NamesInterface(TypeReference type) =>
+		GenerationRoot is not null && SelfAndDescendants(GenerationRoot)
+			.OfType<ClassDeclaration>()
+			.Any(declared => declared.Kind == TypeDeclarationKind.Interface && declared.Name == type.Name);
 
 	/// <summary>
 	/// Reports whether a type is already a view of what it holds.
