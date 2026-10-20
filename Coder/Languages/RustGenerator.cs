@@ -1615,10 +1615,7 @@ public class RustGenerator : StandardLanguageGenerator
 		code.Write($"{parameter.Name ?? $"param{position}"}: ");
 		code.Write(SpellType(parameter.Type ?? new TypeReference(UnknownTypeName)));
 
-		if (parameter.IsOptional && !string.IsNullOrEmpty(parameter.DefaultValue))
-		{
-			code.Write($" /* = {parameter.DefaultValue} */");
-		}
+		AppendDefaultValueComment(parameter, code);
 	}
 
 	/// <inheritdoc/>

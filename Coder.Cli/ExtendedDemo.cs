@@ -95,7 +95,7 @@ public static class ExtendedDemo
 		function.Parameters.Add(new Parameter("principal", "double"));
 		function.Parameters.Add(new Parameter("rate", "double"));
 		function.Parameters.Add(new Parameter("time", "int"));
-		function.Parameters.Add(new Parameter("compound", "int") { IsOptional = true, DefaultValue = "1" });
+		function.Parameters.Add(new Parameter("compound", "int") { IsOptional = true, DefaultValue = Literal.Number(1) });
 
 		// Create complex expression: principal * (1 + rate/compound)^(compound*time)
 		// For demo, we'll create a simpler version: principal * (1 + rate * time)

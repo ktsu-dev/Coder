@@ -58,7 +58,7 @@ internal static class CompiledExemplar
 
 		FunctionDeclaration create = new("Point") { Kind = FunctionKind.Constructor };
 		create.Parameters.Add(new Parameter("x", "int"));
-		create.Parameters.Add(new Parameter("y", "int") { IsOptional = true, DefaultValue = "0" });
+		create.Parameters.Add(new Parameter("y", "int") { IsOptional = true, DefaultValue = Literal.Number(0) });
 		create.Initialisers.Add(new MemberInitialiser("x") { Value = new VariableReference("x") });
 		create.Initialisers.Add(new MemberInitialiser("y") { Value = new VariableReference("y") });
 		point.Members.Add(create);

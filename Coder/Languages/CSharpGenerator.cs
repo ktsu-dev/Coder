@@ -1597,13 +1597,14 @@ public class CSharpGenerator : LanguageGeneratorBase
 		};
 	}
 
-	private static void GenerateParameter(Parameter parameter, CodeBlocker code)
+	private void GenerateParameter(Parameter parameter, CodeBlocker code)
 	{
 		code.Write($"{MapToCSType(parameter.Type ?? new TypeReference(UnknownTypeName))} {parameter.Name}");
 
-		if (parameter.IsOptional && !string.IsNullOrEmpty(parameter.DefaultValue))
+		if (parameter.IsOptional && parameter.DefaultValue is Expression value)
 		{
-			code.Write($" = {parameter.DefaultValue}");
+			code.Write(" = ");
+			GenerateInternal(value, code);
 		}
 	}
 
