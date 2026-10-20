@@ -306,6 +306,11 @@ public class CSharpGenerator : LanguageGeneratorBase
 		memberAliasesHoisted = true;
 		try
 		{
+			if (NeedsParameterlessConstructor(classDecl))
+			{
+				GenerateFunction(new FunctionDeclaration(classDecl.Name ?? "UnnamedClass") { Kind = FunctionKind.Constructor, Visibility = Visibility.Public }, code, classDecl);
+			}
+
 			foreach (AstNode member in classDecl.Members)
 			{
 				if (member is FunctionDeclaration method)
@@ -1008,6 +1013,41 @@ public class CSharpGenerator : LanguageGeneratorBase
 	}
 
 	/// <summary>
+	/// Whether a struct needs a constructor written for it that the AST does not declare.
+	/// </summary>
+	/// <param name="classDecl">The declaration being emitted.</param>
+	/// <returns><see langword="true"/> for a struct whose instance members start at a value and which declares no constructor C# will see.</returns>
+	/// <remarks>
+	/// C# 10 lets a struct's fields start at a value, but only in a struct that declares a constructor
+	/// (CS8983), because <c>default(T)</c> never runs an initializer and the language wants a
+	/// constructor that does. An empty parameterless one is the smallest declaration it accepts, and
+	/// <c>new T()</c> through it still starts every field where the AST said. A static or constant
+	/// member is not an instance's and does not count, and neither does a deleted constructor, which is
+	/// written as a note rather than a declaration.
+	/// </remarks>
+	private static bool NeedsParameterlessConstructor(ClassDeclaration classDecl) =>
+		classDecl.Kind == TypeDeclarationKind.Struct
+		&& !classDecl.Members.OfType<FunctionDeclaration>().Any(function =>
+			function.Kind == FunctionKind.Constructor && function.Definition != FunctionDefinition.Deleted)
+		&& classDecl.Members.Any(member => member switch
+		{
+			FieldDeclaration field => field.InitialValue is not null && !field.IsStatic && !field.IsConstant,
+			VariableDeclaration variable => variable.InitialValue is not null && !IsWrittenAsConst(variable),
+			_ => false,
+		});
+
+	/// <summary>
+	/// Whether a variable is written as a C# <c>const</c>, which belongs to the type rather than to an instance.
+	/// </summary>
+	/// <param name="varDecl">The declaration being considered.</param>
+	/// <returns><see langword="true"/> when <see cref="GenerateVariableDeclaration"/> writes it with <c>const</c>.</returns>
+	private static bool IsWrittenAsConst(VariableDeclaration varDecl) =>
+		varDecl.IsConstant
+		&& !varDecl.IsTypeInferred
+		&& varDecl.Type is not null
+		&& IsCompileTimeValue(varDecl.InitialValue);
+
+	/// <summary>
 	/// Emits a function.
 	/// </summary>
 	/// <param name="function">The function to emit.</param>
@@ -1488,9 +1528,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 		// A C# constant must name its type and hold a compile-time value, so an inferred one, or one
 		// computed from a parameter or a call, stays a plain declaration rather than becoming source
 		// that does not compile. C# has no readonly local to say the rest with.
-		bool isConst = varDecl.IsConstant
-			&& !string.Equals(type, "var", StringComparison.Ordinal)
-			&& IsCompileTimeValue(varDecl.InitialValue);
+		bool isConst = IsWrittenAsConst(varDecl);
 		if (isConst)
 		{
 			code.Write("const ");
