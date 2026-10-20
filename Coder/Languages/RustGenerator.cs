@@ -1096,6 +1096,9 @@ public class RustGenerator : StandardLanguageGenerator
 
 		using Scope body = new(code);
 
+		// The parameters' and locals' types are what says where a number has to be widened.
+		using IDisposable types = OpenStaticTypeScope(funcDecl);
+
 		if (funcDecl.Kind == FunctionKind.Constructor)
 		{
 			WriteConstructorBody(funcDecl, code);
@@ -1165,12 +1168,57 @@ public class RustGenerator : StandardLanguageGenerator
 			code.Write("String::from(");
 		}
 
-		GenerateInternal(value, code);
+		GenerateWidenedTo(value, target, code);
 
 		if (owned)
 		{
 			code.Write(")");
 		}
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// Rust converts no number to another on its own, so <c>a + b</c> on an <c>i64</c> and an
+	/// <c>i32</c>, or <c>x * 2</c> on an <c>f64</c>, does not compile (#238).
+	/// </remarks>
+	protected override bool WidensNumbersExplicitly => true;
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// <c>as</c>, parenthesised because it binds tighter than any operator around it. An integer
+	/// literal is left to inference where the receiving type is an integer, and written as a
+	/// floating literal where it is a floating one, so <c>x * 2</c> is <c>x * 2.0</c>.
+	/// </remarks>
+	protected override void WriteWidened(Expression value, TypeReference wider, CodeBlocker code)
+	{
+		Ensure.NotNull(value);
+		Ensure.NotNull(wider);
+		Ensure.NotNull(code);
+
+		long? integer = value switch
+		{
+			LiteralExpression<int> literal => literal.Value,
+			LiteralExpression<long> literal => literal.Value,
+			_ => null,
+		};
+
+		if (integer is long whole)
+		{
+			if (IsFloatingType(wider))
+			{
+				code.Write(FormatDouble(whole));
+			}
+			else
+			{
+				GenerateInternal(value, code);
+			}
+
+			return;
+		}
+
+		code.Write("(");
+		GenerateInternal(value, code);
+		code.Write($" as {SpellType(wider)})");
 	}
 
 	/// <inheritdoc/>
@@ -1629,6 +1677,7 @@ public class RustGenerator : StandardLanguageGenerator
 		Ensure.NotNull(varDecl);
 		Ensure.NotNull(code);
 
+		RegisterStaticType(varDecl);
 		code.Write(varDecl.IsConstant ? "let " : "let mut ");
 		code.Write(EscapeIdentifier(varDecl.Name));
 

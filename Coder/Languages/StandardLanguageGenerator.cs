@@ -465,7 +465,7 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 					}
 				}
 
-				return null;
+				return DeclaredMemberType(reference.Name);
 			default:
 				return null;
 		}
@@ -494,7 +494,14 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	/// resolved: an overload or a namesake elsewhere could return something else, and a callee
 	/// declared outside the tree says nothing here, so both keep the type unknown.
 	/// </remarks>
-	private TypeReference? DeclaredReturnType(string callee)
+	private TypeReference? DeclaredReturnType(string callee) => DeclaredFunction(callee)?.ReturnType;
+
+	/// <summary>
+	/// Finds the one function a receiver-less call can name.
+	/// </summary>
+	/// <param name="callee">The name the call is written with.</param>
+	/// <returns>The function, or null when no function or more than one has the name.</returns>
+	private FunctionDeclaration? DeclaredFunction(string callee)
 	{
 		if (GenerationRoot is null || string.IsNullOrEmpty(callee))
 		{
@@ -505,7 +512,65 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 			.OfType<FunctionDeclaration>()
 			.Where(function => function.Name == callee)
 			.Take(2)];
-		return matches.Length == 1 ? matches[0].ReturnType : null;
+		return matches.Length == 1 ? matches[0] : null;
+	}
+
+	/// <summary>
+	/// Reads the declared type of the parameter a call's argument is passed as.
+	/// </summary>
+	/// <param name="call">The call.</param>
+	/// <param name="index">The argument's position.</param>
+	/// <returns>
+	/// The parameter's type, or null when the call does not name exactly one declared function or
+	/// method, or that function has no parameter at the position.
+	/// </returns>
+	private TypeReference? DeclaredParameterType(CallExpression call, int index)
+	{
+		FunctionDeclaration? function = call.Receiver is Expression receiver
+			? DeclaredMethod(StaticType(receiver), call.Callee)
+			: DeclaredFunction(call.Callee);
+		return function is not null && index < function.Parameters.Count
+			? function.Parameters[index].Type
+			: null;
+	}
+
+	/// <summary>
+	/// Reads the declared type of the one field or member variable a name no function scope declares
+	/// can mean.
+	/// </summary>
+	/// <param name="name">The name the reference is written with.</param>
+	/// <returns>The member's declared type, or null when no member or more than one has the name.</returns>
+	/// <remarks>
+	/// A file-scope <c>int</c> constant read by a function was otherwise of unknown type, so
+	/// <c>LIMIT / 2</c> was true division in Python and JavaScript, and C typed a local copied from it
+	/// <c>void*</c> (#304). Only a <see cref="FieldDeclaration"/>, or a <see cref="VariableDeclaration"/>
+	/// declared as a member of a file, namespace or type rather than in a body, is a candidate, and only
+	/// a name exactly one of them has is resolved, the same rule <see cref="DeclaredReturnType"/> keeps.
+	/// A parameter or local of the name is found in the scopes first and so still wins.
+	/// </remarks>
+	private TypeReference? DeclaredMemberType(string name)
+	{
+		if (GenerationRoot is null || string.IsNullOrEmpty(name))
+		{
+			return null;
+		}
+
+		IEnumerable<AstNode> containers = SelfAndDescendants(GenerationRoot);
+		IEnumerable<VariableDeclaration> memberVariables = containers.SelectMany(node => node switch
+		{
+			SourceFile file => file.Members,
+			NamespaceDeclaration space => space.Members,
+			ClassDeclaration type => type.Members,
+			_ => Enumerable.Empty<AstNode>(),
+		}).OfType<VariableDeclaration>();
+
+		TypeReference?[] matches = [.. SelfAndDescendants(GenerationRoot)
+			.OfType<FieldDeclaration>()
+			.Where(field => field.Name == name)
+			.Select(field => field.Type)
+			.Concat(memberVariables.Where(variable => variable.Name == name).Select(variable => variable.Type))
+			.Take(2)];
+		return matches.Length == 1 ? matches[0] : null;
 	}
 
 	/// <summary>
@@ -523,7 +588,16 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	/// own members are looked at: a method it inherits, an overload, or a class declared outside the
 	/// tree could return something else, so each keeps the type unknown.
 	/// </remarks>
-	private TypeReference? DeclaredMethodReturnType(TypeReference? receiverType, string callee)
+	private TypeReference? DeclaredMethodReturnType(TypeReference? receiverType, string callee) =>
+		DeclaredMethod(receiverType, callee)?.ReturnType;
+
+	/// <summary>
+	/// Finds the one method a call on a receiver of a known type can name.
+	/// </summary>
+	/// <param name="receiverType">The receiver's type, or null when it is unknown.</param>
+	/// <param name="callee">The name the call is written with.</param>
+	/// <returns>The method, or null where <see cref="DeclaredMethodReturnType"/> knows no type.</returns>
+	private FunctionDeclaration? DeclaredMethod(TypeReference? receiverType, string callee)
 	{
 		if (GenerationRoot is null || receiverType is null or { IsArray: true } || string.IsNullOrEmpty(callee))
 		{
@@ -543,7 +617,7 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 			.OfType<FunctionDeclaration>()
 			.Where(function => function.Name == callee)
 			.Take(2)];
-		return matches.Length == 1 ? matches[0].ReturnType : null;
+		return matches.Length == 1 ? matches[0] : null;
 	}
 
 	/// <summary>
@@ -575,6 +649,74 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	/// <returns>Its position, or -1 when it is not a plain numeric type.</returns>
 	private static int NumericRank(TypeReference? type) =>
 		type is null ? -1 : Array.IndexOf(NumericPromotionOrder, type.ToString());
+
+	/// <summary>
+	/// Gets whether the target refuses to widen a number implicitly, so a narrower value meeting a
+	/// wider type has to be converted in the source.
+	/// </summary>
+	/// <remarks>
+	/// The AST follows the C family, where an <c>int</c> beside a <c>long</c> or a <c>double</c> is
+	/// widened, and an <c>int</c> can be assigned, returned or passed as either. Rust and Go convert
+	/// nothing between numeric types, so <c>a + b</c> on an <c>i64</c> and an <c>i32</c> does not
+	/// compile there (#238). Those two override this and <see cref="WriteWidened"/>.
+	/// </remarks>
+	protected virtual bool WidensNumbersExplicitly => false;
+
+	/// <summary>
+	/// Writes a value converted to a wider numeric type, for a target that does not widen implicitly.
+	/// </summary>
+	/// <param name="value">The value to write.</param>
+	/// <param name="wider">The wider type it meets.</param>
+	/// <param name="code">The writer to emit into.</param>
+	protected virtual void WriteWidened(Expression value, TypeReference wider, CodeBlocker code) => GenerateInternal(value, code);
+
+	/// <summary>
+	/// Writes a value where a type receives it, converting it first when it is a narrower number the
+	/// target does not widen on its own.
+	/// </summary>
+	/// <param name="value">The value to write.</param>
+	/// <param name="target">The type receiving it, or null where none is known.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// Only widening is converted. Narrowing is never implicit in the AST, so a value whose type is
+	/// unknown, not numeric, or already as wide is written as it is.
+	/// </remarks>
+	protected void GenerateWidenedTo(AstNode value, TypeReference? target, CodeBlocker code)
+	{
+		Ensure.NotNull(value);
+		if (WidensNumbersExplicitly
+			&& value is Expression expression
+			&& target is not null
+			&& StaticType(expression) is TypeReference from
+			&& IsWidening(from, target))
+		{
+			WriteWidened(expression, target, code);
+			return;
+		}
+
+		GenerateInternal(value, code);
+	}
+
+	/// <summary>
+	/// Reports whether a value of one numeric type is widened by meeting another.
+	/// </summary>
+	/// <param name="from">The value's type.</param>
+	/// <param name="to">The type it meets.</param>
+	/// <returns>True when <paramref name="to"/> is the wider of the two.</returns>
+	private static bool IsWidening(TypeReference from, TypeReference to)
+	{
+		int fromRank = NumericRank(from);
+		return (fromRank >= 0 && NumericRank(to) > fromRank)
+			|| (IsIntegerType(from) && FloatingTypeName(to) is not null);
+	}
+
+	/// <summary>
+	/// Reports whether a target type is a floating-point one, for the targets that write an integer
+	/// literal meeting it as a floating literal.
+	/// </summary>
+	/// <param name="type">The type to inspect.</param>
+	/// <returns>True for <c>float</c> and <c>double</c>.</returns>
+	protected static bool IsFloatingType(TypeReference? type) => FloatingTypeName(type) is not null;
 
 	private sealed record StaticTypeScope(Dictionary<string, TypeReference> Types, TypeReference? ReturnType);
 
@@ -1379,11 +1521,28 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	protected virtual void GenerateBinary(BinaryExpression binary, CodeBlocker code)
 	{
 		Ensure.NotNull(binary);
+		Ensure.NotNull(code);
 		if (SpellsFloatingRemainderAsCall
 			&& binary.Operator == BinaryOperator.Modulo
 			&& FloatingRemainderType(binary.Left, binary.Right) is string floatingType)
 		{
 			WriteFloatingRemainder(binary.Left, binary.Right, floatingType, code);
+			return;
+		}
+
+		// The operands meet at the wider of their types, which a target that widens nothing on its own
+		// has to be told. A shift's count is not an operand of that kind, and a logical operator's
+		// operands are booleans.
+		if (WidensNumbersExplicitly
+			&& binary.Operator is not (BinaryOperator.LeftShift or BinaryOperator.RightShift
+				or BinaryOperator.LogicalAnd or BinaryOperator.LogicalOr))
+		{
+			TypeReference? common = Promoted(StaticType(binary.Left), StaticType(binary.Right));
+			code.Write("(");
+			GenerateWidenedTo(binary.Left, common, code);
+			code.Write($" {GetOperatorSpelling(binary.Operator)} ");
+			GenerateWidenedTo(binary.Right, common, code);
+			code.Write(")");
 			return;
 		}
 
@@ -1411,7 +1570,49 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 			return;
 		}
 
+		if (WidensNumbersExplicitly
+			&& assignment.Operator is not (AssignmentOperator.LeftShiftAssign or AssignmentOperator.RightShiftAssign)
+			&& StaticType(assignment.Target) is TypeReference targetType)
+		{
+			GenerateInternal(assignment.Target, code);
+			code.Write($" {GetAssignmentOperator(assignment.Operator)} ");
+			GenerateWidenedTo(assignment.Value, targetType, code);
+			EndStatement(code);
+			return;
+		}
+
 		base.GenerateAssignmentStatement(assignment, code);
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// The value is widened to the function's return type where the target does not do it implicitly.
+	/// </remarks>
+	protected override void GenerateReturnStatement(ReturnStatement returnStmt, CodeBlocker code)
+	{
+		Ensure.NotNull(returnStmt);
+		Ensure.NotNull(code);
+
+		if (!WidensNumbersExplicitly || returnStmt.Expression is null)
+		{
+			base.GenerateReturnStatement(returnStmt, code);
+			return;
+		}
+
+		code.Write("return ");
+		GenerateWidenedTo(returnStmt.Expression, StaticType(returnStmt), code);
+		EndStatement(code);
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// An argument is widened to its parameter's type where the target does not do it implicitly and
+	/// the call names exactly one function declared in what is being generated.
+	/// </remarks>
+	protected override void GenerateArgument(CallExpression callExpr, int index, CodeBlocker code)
+	{
+		Ensure.NotNull(callExpr);
+		GenerateWidenedTo(callExpr.Arguments[index], WidensNumbersExplicitly ? DeclaredParameterType(callExpr, index) : null, code);
 	}
 
 	/// <summary>

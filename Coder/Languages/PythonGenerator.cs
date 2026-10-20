@@ -501,6 +501,9 @@ public class PythonGenerator : StandardLanguageGenerator
 		using IDisposable types = OpenStaticTypeScope(funcDecl);
 		WritePreamble(funcDecl, code, PreambleSite.Function);
 
+		// The same reason a class's parameters are written down: TypeVar needs an import.
+		WriteTypeParametersDown(funcDecl.TypeParameters, code);
+
 		// Function signature
 		code.Write($"def {funcDecl.Name ?? "unnamed_function"}(");
 		GenerateParameterList(funcDecl.Parameters, code);
@@ -663,6 +666,7 @@ public class PythonGenerator : StandardLanguageGenerator
 	{
 		using IDisposable types = OpenStaticTypeScope(method);
 		WritePreamble(method, code, PreambleSite.Method);
+		WriteTypeParametersDown(method.TypeParameters, code);
 
 		if (method.Definition != FunctionDefinition.Provided)
 		{

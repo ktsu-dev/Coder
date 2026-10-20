@@ -244,11 +244,15 @@ public class CGenerator : CFamilyGenerator
 		if (funcDecl.Definition == FunctionDefinition.Deleted)
 		{
 			WritePreamble(funcDecl, code, enclosingType is null ? PreambleSite.Function : PreambleSite.Method);
+			WriteTypeParametersDown(funcDecl.TypeParameters, code);
 			WriteInexpressible(code, $"{SpellFunctionName(funcDecl, enclosingType)} is deleted: C cannot refuse a call");
 			return;
 		}
 
 		WritePreamble(funcDecl, code, enclosingType is null ? PreambleSite.Function : PreambleSite.Method);
+
+		// C has no generics, so what a function is written over is written down, as for a type.
+		WriteTypeParametersDown(funcDecl.TypeParameters, code);
 
 		// Internal linkage is the only privacy C has, and it is what a private function wants: the
 		// declaration is visible to this translation unit and to nothing else.
@@ -778,6 +782,7 @@ public class CGenerator : CFamilyGenerator
 	private void GenerateFunctionPointer(FunctionDeclaration funcDecl, CodeBlocker code)
 	{
 		WritePreamble(funcDecl, code, PreambleSite.Function);
+		WriteTypeParametersDown(funcDecl.TypeParameters, code);
 
 		List<Parameter> parameters = [];
 		if (!funcDecl.IsStatic)
