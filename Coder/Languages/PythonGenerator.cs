@@ -266,7 +266,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		Ensure.NotNull(file);
 		if (ContainsEnum(file.Members))
 		{
-			yield return "from enum import Enum";
+			yield return "from enum import IntEnum";
 		}
 
 		if (ContainsFloatingRemainder(file))
@@ -429,10 +429,15 @@ public class PythonGenerator : StandardLanguageGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
-	/// Python has no enumeration syntax; <c>enum.Enum</c> is a class. A member with no value of its
+	/// Python has no enumeration syntax; <c>enum.IntEnum</c> is a class. A member with no value of its
 	/// own is one more than the member before it, matching what a language with real enumerations
-	/// would give it; see <see cref="LanguageGeneratorBase.EnumMemberValues"/>. The <c>from enum import Enum</c> this needs belongs to the file rather than to the
-	/// declaration.
+	/// would give it; see <see cref="LanguageGeneratorBase.EnumMemberValues"/>. The
+	/// <c>from enum import IntEnum</c> this needs belongs to the file rather than to the declaration.
+	/// <para>
+	/// <c>IntEnum</c> rather than <c>Enum</c>, because every other target orders an enumeration's
+	/// values by their numbers, and a plain <c>Enum</c> member defines no ordering at all:
+	/// <c>a &lt; b</c> raises <c>TypeError</c> at run time.
+	/// </para>
 	/// </remarks>
 	protected override void GenerateEnumDeclaration(EnumDeclaration enumDecl, CodeBlocker code)
 	{
@@ -440,7 +445,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		Ensure.NotNull(code);
 
 		WritePreamble(enumDecl, code, PreambleSite.Enum);
-		code.WriteLine($"class {enumDecl.Name ?? "UnnamedEnum"}(Enum):");
+		code.WriteLine($"class {enumDecl.Name ?? "UnnamedEnum"}(IntEnum):");
 
 		using IndentScope body = new(code);
 		if (enumDecl.Members.Count == 0)

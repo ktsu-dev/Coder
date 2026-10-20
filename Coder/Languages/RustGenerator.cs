@@ -1686,7 +1686,10 @@ public class RustGenerator : StandardLanguageGenerator
 	/// Every enumeration derives the traits a value of it needs to be compared, copied and printed.
 	/// The reason a plain struct derives nothing, that one of its fields might not implement them,
 	/// cannot apply to a fieldless enumeration, and without them <c>a == b</c> is E0369, a record
-	/// holding one is E0277, and reading one out of <c>&amp;self</c> is E0507.
+	/// holding one is E0277, and reading one out of <c>&amp;self</c> is E0507. <c>PartialOrd</c> and
+	/// <c>Ord</c> are among them because every other target orders an enumeration's values, and a
+	/// derived ordering on a fieldless enumeration compares discriminants, which is the same order;
+	/// without them <c>a &lt; b</c> is E0369 too.
 	/// </para>
 	/// </remarks>
 	protected override void GenerateEnumDeclaration(EnumDeclaration enumDecl, CodeBlocker code)
@@ -1702,7 +1705,7 @@ public class RustGenerator : StandardLanguageGenerator
 		}
 
 		string name = enumDecl.Name ?? "UnnamedEnum";
-		code.WriteLine("#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]");
+		code.WriteLine("#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]");
 		code.Write($"{SpellVisibilityOf(enumDecl)}enum {name} ");
 
 		// A variant is not a value in a discriminant, so one naming another is cast to the
