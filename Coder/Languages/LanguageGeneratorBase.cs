@@ -154,7 +154,7 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 		switch (node)
 		{
 			case VariableReference varRef:
-				code.Write(varRef.Name);
+				code.Write(EscapeReference(varRef.Name));
 				return true;
 
 			case LiteralExpression<string> stringLit:
@@ -1102,6 +1102,76 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// </remarks>
 	protected static Visibility VisibilityOf(AstNode node) =>
 		node is IHasVisibility declaration ? declaration.Visibility : Visibility.Unspecified;
+
+	/// <summary>
+	/// Gets the words the target language reserves, which no declared name may be spelled as.
+	/// </summary>
+	/// <remarks>
+	/// The AST is language-neutral, so a name that is ordinary in one target is a keyword in another:
+	/// a property called <c>Type</c> becomes a getter <c>type</c> in snake case, which Rust reserves,
+	/// and one called <c>Default</c> becomes <c>default</c>, which C++ does. Empty by default, so a
+	/// generator that declares nothing escapes nothing.
+	/// </remarks>
+	protected virtual IReadOnlySet<string> ReservedWords { get; } = new HashSet<string>(StringComparer.Ordinal);
+
+	/// <summary>
+	/// Spells a declared name so the target does not read it as one of its own keywords.
+	/// </summary>
+	/// <param name="name">The name as the AST holds it.</param>
+	/// <returns>The name unchanged, or escaped when it is one of <see cref="ReservedWords"/>.</returns>
+	/// <remarks>
+	/// Appends an underscore, which is the only escape most targets have: <c>default</c> becomes
+	/// <c>default_</c>. A target with a real escape — Rust's raw identifiers — overrides this. Every
+	/// site that writes a name, at its declaration and wherever it is used, goes through here or
+	/// through <see cref="EscapeReference"/>, so the two cannot come out spelled differently.
+	/// </remarks>
+	protected virtual string EscapeIdentifier(string name)
+	{
+		Ensure.NotNull(name);
+		return ReservedWords.Contains(name) ? $"{name}_" : name;
+	}
+
+	/// <summary>
+	/// Tells whether a word leading a reference means what the language means by it.
+	/// </summary>
+	/// <param name="word">The first dotted segment of a <see cref="VariableReference"/>.</param>
+	/// <returns>True when the word is left as written there; false when it is escaped like any other name.</returns>
+	/// <remarks>
+	/// A reference is text, and <c>self.x</c> or <c>this</c> names the receiver rather than something
+	/// the AST declared. Such a word is a keyword, but escaping it would break the reference.
+	/// </remarks>
+	protected virtual bool IsReceiverWord(string word) => false;
+
+	/// <summary>
+	/// Spells a reference so any segment naming a declared member escapes as its declaration did.
+	/// </summary>
+	/// <param name="reference">The reference's text, possibly a dotted member access such as <c>self.type</c>.</param>
+	/// <returns>The reference with each reserved segment escaped.</returns>
+	/// <remarks>
+	/// Only a segment that is exactly a reserved word changes. Anything else — a call such as
+	/// <c>args.len()</c>, an index such as <c>steps[0]</c>, a path such as <c>Self::CAPACITY</c> — is
+	/// written as given, since a reference is text and only its plain names are the AST's.
+	/// </remarks>
+	protected string EscapeReference(string reference)
+	{
+		Ensure.NotNull(reference);
+
+		if (ReservedWords.Count == 0)
+		{
+			return reference;
+		}
+
+		string[] segments = reference.Split('.');
+		for (int i = 0; i < segments.Length; i++)
+		{
+			if (ReservedWords.Contains(segments[i]) && !(i == 0 && IsReceiverWord(segments[i])))
+			{
+				segments[i] = EscapeIdentifier(segments[i]);
+			}
+		}
+
+		return string.Join(".", segments);
+	}
 
 	/// <summary>
 	/// Escapes a string literal's contents for a target language using C-style backslash escapes.

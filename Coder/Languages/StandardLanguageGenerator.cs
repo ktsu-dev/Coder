@@ -1239,7 +1239,7 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	{
 		if (argument is MemberInitialiser designated)
 		{
-			WriteDesignator(designated.Name ?? string.Empty, code);
+			WriteDesignator(EscapeIdentifier(designated.Name ?? string.Empty), code);
 			WriteListValue(designated.Value!, code);
 			return;
 		}
