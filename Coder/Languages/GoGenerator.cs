@@ -276,11 +276,25 @@ public class GoGenerator : StandardLanguageGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
-	/// The <c>math</c> package's functions, which <see cref="ImportGroups"/> imports for a file that
-	/// holds one.
+	/// Negative zero as well as NaN and the infinities. Go evaluates a constant expression exactly,
+	/// and exact arithmetic has no negative zero, so <c>-0.0</c> is positive zero in Go however it is
+	/// declared.
 	/// </remarks>
-	protected override string SpellNonFiniteDouble(double value) =>
-		double.IsNaN(value) ? "math.NaN()" : value > 0 ? "math.Inf(1)" : "math.Inf(-1)";
+	protected override bool IsSpelledByName(double value) => IsCalledFor(value);
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// The <c>math</c> package's functions, which <see cref="ImportGroups"/> imports for a file that
+	/// holds one. Negative zero is <c>math.Copysign(0, -1)</c>, the one way to reach it that is not
+	/// constant arithmetic.
+	/// </remarks>
+	protected override string SpellNonFiniteDouble(double value) => value switch
+	{
+		double.NaN => "math.NaN()",
+		double.PositiveInfinity => "math.Inf(1)",
+		double.NegativeInfinity => "math.Inf(-1)",
+		_ => "math.Copysign(0, -1)",
+	};
 
 	/// <inheritdoc/>
 	protected override bool SpellsFloatingRemainderAsCall => true;
@@ -458,7 +472,7 @@ public class GoGenerator : StandardLanguageGenerator
 			groups[0].Add(RuntimePackage);
 		}
 
-		if ((ContainsNonFiniteLiteral(file) || ContainsFloatingRemainder(file)) && !groups.Any(group => group.Contains(MathPackage)))
+		if ((SelfAndDescendants(file).Any(IsCall) || ContainsFloatingRemainder(file)) && !groups.Any(group => group.Contains(MathPackage)))
 		{
 			groups[0].Add(MathPackage);
 		}
@@ -1503,23 +1517,43 @@ public class GoGenerator : StandardLanguageGenerator
 	/// <param name="value">What it starts at.</param>
 	/// <returns>True when Go will hold it as a constant.</returns>
 	/// <remarks>
-	/// NaN and the infinities are the one kind of number that is not: Go has no constant spelling for
-	/// them, and <c>math.NaN()</c> and <c>math.Inf(1)</c> are calls, which a <c>const</c> cannot hold.
+	/// NaN, the infinities and negative zero are the numbers that are not: Go has no constant spelling
+	/// for them, and <c>math.NaN()</c>, <c>math.Inf(1)</c> and <c>math.Copysign(0, -1)</c> are calls,
+	/// which a <c>const</c> cannot hold.
 	/// </remarks>
 	private static bool IsConstant(bool wanted, AstNode? value) =>
-		wanted && IsCompileTimeValue(value) && !IsNonFinite(value);
+		wanted && IsCompileTimeValue(value) && !IsCall(value);
 
 	/// <summary>
-	/// Reports whether a value is a NaN or infinite floating-point literal.
+	/// Reports whether a value is a floating-point literal Go can only write as a <c>math</c> call.
 	/// </summary>
 	/// <param name="value">The value to test.</param>
 	/// <returns>True when it is.</returns>
-	private static bool IsNonFinite(AstNode? value) => value switch
+	private static bool IsCall(AstNode? value) => value switch
 	{
-		LiteralExpression<double> literal => !double.IsFinite(literal.Value),
-		LiteralExpression<float> literal => !float.IsFinite(literal.Value),
+		LiteralExpression<double> literal => IsCalledFor(literal.Value),
+		LiteralExpression<float> literal => IsCalledFor(literal.Value),
 		_ => false,
 	};
+
+	/// <summary>
+	/// Reports whether Go can only write a floating-point value as a <c>math</c> call.
+	/// </summary>
+	/// <param name="value">The value, widened to a double when it is a float.</param>
+	/// <returns>True when it is NaN, an infinity or negative zero.</returns>
+	private static bool IsCalledFor(double value) =>
+		!double.IsFinite(value) || IsNegativeZero(value);
+
+	/// <summary>
+	/// Reports whether a value is negative zero.
+	/// </summary>
+	/// <param name="value">The value to test.</param>
+	/// <returns>True when its bits are negative zero's.</returns>
+	/// <remarks>
+	/// Compared by bits, because <c>-0.0 == 0.0</c> is true and the sign is the whole point.
+	/// </remarks>
+	private static bool IsNegativeZero(double value) =>
+		BitConverter.DoubleToInt64Bits(value) == BitConverter.DoubleToInt64Bits(double.NegativeZero);
 
 	/// <summary>
 	/// Writes what a declaration starts at, giving a bare list the declaration's own type.

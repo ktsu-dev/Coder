@@ -170,11 +170,11 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 				return true;
 
 			case LiteralExpression<double> doubleLit:
-				code.Write(double.IsFinite(doubleLit.Value) ? FormatDouble(doubleLit.Value) : SpellNonFiniteDouble(doubleLit.Value));
+				code.Write(IsSpelledByName(doubleLit.Value) ? SpellNonFiniteDouble(doubleLit.Value) : FormatDouble(doubleLit.Value));
 				return true;
 
 			case LiteralExpression<float> floatLit:
-				code.Write(float.IsFinite(floatLit.Value) ? FormatSingle(floatLit.Value) + SingleLiteralSuffix : SpellNonFiniteSingle(floatLit.Value));
+				code.Write(IsSpelledByName(floatLit.Value) ? SpellNonFiniteSingle(floatLit.Value) : FormatSingle(floatLit.Value) + SingleLiteralSuffix);
 				return true;
 
 			case LiteralExpression<long> longLit:
@@ -1187,6 +1187,17 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// </remarks>
 	protected static string FormatDouble(double value) =>
 		WithFraction(value.ToString("R", CultureInfo.InvariantCulture), double.IsFinite(value));
+
+	/// <summary>
+	/// Reports whether a floating-point literal is written by name rather than as a number.
+	/// </summary>
+	/// <param name="value">The literal's value, widened to a double when it is a float.</param>
+	/// <returns>True when <see cref="SpellNonFiniteDouble"/> or <see cref="SpellNonFiniteSingle"/> writes it.</returns>
+	/// <remarks>
+	/// NaN and the infinities, which no target can write as digits. A target with no numeric spelling
+	/// for some finite value as well widens this — Go, whose <c>-0.0</c> is positive zero.
+	/// </remarks>
+	protected virtual bool IsSpelledByName(double value) => !double.IsFinite(value);
 
 	/// <summary>
 	/// Spells a double that is NaN or an infinity.
