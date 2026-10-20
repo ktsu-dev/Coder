@@ -118,6 +118,77 @@ public class EntryPointPlacementTests
 		CompileAndRun(language, Program("type", withHelper: false));
 
 	/// <summary>
+	/// Tests that a type generated on its own, rather than inside a file, still has the entry point it
+	/// holds written after it at file scope.
+	/// </summary>
+	/// <param name="language">The generator's display name.</param>
+	/// <param name="signature">How the entry point starts, at the start of a line.</param>
+	[TestMethod]
+	[DataRow("C", "int main(")]
+	[DataRow("C++", "int main(")]
+	[DataRow("Rust", "fn main(")]
+	[DataRow("Go", "func main(")]
+	[DataRow("Python", "def main(")]
+	[DataRow("JavaScript", "function main(")]
+	public void AnEntryPointInATypeGeneratedOnItsOwnIsWrittenAfterIt(string language, string signature)
+	{
+		AstNode type = Program("type", withHelper: false).Members[0];
+
+		string code = GeneratorFor(language).Generate(type);
+
+		int declared = code.IndexOf("Program", StringComparison.Ordinal);
+		int main = code.IndexOf($"\n{signature}", StringComparison.Ordinal);
+		Assert.IsTrue(declared >= 0 && main > declared, code);
+		Assert.AreEqual(main, code.LastIndexOf($"\n{signature}", StringComparison.Ordinal), $"The entry point was written twice:{Environment.NewLine}{code}");
+	}
+
+	/// <summary>
+	/// Tests that a namespace generated on its own, rather than inside a file, has its entry point
+	/// written after it at file scope, with the names declared beside it brought back into the body.
+	/// </summary>
+	/// <param name="language">The generator's display name.</param>
+	/// <param name="signature">How the entry point starts, at the start of a line.</param>
+	/// <param name="import">What brings the namespace's names into the body.</param>
+	[TestMethod]
+	[DataRow("C++", "int main(", "using namespace App;")]
+	[DataRow("Rust", "fn run(", "use self::App::*;")]
+	public void AnEntryPointInANamespaceGeneratedOnItsOwnIsWrittenAfterIt(string language, string signature, string import)
+	{
+		AstNode container = Program("namespace", withHelper: true).Members[0];
+
+		string code = GeneratorFor(language).Generate(container);
+
+		int helper = code.IndexOf("helper", StringComparison.Ordinal);
+		int main = code.IndexOf($"\n{signature}", StringComparison.Ordinal);
+		Assert.IsTrue(helper >= 0 && main > helper, code);
+		Assert.IsTrue(code.IndexOf(import, StringComparison.Ordinal) > main, code);
+	}
+
+	/// <summary>
+	/// Tests that a type which loses its entry point to file scope keeps its annotations, which the
+	/// copy left behind carries in its place.
+	/// </summary>
+	/// <param name="language">The generator's display name.</param>
+	[TestMethod]
+	[DataRow("C")]
+	[DataRow("C++")]
+	[DataRow("Rust")]
+	[DataRow("Go")]
+	[DataRow("Python")]
+	[DataRow("JavaScript")]
+	public void AnAnnotatedTypeKeepsItsAnnotationsWhenItsEntryPointMoves(string language)
+	{
+		SourceFile file = Program("type", withHelper: false);
+		((ClassDeclaration)file.Members[0]).Annotations.Add(new Annotation("Marked"));
+		LanguageGeneratorBase generator = (LanguageGeneratorBase)GeneratorFor(language);
+		generator.EnforceConservation = true;
+
+		string code = generator.Generate(file);
+
+		StringAssert.Contains(code, "Marked", StringComparison.Ordinal, code);
+	}
+
+	/// <summary>
 	/// Builds a program that exits with <see cref="Expected"/>.
 	/// </summary>
 	/// <param name="placement">Where the entry point is declared: <c>file</c>, <c>namespace</c> or <c>type</c>.</param>
