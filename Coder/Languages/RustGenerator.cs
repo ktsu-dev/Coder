@@ -1038,6 +1038,9 @@ public class RustGenerator : StandardLanguageGenerator
 
 		using Scope body = new(code);
 
+		// The parameters' types are what tells a join of strings from an addition of numbers.
+		using IDisposable types = OpenStaticTypeScope(funcDecl);
+
 		if (funcDecl.Kind == FunctionKind.Constructor)
 		{
 			WriteConstructorBody(funcDecl, code);
@@ -1571,6 +1574,7 @@ public class RustGenerator : StandardLanguageGenerator
 		Ensure.NotNull(varDecl);
 		Ensure.NotNull(code);
 
+		RegisterStaticType(varDecl);
 		code.Write(varDecl.IsConstant ? "let " : "let mut ");
 		code.Write(varDecl.Name);
 
@@ -1794,6 +1798,63 @@ public class RustGenerator : StandardLanguageGenerator
 		code.Write(" } else { ");
 		GenerateInternal(conditional.WhenFalse, code);
 		code.Write(" })");
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// Joining strings is written <c>format!</c> rather than <c>+</c>. Rust implements <c>+</c> only
+	/// as <c>String + &amp;str</c>, so a literal on the left, or a <c>String</c> on the right, does
+	/// not compile; <c>format!</c> takes any mix of the two by reference and moves neither. A chain
+	/// of joins is one call with one placeholder per operand.
+	/// </remarks>
+	protected override void GenerateBinary(BinaryExpression binary, CodeBlocker code)
+	{
+		Ensure.NotNull(binary);
+		Ensure.NotNull(code);
+
+		if (!IsStringJoin(binary))
+		{
+			base.GenerateBinary(binary, code);
+			return;
+		}
+
+		List<Expression> operands = [];
+		CollectJoined(binary, operands);
+
+		code.Write($"format!(\"{string.Concat(Enumerable.Repeat("{}", operands.Count))}\"");
+		foreach (Expression operand in operands)
+		{
+			code.Write(", ");
+			GenerateInternal(operand, code);
+		}
+
+		code.Write(")");
+	}
+
+	/// <summary>
+	/// Reports whether a binary expression joins two strings.
+	/// </summary>
+	/// <param name="binary">The expression to inspect.</param>
+	/// <returns>True for an addition either of whose operands is known to be a string.</returns>
+	private bool IsStringJoin(BinaryExpression binary) =>
+		binary.Operator == BinaryOperator.Add
+		&& (IsOwnedString(StaticType(binary.Left)) || IsOwnedString(StaticType(binary.Right)));
+
+	/// <summary>
+	/// Flattens a chain of string joins into its operands, in order.
+	/// </summary>
+	/// <param name="operand">The join, or one of its operands.</param>
+	/// <param name="operands">Receives the operands.</param>
+	private void CollectJoined(Expression operand, List<Expression> operands)
+	{
+		if (operand is BinaryExpression binary && IsStringJoin(binary))
+		{
+			CollectJoined(binary.Left, operands);
+			CollectJoined(binary.Right, operands);
+			return;
+		}
+
+		operands.Add(operand);
 	}
 
 	/// <inheritdoc/>

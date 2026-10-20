@@ -1152,6 +1152,36 @@ public class CGenerator : CFamilyGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
+	/// Joining strings is written down rather than translated. A string is a <c>const char*</c>, and
+	/// <c>+</c> on two pointers does not compile; joining them needs a buffer somebody allocates and
+	/// owns, which is a decision about the program rather than a spelling of the expression. So the
+	/// <c>+</c> stays, and a note in front of it says why the compiler rejects it and what to write
+	/// instead, rather than leaving the reader with <c>invalid operands to binary +</c> alone.
+	/// </remarks>
+	protected override void GenerateBinary(BinaryExpression binary, CodeBlocker code)
+	{
+		Ensure.NotNull(binary);
+		Ensure.NotNull(code);
+
+		if (binary.Operator == BinaryOperator.Add
+			&& (IsCString(StaticType(binary.Left)) || IsCString(StaticType(binary.Right))))
+		{
+			code.Write("/* C has no string concatenation: join these into a buffer with snprintf or strcat */ ");
+		}
+
+		base.GenerateBinary(binary, code);
+	}
+
+	/// <summary>
+	/// Reports whether a type is spelled as C's string, a pointer to constant characters.
+	/// </summary>
+	/// <param name="type">The type, or null where none is known.</param>
+	/// <returns>True for <c>str</c> and <c>string</c> as a plain value.</returns>
+	private static bool IsCString(TypeReference? type) =>
+		type is not null && MapToCType(type) == TypeMappings["string"];
+
+	/// <inheritdoc/>
+	/// <remarks>
 	/// A parameter's default value is written as a comment beside it. C has no default arguments, so
 	/// the caller has to pass one — and the value the declaration chose is exactly what they need to
 	/// know in order to pass the same thing.
