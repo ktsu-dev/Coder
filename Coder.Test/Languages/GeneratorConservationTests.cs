@@ -45,6 +45,77 @@ public sealed class GeneratorConservationTests
 		StringAssert.Contains(generated, "def Run():");
 	}
 
+	[TestMethod]
+	public void EveryGenerator_KeepsAFreeFunctionsTypeParameters()
+	{
+		foreach (LanguageGeneratorBase generator in AllGenerators())
+		{
+			string generated = generator.Generate(GenericFunction("Id"));
+
+			StringAssert.Contains(generated, "IComparable", generator.DisplayName);
+		}
+	}
+
+	[TestMethod]
+	public void EveryGenerator_KeepsAMethodsTypeParameters()
+	{
+		ClassDeclaration declaration = new("Holder");
+		declaration.Members.Add(GenericFunction("Id"));
+
+		foreach (LanguageGeneratorBase generator in AllGenerators())
+		{
+			string generated = generator.Generate(declaration);
+
+			StringAssert.Contains(generated, "IComparable", generator.DisplayName);
+		}
+	}
+
+	[TestMethod]
+	public void GeneratorsWithoutGenerics_WriteAFunctionsTypeParametersDown()
+	{
+		ClassDeclaration declaration = new("Holder");
+		declaration.Members.Add(GenericFunction("Method"));
+
+		LanguageGeneratorBase[] generators = [new CGenerator(), new JavaScriptGenerator(), new PythonGenerator()];
+		foreach (LanguageGeneratorBase generator in generators)
+		{
+			StringAssert.Contains(generator.Generate(GenericFunction("Id")), "over V : IComparable", generator.DisplayName);
+			StringAssert.Contains(generator.Generate(declaration), "over V : IComparable", generator.DisplayName);
+		}
+	}
+
+	[TestMethod]
+	public void CGenerator_WritesAnInterfaceMembersTypeParametersDown()
+	{
+		ClassDeclaration contract = new("Contract") { Kind = TypeDeclarationKind.Interface };
+		FunctionDeclaration member = GenericFunction("Id");
+		member.Body.Clear();
+		member.IsAbstract = true;
+		contract.Members.Add(member);
+
+		StringAssert.Contains(new CGenerator().Generate(contract), "over V : IComparable");
+	}
+
+	private static LanguageGeneratorBase[] AllGenerators() =>
+	[
+		new CSharpGenerator(),
+		new CppGenerator(),
+		new CGenerator(),
+		new GoGenerator(),
+		new JavaScriptGenerator(),
+		new PythonGenerator(),
+		new RustGenerator(),
+	];
+
+	private static FunctionDeclaration GenericFunction(string name)
+	{
+		FunctionDeclaration function = new(name) { ReturnType = "V" };
+		function.TypeParameters.Add(TypeParameter.Parse("V : IComparable"));
+		function.Parameters.Add(new Parameter("x", "V"));
+		function.Body.Add(new ReturnStatement(new VariableReference("x")));
+		return function;
+	}
+
 	private static SourceFile AnnotatedFile()
 	{
 		SourceFile file = new("conservation");
