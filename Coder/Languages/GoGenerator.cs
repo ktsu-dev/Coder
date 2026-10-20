@@ -1711,11 +1711,26 @@ public class GoGenerator : StandardLanguageGenerator
 	/// The same lowering <see cref="GenerateReturnStatement"/> does, in the other statement that can
 	/// hold a choice between two values. Here it needs both arms, since falling through would leave
 	/// the target holding what it held before rather than the other branch.
+	/// <para>
+	/// <c>&amp;=</c>, <c>|=</c> and <c>^=</c> on booleans are written <c>x = x &amp;&amp; y</c> and the
+	/// like through <see cref="GenerateBinary"/>, since Go has no boolean compound assignment.
+	/// </para>
 	/// </remarks>
 	protected override void GenerateAssignmentStatement(AssignmentStatement assignment, CodeBlocker code)
 	{
 		Ensure.NotNull(assignment);
 		Ensure.NotNull(code);
+
+		if (BitwiseOperatorOf(assignment.Operator) is BinaryOperator bitwise
+			&& assignment.Value is not ConditionalExpression
+			&& IsBooleanBitwise(bitwise, assignment.Target, assignment.Value))
+		{
+			GenerateInternal(assignment.Target, code);
+			code.Write($" {GetAssignmentOperator(AssignmentOperator.Assign)} ");
+			GenerateBinary(new BinaryExpression(assignment.Target, bitwise, assignment.Value), code);
+			EndStatement(code);
+			return;
+		}
 
 		if (assignment.Value is not ConditionalExpression conditional)
 		{
@@ -1731,6 +1746,55 @@ public class GoGenerator : StandardLanguageGenerator
 			EndStatement(code);
 		});
 	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// Go defines <c>&amp;</c>, <c>|</c> and <c>^</c> on integers only, so on two booleans they fail to
+	/// build with "operator ^ not defined on a (variable of type bool)" (#268). <c>^</c> is written
+	/// <c>!=</c>. <c>&amp;</c> and <c>|</c> are written <c>&amp;&amp;</c> and <c>||</c>, which agree
+	/// with them except that they skip the right side, so when that side holds a call they are written
+	/// as a function literal applied to both, which evaluates each side once and in order.
+	/// </remarks>
+	protected override void GenerateBinary(BinaryExpression binary, CodeBlocker code)
+	{
+		Ensure.NotNull(binary);
+		Ensure.NotNull(code);
+
+		if (!IsBooleanBitwise(binary.Operator, binary.Left, binary.Right))
+		{
+			base.GenerateBinary(binary, code);
+			return;
+		}
+
+		if (BooleanBitwiseSpelling(binary) is string spelling)
+		{
+			GenerateBinaryExpression(binary, code, spelling);
+			return;
+		}
+
+		string logical = binary.Operator == BinaryOperator.BitwiseAnd ? "&&" : "||";
+		code.Write($"func(l, r bool) bool {{ return l {logical} r }}(");
+		GenerateInternal(binary.Left, code);
+		code.Write(", ");
+		GenerateInternal(binary.Right, code);
+		code.Write(")");
+	}
+
+	/// <summary>
+	/// Spells a bitwise operator on two booleans as the Go operator that means the same.
+	/// </summary>
+	/// <param name="binary">The expression, whose operands are both known to be <c>bool</c>.</param>
+	/// <returns>
+	/// <c>!=</c> for <c>^</c>; <c>&amp;&amp;</c> or <c>||</c> for <c>&amp;</c> or <c>|</c> when the right
+	/// side holds no call, so skipping it changes nothing; otherwise null.
+	/// </returns>
+	private static string? BooleanBitwiseSpelling(BinaryExpression binary) => binary.Operator switch
+	{
+		BinaryOperator.BitwiseXor => "!=",
+		_ when SelfAndDescendants(binary.Right).OfType<CallExpression>().Any() => null,
+		BinaryOperator.BitwiseAnd => "&&",
+		_ => "||",
+	};
 
 	private void WriteConditionalBranch(
 		ConditionalExpression conditional,
@@ -1819,9 +1883,15 @@ public class GoGenerator : StandardLanguageGenerator
 	{
 		switch (condition)
 		{
-			case BinaryExpression binary:
+			case BinaryExpression binary when !IsBooleanBitwise(binary.Operator, binary.Left, binary.Right):
 				WriteConditionOperand(binary.Left, code);
 				code.Write($" {GetOperatorSpelling(binary.Operator)} ");
+				WriteConditionOperand(binary.Right, code);
+				return;
+
+			case BinaryExpression binary when BooleanBitwiseSpelling(binary) is string spelling:
+				WriteConditionOperand(binary.Left, code);
+				code.Write($" {spelling} ");
 				WriteConditionOperand(binary.Right, code);
 				return;
 
