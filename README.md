@@ -254,7 +254,9 @@ function.Parameters.Add(new Parameter("b", "int"));
 function.Parameters.Add(new Parameter("debug", "bool")
 {
     IsOptional = true,
-    DefaultValue = "False"
+    // An expression, not source text: each generator spells it its own way
+    // (False in Python, false in C#, C++ and JavaScript).
+    DefaultValue = Literal.Bool(false)
 });
 
 // Add function body
@@ -283,7 +285,7 @@ functionDeclaration:
         - name: debug
           type: bool
           isOptional: true
-          defaultValue: False
+          defaultValue: false
     body:
         - returnStatement:
               expression:

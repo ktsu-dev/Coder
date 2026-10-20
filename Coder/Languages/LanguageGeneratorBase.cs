@@ -877,7 +877,16 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 
 		code.Write(callExpr.Callee);
 		code.Write("(");
-		GenerateArgumentList(callExpr.Arguments, code);
+		for (int index = 0; index < callExpr.Arguments.Count; index++)
+		{
+			if (index > 0)
+			{
+				code.Write(", ");
+			}
+
+			GenerateArgument(callExpr, index, code);
+		}
+
 		code.Write(")");
 	}
 
@@ -891,6 +900,21 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// there does not compile (#170).
 	/// </remarks>
 	protected virtual string SpellMemberAccess(Expression receiver) => ".";
+
+	/// <summary>
+	/// Emits one argument of a call.
+	/// </summary>
+	/// <param name="callExpr">The call the argument belongs to.</param>
+	/// <param name="index">The argument's position.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// Overridable for a target that has to convert an argument to the parameter it is passed as.
+	/// </remarks>
+	protected virtual void GenerateArgument(CallExpression callExpr, int index, CodeBlocker code)
+	{
+		Ensure.NotNull(callExpr);
+		GenerateInternal(callExpr.Arguments[index], code);
+	}
 
 	/// <summary>
 	/// Emits a parenthesised choice between two values.
