@@ -2066,6 +2066,9 @@ public class GoGenerator : StandardLanguageGenerator
 		string parameters = entryPoint.AcceptsArguments ? "args []string" : string.Empty;
 		string arguments = entryPoint.AcceptsArguments ? "os.Args[1:]" : string.Empty;
 
+		// Opened over both shapes, so the body's locals are typed whether it lands in main or in run.
+		using IDisposable types = OpenStaticTypeScope(entryPoint);
+
 		if (entryPoint.ReturnsExitCode)
 		{
 			code.Write($"func run({parameters}) int ");
