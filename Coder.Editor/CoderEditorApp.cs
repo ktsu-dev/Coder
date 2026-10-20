@@ -51,6 +51,41 @@ public sealed class CoderEditorApp(
 	public string? DocumentPath { get; private set; }
 
 	/// <summary>
+	/// Gets or sets the text in the File menu's Path box.
+	/// </summary>
+	/// <remarks>
+	/// Kept in step with <see cref="DocumentPath"/> by Open, Save and New, so the box always shows
+	/// where Save will write. Typing another path into it is how a document is saved under a new name.
+	/// </remarks>
+	internal string PathBox
+	{
+		get => pathBuffer;
+		set => pathBuffer = value ?? string.Empty;
+	}
+
+	/// <summary>
+	/// Gets the file the menu's Save and Export act on: the Path box, or the document's own path when
+	/// the box is empty.
+	/// </summary>
+	/// <remarks>
+	/// The box wins because it is what the user can see and change. Preferring the document's path
+	/// made the box inert once a document had one, so nothing could be saved under a second name.
+	/// </remarks>
+	internal string? MenuTarget => pathBuffer.Length > 0 ? pathBuffer : DocumentPath;
+
+	/// <summary>
+	/// Saves to <see cref="MenuTarget"/>, as the File menu's Save item and Ctrl+S do.
+	/// </summary>
+	/// <returns>True if it was written; false if it failed or there was nowhere to write.</returns>
+	internal bool SaveToMenuTarget() => MenuTarget is { Length: > 0 } target && Save(target);
+
+	/// <summary>
+	/// Exports beside <see cref="MenuTarget"/>, as the File menu's Export item does.
+	/// </summary>
+	/// <returns>The file written, or null if nothing was written.</returns>
+	internal string? ExportToMenuTarget() => MenuTarget is { Length: > 0 } target ? Export(target) : null;
+
+	/// <summary>
 	/// Gets the last thing that happened, as shown in the status bar.
 	/// </summary>
 	public string Status { get; private set; } = "New document.";
@@ -317,9 +352,9 @@ public sealed class CoderEditorApp(
 			Editor.Redo();
 		}
 
-		if (ImGui.IsKeyPressed(ImGuiKey.S) && DocumentPath is not null)
+		if (ImGui.IsKeyPressed(ImGuiKey.S))
 		{
-			Save(DocumentPath);
+			SaveToMenuTarget();
 		}
 	}
 
@@ -362,14 +397,14 @@ public sealed class CoderEditorApp(
 				Open(pathBuffer);
 			}
 
-			if (ImGui.MenuItem("Save") && (DocumentPath ?? pathBuffer).Length > 0)
+			if (ImGui.MenuItem("Save"))
 			{
-				Save(DocumentPath ?? pathBuffer);
+				SaveToMenuTarget();
 			}
 
-			if (ImGui.MenuItem("Export generated code") && (DocumentPath ?? pathBuffer).Length > 0)
+			if (ImGui.MenuItem("Export generated code"))
 			{
-				Export(DocumentPath ?? pathBuffer);
+				ExportToMenuTarget();
 			}
 
 			if (Settings.RecentFiles.Count > 0 && ImGui.BeginMenu("Recent"))
@@ -594,6 +629,7 @@ public sealed class CoderEditorApp(
 		Editor = EditorFor(document);
 		Editor.LayoutRunning = Settings.LayoutRunning;
 		DocumentPath = null;
+		pathBuffer = string.Empty;
 		Status = status;
 		GeneratedCode = string.Empty;
 		GenerationError = null;
@@ -616,6 +652,7 @@ public sealed class CoderEditorApp(
 		Editor = EditorFor(result.Root);
 		Editor.LayoutRunning = Settings.LayoutRunning;
 		DocumentPath = result.Path;
+		pathBuffer = result.Path!;
 		Settings.Remember(result.Path!);
 		Status = $"Opened {result.Path}.";
 		Regenerate();
@@ -637,6 +674,7 @@ public sealed class CoderEditorApp(
 		}
 
 		DocumentPath = result.Path;
+		pathBuffer = result.Path!;
 		Settings.Remember(result.Path!);
 
 		// Tells the undo stack that everything up to here is on disk, so the dirty marker clears and

@@ -51,6 +51,13 @@ source in seven target languages. The solution uses:
   as a string can only paste it, so the caller would have to spell the target language itself.
   `Parse` and `ToString` are inverses and text the grammar cannot read becomes a name holding it
   verbatim, so a property that used to hold a string still takes and gives one.
+- `Coder/Ast/Parameter.cs`'s `DefaultValue` — an `Expression`, not source text, for the reason
+  `TypeReference` is structure: `False` is Python's spelling and fails to compile in C# and C++, and
+  no spelling of a flag or a null works in every target. Each generator writes it with its own
+  literal writer; C, Go and Rust, which have no default arguments, write it into a comment with any
+  `*/` broken apart. `ParseDefaultValue`/`FormatDefaultValue` are the text form the YAML and the
+  editor's field hold, so a document from when it was text still reads: `true`/`false` in any case,
+  numbers and double-quoted strings become literals, and anything else is a name, written verbatim.
 - `Coder/Ast/SourceFile.cs`, `NamespaceDeclaration.cs`, `EnumDeclaration.cs`, `FieldDeclaration.cs` —
   what a generated *header* is made of rather than a snippet. `FieldDeclaration` is deliberately not
   `VariableDeclaration`: a field with no initialiser is value-initialised, so a default-constructed

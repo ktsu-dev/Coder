@@ -23,7 +23,7 @@ public partial class YamlSerializationTests
 			Parameters =
 			[
 				new Parameter("param1", "int"),
-				new Parameter("param2", "string") { IsOptional = true, DefaultValue = "\"default\"" }
+				new Parameter("param2", "string") { IsOptional = true, DefaultValue = Literal.Text("default") }
 			]
 		};
 		funcDecl.Body.Add(new ReturnStatement(42));
@@ -57,7 +57,7 @@ public partial class YamlSerializationTests
 			Parameters =
 			[
 				new Parameter("param1", "int"),
-				new Parameter("param2", "string") { IsOptional = true, DefaultValue = "\"default\"" }
+				new Parameter("param2", "string") { IsOptional = true, DefaultValue = Literal.Text("default") }
 			]
 		};
 		originalFuncDecl.Body.Add(new ReturnStatement(42));
@@ -80,7 +80,7 @@ public partial class YamlSerializationTests
 		Assert.AreEqual(originalFuncDecl.Parameters[0].Name, deserializedFunc.Parameters[0].Name);
 		Assert.AreEqual(originalFuncDecl.Parameters[0].Type, deserializedFunc.Parameters[0].Type);
 		Assert.AreEqual(originalFuncDecl.Parameters[1].IsOptional, deserializedFunc.Parameters[1].IsOptional);
-		Assert.AreEqual(originalFuncDecl.Parameters[1].DefaultValue, deserializedFunc.Parameters[1].DefaultValue);
+		Assert.AreEqual("default", ((LiteralExpression<string>)deserializedFunc.Parameters[1].DefaultValue!).Value);
 		Assert.AreEqual(originalFuncDecl.Body.Count, deserializedFunc.Body.Count);
 
 		Assert.IsInstanceOfType<ReturnStatement>(deserializedFunc.Body[0]);

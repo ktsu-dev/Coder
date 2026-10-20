@@ -321,7 +321,7 @@ public partial class YamlDeserializer
 		return entryPoint;
 	}
 
-	private static void DeserializeFunctionParameters(FunctionDeclaration funcDecl, Dictionary<object, object> dict)
+	private void DeserializeFunctionParameters(FunctionDeclaration funcDecl, Dictionary<object, object> dict)
 	{
 		if (!dict.TryGetValue("parameters", out object? paramsObj) || paramsObj is not List<object> paramsList)
 		{
@@ -708,6 +708,9 @@ public partial class YamlDeserializer
 
 	/// <summary>The key a node's members are written under.</summary>
 	private const string MembersKey = "members";
+
+	/// <summary>The key a node's keyed children are written under.</summary>
+	private const string ChildrenKey = "children";
 
 	/// <summary>The key a node's single value is written under.</summary>
 	private const string ValueKey = "value";
@@ -1105,21 +1108,34 @@ public partial class YamlDeserializer
 	/// <param name="node">The node to add them to.</param>
 	/// <param name="dict">The node's mapping.</param>
 	/// <remarks>
-	/// A keyed child is written as a mapping holding one node, so anything else under a key is one
-	/// of the node's own properties and is left to the reader that knows it.
+	/// They are written under one <c>children</c> mapping, each under its exact key. Documents saved
+	/// before that wrote them into the node's own mapping with the key lowercased, so a node without
+	/// a <c>children</c> mapping is read that way: a keyed child is a mapping holding one node, so
+	/// anything else under a key is one of the node's own properties and is left to the reader that
+	/// knows it.
 	/// </remarks>
 	private void DeserializeKeyedChildren(AstCompositeNode node, Dictionary<object, object> dict)
 	{
-		HashSet<string> knownKeys = ["name", "returnType", "visibility", "accessModifier", "parameters", "body", "metadata"];
-
-		foreach ((object key, object value) in dict)
+		if (dict.TryGetValue(ChildrenKey, out object? childrenObj) && childrenObj is Dictionary<object, object> children)
 		{
-			string keyString = key.ToString() ?? string.Empty;
-			if (knownKeys.Contains(keyString) || value is not Dictionary<object, object> childDict)
+			ReadKeyedChildren(node, children);
+			return;
+		}
+
+		HashSet<string> knownKeys = ["name", "returnType", "visibility", "accessModifier", "parameters", "body", "metadata", "expression"];
+		ReadKeyedChildren(node, dict.Where(entry => !knownKeys.Contains(entry.Key.ToString() ?? string.Empty)));
+	}
+
+	private void ReadKeyedChildren(AstCompositeNode node, IEnumerable<KeyValuePair<object, object>> entries)
+	{
+		foreach ((object key, object value) in entries)
+		{
+			if (value is not Dictionary<object, object> childDict)
 			{
 				continue;
 			}
 
+			string keyString = key.ToString() ?? string.Empty;
 			foreach ((object childType, object childData) in childDict)
 			{
 				AstNode? child = DeserializeNode(childType.ToString() ?? string.Empty, childData);
@@ -1131,7 +1147,7 @@ public partial class YamlDeserializer
 		}
 	}
 
-	private static Parameter DeserializeParameter(object? nodeData)
+	private Parameter DeserializeParameter(object? nodeData)
 	{
 		Parameter param = new();
 		if (nodeData is Dictionary<object, object> dict)
@@ -1143,7 +1159,11 @@ public partial class YamlDeserializer
 			{
 				param.IsOptional = isOptional;
 
-				param.DefaultValue = ReadString(dict, "defaultValue");
+				param.DefaultValue = dict.TryGetValue("defaultValue", out object? defaultObj)
+					&& defaultObj is Dictionary<object, object> defaultDict
+					&& defaultDict.Count > 0
+					? DeserializeNode(defaultDict.First().Key.ToString() ?? string.Empty, defaultDict.First().Value) as Expression
+					: Parameter.ParseDefaultValue(ReadString(dict, "defaultValue"));
 			}
 
 			// Parse metadata if present
@@ -1167,6 +1187,8 @@ public partial class YamlDeserializer
 					break; // Only one expression in a return statement
 				}
 			}
+
+			DeserializeKeyedChildren(returnStmt, dict);
 
 			// Parse metadata if present
 			DeserializeMetadata(returnStmt, dict);

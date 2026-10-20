@@ -944,7 +944,7 @@ public class GoGeneratorTests
 	public void OptionalParameter_KeepsItsDefaultAsAComment()
 	{
 		FunctionDeclaration function = new("greet");
-		function.Parameters.Add(new Parameter("times", "int") { IsOptional = true, DefaultValue = "1" });
+		function.Parameters.Add(new Parameter("times", "int") { IsOptional = true, DefaultValue = Literal.Number(1) });
 
 		StringAssert.Contains(Generator.Generate(function), "(times int /* = 1 */)", StringComparison.Ordinal);
 	}
