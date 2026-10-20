@@ -1172,8 +1172,12 @@ public class GoGenerator : StandardLanguageGenerator
 	/// <param name="funcDecl">The declaration to test.</param>
 	/// <param name="enclosingType">The name of the type it belongs to, when it belongs to one.</param>
 	/// <returns>True when it takes a receiver.</returns>
+	/// <remarks>
+	/// A friend is declared beside the type rather than as a member of it and names every operand
+	/// itself, so it is a function of the type's name rather than a method on it.
+	/// </remarks>
 	private static bool TakesReceiver(FunctionDeclaration funcDecl, string? enclosingType) =>
-		enclosingType is not null && !funcDecl.IsStatic && funcDecl.Kind != FunctionKind.Constructor;
+		enclosingType is not null && !funcDecl.IsStatic && !funcDecl.IsFriend && funcDecl.Kind != FunctionKind.Constructor;
 
 	/// <summary>
 	/// Spells the name a declaration is written under.
@@ -1215,13 +1219,14 @@ public class GoGenerator : StandardLanguageGenerator
 	/// <returns>The method name.</returns>
 	/// <remarks>
 	/// A declaration with no operand beside the instance is the unary reading of its symbol, which is
-	/// the only thing that tells <c>-a</c> from <c>a - b</c>.
+	/// the only thing that tells <c>-a</c> from <c>a - b</c>. A friend names its first operand itself,
+	/// so for one the unary reading is a single declared parameter.
 	/// </remarks>
 	private static string OperatorName(FunctionDeclaration funcDecl)
 	{
 		string symbol = funcDecl.Name ?? string.Empty;
 
-		if (funcDecl.Parameters.Count == 0 && UnaryOperatorNames.TryGetValue(symbol, out string? unary))
+		if (funcDecl.Parameters.Count == (funcDecl.IsFriend ? 1 : 0) && UnaryOperatorNames.TryGetValue(symbol, out string? unary))
 		{
 			return unary;
 		}

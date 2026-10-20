@@ -540,6 +540,7 @@ public class RustGeneratedSourceCompilesTests
 		point.Members.Add(CompiledExemplar.Shift("shift"));
 		point.Members.Add(CompiledExemplar.Plus());
 		point.Members.Add(CompiledExemplar.Negate());
+		point.Members.Add(CompiledExemplar.Times());
 		point.Members.Add(CompiledExemplar.ToDouble("value.x as f64"));
 		point.Members.Add(CompiledExemplar.Pick("pick", "shift"));
 

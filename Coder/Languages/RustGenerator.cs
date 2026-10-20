@@ -817,7 +817,13 @@ public class RustGenerator : StandardLanguageGenerator
 		}
 
 		string symbol = funcDecl.Name ?? string.Empty;
-		bool unary = funcDecl.Parameters.Count == 0;
+
+		// A friend is declared beside the type and names every operand itself, the first being the
+		// one a trait method takes as self. It is written as the method with that operand rebound
+		// to its own name, so the body reads what it was written against.
+		Parameter? receiver = funcDecl.IsFriend ? funcDecl.Parameters.FirstOrDefault() : null;
+		List<Parameter> operands = [.. funcDecl.Parameters.Skip(funcDecl.IsFriend ? 1 : 0)];
+		bool unary = operands.Count == 0;
 		Dictionary<string, OperatorTrait> traits = unary ? UnaryOperatorTraits : BinaryOperatorTraits;
 
 		if (!traits.TryGetValue(symbol, out OperatorTrait? op))
@@ -846,16 +852,18 @@ public class RustGenerator : StandardLanguageGenerator
 		// A comparison borrows what it compares and answers a bool; an arithmetic operator consumes
 		// its operands and answers the type it named as its Output. An operand it consumes is its
 		// own to change, but only if it is bound mut, as a parameter is.
+		string receiverName = receiver?.Name ?? SelfName;
 		HashSet<string> reassigned = op.ReturnsBool
 			? []
 			: ReassignedNames(funcDecl.Body, [
-				new(SelfName, new TypeReference(typeName)),
-				.. funcDecl.Parameters.Select(parameter => new KeyValuePair<string, TypeReference?>(OperandName(parameter), parameter.Type)),
+				new(receiverName, receiver?.Type ?? new TypeReference(typeName)),
+				.. operands.Select(parameter => new KeyValuePair<string, TypeReference?>(OperandName(parameter), parameter.Type)),
 			]);
-		string self = op.ReturnsBool ? "&self" : reassigned.Contains(SelfName) ? $"mut {SelfName}" : SelfName;
+		bool rebind = receiverName != SelfName;
+		string self = op.ReturnsBool ? "&self" : reassigned.Contains(receiverName) && !rebind ? $"mut {SelfName}" : SelfName;
 		code.Write($"fn {op.Method}({self}");
 
-		foreach (Parameter parameter in funcDecl.Parameters)
+		foreach (Parameter parameter in operands)
 		{
 			string name = OperandName(parameter);
 			code.Write(", ");
@@ -865,6 +873,12 @@ public class RustGenerator : StandardLanguageGenerator
 		code.Write($") -> {(op.ReturnsBool ? "bool" : result)} ");
 
 		using Scope body = new(code);
+
+		if (rebind)
+		{
+			code.WriteLine($"let {(reassigned.Contains(receiverName) ? "mut " : string.Empty)}{receiverName} = {SelfName};");
+		}
+
 		WriteBody(funcDecl.Body, code);
 	}
 
