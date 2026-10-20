@@ -165,13 +165,14 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// <remarks>
 	/// C#'s shift operators take an <c>int</c> count and a <c>long</c> does not convert to one, so
 	/// <c>x &lt;&lt; n</c> with a <c>long</c> <c>n</c> fails with CS0019 where every other target accepts it.
-	/// There is no static-type scope here to tell the two apart, so any count that is not an
-	/// <c>int</c> literal is cast. That changes no result: an <c>int</c> cast to <c>int</c> is itself,
-	/// and C# masks a <c>long</c> count to its low six bits, which the cast keeps.
+	/// A count is therefore cast when <see cref="ShouldCastShiftCount"/> says so. That changes no
+	/// result: C# masks a <c>long</c> count to its low six bits, which the cast keeps. What it must
+	/// not touch is a shift between values of a type that declares its own <c>&lt;&lt;</c>, where the
+	/// count is an operand of that operator and a cast to <c>int</c> is CS0030 (#305).
 	/// </remarks>
 	private void GenerateBinary(BinaryExpression binary, CodeBlocker code)
 	{
-		if (!IsShift(binary.Operator) || IsIntLiteral(binary.Right))
+		if (!IsShift(binary.Operator) || !ShouldCastShiftCount(binary.Right))
 		{
 			GenerateBinaryExpression(binary, code, GetBinaryOperator(binary.Operator));
 			return;
@@ -195,7 +196,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 		Ensure.NotNull(code);
 
 		if (assignment.Operator is not (AssignmentOperator.LeftShiftAssign or AssignmentOperator.RightShiftAssign)
-			|| IsIntLiteral(assignment.Value))
+			|| !ShouldCastShiftCount(assignment.Value))
 		{
 			base.GenerateAssignmentStatement(assignment, code);
 			return;
@@ -209,7 +210,72 @@ public class CSharpGenerator : LanguageGeneratorBase
 
 	private static bool IsShift(BinaryOperator op) => op is BinaryOperator.LeftShift or BinaryOperator.RightShift;
 
-	private static bool IsIntLiteral(Expression expression) => expression is LiteralExpression<int>;
+	/// <summary>
+	/// Decides whether a shift's count is cast to <c>int</c>.
+	/// </summary>
+	/// <param name="count">The count being shifted by.</param>
+	/// <returns>True when the count is, or may be, a wider integer than C#'s shifts take.</returns>
+	/// <remarks>
+	/// A count whose type is known decides it outright: a <c>long</c>, <c>ulong</c> or <c>uint</c> one
+	/// is cast and anything else is written as it is, a user type included. A count whose type is not
+	/// known is cast as before, unless the tree being generated declares a shift operator of its own,
+	/// since then the count may be an operand of that operator and the cast would be the error.
+	/// </remarks>
+	private bool ShouldCastShiftCount(Expression count)
+	{
+		return count switch
+		{
+			LiteralExpression<long> => true,
+			LiteralExpression<int> => false,
+			VariableReference reference when shiftCountTypes.TryGetValue(reference.Name, out TypeReference? type) =>
+				type is { IsArray: false, Indirection: TypeIndirection.None, TypeArguments.Count: 0 }
+				&& type.Name is "long" or "ulong" or "uint",
+			_ => !DeclaresShiftOperator(),
+		};
+	}
+
+	/// <summary>
+	/// Determines whether the tree being generated declares a <c>&lt;&lt;</c> or <c>&gt;&gt;</c> of its own.
+	/// </summary>
+	/// <returns>True when a shift operator is declared anywhere in the tree.</returns>
+	private bool DeclaresShiftOperator()
+	{
+		if (!ReferenceEquals(shiftOperatorRoot, GenerationRoot))
+		{
+			shiftOperatorRoot = GenerationRoot;
+			declaresShiftOperator = GenerationRoot is not null && Descendants(GenerationRoot)
+				.OfType<FunctionDeclaration>()
+				.Any(function => function.Kind == FunctionKind.Operator && function.Name is "<<" or ">>");
+		}
+
+		return declaresShiftOperator;
+	}
+
+	/// <summary>
+	/// Walks a node and everything under it.
+	/// </summary>
+	/// <param name="node">The node to start from.</param>
+	/// <returns>The node and its descendants, parents first.</returns>
+	private static IEnumerable<AstNode> Descendants(AstNode node)
+	{
+		yield return node;
+
+		IEnumerable<AstNode> children = node switch
+		{
+			SourceFile file => file.Members,
+			NamespaceDeclaration namespaceDecl => namespaceDecl.Members,
+			ClassDeclaration classDecl => classDecl.Members,
+			_ => [],
+		};
+
+		foreach (AstNode child in children)
+		{
+			foreach (AstNode descendant in Descendants(child))
+			{
+				yield return descendant;
+			}
+		}
+	}
 
 	private void WriteShiftCount(Expression count, CodeBlocker code)
 	{
@@ -306,6 +372,11 @@ public class CSharpGenerator : LanguageGeneratorBase
 		memberAliasesHoisted = true;
 		try
 		{
+			if (NeedsParameterlessConstructor(classDecl))
+			{
+				GenerateFunction(new FunctionDeclaration(classDecl.Name ?? "UnnamedClass") { Kind = FunctionKind.Constructor, Visibility = Visibility.Public }, code, classDecl);
+			}
+
 			foreach (AstNode member in classDecl.Members)
 			{
 				if (member is FunctionDeclaration method)
@@ -321,6 +392,14 @@ public class CSharpGenerator : LanguageGeneratorBase
 			foreach (FunctionDeclaration partner in MissingComparisonPartners(classDecl))
 			{
 				GenerateFunction(partner, code, classDecl);
+			}
+
+			if (scopeOperators.TryGetValue(classDecl, out List<FunctionDeclaration>? lodged))
+			{
+				foreach (FunctionDeclaration lodgedOperator in lodged)
+				{
+					GenerateFunction(lodgedOperator, code, classDecl);
+				}
 			}
 		}
 		finally
@@ -383,7 +462,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 			// An operand with no name, which a half-edited document holds, leaves the partner nothing
 			// to refer to.
 			if (partnerDeclared || declared.Definition != FunctionDefinition.Provided || declared.IsAbstract
-				|| string.IsNullOrWhiteSpace(operand.Name))
+				|| string.IsNullOrWhiteSpace(operand.Name) || RecordSynthesises(declared, classDecl))
 			{
 				continue;
 			}
@@ -395,7 +474,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 			{
 				answer = new UnaryExpression(UnaryOperator.LogicalNot, new BinaryExpression(self, op, other));
 			}
-			else if (operand.Type?.Name == classDecl.Name && operand.Type?.TypeArguments.Count == classDecl.TypeParameters.Count)
+			else if (IsTheType(operand.Type, classDecl))
 			{
 				answer = new BinaryExpression(other, op, self);
 			}
@@ -586,8 +665,8 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// <param name="holderName">What to call the class, unless a type beside it already has the name.</param>
 	/// <param name="code">The writer to emit into.</param>
 	/// <remarks>
-	/// C# has no field, function or variable outside a type: one in a namespace fails with CS0116,
-	/// and one at file scope with CS0106. Every other target has somewhere to put them, so the AST
+	/// C# has no field, function, variable or entry point outside a type: one in a namespace fails
+	/// with CS0116, and one at file scope with CS0106 (#128). Every other target has somewhere to put them, so the AST
 	/// allows them, and a static class is what C# has in their place — a reader names
 	/// <c>Geometry.twice</c> where C++ names <c>Geometry::twice</c>. The class is written where the
 	/// first of them was declared, and types, enums and nested namespaces stay where they are. Aliases
@@ -602,7 +681,8 @@ public class CSharpGenerator : LanguageGeneratorBase
 	private void GenerateScopeMembers(IEnumerable<AstNode> members, string holderName, CodeBlocker code)
 	{
 		AstNode[] declared = [.. members];
-		AstNode[] typeless = [.. declared.Where(IsTypelessMember)];
+		FunctionDeclaration[] lodged = LodgeScopeOperators(declared);
+		AstNode[] typeless = [.. declared.Where(member => IsTypelessMember(member) && !IsLodged(member))];
 		bool holderWritten = false;
 
 		// Every alias the scope holds goes first, its own and those lifted out of its types: C# takes
@@ -631,7 +711,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 			foreach (AstNode member in declared)
 			{
 				bool isTypeless = IsTypelessMember(member);
-				if ((isTypeless && holderWritten) || member is UsingAlias)
+				if ((isTypeless && holderWritten) || member is UsingAlias || IsLodged(member))
 				{
 					continue;
 				}
@@ -657,8 +737,84 @@ public class CSharpGenerator : LanguageGeneratorBase
 		finally
 		{
 			memberAliasesHoisted = aliasesWereHoisted;
+			foreach (FunctionDeclaration function in lodged)
+			{
+				lodgedOperators.Remove(function);
+			}
+
+			foreach (ClassDeclaration type in declared.OfType<ClassDeclaration>())
+			{
+				scopeOperators.Remove(type);
+			}
 		}
 	}
+
+	/// <summary>
+	/// Moves each operator declared in a namespace or a file into the type beside it that it operates
+	/// on.
+	/// </summary>
+	/// <param name="declared">Everything declared in the scope.</param>
+	/// <returns>The operators that were moved.</returns>
+	/// <remarks>
+	/// C++ writes a symmetric operator beside the type rather than as a member of it, and the AST
+	/// allows that. C# has no operator outside a type, and the static class holding the scope's other
+	/// functions may not declare one (CS0715), so it goes into the type one of its operands is — the
+	/// only type C# lets declare it (CS0563) — with every operand it names and none added. A scope
+	/// declaring no such type leaves it where it was, to be written down there.
+	/// </remarks>
+	private FunctionDeclaration[] LodgeScopeOperators(AstNode[] declared)
+	{
+		ClassDeclaration[] types = [.. declared.OfType<ClassDeclaration>().Where(type => type.Kind != TypeDeclarationKind.Interface)];
+		List<FunctionDeclaration> lodged = [];
+		foreach (FunctionDeclaration function in declared.OfType<FunctionDeclaration>().Where(function => function.Kind == FunctionKind.Operator))
+		{
+			ClassDeclaration? home = types.FirstOrDefault(type => function.Parameters.Any(parameter => NamesType(parameter.Type, type)));
+			if (home is null)
+			{
+				continue;
+			}
+
+			if (!scopeOperators.TryGetValue(home, out List<FunctionDeclaration>? operators))
+			{
+				operators = [];
+				scopeOperators[home] = operators;
+			}
+
+			operators.Add(function);
+			lodgedOperators.Add(function);
+			lodged.Add(function);
+		}
+
+		return [.. lodged];
+	}
+
+	/// <summary>
+	/// Determines whether a type reference names a declared type, type arguments and all.
+	/// </summary>
+	/// <param name="type">The reference.</param>
+	/// <param name="classDecl">The declaration.</param>
+	/// <returns>True when the reference is to that type.</returns>
+	private static bool NamesType(TypeReference? type, ClassDeclaration classDecl) =>
+		type is not null
+		&& string.Equals(type.Name, classDecl.Name, StringComparison.Ordinal)
+		&& type.TypeArguments.Count == classDecl.TypeParameters.Count;
+
+	/// <summary>
+	/// Determines whether a member of a scope has been moved into a type beside it.
+	/// </summary>
+	/// <param name="member">The member.</param>
+	/// <returns>True for an operator <see cref="LodgeScopeOperators"/> moved.</returns>
+	private bool IsLodged(AstNode member) => member is FunctionDeclaration function && lodgedOperators.Contains(function);
+
+	/// <summary>
+	/// The operators declared in a scope, by the type beside them each was moved into.
+	/// </summary>
+	private readonly Dictionary<ClassDeclaration, List<FunctionDeclaration>> scopeOperators = new(ReferenceEqualityComparer.Instance);
+
+	/// <summary>
+	/// The operators moved out of the scope they were declared in, which name every operand they take.
+	/// </summary>
+	private readonly HashSet<FunctionDeclaration> lodgedOperators = new(ReferenceEqualityComparer.Instance);
 
 	/// <summary>
 	/// Emits the static class that holds a scope's fields, functions and variables.
@@ -699,9 +855,9 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// Determines whether a member of a namespace or file is one C# can declare only inside a type.
 	/// </summary>
 	/// <param name="member">The member.</param>
-	/// <returns>True for a field, a function or a variable.</returns>
+	/// <returns>True for a field, a function, a variable or an entry point.</returns>
 	private static bool IsTypelessMember(AstNode member) =>
-		member is FieldDeclaration or FunctionDeclaration or VariableDeclaration;
+		member is FieldDeclaration or FunctionDeclaration or VariableDeclaration or EntryPoint;
 
 	/// <summary>
 	/// Picks a name for the class holding a scope's members that no type beside it already has.
@@ -1008,6 +1164,41 @@ public class CSharpGenerator : LanguageGeneratorBase
 	}
 
 	/// <summary>
+	/// Whether a struct needs a constructor written for it that the AST does not declare.
+	/// </summary>
+	/// <param name="classDecl">The declaration being emitted.</param>
+	/// <returns><see langword="true"/> for a struct whose instance members start at a value and which declares no constructor C# will see.</returns>
+	/// <remarks>
+	/// C# 10 lets a struct's fields start at a value, but only in a struct that declares a constructor
+	/// (CS8983), because <c>default(T)</c> never runs an initializer and the language wants a
+	/// constructor that does. An empty parameterless one is the smallest declaration it accepts, and
+	/// <c>new T()</c> through it still starts every field where the AST said. A static or constant
+	/// member is not an instance's and does not count, and neither does a deleted constructor, which is
+	/// written as a note rather than a declaration.
+	/// </remarks>
+	private static bool NeedsParameterlessConstructor(ClassDeclaration classDecl) =>
+		classDecl.Kind == TypeDeclarationKind.Struct
+		&& !classDecl.Members.OfType<FunctionDeclaration>().Any(function =>
+			function.Kind == FunctionKind.Constructor && function.Definition != FunctionDefinition.Deleted)
+		&& classDecl.Members.Any(member => member switch
+		{
+			FieldDeclaration field => field.InitialValue is not null && !field.IsStatic && !field.IsConstant,
+			VariableDeclaration variable => variable.InitialValue is not null && !IsWrittenAsConst(variable),
+			_ => false,
+		});
+
+	/// <summary>
+	/// Whether a variable is written as a C# <c>const</c>, which belongs to the type rather than to an instance.
+	/// </summary>
+	/// <param name="varDecl">The declaration being considered.</param>
+	/// <returns><see langword="true"/> when <see cref="GenerateVariableDeclaration"/> writes it with <c>const</c>.</returns>
+	private static bool IsWrittenAsConst(VariableDeclaration varDecl) =>
+		varDecl.IsConstant
+		&& !varDecl.IsTypeInferred
+		&& varDecl.Type is not null
+		&& IsCompileTimeValue(varDecl.InitialValue);
+
+	/// <summary>
 	/// Emits a function.
 	/// </summary>
 	/// <param name="function">The function to emit.</param>
@@ -1051,6 +1242,14 @@ public class CSharpGenerator : LanguageGeneratorBase
 			return;
 		}
 
+		// An operator with nowhere to go: C# declares one only in a type it operates on (CS0563), and
+		// the static class holding the scope's functions may not declare one at all (CS0715).
+		if (enclosingType is null && function.Kind == FunctionKind.Operator)
+		{
+			WriteInexpressible(code, $"{name} is declared outside a type, and C# declares an operator only in a type one of its operands is.");
+			return;
+		}
+
 		if (!WriteMemberNotes(function, name, enclosingType, code))
 		{
 			return;
@@ -1063,7 +1262,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 		code.Write(SpellTypeParameters(function.TypeParameters));
 		code.Write("(");
 
-		bool takesOperand = TakesImplicitOperand(function, enclosingType);
+		bool takesOperand = TakesImplicitOperand(function, enclosingType) && !lodgedOperators.Contains(function);
 		if (takesOperand)
 		{
 			code.Write($"{enclosingType!.Name}{SpellTypeParameters(enclosingType.TypeParameters)} {OperandParameterName}");
@@ -1092,12 +1291,32 @@ public class CSharpGenerator : LanguageGeneratorBase
 		code.WriteLine();
 		WriteConstraintClauses(function.TypeParameters, code);
 
-		using Scope body = new(code);
-		WriteInitialisers(function, code);
-
-		foreach (AstNode statement in function.Body)
+		// The parameters' types are what decides whether a shift by one is cast; see
+		// ShouldCastShiftCount. The enclosing function's are restored afterwards, so a nested
+		// declaration does not leave its own behind.
+		Dictionary<string, TypeReference> enclosingTypes = shiftCountTypes;
+		shiftCountTypes = new(enclosingTypes, StringComparer.Ordinal);
+		foreach (Parameter parameter in function.Parameters)
 		{
-			GenerateInternal(statement, code);
+			if (parameter is { Name: string parameterName, Type: TypeReference parameterType })
+			{
+				shiftCountTypes[parameterName] = parameterType;
+			}
+		}
+
+		try
+		{
+			using Scope body = new(code);
+			WriteInitialisers(function, code);
+
+			foreach (AstNode statement in function.Body)
+			{
+				GenerateInternal(statement, code);
+			}
+		}
+		finally
+		{
+			shiftCountTypes = enclosingTypes;
 		}
 	}
 
@@ -1153,6 +1372,14 @@ public class CSharpGenerator : LanguageGeneratorBase
 			WriteInexpressible(code, $"readonly: {name} does not modify its instance");
 		}
 
+		// A record already has == and != against itself, compiled from every field, so declaring
+		// either again is a second member with the same signature (CS0111).
+		if (enclosingType is not null && RecordSynthesises(function, enclosingType))
+		{
+			WriteInexpressible(code, $"{name} is synthesised by the record, which compares every field.");
+			return false;
+		}
+
 		// C++ lets a member operator be private, protected or virtual; a C# operator is public and
 		// static and nothing else, so what it asked for is written down rather than lost.
 		if (IsOperator(function))
@@ -1171,6 +1398,32 @@ public class CSharpGenerator : LanguageGeneratorBase
 
 		return true;
 	}
+
+	/// <summary>
+	/// Gets whether a declaration is an equality operator a C# record already declares.
+	/// </summary>
+	/// <param name="function">The declaration being emitted.</param>
+	/// <param name="enclosingType">The type it belongs to.</param>
+	/// <returns>True for <c>==</c> or <c>!=</c> comparing a record with itself.</returns>
+	/// <remarks>
+	/// One compared against another type is not synthesised, so it is still declared, and still
+	/// given its partner.
+	/// </remarks>
+	private static bool RecordSynthesises(FunctionDeclaration function, ClassDeclaration enclosingType) =>
+		enclosingType.IsRecord
+		&& function.Kind == FunctionKind.Operator
+		&& function.Name is "==" or "!="
+		&& function.Parameters.Count == 1
+		&& IsTheType(function.Parameters[0].Type, enclosingType);
+
+	/// <summary>
+	/// Gets whether a type reference names the type being declared.
+	/// </summary>
+	/// <param name="type">The reference.</param>
+	/// <param name="classDecl">The type being declared.</param>
+	/// <returns>True when the name matches and the arguments are as many as its parameters.</returns>
+	private static bool IsTheType(TypeReference? type, ClassDeclaration classDecl) =>
+		type is not null && type.Name == classDecl.Name && type.TypeArguments.Count == classDecl.TypeParameters.Count;
 
 	/// <summary>
 	/// Gets whether a declaration is one C# requires to be <c>public static</c>.
@@ -1281,9 +1534,16 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// the instance it belongs to is the left-hand operand. A C# operator is static and takes every
 	/// operand explicitly, so written as declared a binary operator would become a unary one and a
 	/// unary operator or a conversion would take nothing at all (CS1019).
+	/// <para>
+	/// A friend is the exception: it is declared beside the type rather than as a member of it, so it
+	/// already names every operand it takes, and adding the instance would make a binary operator
+	/// ternary (CS1534).
+	/// </para>
 	/// </remarks>
 	private static bool TakesImplicitOperand(FunctionDeclaration function, ClassDeclaration? enclosingType) =>
-		enclosingType is not null && function.Kind is FunctionKind.Operator or FunctionKind.ConversionOperator;
+		enclosingType is not null
+		&& !function.IsFriend
+		&& function.Kind is FunctionKind.Operator or FunctionKind.ConversionOperator;
 
 	/// <summary>
 	/// Determines whether a declaration's <see cref="FunctionDeclaration.IsReadOnly"/> is spelled as
@@ -1337,13 +1597,14 @@ public class CSharpGenerator : LanguageGeneratorBase
 		};
 	}
 
-	private static void GenerateParameter(Parameter parameter, CodeBlocker code)
+	private void GenerateParameter(Parameter parameter, CodeBlocker code)
 	{
 		code.Write($"{MapToCSType(parameter.Type ?? new TypeReference(UnknownTypeName))} {parameter.Name}");
 
-		if (parameter.IsOptional && !string.IsNullOrEmpty(parameter.DefaultValue))
+		if (parameter.IsOptional && parameter.DefaultValue is Expression value)
 		{
-			code.Write($" = {parameter.DefaultValue}");
+			code.Write(" = ");
+			GenerateInternal(value, code);
 		}
 	}
 
@@ -1376,6 +1637,22 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// in front of itself; one inside a namespace, a file or another type leaves them to that.
 	/// </remarks>
 	private bool memberAliasesHoisted;
+
+	/// <summary>
+	/// The declared types of the parameters and locals in scope, by name, for deciding whether a
+	/// shift's count is cast (#305).
+	/// </summary>
+	private Dictionary<string, TypeReference> shiftCountTypes = new(StringComparer.Ordinal);
+
+	/// <summary>
+	/// The root <see cref="declaresShiftOperator"/> was computed for.
+	/// </summary>
+	private AstNode? shiftOperatorRoot;
+
+	/// <summary>
+	/// Whether <see cref="shiftOperatorRoot"/> declares a shift operator of its own.
+	/// </summary>
+	private bool declaresShiftOperator;
 
 	/// <summary>
 	/// The member of a namespace or file being written into the static class that holds it, which
@@ -1471,6 +1748,15 @@ public class CSharpGenerator : LanguageGeneratorBase
 
 	private void GenerateVariableDeclaration(VariableDeclaration varDecl, CodeBlocker code)
 	{
+		if (!varDecl.IsTypeInferred && varDecl.Type is TypeReference declaredType)
+		{
+			shiftCountTypes[varDecl.Name] = declaredType;
+		}
+		else
+		{
+			shiftCountTypes.Remove(varDecl.Name);
+		}
+
 		// Use type or var for type inference
 		string type = varDecl.IsTypeInferred || varDecl.Type is null
 			? "var"
@@ -1488,9 +1774,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 		// A C# constant must name its type and hold a compile-time value, so an inferred one, or one
 		// computed from a parameter or a call, stays a plain declaration rather than becoming source
 		// that does not compile. C# has no readonly local to say the rest with.
-		bool isConst = varDecl.IsConstant
-			&& !string.Equals(type, "var", StringComparison.Ordinal)
-			&& IsCompileTimeValue(varDecl.InitialValue);
+		bool isConst = IsWrittenAsConst(varDecl);
 		if (isConst)
 		{
 			code.Write("const ");
@@ -1520,7 +1804,8 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// <remarks>
 	/// Always <c>static</c>, and named with the capital C# gives it. The method is emitted on its own
 	/// rather than wrapped in a class, because a C# entry point is an ordinary member of whatever
-	/// class the document puts it in — including one this generator emits around it.
+	/// class the document puts it in — including the static class this generator writes around one
+	/// declared in a namespace or a file (#128).
 	/// </remarks>
 	private void GenerateEntryPoint(EntryPoint entryPoint, CodeBlocker code)
 	{

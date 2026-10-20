@@ -1,4 +1,4 @@
-// Copyright (c) 2023-2026 ktsu-dev contributors
+﻿// Copyright (c) 2023-2026 ktsu-dev contributors
 
 namespace ktsu.Coder.Test.Languages;
 
@@ -391,6 +391,77 @@ public class TypeDeclarationShapeTests
 
 		StringAssert.Contains(code, $"public int total;{NewLine}");
 		StringAssert.Contains(code, $"public readonly int x;{NewLine}");
+	}
+
+	/// <summary>
+	/// A struct whose instance members start at a value is given an empty parameterless constructor,
+	/// because C# accepts a field initialiser in a struct only beside a declared constructor (#270).
+	/// </summary>
+	[TestMethod]
+	public void CSharp_AStructWithInitialisedFieldsDeclaresAConstructor()
+	{
+		ClassDeclaration counter = new("Counter") { Kind = TypeDeclarationKind.Struct };
+		counter.Members.Add(new FieldDeclaration("count", "int") { InitialValue = Literal.Number(0) });
+
+		string code = Generate(new CSharpGenerator(), counter);
+
+		StringAssert.Contains(code, "public Counter()");
+	}
+
+	/// <summary>
+	/// A local-style variable member that starts at a value needs the constructor too, unless it is
+	/// written as a <c>const</c>, which belongs to the type.
+	/// </summary>
+	[TestMethod]
+	public void CSharp_AStructsVariableMemberCountsUnlessItIsAConstant()
+	{
+		ClassDeclaration counter = new("Counter") { Kind = TypeDeclarationKind.Struct };
+		counter.Members.Add(new VariableDeclaration("count", "int", Literal.Number(0)));
+		StringAssert.Contains(Generate(new CSharpGenerator(), counter), "public Counter()");
+
+		ClassDeclaration limits = new("Limits") { Kind = TypeDeclarationKind.Struct };
+		limits.Members.Add(new VariableDeclaration("most", "int", Literal.Number(9)) { IsConstant = true });
+		Assert.DoesNotContain("Limits()", Generate(new CSharpGenerator(), limits));
+	}
+
+	/// <summary>
+	/// No constructor is added where one is not needed: a struct that declares its own, a struct whose
+	/// only initialised members are static or constant, and a class, which never needed one.
+	/// </summary>
+	[TestMethod]
+	public void CSharp_NoConstructorIsAddedWhereNoneIsNeeded()
+	{
+		ClassDeclaration declared = new("Declared") { Kind = TypeDeclarationKind.Struct };
+		declared.Members.Add(new FieldDeclaration("count", "int") { InitialValue = Literal.Number(0) });
+		FunctionDeclaration constructor = new("Declared") { Kind = FunctionKind.Constructor, Visibility = Visibility.Public };
+		constructor.Parameters.Add(new Parameter("count", "int"));
+		declared.Members.Add(constructor);
+		Assert.DoesNotContain("Declared()", Generate(new CSharpGenerator(), declared));
+
+		ClassDeclaration shared = new("Shared") { Kind = TypeDeclarationKind.Struct };
+		shared.Members.Add(new FieldDeclaration("total", "int") { IsStatic = true, InitialValue = Literal.Number(0) });
+		shared.Members.Add(new FieldDeclaration("Limit", "int") { IsConstant = true, InitialValue = Literal.Number(4) });
+		Assert.DoesNotContain("Shared()", Generate(new CSharpGenerator(), shared));
+
+		ClassDeclaration plain = new("Plain") { Kind = TypeDeclarationKind.Class };
+		plain.Members.Add(new FieldDeclaration("count", "int") { InitialValue = Literal.Number(0) });
+		Assert.DoesNotContain("Plain()", Generate(new CSharpGenerator(), plain));
+	}
+
+	/// <summary>
+	/// A deleted constructor is written as a note rather than a declaration, so it does not stand in
+	/// for the one C# needs.
+	/// </summary>
+	[TestMethod]
+	public void CSharp_ADeletedConstructorDoesNotStandInForTheOneCSharpNeeds()
+	{
+		ClassDeclaration counter = new("Counter") { Kind = TypeDeclarationKind.Struct };
+		counter.Members.Add(new FieldDeclaration("count", "int") { InitialValue = Literal.Number(0) });
+		FunctionDeclaration deleted = new("Counter") { Kind = FunctionKind.Constructor, Definition = FunctionDefinition.Deleted };
+		deleted.Parameters.Add(new Parameter("other", "Counter"));
+		counter.Members.Add(deleted);
+
+		StringAssert.Contains(Generate(new CSharpGenerator(), counter), "public Counter()");
 	}
 
 	/// <summary>

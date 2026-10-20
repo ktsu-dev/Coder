@@ -2,6 +2,10 @@
 
 Changes since v3.19.0:
 
+- [patch] Cast a C# shift count only when it may be wider than int (#305) (Claude)
+- Express the remainder scan and its test loop with LINQ (matt-edmondson)
+- Give the exit-code helper another name when the user declares run [patch] (matt-edmondson)
+- Import the floating-remainder call when the remainder is in a setter or entry point [patch] (matt-edmondson)
 - Cover DocumentStore's permission and cleanup-failure paths (Claude)
 - Skip the comparison partner for an unnamed operand, and show any generator failure in the preview [patch] (Claude)
 - Save documents through a temporary file so a failed write keeps the old one [patch] (Claude)

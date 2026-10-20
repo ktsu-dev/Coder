@@ -64,6 +64,60 @@ public class RustGeneratedSourceCompilesTests
 	}
 
 	/// <summary>
+	/// Tests that an interface taken by reference is a trait object, and that a call through it
+	/// reaches the implementation when run.
+	/// </summary>
+	/// <remarks>
+	/// A bare trait where a type belongs is an error from the 2021 edition on, so <c>s: &amp;Shape</c>
+	/// had to become <c>s: &amp;dyn Shape</c> (issue #298). The driver supplies the
+	/// <c>impl Shape for Square</c> the generator does not write for a struct's interfaces.
+	/// </remarks>
+	[TestMethod]
+	public void InterfaceParameters_AreCalledThroughWhenRun()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "rustc") is null)
+		{
+			Assert.Inconclusive("No Rust compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		string driver = """
+			impl Shape for Square {
+			    fn area(&self) -> i32 {
+			        Square::area(self)
+			    }
+			}
+
+			fn main() {
+			    let mut square = Square { side: 2 };
+			    let first = measure(&square);
+			    println!("{} {}", first, measureMutable(&mut square));
+			}
+
+			""";
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new RustGenerator().Generate(CompiledExemplar.Measured());
+			string allowed = "#![allow(dead_code, unused_variables, unused_mut, non_snake_case)]";
+
+			File.WriteAllText(
+				Path.Combine(directory, "measured.rs"),
+				$"{allowed}{Environment.NewLine}{source}{Environment.NewLine}{driver}");
+
+			(int exitCode, string output) = ToolchainHarness.Run(
+				"rustc",
+				"--edition 2021 -o measured measured.rs",
+				directory);
+			Assert.AreEqual(0, exitCode, $"rustc rejected the generated source:{Environment.NewLine}{source}{Environment.NewLine}{output}");
+
+			(int ran, string printed) = ToolchainHarness.Run(Path.Combine(directory, "measured"), string.Empty, directory);
+			Assert.AreEqual(0, ran, printed);
+			Assert.AreEqual("4 4", printed.Trim());
+		});
+	}
+
+	/// <summary>
 	/// Tests that a string literal compiles where an owned <c>String</c> receives it: returned from
 	/// a function answering <c>str</c> or <c>string</c>, and initialising a local declared as one.
 	/// </summary>
@@ -597,6 +651,7 @@ public class RustGeneratedSourceCompilesTests
 		point.Members.Add(CompiledExemplar.Shift("shift"));
 		point.Members.Add(CompiledExemplar.Plus());
 		point.Members.Add(CompiledExemplar.Negate());
+		point.Members.Add(CompiledExemplar.Times());
 		point.Members.Add(CompiledExemplar.ToDouble("value.x as f64"));
 		point.Members.Add(CompiledExemplar.Pick("pick", "shift"));
 
@@ -731,4 +786,36 @@ public class RustGeneratedSourceCompilesTests
 	/// <returns>The type.</returns>
 	private static TypeReference BorrowedString() =>
 		new("str") { Indirection = TypeIndirection.Reference, IsReadOnly = true };
+
+	/// <summary>
+	/// Tests that numbers of different widths meeting in an operator, an initialiser, an assignment,
+	/// a return and a call argument compile, which Rust only allows once the narrower is converted
+	/// (issue #238).
+	/// </summary>
+	[TestMethod]
+	public void MixedNumericWidths_Compile()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "rustc") is null)
+		{
+			Assert.Inconclusive("No Rust compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new RustGenerator().Generate(NumericWideningTests.Widening());
+			string allowed = "#![allow(unused_parens, dead_code, unused_variables, unused_mut, unused_assignments)]";
+
+			File.WriteAllText(
+				Path.Combine(directory, "widening.rs"),
+				$"{allowed}{Environment.NewLine}{source}");
+
+			(int exitCode, string output) = ToolchainHarness.Run(
+				"rustc",
+				"--crate-type lib --edition 2021 -o widening.rlib widening.rs",
+				directory);
+
+			Assert.AreEqual(0, exitCode, $"rustc rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+		});
+	}
 }
