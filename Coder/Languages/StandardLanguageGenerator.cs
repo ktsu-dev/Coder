@@ -665,7 +665,7 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 				break;
 
 			case UnaryExpression unaryExpr:
-				GenerateUnaryExpression(unaryExpr, code, GetUnaryOperatorSpelling(unaryExpr.Operator));
+				GenerateUnary(unaryExpr, code);
 				break;
 
 			case ReturnStatement returnStmt:
@@ -1388,6 +1388,21 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 		}
 
 		GenerateBinaryExpression(binary, code, GetOperatorSpelling(binary.Operator));
+	}
+
+	/// <summary>
+	/// Emits a unary expression in the target language.
+	/// </summary>
+	/// <param name="unary">The expression to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// Defaults to the operator's spelling before its operand. A language whose operator means
+	/// something else for some operands, rather than being spelled differently, overrides this.
+	/// </remarks>
+	protected virtual void GenerateUnary(UnaryExpression unary, CodeBlocker code)
+	{
+		Ensure.NotNull(unary);
+		GenerateUnaryExpression(unary, code, GetUnaryOperatorSpelling(unary.Operator));
 	}
 
 	/// <inheritdoc/>

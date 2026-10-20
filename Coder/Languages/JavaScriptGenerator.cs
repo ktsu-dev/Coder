@@ -757,6 +757,11 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	/// <c>1</c>, so <c>===</c> against <c>true</c> fails (#268). <c>^</c> is written <c>!==</c>, and
 	/// <c>&amp;</c> and <c>|</c> are wrapped in <c>Boolean(...)</c>; both still evaluate each side.
 	/// </para>
+	/// <para>
+	/// The bitwise and shift operators convert both operands to a signed 32-bit integer, so on a
+	/// <c>long</c> or <c>ulong</c> they drop every bit above the 32nd and on a <c>uint</c> they give a
+	/// negative number for anything above 2^31 (#256). See <see cref="WriteWideBitwise"/>.
+	/// </para>
 	/// </remarks>
 	protected override void GenerateBinary(BinaryExpression binary, CodeBlocker code)
 	{
@@ -777,6 +782,12 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 			return;
 		}
 
+		if (IntegerWidthOf(binary) is IntegerWidth width)
+		{
+			WriteWideBitwise(binary, width, code);
+			return;
+		}
+
 		if (binary.Operator != BinaryOperator.Divide || !IsIntegerArithmetic(binary))
 		{
 			base.GenerateBinary(binary, code);
@@ -794,23 +805,28 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	/// <c>5 /= 2</c> where the C family gives <c>2</c>. When both sides are known to be integers the
 	/// assignment is written out as <c>x = Math.trunc(x / y)</c> through <see cref="GenerateBinary"/>.
 	/// <c>&amp;=</c>, <c>|=</c> and <c>^=</c> on booleans are written out the same way, so the target
-	/// is left holding a boolean rather than a number. <c>%=</c> already matches the C family, and
-	/// every other compound assignment is left as it is.
+	/// is left holding a boolean rather than a number, and the bitwise and shift assignments on a
+	/// <c>long</c>, <c>ulong</c> or <c>uint</c> so they keep every bit. <c>%=</c> already matches the C
+	/// family, and every other compound assignment is left as it is.
 	/// </remarks>
 	protected override void GenerateAssignmentStatement(AssignmentStatement assignment, CodeBlocker code)
 	{
 		Ensure.NotNull(assignment);
 		Ensure.NotNull(code);
 
-		BinaryOperator? spelledOut = assignment.Operator == AssignmentOperator.DivideAssign
-			? BinaryOperator.Divide
-			: BitwiseOperatorOf(assignment.Operator);
+		BinaryOperator? spelledOut = assignment.Operator switch
+		{
+			AssignmentOperator.DivideAssign => BinaryOperator.Divide,
+			AssignmentOperator.LeftShiftAssign => BinaryOperator.LeftShift,
+			AssignmentOperator.RightShiftAssign => BinaryOperator.RightShift,
+			_ => BitwiseOperatorOf(assignment.Operator),
+		};
 		BinaryExpression? binary = spelledOut is BinaryOperator op
 			? new(assignment.Target, op, assignment.Value)
 			: null;
 		bool writtenOut = binary is not null && (binary.Operator == BinaryOperator.Divide
 			? IsIntegerArithmetic(binary)
-			: IsBooleanBitwise(binary.Operator, binary.Left, binary.Right));
+			: IsBooleanBitwise(binary.Operator, binary.Left, binary.Right) || IntegerWidthOf(binary) is not null);
 		if (binary is null || !writtenOut)
 		{
 			base.GenerateAssignmentStatement(assignment, code);
@@ -821,6 +837,124 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		code.Write(" = ");
 		GenerateBinary(binary, code);
 		EndStatement(code);
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// <c>~</c> converts its operand to a signed 32-bit integer, the same as the binary bitwise
+	/// operators, so on a <c>long</c>, <c>ulong</c> or <c>uint</c> it is written out the way they are.
+	/// </remarks>
+	protected override void GenerateUnary(UnaryExpression unary, CodeBlocker code)
+	{
+		Ensure.NotNull(unary);
+		Ensure.NotNull(code);
+
+		IntegerWidth? width = unary.Operator == UnaryOperator.BitwiseNot ? IntegerWidthOf(StaticType(unary.Operand)) : null;
+		switch (width)
+		{
+			case IntegerWidth.Unsigned32:
+				code.Write("(");
+				base.GenerateUnary(unary, code);
+				code.Write(" >>> 0)");
+				return;
+			case IntegerWidth.Signed64 or IntegerWidth.Unsigned64:
+				code.Write($"Number(BigInt.{(width == IntegerWidth.Signed64 ? "asIntN" : "asUintN")}(64, ~BigInt(");
+				GenerateInternal(unary.Operand, code);
+				code.Write(")))");
+				return;
+			default:
+				base.GenerateUnary(unary, code);
+				return;
+		}
+	}
+
+	/// <summary>
+	/// The integer types whose bitwise operators JavaScript's 32-bit signed conversion gets wrong.
+	/// </summary>
+	private enum IntegerWidth
+	{
+		/// <summary><c>uint</c>.</summary>
+		Unsigned32,
+
+		/// <summary><c>long</c>.</summary>
+		Signed64,
+
+		/// <summary><c>ulong</c>.</summary>
+		Unsigned64,
+	}
+
+	/// <summary>
+	/// Reads which width a bitwise or shift operator is applied at, when JavaScript's own would differ.
+	/// </summary>
+	/// <param name="binary">The expression to inspect.</param>
+	/// <returns>The width, or null for any other operator or for operands of no wider known type.</returns>
+	/// <remarks>
+	/// A shift takes the width of its left operand alone, since the count does not widen the value.
+	/// Otherwise the widest operand decides, <c>ulong</c> over <c>long</c> over <c>uint</c>, which is
+	/// the C family's conversion of the narrower one to the wider.
+	/// </remarks>
+	private IntegerWidth? IntegerWidthOf(BinaryExpression binary)
+	{
+		if (binary.Operator is BinaryOperator.LeftShift or BinaryOperator.RightShift)
+		{
+			return IntegerWidthOf(StaticType(binary.Left));
+		}
+
+		if (binary.Operator is not (BinaryOperator.BitwiseAnd or BinaryOperator.BitwiseOr or BinaryOperator.BitwiseXor))
+		{
+			return null;
+		}
+
+		IntegerWidth? left = IntegerWidthOf(StaticType(binary.Left));
+		IntegerWidth? right = IntegerWidthOf(StaticType(binary.Right));
+		return left is null ? right : right is null ? left : (IntegerWidth)Math.Max((int)left, (int)right);
+	}
+
+	private static IntegerWidth? IntegerWidthOf(TypeReference? type) =>
+		type is { IsArray: false, Indirection: TypeIndirection.None, TypeArguments.Count: 0 }
+			? type.Name switch
+			{
+				"uint" => IntegerWidth.Unsigned32,
+				"long" => IntegerWidth.Signed64,
+				"ulong" => IntegerWidth.Unsigned64,
+				_ => null,
+			}
+			: null;
+
+	/// <summary>
+	/// Writes a bitwise or shift operator so it keeps the bits of the width it is applied at.
+	/// </summary>
+	/// <param name="binary">The expression to emit.</param>
+	/// <param name="width">The width it is applied at.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// A <c>uint</c> result is read back as unsigned with <c>&gt;&gt;&gt; 0</c>, and its right shift is
+	/// <c>&gt;&gt;&gt;</c>, which shifts in zeros rather than copies of a sign bit it does not have. A
+	/// 64-bit operation is done in BigInt, wrapped to 64 bits with <c>BigInt.asIntN</c> or
+	/// <c>BigInt.asUintN</c> and converted back to a number, which every other <c>long</c> in the output
+	/// already is; a result past 2^53 is rounded by that conversion, as it is anywhere else.
+	/// </remarks>
+	private void WriteWideBitwise(BinaryExpression binary, IntegerWidth width, CodeBlocker code)
+	{
+		if (width == IntegerWidth.Unsigned32)
+		{
+			if (binary.Operator == BinaryOperator.RightShift)
+			{
+				GenerateBinaryExpression(binary, code, ">>>");
+				return;
+			}
+
+			code.Write("(");
+			GenerateBinaryExpression(binary, code, GetOperatorSpelling(binary.Operator));
+			code.Write(" >>> 0)");
+			return;
+		}
+
+		code.Write($"Number(BigInt.{(width == IntegerWidth.Signed64 ? "asIntN" : "asUintN")}(64, BigInt(");
+		GenerateInternal(binary.Left, code);
+		code.Write($") {GetOperatorSpelling(binary.Operator)} BigInt(");
+		GenerateInternal(binary.Right, code);
+		code.Write(")))");
 	}
 
 	/// <summary>
