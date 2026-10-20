@@ -286,6 +286,48 @@ public class CppGeneratedSourceCompilesTests
 	}
 
 	/// <summary>
+	/// Tests that a call on a reference parameter, on a pointer parameter, and on another call's
+	/// result compile and run (#170).
+	/// </summary>
+	/// <remarks>
+	/// The pointer was reached with a dot, which C++ refuses: a member call through one is an arrow.
+	/// </remarks>
+	[TestMethod]
+	public void CallsOnAReferenceAPointerAndACallResult_CompileAndRun()
+	{
+		string header = new CppGenerator().Generate(ReceiverExemplar.Build(method => method));
+
+		Assert.Contains("return other->length();", header, StringComparison.Ordinal, header);
+		Assert.Contains("return other.length();", header, StringComparison.Ordinal, header);
+
+		string? compiler = ToolchainHarness.FindOnPath("--version", Compilers);
+		if (compiler is null)
+		{
+			Assert.Inconclusive("No C++ compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			File.WriteAllText(Path.Combine(directory, "receivers.h"), header);
+			File.WriteAllText(
+				Path.Combine(directory, "driver.cpp"),
+				$"#include \"receivers.h\"{Environment.NewLine}{Environment.NewLine}int main() {{ Vec2 v{{}}; return static_cast<int>(through_reference(v) + through_pointer(&v) + chained(v)) - 3; }}{Environment.NewLine}");
+
+			(int exitCode, string output) = ToolchainHarness.Run(
+				compiler,
+				"-std=c++20 -Wall -Wextra -pedantic -Werror driver.cpp -o driver",
+				directory);
+
+			Assert.AreEqual(0, exitCode, $"{compiler} rejected the generated header:{Environment.NewLine}{output}{Environment.NewLine}{header}");
+
+			(exitCode, output) = ToolchainHarness.Run(Path.Combine(directory, "driver"), string.Empty, directory);
+
+			Assert.AreEqual(0, exitCode, $"A call did not reach its method:{Environment.NewLine}{output}");
+		});
+	}
+
+	/// <summary>
 	/// Builds a header declaring an array in each position one with no bound may stand in.
 	/// </summary>
 	/// <returns>The file to generate.</returns>

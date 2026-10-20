@@ -153,6 +153,64 @@ public class CGeneratedSourceCompilesTests
 	}
 
 	/// <summary>
+	/// The consumer of the receivers header, which calls each function and exits with zero when each
+	/// call reached the member function it lowers to.
+	/// </summary>
+	private const string ReceiverDriver = """
+		#include "receivers.h"
+
+		int main(void)
+		{
+			Vec2 v = { .x = 0.0 };
+			return (int)(through_reference(&v) + through_pointer(&v) + chained(v)) - 3;
+		}
+
+		""";
+
+	/// <summary>
+	/// Tests that a call on a reference parameter, on a pointer parameter, and on another call's
+	/// result each pass the pointer C's lowered member function takes (#170).
+	/// </summary>
+	/// <remarks>
+	/// The first two used to take the address of what was already a pointer, which GCC 14 refuses,
+	/// and the third the address of a call's result, which no C compiler accepts. Warnings are
+	/// errors here so that the pointer-to-pointer fails on GCC 13 as well.
+	/// </remarks>
+	[TestMethod]
+	public void CallsOnAReferenceAPointerAndACallResult_CompileAndRun()
+	{
+		SourceFile file = ReceiverExemplar.Build(method => $"Vec2_{method}");
+		string header = new CGenerator().Generate(file);
+
+		Assert.Contains("return Vec2_length(other);", header, StringComparison.Ordinal, header);
+		Assert.Contains("return Vec2_length((Vec2[]){ Vec2_twice(&v) });", header, StringComparison.Ordinal, header);
+
+		string? compiler = ToolchainHarness.FindOnPath("--version", Compilers);
+		if (compiler is null)
+		{
+			Assert.Inconclusive("No C compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			File.WriteAllText(Path.Combine(directory, "receivers.h"), header);
+			File.WriteAllText(Path.Combine(directory, "driver.c"), ReceiverDriver);
+
+			(int exitCode, string output) = ToolchainHarness.Run(
+				compiler,
+				"-std=c11 -Wall -Wextra -Wno-unused-parameter -pedantic -Werror driver.c -o driver",
+				directory);
+
+			Assert.AreEqual(0, exitCode, $"{compiler} rejected the generated calls:{Environment.NewLine}{output}{Environment.NewLine}{header}");
+
+			(exitCode, output) = ToolchainHarness.Run(Path.Combine(directory, "driver"), string.Empty, directory);
+
+			Assert.AreEqual(0, exitCode, $"A call did not reach its function:{Environment.NewLine}{output}");
+		});
+	}
+
+	/// <summary>
 	/// The consumer of the empty-type header, which builds the one with a constructor.
 	/// </summary>
 	private const string EmptyDriver = """

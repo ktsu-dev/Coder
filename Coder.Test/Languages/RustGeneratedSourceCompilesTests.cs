@@ -391,6 +391,47 @@ public class RustGeneratedSourceCompilesTests
 	}
 
 	/// <summary>
+	/// Tests that a call on a reference parameter, on a pointer parameter, and on another call's
+	/// result compile and run (#170).
+	/// </summary>
+	/// <remarks>
+	/// A raw pointer has no methods of its own and is not dereferenced for a call the way a reference
+	/// is, so <c>other.length()</c> on a <c>*const Vec2</c> did not compile.
+	/// </remarks>
+	[TestMethod]
+	public void CallsOnAReferenceAPointerAndACallResult_CompileAndRun()
+	{
+		SourceFile file = ReceiverExemplar.Build(method => method);
+		string source = new RustGenerator().Generate(file);
+
+		Assert.Contains("return unsafe { (*other).length() };", source, StringComparison.Ordinal, source);
+
+		if (ToolchainHarness.FindOnPath("--version", "rustc") is null)
+		{
+			Assert.Inconclusive("No Rust compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			File.WriteAllText(
+				Path.Combine(directory, "receivers.rs"),
+				$"{source}{Environment.NewLine}fn main() {{ let v = Vec2 {{ x: 0.0 }}; std::process::exit((through_reference(&v) + through_pointer(&v) + chained(v)) as i32 - 3); }}{Environment.NewLine}");
+
+			(int exitCode, string output) = ToolchainHarness.Run(
+				"rustc",
+				"--edition 2021 -o receivers receivers.rs",
+				directory);
+
+			Assert.AreEqual(0, exitCode, $"rustc rejected the generated source:{Environment.NewLine}{source}{Environment.NewLine}{output}");
+
+			(exitCode, output) = ToolchainHarness.Run(Path.Combine(directory, "receivers"), string.Empty, directory);
+
+			Assert.AreEqual(0, exitCode, $"A call did not reach its method:{Environment.NewLine}{output}");
+		});
+	}
+
+	/// <summary>
 	/// A struct with a mutating method, a read-only one, and an arithmetic operator that calls the
 	/// mutating one on <c>self</c>.
 	/// </summary>

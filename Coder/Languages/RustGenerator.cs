@@ -1037,6 +1037,7 @@ public class RustGenerator : StandardLanguageGenerator
 		code.Write(" ");
 
 		using Scope body = new(code);
+		using IDisposable types = OpenStaticTypeScope(funcDecl);
 
 		if (funcDecl.Kind == FunctionKind.Constructor)
 		{
@@ -1048,6 +1049,32 @@ public class RustGenerator : StandardLanguageGenerator
 		returnType = ReturnsAValue(funcDecl) ? funcDecl.ReturnType : null;
 		WriteBody(funcDecl.Body, code);
 		returnType = outerReturnType;
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// A raw pointer is not dereferenced for a method call the way a reference is, so a call through
+	/// one is written <c>unsafe { (*p).length() }</c>, which says what the call does: reads through a
+	/// pointer the compiler cannot vouch for (#170). Every other receiver is written as the base
+	/// writes it.
+	/// </remarks>
+	protected override void GenerateCallExpression(CallExpression callExpr, CodeBlocker code)
+	{
+		Ensure.NotNull(callExpr);
+		Ensure.NotNull(code);
+
+		if (callExpr.Receiver is not Expression receiver
+			|| StaticType(receiver) is not { Indirection: TypeIndirection.Pointer, IsArray: false })
+		{
+			base.GenerateCallExpression(callExpr, code);
+			return;
+		}
+
+		code.Write("unsafe { (*");
+		GenerateInternal(receiver, code);
+		code.Write($").{callExpr.Callee}(");
+		GenerateArgumentList(callExpr.Arguments, code);
+		code.Write(") }");
 	}
 
 	/// <inheritdoc/>
@@ -1571,6 +1598,7 @@ public class RustGenerator : StandardLanguageGenerator
 		Ensure.NotNull(varDecl);
 		Ensure.NotNull(code);
 
+		RegisterStaticType(varDecl);
 		code.Write(varDecl.IsConstant ? "let " : "let mut ");
 		code.Write(varDecl.Name);
 
