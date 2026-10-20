@@ -361,4 +361,45 @@ public class CSharpGeneratedSourceCompilesTests
 			members.Add(user);
 		}
 	}
+
+	/// <summary>
+	/// Tests that a struct whose fields start at a value compiles, which C# allows only beside a
+	/// declared constructor (CS8983), and that <c>new</c> starts the fields at those values (#270).
+	/// </summary>
+	[TestMethod]
+	public void StructsWithInitialisedFields_Compile()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "dotnet") is null)
+		{
+			Assert.Inconclusive("No dotnet on the path, so nothing was compiled.");
+			return;
+		}
+
+		SourceFile file = new("Generated");
+		ClassDeclaration counter = new("Counter") { Kind = TypeDeclarationKind.Struct };
+		counter.Members.Add(new FieldDeclaration("count", "int") { Visibility = Visibility.Public, InitialValue = Literal.Number(7) });
+		file.Members.Add(counter);
+
+		ClassDeclaration limits = new("Limits") { Kind = TypeDeclarationKind.Struct, IsReadOnly = true };
+		limits.Members.Add(new FieldDeclaration("most", "int") { Visibility = Visibility.Public, InitialValue = Literal.Number(9) });
+		file.Members.Add(limits);
+
+		const string StructDriver = """
+			public static class Driver
+			{
+				public static int Use() => new Counter().count + new Limits().most;
+			}
+			""";
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new CSharpGenerator().Generate(file);
+			File.WriteAllText(Path.Combine(directory, "Generated.csproj"), Project);
+			File.WriteAllText(Path.Combine(directory, "Driver.cs"), StructDriver);
+			File.WriteAllText(Path.Combine(directory, "Generated.cs"), source);
+
+			(int exitCode, string output) = ToolchainHarness.Run("dotnet", "build -nologo", directory);
+			Assert.AreEqual(0, exitCode, $"C# rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+		});
+	}
 }
