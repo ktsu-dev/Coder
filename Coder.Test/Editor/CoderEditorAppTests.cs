@@ -3,6 +3,7 @@
 namespace ktsu.Coder.Test.Editor;
 
 using System.Numerics;
+using Hexa.NET.ImGui;
 using ktsu.Coder.Ast;
 using ktsu.Coder.Editor;
 using ktsu.Coder.Graph;
@@ -537,6 +538,40 @@ public sealed class CoderEditorAppTests
 
 		Assert.AreEqual(Path.Combine(root, "elsewhere.cs"), written);
 		Assert.IsFalse(File.Exists(Path.Combine(root, "document.cs")));
+	}
+
+	/// <summary>
+	/// Tests that Export writes nothing when neither the Path box nor the document names a file.
+	/// </summary>
+	[TestMethod]
+	public void ExportToMenuTarget_WritesNothingWithNowhereToWrite()
+	{
+		CoderEditorApp app = NewApp(NewStore());
+		app.PathBox = null!;
+
+		Assert.AreEqual(string.Empty, app.PathBox, "clearing the box leaves it empty rather than null");
+		Assert.IsNull(app.ExportToMenuTarget());
+		Assert.IsEmpty(Directory.GetFiles(root));
+	}
+
+	/// <summary>
+	/// Tests that Ctrl+S saves to the path typed into the Path box, through a real frame.
+	/// </summary>
+	[TestMethod]
+	public void CtrlS_SavesToThePathBox()
+	{
+		DocumentStore store = NewStore();
+		CoderEditorApp app = NewApp(store);
+		string target = PathIn("shortcut");
+		app.PathBox = target;
+
+		using ImGuiAppHarness harness = ImGuiAppHarness.Start(app.BuildConfig(), Options);
+		harness.Step(2);
+		harness.Keyboard.Press(ImGuiKey.S, ctrl: true);
+		harness.Step(2);
+
+		Assert.IsTrue(File.Exists(target), app.Status);
+		Assert.AreEqual(target, app.DocumentPath);
 	}
 
 	/// <summary>
