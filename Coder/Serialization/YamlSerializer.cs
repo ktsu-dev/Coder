@@ -25,6 +25,7 @@ public class YamlSerializer
 			.WithNamingConvention(CamelCaseNamingConvention.Instance)
 			.DisableAliases()
 			.WithQuotingNecessaryStrings()
+			.WithEventEmitter(next => new LineBreakPreservingEventEmitter(next))
 			.ConfigureDefaultValuesHandling(DefaultValuesHandling.OmitNull | DefaultValuesHandling.OmitEmptyCollections)
 			.Build();
 	}
