@@ -388,6 +388,14 @@ public class CSharpGenerator : LanguageGeneratorBase
 			{
 				GenerateFunction(partner, code, classDecl);
 			}
+
+			if (scopeOperators.TryGetValue(classDecl, out List<FunctionDeclaration>? lodged))
+			{
+				foreach (FunctionDeclaration lodgedOperator in lodged)
+				{
+					GenerateFunction(lodgedOperator, code, classDecl);
+				}
+			}
 		}
 		finally
 		{
@@ -668,7 +676,8 @@ public class CSharpGenerator : LanguageGeneratorBase
 	private void GenerateScopeMembers(IEnumerable<AstNode> members, string holderName, CodeBlocker code)
 	{
 		AstNode[] declared = [.. members];
-		AstNode[] typeless = [.. declared.Where(IsTypelessMember)];
+		FunctionDeclaration[] lodged = LodgeScopeOperators(declared);
+		AstNode[] typeless = [.. declared.Where(member => IsTypelessMember(member) && !IsLodged(member))];
 		bool holderWritten = false;
 
 		// Every alias the scope holds goes first, its own and those lifted out of its types: C# takes
@@ -697,7 +706,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 			foreach (AstNode member in declared)
 			{
 				bool isTypeless = IsTypelessMember(member);
-				if ((isTypeless && holderWritten) || member is UsingAlias)
+				if ((isTypeless && holderWritten) || member is UsingAlias || IsLodged(member))
 				{
 					continue;
 				}
@@ -723,8 +732,84 @@ public class CSharpGenerator : LanguageGeneratorBase
 		finally
 		{
 			memberAliasesHoisted = aliasesWereHoisted;
+			foreach (FunctionDeclaration function in lodged)
+			{
+				lodgedOperators.Remove(function);
+			}
+
+			foreach (ClassDeclaration type in declared.OfType<ClassDeclaration>())
+			{
+				scopeOperators.Remove(type);
+			}
 		}
 	}
+
+	/// <summary>
+	/// Moves each operator declared in a namespace or a file into the type beside it that it operates
+	/// on.
+	/// </summary>
+	/// <param name="declared">Everything declared in the scope.</param>
+	/// <returns>The operators that were moved.</returns>
+	/// <remarks>
+	/// C++ writes a symmetric operator beside the type rather than as a member of it, and the AST
+	/// allows that. C# has no operator outside a type, and the static class holding the scope's other
+	/// functions may not declare one (CS0715), so it goes into the type one of its operands is — the
+	/// only type C# lets declare it (CS0563) — with every operand it names and none added. A scope
+	/// declaring no such type leaves it where it was, to be written down there.
+	/// </remarks>
+	private FunctionDeclaration[] LodgeScopeOperators(AstNode[] declared)
+	{
+		ClassDeclaration[] types = [.. declared.OfType<ClassDeclaration>().Where(type => type.Kind != TypeDeclarationKind.Interface)];
+		List<FunctionDeclaration> lodged = [];
+		foreach (FunctionDeclaration function in declared.OfType<FunctionDeclaration>().Where(function => function.Kind == FunctionKind.Operator))
+		{
+			ClassDeclaration? home = types.FirstOrDefault(type => function.Parameters.Any(parameter => NamesType(parameter.Type, type)));
+			if (home is null)
+			{
+				continue;
+			}
+
+			if (!scopeOperators.TryGetValue(home, out List<FunctionDeclaration>? operators))
+			{
+				operators = [];
+				scopeOperators[home] = operators;
+			}
+
+			operators.Add(function);
+			lodgedOperators.Add(function);
+			lodged.Add(function);
+		}
+
+		return [.. lodged];
+	}
+
+	/// <summary>
+	/// Determines whether a type reference names a declared type, type arguments and all.
+	/// </summary>
+	/// <param name="type">The reference.</param>
+	/// <param name="classDecl">The declaration.</param>
+	/// <returns>True when the reference is to that type.</returns>
+	private static bool NamesType(TypeReference? type, ClassDeclaration classDecl) =>
+		type is not null
+		&& string.Equals(type.Name, classDecl.Name, StringComparison.Ordinal)
+		&& type.TypeArguments.Count == classDecl.TypeParameters.Count;
+
+	/// <summary>
+	/// Determines whether a member of a scope has been moved into a type beside it.
+	/// </summary>
+	/// <param name="member">The member.</param>
+	/// <returns>True for an operator <see cref="LodgeScopeOperators"/> moved.</returns>
+	private bool IsLodged(AstNode member) => member is FunctionDeclaration function && lodgedOperators.Contains(function);
+
+	/// <summary>
+	/// The operators declared in a scope, by the type beside them each was moved into.
+	/// </summary>
+	private readonly Dictionary<ClassDeclaration, List<FunctionDeclaration>> scopeOperators = new(ReferenceEqualityComparer.Instance);
+
+	/// <summary>
+	/// The operators moved out of the scope they were declared in, which name every operand they take.
+	/// </summary>
+	private readonly HashSet<FunctionDeclaration> lodgedOperators = new(ReferenceEqualityComparer.Instance);
 
 	/// <summary>
 	/// Emits the static class that holds a scope's fields, functions and variables.
@@ -1117,6 +1202,14 @@ public class CSharpGenerator : LanguageGeneratorBase
 			return;
 		}
 
+		// An operator with nowhere to go: C# declares one only in a type it operates on (CS0563), and
+		// the static class holding the scope's functions may not declare one at all (CS0715).
+		if (enclosingType is null && function.Kind == FunctionKind.Operator)
+		{
+			WriteInexpressible(code, $"{name} is declared outside a type, and C# declares an operator only in a type one of its operands is.");
+			return;
+		}
+
 		if (!WriteMemberNotes(function, name, enclosingType, code))
 		{
 			return;
@@ -1129,7 +1222,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 		code.Write(SpellTypeParameters(function.TypeParameters));
 		code.Write("(");
 
-		bool takesOperand = TakesImplicitOperand(function, enclosingType);
+		bool takesOperand = TakesImplicitOperand(function, enclosingType) && !lodgedOperators.Contains(function);
 		if (takesOperand)
 		{
 			code.Write($"{enclosingType!.Name}{SpellTypeParameters(enclosingType.TypeParameters)} {OperandParameterName}");
