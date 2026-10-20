@@ -4,6 +4,7 @@ namespace ktsu.Coder.Languages;
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using ktsu.Coder.Ast;
 using ktsu.CodeBlocker;
@@ -906,6 +907,36 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 		}
 
 		return separated;
+	}
+
+	/// <summary>
+	/// Picks a name for a function the generator invents beside the user's, one the generated input
+	/// does not already declare.
+	/// </summary>
+	/// <param name="preferred">The name to use when nothing in the input declares it.</param>
+	/// <param name="fallback">The stem to use otherwise, numbered if the input declares that too.</param>
+	/// <returns>A name no declaration in the input has.</returns>
+	/// <remarks>
+	/// Any declaration of the name anywhere in the input counts, not only one beside the invented
+	/// function, so the answer does not depend on how a target scopes what it lowers (#299).
+	/// </remarks>
+	protected string UnclaimedName(string preferred, string fallback)
+	{
+		Ensure.NotNull(preferred);
+		Ensure.NotNull(fallback);
+		HashSet<string> taken = GenerationRoot is null ? [] : NamesOf(SelfAndDescendants(GenerationRoot));
+		if (!taken.Contains(preferred))
+		{
+			return preferred;
+		}
+
+		string name = fallback;
+		for (int suffix = 2; taken.Contains(name); suffix++)
+		{
+			name = string.Create(CultureInfo.InvariantCulture, $"{fallback}{suffix}");
+		}
+
+		return name;
 	}
 
 	/// <summary>

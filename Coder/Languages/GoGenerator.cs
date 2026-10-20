@@ -2105,9 +2105,11 @@ public class GoGenerator : StandardLanguageGenerator
 
 		if (entryPoint.ReturnsExitCode)
 		{
-			code.Write($"func run({parameters}) int ");
+			// A user's own run would be declared twice, so the helper takes another name then (#299).
+			string run = UnclaimedName("run", "runMain");
+			code.Write($"func {run}({parameters}) int ");
 
-			using (Scope run = new(code))
+			using (Scope helper = new(code))
 			{
 				WriteBody(entryPoint.Body, code);
 			}
@@ -2116,7 +2118,7 @@ public class GoGenerator : StandardLanguageGenerator
 			code.Write("func main() ");
 
 			using Scope main = new(code);
-			code.WriteLine($"os.Exit(run({arguments}))");
+			code.WriteLine($"os.Exit({run}({arguments}))");
 			return;
 		}
 

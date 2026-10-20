@@ -1942,9 +1942,11 @@ public class RustGenerator : StandardLanguageGenerator
 
 		if (entryPoint.ReturnsExitCode)
 		{
-			code.Write($"fn run({arguments}) -> i32 ");
+			// A user's own run would be declared twice, so the helper takes another name then (#299).
+			string run = UnclaimedName("run", "run_main");
+			code.Write($"fn {run}({arguments}) -> i32 ");
 
-			using (Scope run = new(code))
+			using (Scope helper = new(code))
 			{
 				WriteBody(entryPoint.Body, code);
 			}
@@ -1953,7 +1955,7 @@ public class RustGenerator : StandardLanguageGenerator
 			code.Write("fn main() ");
 
 			using Scope main = new(code);
-			code.WriteLine($"std::process::exit(run({collect}));");
+			code.WriteLine($"std::process::exit({run}({collect}));");
 			return;
 		}
 
