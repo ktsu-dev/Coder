@@ -475,6 +475,58 @@ public class RustGeneratedSourceCompilesTests
 	}
 
 	/// <summary>
+	/// Tests that an enumeration's values can be compared, held in a record and read out of
+	/// <c>&amp;self</c>, which each need a trait the enumeration has to derive (#255).
+	/// </summary>
+	[TestMethod]
+	public void EnumValuesCompareCopyAndSitInARecord_Compile()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "rustc") is null)
+		{
+			Assert.Inconclusive("No Rust compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		// same(a, b) -> bool { return a == b; }
+		FunctionDeclaration same = new("same") { ReturnType = "bool" };
+		same.Parameters.Add(new Parameter("a", "Colour"));
+		same.Parameters.Add(new Parameter("b", "Colour"));
+		same.Body.Add(new ReturnStatement(
+			new BinaryExpression(new VariableReference("a"), BinaryOperator.Equal, new VariableReference("b"))));
+
+		// A record's derive needs every field to implement what it derives.
+		ClassDeclaration paint = new("Paint") { Kind = TypeDeclarationKind.Struct, IsRecord = true };
+		paint.Members.Add(new VariableDeclaration("colour", "Colour"));
+
+		// colour(&self) -> Colour { return self.colour; }
+		FunctionDeclaration colour = new("colour") { ReturnType = "Colour", IsReadOnly = true };
+		colour.Body.Add(new ReturnStatement(new VariableReference("self.colour")));
+		paint.Members.Add(colour);
+
+		SourceFile file = new("enums");
+		file.Members.Add(CompiledExemplar.Colour());
+		file.Members.Add(same);
+		file.Members.Add(paint);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new RustGenerator().Generate(file);
+			string allowed = "#![allow(unused_parens, dead_code)]";
+
+			File.WriteAllText(
+				Path.Combine(directory, "enums.rs"),
+				$"{allowed}{Environment.NewLine}{source}");
+
+			(int exitCode, string output) = ToolchainHarness.Run(
+				"rustc",
+				"--crate-type lib --edition 2021 -o enums.rlib enums.rs",
+				directory);
+
+			Assert.AreEqual(0, exitCode, $"rustc rejected the generated source:{Environment.NewLine}{source}{Environment.NewLine}{output}");
+		});
+	}
+
+	/// <summary>
 	/// Builds a file holding one of everything the generator has a spelling for.
 	/// </summary>
 	/// <returns>The file to generate.</returns>

@@ -558,7 +558,7 @@ public class RustGeneratorTests
 		string code = Generator.Generate(colour);
 
 		Assert.AreEqual(
-			$"#[repr(i32)]{NewLine}pub enum Colour {{{NewLine}    Red = 1,{NewLine}    Green,{NewLine}}}{NewLine}",
+			$"#[repr(i32)]{NewLine}#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]{NewLine}pub enum Colour {{{NewLine}    Red = 1,{NewLine}    Green,{NewLine}}}{NewLine}",
 			code);
 	}
 
@@ -572,7 +572,8 @@ public class RustGeneratorTests
 		string code = Generator.Generate(new EnumDeclaration("Empty") { UnderlyingType = "int" });
 
 		Assert.IsFalse(code.Contains("#[repr", StringComparison.Ordinal));
-		StringAssert.StartsWith(code, "pub enum Empty {", StringComparison.Ordinal);
+		StringAssert.StartsWith(code, "#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]", StringComparison.Ordinal);
+		Assert.Contains("pub enum Empty {", code, StringComparison.Ordinal);
 	}
 
 	/// <summary>
