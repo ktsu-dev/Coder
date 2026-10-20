@@ -1419,8 +1419,9 @@ public class GoGenerator : StandardLanguageGenerator
 		}
 
 		// The short form declares a variable, so it is not open to a constant — which is the one
-		// reason the decision has to be made before the keyword is written rather than with it.
-		if (inferred && varDecl.InitialValue is not null && !IsConstant(varDecl.IsConstant, varDecl.InitialValue))
+		// reason the decision has to be made before the keyword is written rather than with it. It is
+		// a statement, too, so a package-level variable takes `var x = v` instead.
+		if (!IsModuleVariable(varDecl) && inferred && varDecl.InitialValue is not null && !IsConstant(varDecl.IsConstant, varDecl.InitialValue))
 		{
 			code.Write($"{varDecl.Name} := ");
 			GenerateInternal(varDecl.InitialValue, code);

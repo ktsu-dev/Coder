@@ -32,6 +32,11 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	private readonly Stack<StaticTypeScope> staticTypeScopes = new();
 
 	/// <summary>
+	/// The variables declared directly in a namespace or a file, which are items rather than locals.
+	/// </summary>
+	private readonly HashSet<VariableDeclaration> moduleVariables = new(ReferenceEqualityComparer.Instance);
+
+	/// <summary>
 	/// Determines whether this generator can generate code for the specified AST node.
 	/// </summary>
 	/// <param name="astNode">The AST node to check.</param>
@@ -393,6 +398,30 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	}
 
 	/// <summary>
+	/// Reports whether a variable is declared directly in a namespace or a file rather than in a body.
+	/// </summary>
+	/// <param name="declaration">The declaration to test.</param>
+	/// <returns>True when it is a module-scope variable.</returns>
+	/// <remarks>
+	/// Several targets spell a local as a statement — Rust's <c>let</c>, Go's <c>:=</c> — which is
+	/// refused outside a function, so a variable of a namespace or a file has to be told apart by
+	/// where it was declared rather than by its own shape.
+	/// </remarks>
+	protected bool IsModuleVariable(VariableDeclaration declaration) => moduleVariables.Contains(declaration);
+
+	/// <summary>
+	/// Records the variables a namespace or a file declares directly.
+	/// </summary>
+	/// <param name="members">The scope's members.</param>
+	private void HoldModuleVariables(IEnumerable<AstNode> members)
+	{
+		foreach (VariableDeclaration variable in members.OfType<VariableDeclaration>())
+		{
+			moduleVariables.Add(variable);
+		}
+	}
+
+	/// <summary>
 	/// Reads the width an inferred local must be written with, because the target would infer another.
 	/// </summary>
 	/// <param name="initialValue">The local's initialiser.</param>
@@ -605,10 +634,12 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 				break;
 
 			case SourceFile file:
+				HoldModuleVariables(file.Members);
 				GenerateSourceFile(file, code);
 				break;
 
 			case NamespaceDeclaration namespaceDecl:
+				HoldModuleVariables(namespaceDecl.Members);
 				GenerateNamespaceDeclaration(namespaceDecl, code);
 				break;
 

@@ -1591,6 +1591,21 @@ public class CSharpGenerator : LanguageGeneratorBase
 		// by whether one was set: emitting it only when present keeps both correct. A variable of a
 		// namespace or file is a field of the class holding it, and as visible as the scope it was in.
 		bool isHeld = ReferenceEquals(varDecl, heldMember);
+
+		// `var` is only for a local (CS0825), so a held variable says the type its initialiser
+		// establishes, and one whose initialiser establishes none is an object with a note saying so.
+		if (isHeld && string.Equals(type, "var", StringComparison.Ordinal))
+		{
+			if (InferredFieldType(varDecl.InitialValue) is string inferred)
+			{
+				type = inferred;
+			}
+			else
+			{
+				WriteInexpressible(code, $"{varDecl.Name}: C# infers no type for a field, and nothing here says one");
+				type = UnknownTypeName;
+			}
+		}
 		if ((isHeld ? SpellVisibility(varDecl.Visibility) ?? DefaultVisibility : SpellVisibility(varDecl.Visibility)) is string modifier)
 		{
 			code.Write($"{modifier} ");
@@ -1622,6 +1637,24 @@ public class CSharpGenerator : LanguageGeneratorBase
 
 		code.WriteLine(";");
 	}
+
+	/// <summary>
+	/// Reads the type a field's initialiser establishes, for a field C# will not let infer it.
+	/// </summary>
+	/// <param name="initialValue">The initialiser, if there is one.</param>
+	/// <returns>The C# type, or null when the initialiser does not establish one.</returns>
+	private static string? InferredFieldType(Expression? initialValue) => initialValue switch
+	{
+		{ ExpectedType: string expected } => MapToCSType(new TypeReference(expected)),
+		LiteralExpression<string> => "string",
+		LiteralExpression<int> => "int",
+		LiteralExpression<long> => "long",
+		LiteralExpression<float> => "float",
+		LiteralExpression<double> => "double",
+		LiteralExpression<bool> => "bool",
+		ConstructionExpression { Type: TypeReference constructed } => MapToCSType(constructed),
+		_ => null,
+	};
 
 	/// <summary>
 	/// Emits the program's entry point as C#'s <c>Main</c> method.
