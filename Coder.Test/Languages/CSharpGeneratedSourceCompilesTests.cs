@@ -125,6 +125,7 @@ public class CSharpGeneratedSourceCompilesTests
 		ClassDeclaration point = CompiledExemplar.Point();
 		point.Members.Add(CompiledExemplar.Plus());
 		point.Members.Add(CompiledExemplar.Negate());
+		point.Members.Add(CompiledExemplar.Times());
 		point.Members.Add(CompiledExemplar.ToDouble("self.x"));
 
 		SourceFile file = new("Generated");

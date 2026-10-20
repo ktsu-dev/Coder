@@ -1281,9 +1281,16 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// the instance it belongs to is the left-hand operand. A C# operator is static and takes every
 	/// operand explicitly, so written as declared a binary operator would become a unary one and a
 	/// unary operator or a conversion would take nothing at all (CS1019).
+	/// <para>
+	/// A friend is the exception: it is declared beside the type rather than as a member of it, so it
+	/// already names every operand it takes, and adding the instance would make a binary operator
+	/// ternary (CS1534).
+	/// </para>
 	/// </remarks>
 	private static bool TakesImplicitOperand(FunctionDeclaration function, ClassDeclaration? enclosingType) =>
-		enclosingType is not null && function.Kind is FunctionKind.Operator or FunctionKind.ConversionOperator;
+		enclosingType is not null
+		&& !function.IsFriend
+		&& function.Kind is FunctionKind.Operator or FunctionKind.ConversionOperator;
 
 	/// <summary>
 	/// Determines whether a declaration's <see cref="FunctionDeclaration.IsReadOnly"/> is spelled as

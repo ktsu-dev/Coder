@@ -207,6 +207,42 @@ internal static class CompiledExemplar
 	}
 
 	/// <summary>
+	/// Gets a binary operator declared as a friend, which names both of its operands itself.
+	/// </summary>
+	/// <returns>The declaration.</returns>
+	/// <remarks>
+	/// A target that adds the instance to every operator a type declares writes this one with three
+	/// operands, which no language accepts for <c>*</c> (#231).
+	/// </remarks>
+	public static FunctionDeclaration Times()
+	{
+		FunctionDeclaration times = new("*")
+		{
+			Kind = FunctionKind.Operator,
+			ReturnType = "Point",
+			IsFriend = true,
+		};
+		times.Parameters.Add(new Parameter("a", "Point"));
+		times.Parameters.Add(new Parameter("b", "Point"));
+
+		ConstructionExpression built = new(new TypeReference("Point"));
+
+		foreach (string member in new[] { "x", "y" })
+		{
+			built.Arguments.Add(new MemberInitialiser(member)
+			{
+				Value = new BinaryExpression(
+					new VariableReference($"a.{member}"),
+					BinaryOperator.Multiply,
+					new VariableReference($"b.{member}")),
+			});
+		}
+
+		times.Body.Add(new ReturnStatement(built));
+		return times;
+	}
+
+	/// <summary>
 	/// Gets the unary operator that shares its symbol with the binary one.
 	/// </summary>
 	/// <returns>The declaration.</returns>

@@ -668,6 +668,7 @@ public class GoGeneratedSourceCompilesTests
 		point.Members.Add(CompiledExemplar.Shift("Shift"));
 		point.Members.Add(CompiledExemplar.Plus());
 		point.Members.Add(CompiledExemplar.Negate());
+		point.Members.Add(CompiledExemplar.Times());
 		point.Members.Add(CompiledExemplar.ToDouble("float64(self.x)"));
 		point.Members.Add(CompiledExemplar.Pick("Pick", "Shift"));
 

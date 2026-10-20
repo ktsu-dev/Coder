@@ -424,13 +424,14 @@ public class CGenerator : CFamilyGenerator
 	/// A static member acts on no instance and a constructor has none to act on yet, so neither takes
 	/// one. <see cref="FunctionDeclaration.IsReadOnly"/> — a member function that does not modify
 	/// what it is called on — becomes a pointer to <c>const</c>, which is exactly what it says and is
-	/// the only place C has to say it.
+	/// the only place C has to say it. A friend is declared beside the type rather than as a member
+	/// of it and names every operand itself, so it takes no instance either.
 	/// </remarks>
 	private static List<Parameter> ParametersOf(FunctionDeclaration funcDecl, string? enclosingType)
 	{
 		List<Parameter> parameters = [];
 
-		if (enclosingType is not null && !funcDecl.IsStatic && funcDecl.Kind != FunctionKind.Constructor)
+		if (enclosingType is not null && !funcDecl.IsStatic && !funcDecl.IsFriend && funcDecl.Kind != FunctionKind.Constructor)
 		{
 			parameters.Add(SelfParameter(enclosingType, funcDecl.IsReadOnly));
 		}
