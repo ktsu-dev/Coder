@@ -34,11 +34,31 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// </summary>
 	/// <param name="node">The AST node to generate code for.</param>
 	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// The root of a generation starts with no locals in scope, so nothing declared by an earlier
+	/// <see cref="LanguageGeneratorBase.Generate"/> call decides how this one casts a shift (#320).
+	/// </remarks>
 	protected override void GenerateInternal(AstNode node, CodeBlocker code)
 	{
 		Ensure.NotNull(node);
 		Ensure.NotNull(code);
 
+		if (ReferenceEquals(node, GenerationRoot))
+		{
+			InShiftCountScope(new(StringComparer.Ordinal), () => GenerateNode(node, code));
+			return;
+		}
+
+		GenerateNode(node, code);
+	}
+
+	/// <summary>
+	/// Emits one node, whatever scope it is in.
+	/// </summary>
+	/// <param name="node">The AST node to generate code for.</param>
+	/// <param name="code">The writer to emit into.</param>
+	private void GenerateNode(AstNode node, CodeBlocker code)
+	{
 		switch (node)
 		{
 			case ClassDeclaration classDecl:
@@ -1022,12 +1042,15 @@ public class CSharpGenerator : LanguageGeneratorBase
 	{
 		code.WriteLine();
 
-		using Scope statements = new(code);
-
-		foreach (AstNode statement in body)
+		InShiftCountScope(new(shiftCountTypes, StringComparer.Ordinal), () =>
 		{
-			GenerateInternal(statement, code);
-		}
+			using Scope statements = new(code);
+
+			foreach (AstNode statement in body)
+			{
+				GenerateInternal(statement, code);
+			}
+		});
 	}
 
 	/// <summary>
@@ -1161,17 +1184,16 @@ public class CSharpGenerator : LanguageGeneratorBase
 		// The parameters' types are what decides whether a shift by one is cast; see
 		// ShouldCastShiftCount. The enclosing function's are restored afterwards, so a nested
 		// declaration does not leave its own behind.
-		Dictionary<string, TypeReference> enclosingTypes = shiftCountTypes;
-		shiftCountTypes = new(enclosingTypes, StringComparer.Ordinal);
+		Dictionary<string, TypeReference> scope = new(shiftCountTypes, StringComparer.Ordinal);
 		foreach (Parameter parameter in function.Parameters)
 		{
 			if (parameter is { Name: string parameterName, Type: TypeReference parameterType })
 			{
-				shiftCountTypes[parameterName] = parameterType;
+				scope[parameterName] = parameterType;
 			}
 		}
 
-		try
+		InShiftCountScope(scope, () =>
 		{
 			using Scope body = new(code);
 			WriteInitialisers(function, code);
@@ -1180,6 +1202,27 @@ public class CSharpGenerator : LanguageGeneratorBase
 			{
 				GenerateInternal(statement, code);
 			}
+		});
+	}
+
+	/// <summary>
+	/// Runs <paramref name="body"/> with <paramref name="scope"/> as the locals in scope, and puts the
+	/// enclosing ones back afterwards.
+	/// </summary>
+	/// <param name="scope">The declared types in scope for the body.</param>
+	/// <param name="body">What to emit in that scope.</param>
+	/// <remarks>
+	/// Every body that can declare a local opens one, so a local never outlives the body that
+	/// declared it and cannot lend its type to a field of the same name (#320).
+	/// </remarks>
+	private void InShiftCountScope(Dictionary<string, TypeReference> scope, Action body)
+	{
+		Dictionary<string, TypeReference> enclosingTypes = shiftCountTypes;
+		shiftCountTypes = scope;
+
+		try
+		{
+			body();
 		}
 		finally
 		{
@@ -1645,10 +1688,13 @@ public class CSharpGenerator : LanguageGeneratorBase
 		// The line is ended before the scope opens, so C#'s brace lands on its own line.
 		code.WriteLine(")");
 
-		using Scope body = new(code);
-		foreach (AstNode statement in entryPoint.Body)
+		InShiftCountScope(new(shiftCountTypes, StringComparer.Ordinal), () =>
 		{
-			GenerateInternal(statement, code);
-		}
+			using Scope body = new(code);
+			foreach (AstNode statement in entryPoint.Body)
+			{
+				GenerateInternal(statement, code);
+			}
+		});
 	}
 }
