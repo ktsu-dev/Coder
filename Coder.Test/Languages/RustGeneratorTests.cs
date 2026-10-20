@@ -884,6 +884,88 @@ public class RustGeneratorTests
 	}
 
 	/// <summary>
+	/// A plain struct a record holds derives with it, because the record's derive does not compile
+	/// otherwise; one no record holds derives nothing.
+	/// </summary>
+	[TestMethod]
+	public void StructsARecordHolds_DeriveWithIt()
+	{
+		SourceFile file = RustGeneratedSourceCompilesTests.RecordsHoldingTypes();
+		ClassDeclaration unused = new("Unused") { Kind = TypeDeclarationKind.Struct };
+		unused.Members.Add(new VariableDeclaration("x", "float"));
+		file.Members.Add(unused);
+
+		string code = Generator.Generate(file);
+
+		Assert.AreEqual(3, CountOf(code, "#[derive(Clone, Debug, PartialEq)]"), code);
+		StringAssert.Contains(code, "#[derive(Clone, Debug, PartialEq)]\npub struct Point");
+		Assert.DoesNotContain("PartialEq)]\npub struct Unused", code);
+		Assert.DoesNotContain("// record:", code);
+	}
+
+	/// <summary>
+	/// A record holding something that cannot derive says why instead of writing a derive that
+	/// would not compile, and the structs it holds derive nothing on its account.
+	/// </summary>
+	/// <param name="fieldType">The type that stops the derive.</param>
+	/// <param name="reason">What the note says about it.</param>
+	[TestMethod]
+	[DataRow("Shape", "Shape is a trait")]
+	[DataRow("Decimal128", "Decimal128 is not declared here")]
+	[DataRow("object", "object is Box<dyn std::any::Any>")]
+	public void RecordsHoldingWhatCannotDerive_SayWhy(string fieldType, string reason)
+	{
+		ClassDeclaration shape = new("Shape") { Kind = TypeDeclarationKind.Interface };
+		ClassDeclaration point = new("Point") { Kind = TypeDeclarationKind.Struct };
+		point.Members.Add(new VariableDeclaration("x", "float"));
+		ClassDeclaration record = new("Drawing") { Kind = TypeDeclarationKind.Struct, IsRecord = true };
+		record.Members.Add(new VariableDeclaration("origin", "Point"));
+		record.Members.Add(new VariableDeclaration("held", fieldType));
+
+		SourceFile file = new("drawing");
+		file.Members.Add(shape);
+		file.Members.Add(point);
+		file.Members.Add(record);
+
+		string code = Generator.Generate(file);
+
+		Assert.DoesNotContain("#[derive(", code);
+		StringAssert.Contains(code, $"// record: Clone, Debug and PartialEq are not derived, because {reason}");
+	}
+
+	/// <summary>
+	/// An alias is followed to what it names, a record's own type parameters are bounded by the
+	/// derive rather than required of it, and an associated constant is not a field.
+	/// </summary>
+	[TestMethod]
+	public void AliasesTypeParametersAndConstants_DoNotStopTheDerive()
+	{
+		ClassDeclaration record = new("Tagged") { Kind = TypeDeclarationKind.Struct, IsRecord = true };
+		record.TypeParameters.Add(new TypeParameter("T"));
+		record.Members.Add(new VariableDeclaration("value", "T"));
+		record.Members.Add(new VariableDeclaration("id", "Id"));
+		record.Members.Add(new FieldDeclaration("SHARED", "Unknowable") { IsStatic = true });
+
+		SourceFile file = new("tagged");
+		file.Members.Add(new UsingAlias("Id", "int"));
+		file.Members.Add(record);
+
+		string code = Generator.Generate(file);
+
+		StringAssert.Contains(code, "#[derive(Clone, Debug, PartialEq)]");
+		Assert.DoesNotContain("// record:", code);
+	}
+
+	/// <summary>
+	/// Counts how often some text appears.
+	/// </summary>
+	/// <param name="text">Where to look.</param>
+	/// <param name="value">What to count.</param>
+	/// <returns>How many times it appears.</returns>
+	private static int CountOf(string text, string value) =>
+		(text.Length - text.Replace(value, string.Empty, StringComparison.Ordinal).Length) / value.Length;
+
+	/// <summary>
 	/// Writes one expression on its own, for the assertions that are about the expression rather than
 	/// about the declaration holding it.
 	/// </summary>

@@ -527,6 +527,63 @@ public class RustGeneratedSourceCompilesTests
 	}
 
 	/// <summary>
+	/// A record holding a plain struct, and a record holding another record, both compile: the
+	/// derive reaches every struct a record holds.
+	/// </summary>
+	[TestMethod]
+	public void RecordsHoldingStructsAndRecords_Compile()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "rustc") is null)
+		{
+			Assert.Inconclusive("No Rust compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new RustGenerator().Generate(RecordsHoldingTypes());
+			string allowed = "#![allow(unused_parens, dead_code)]";
+
+			File.WriteAllText(
+				Path.Combine(directory, "records.rs"),
+				$"{allowed}{Environment.NewLine}{source}");
+
+			(int exitCode, string output) = ToolchainHarness.Run(
+				"rustc",
+				"--crate-type lib --edition 2021 -o records.rlib records.rs",
+				directory);
+
+			Assert.AreEqual(0, exitCode, $"rustc rejected the generated source:{Environment.NewLine}{source}{Environment.NewLine}{output}");
+		});
+	}
+
+	/// <summary>
+	/// Builds a record holding a plain struct through a list, and a record holding that record.
+	/// </summary>
+	/// <returns>The file to generate.</returns>
+	internal static SourceFile RecordsHoldingTypes()
+	{
+		ClassDeclaration point = new("Point") { Kind = TypeDeclarationKind.Struct };
+		point.Members.Add(new VariableDeclaration("x", "float"));
+		point.Members.Add(new VariableDeclaration("y", "float"));
+
+		ClassDeclaration path = new("Path") { Kind = TypeDeclarationKind.Struct, IsRecord = true };
+		path.Members.Add(new VariableDeclaration("start", "Point"));
+		path.Members.Add(new VariableDeclaration("points", "list<Point>"));
+
+		ClassDeclaration route = new("Route") { Kind = TypeDeclarationKind.Struct, IsRecord = true };
+		route.Members.Add(new VariableDeclaration("path", "Path"));
+		route.Members.Add(new VariableDeclaration("colour", "Colour"));
+
+		SourceFile file = new("records");
+		file.Members.Add(CompiledExemplar.Colour());
+		file.Members.Add(point);
+		file.Members.Add(path);
+		file.Members.Add(route);
+		return file;
+	}
+
+	/// <summary>
 	/// Builds a file holding one of everything the generator has a spelling for.
 	/// </summary>
 	/// <returns>The file to generate.</returns>
