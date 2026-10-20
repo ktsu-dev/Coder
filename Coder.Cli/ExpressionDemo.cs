@@ -177,8 +177,8 @@ public static class ExpressionDemo
 			ReturnType = "double"
 		};
 		function.Parameters.Add(new Parameter("baseScore", "double"));
-		function.Parameters.Add(new Parameter("multiplier", "double") { IsOptional = true, DefaultValue = "1.0" });
-		function.Parameters.Add(new Parameter("bonus", "double") { IsOptional = true, DefaultValue = "0.0" });
+		function.Parameters.Add(new Parameter("multiplier", "double") { IsOptional = true, DefaultValue = Literal.DecimalValue(1.0) });
+		function.Parameters.Add(new Parameter("bonus", "double") { IsOptional = true, DefaultValue = Literal.DecimalValue(0.0) });
 
 		// Complex calculation: (baseScore * multiplier) + bonus
 		BinaryExpression multiplication = new(

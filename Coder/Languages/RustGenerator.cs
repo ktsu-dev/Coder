@@ -158,14 +158,14 @@ public class RustGenerator : StandardLanguageGenerator
 	/// other two have no bound at all: every Rust type is a value, and whether one is referenced
 	/// is a property of the binding rather than of the type.
 	/// </remarks>
-	private static string SpellParameterDeclarations(IEnumerable<TypeParameter> parameters)
+	private string SpellParameterDeclarations(IEnumerable<TypeParameter> parameters)
 	{
 		string[] declared = [.. parameters.Select(SpellOneParameter)];
 
 		return declared.Length == 0 ? string.Empty : $"<{string.Join(", ", declared)}>";
 	}
 
-	private static string SpellOneParameter(TypeParameter parameter)
+	private string SpellOneParameter(TypeParameter parameter)
 	{
 		string[] bounds =
 		[
@@ -177,9 +177,9 @@ public class RustGenerator : StandardLanguageGenerator
 		return bounds.Length == 0 ? parameter.Name : $"{parameter.Name}: {string.Join(" + ", bounds)}";
 	}
 
-	private static string SpellBound(TypeConstraint constraint) => constraint.Kind switch
+	private string SpellBound(TypeConstraint constraint) => constraint.Kind switch
 	{
-		TypeConstraintKind.Implements => SpellType(constraint.Type ?? new TypeReference(UnknownTypeName)),
+		TypeConstraintKind.Implements => SpellTypeName(constraint.Type ?? new TypeReference(UnknownTypeName)),
 		TypeConstraintKind.Constructible => "Default",
 		_ => string.Empty,
 	};
@@ -580,7 +580,7 @@ public class RustGenerator : StandardLanguageGenerator
 		{
 			WriteInexpressible(
 				code,
-				$"implements {string.Join(", ", classDecl.Interfaces.Select(SpellType))}: "
+				$"implements {string.Join(", ", classDecl.Interfaces.Select(SpellTypeName))}: "
 					+ "each needs an impl block of its own, which this declaration does not say how to fill");
 		}
 
@@ -595,9 +595,14 @@ public class RustGenerator : StandardLanguageGenerator
 		// besides C# that has a word for it rather than a comment about it. Clone is the copy,
 		// PartialEq the comparison, Debug the readable form. Written last of the lines above the
 		// struct, so that it sits against the item it applies to rather than behind the notes.
+		// A record that declares its own == already implements PartialEq, and a second
+		// implementation does not compile (E0119), so the declared one is what it compares by.
 		if (classDecl.IsRecord)
 		{
-			code.WriteLine("#[derive(Clone, Debug, PartialEq)]");
+			bool declaresEquality = classDecl.Members
+				.OfType<FunctionDeclaration>()
+				.Any(function => function.Kind == FunctionKind.Operator && function.Name == "==");
+			code.WriteLine(declaresEquality ? "#[derive(Clone, Debug)]" : "#[derive(Clone, Debug, PartialEq)]");
 		}
 
 		code.Write($"{SpellVisibilityOf(classDecl)}struct {name}{SpellParameterDeclarations(classDecl.TypeParameters)} ");
@@ -739,7 +744,7 @@ public class RustGenerator : StandardLanguageGenerator
 	/// once, so what a field starts at is the constructor's business rather than the declaration's.
 	/// Where there is no constructor, <see cref="WriteUnconstructedDefault"/> says so instead.
 	/// </remarks>
-	private static void WriteStructMember(string? name, TypeReference? type, Visibility visibility, CodeBlocker code) =>
+	private void WriteStructMember(string? name, TypeReference? type, Visibility visibility, CodeBlocker code) =>
 		code.WriteLine($"{SpellVisibilityKeyword(visibility)}{name}: {SpellType(type ?? new TypeReference(UnknownTypeName))},");
 
 	/// <summary>
@@ -765,8 +770,8 @@ public class RustGenerator : StandardLanguageGenerator
 		// the AST is the struct below, where only one of them has an answer at all.
 		string[] supertraits =
 		[
-			.. classDecl.BaseType is TypeReference baseType ? (string[])[SpellType(baseType)] : [],
-			.. classDecl.Interfaces.Select(SpellType),
+			.. classDecl.BaseType is TypeReference baseType ? (string[])[SpellTypeName(baseType)] : [],
+			.. classDecl.Interfaces.Select(SpellTypeName),
 		];
 
 		if (supertraits.Length > 0)
@@ -817,7 +822,13 @@ public class RustGenerator : StandardLanguageGenerator
 		}
 
 		string symbol = funcDecl.Name ?? string.Empty;
-		bool unary = funcDecl.Parameters.Count == 0;
+
+		// A friend is declared beside the type and names every operand itself, the first being the
+		// one a trait method takes as self. It is written as the method with that operand rebound
+		// to its own name, so the body reads what it was written against.
+		Parameter? receiver = funcDecl.IsFriend ? funcDecl.Parameters.FirstOrDefault() : null;
+		List<Parameter> operands = [.. funcDecl.Parameters.Skip(funcDecl.IsFriend ? 1 : 0)];
+		bool unary = operands.Count == 0;
 		Dictionary<string, OperatorTrait> traits = unary ? UnaryOperatorTraits : BinaryOperatorTraits;
 
 		if (!traits.TryGetValue(symbol, out OperatorTrait? op))
@@ -846,16 +857,18 @@ public class RustGenerator : StandardLanguageGenerator
 		// A comparison borrows what it compares and answers a bool; an arithmetic operator consumes
 		// its operands and answers the type it named as its Output. An operand it consumes is its
 		// own to change, but only if it is bound mut, as a parameter is.
+		string receiverName = receiver?.Name ?? SelfName;
 		HashSet<string> reassigned = op.ReturnsBool
 			? []
 			: ReassignedNames(funcDecl.Body, [
-				new(SelfName, new TypeReference(typeName)),
-				.. funcDecl.Parameters.Select(parameter => new KeyValuePair<string, TypeReference?>(OperandName(parameter), parameter.Type)),
+				new(receiverName, receiver?.Type ?? new TypeReference(typeName)),
+				.. operands.Select(parameter => new KeyValuePair<string, TypeReference?>(OperandName(parameter), parameter.Type)),
 			]);
-		string self = op.ReturnsBool ? "&self" : reassigned.Contains(SelfName) ? $"mut {SelfName}" : SelfName;
+		bool rebind = receiverName != SelfName;
+		string self = op.ReturnsBool ? "&self" : reassigned.Contains(receiverName) && !rebind ? $"mut {SelfName}" : SelfName;
 		code.Write($"fn {op.Method}({self}");
 
-		foreach (Parameter parameter in funcDecl.Parameters)
+		foreach (Parameter parameter in operands)
 		{
 			string name = OperandName(parameter);
 			code.Write(", ");
@@ -865,6 +878,12 @@ public class RustGenerator : StandardLanguageGenerator
 		code.Write($") -> {(op.ReturnsBool ? "bool" : result)} ");
 
 		using Scope body = new(code);
+
+		if (rebind)
+		{
+			code.WriteLine($"let {(reassigned.Contains(receiverName) ? "mut " : string.Empty)}{receiverName} = {SelfName};");
+		}
+
 		WriteBody(funcDecl.Body, code);
 	}
 
@@ -886,7 +905,7 @@ public class RustGenerator : StandardLanguageGenerator
 	/// A comparison borrows its operand for the same reason it borrows the instance — answering
 	/// whether two values are equal is not a reason to consume either of them.
 	/// </remarks>
-	private static string SpellOperandType(Parameter parameter, OperatorTrait op, string typeName)
+	private string SpellOperandType(Parameter parameter, OperatorTrait op, string typeName)
 	{
 		string spelled = SpellType(parameter.Type ?? new TypeReference(typeName));
 		return op.ReturnsBool ? $"&{spelled}" : spelled;
@@ -1038,7 +1057,8 @@ public class RustGenerator : StandardLanguageGenerator
 
 		using Scope body = new(code);
 
-		// The parameters' types are what tells a join of strings from an addition of numbers.
+		// The parameters' and locals' types are what tells a join of strings from an addition of
+		// numbers, and what says where a number has to be widened.
 		using IDisposable types = OpenStaticTypeScope(funcDecl);
 
 		if (funcDecl.Kind == FunctionKind.Constructor)
@@ -1110,12 +1130,57 @@ public class RustGenerator : StandardLanguageGenerator
 			code.Write("String::from(");
 		}
 
-		GenerateInternal(value, code);
+		GenerateWidenedTo(value, target, code);
 
 		if (owned)
 		{
 			code.Write(")");
 		}
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// Rust converts no number to another on its own, so <c>a + b</c> on an <c>i64</c> and an
+	/// <c>i32</c>, or <c>x * 2</c> on an <c>f64</c>, does not compile (#238).
+	/// </remarks>
+	protected override bool WidensNumbersExplicitly => true;
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// <c>as</c>, parenthesised because it binds tighter than any operator around it. An integer
+	/// literal is left to inference where the receiving type is an integer, and written as a
+	/// floating literal where it is a floating one, so <c>x * 2</c> is <c>x * 2.0</c>.
+	/// </remarks>
+	protected override void WriteWidened(Expression value, TypeReference wider, CodeBlocker code)
+	{
+		Ensure.NotNull(value);
+		Ensure.NotNull(wider);
+		Ensure.NotNull(code);
+
+		long? integer = value switch
+		{
+			LiteralExpression<int> literal => literal.Value,
+			LiteralExpression<long> literal => literal.Value,
+			_ => null,
+		};
+
+		if (integer is long whole)
+		{
+			if (IsFloatingType(wider))
+			{
+				code.Write(FormatDouble(whole));
+			}
+			else
+			{
+				GenerateInternal(value, code);
+			}
+
+			return;
+		}
+
+		code.Write("(");
+		GenerateInternal(value, code);
+		code.Write($" as {SpellType(wider)})");
 	}
 
 	/// <inheritdoc/>
@@ -1153,7 +1218,7 @@ public class RustGenerator : StandardLanguageGenerator
 	/// </summary>
 	/// <param name="type">The type, or null where none is declared.</param>
 	/// <returns>True for <c>str</c> and <c>string</c> as a plain value.</returns>
-	private static bool IsOwnedString(TypeReference? type) =>
+	private bool IsOwnedString(TypeReference? type) =>
 		type is not null && SpellType(type) == TypeMappings["string"];
 
 	/// <summary>
@@ -1307,7 +1372,7 @@ public class RustGenerator : StandardLanguageGenerator
 	/// Rust writes no return type for a function that answers nothing, rather than naming the unit:
 	/// <c>-&gt; ()</c> is legal and nobody writes it.
 	/// </remarks>
-	private static bool ReturnsAValue(FunctionDeclaration funcDecl) =>
+	private bool ReturnsAValue(FunctionDeclaration funcDecl) =>
 		funcDecl.ReturnType is TypeReference declared && SpellType(declared) != "()";
 
 	/// <summary>
@@ -1551,10 +1616,7 @@ public class RustGenerator : StandardLanguageGenerator
 		code.Write($"{parameter.Name ?? $"param{position}"}: ");
 		code.Write(SpellType(parameter.Type ?? new TypeReference(UnknownTypeName)));
 
-		if (parameter.IsOptional && !string.IsNullOrEmpty(parameter.DefaultValue))
-		{
-			code.Write($" /* = {parameter.DefaultValue} */");
-		}
+		AppendDefaultValueComment(parameter, code);
 	}
 
 	/// <inheritdoc/>
@@ -1669,7 +1731,7 @@ public class RustGenerator : StandardLanguageGenerator
 	/// hold a <c>String</c> built from a literal, and the literal itself is a <c>&amp;'static str</c>.
 	/// The lifetime is spelled because an associated constant may not leave it out.
 	/// </remarks>
-	private static string SpellStorageType(TypeReference type)
+	private string SpellStorageType(TypeReference type)
 	{
 		TypeReference element = type.Clone();
 		element.IsArray = false;
@@ -1690,7 +1752,10 @@ public class RustGenerator : StandardLanguageGenerator
 	/// Every enumeration derives the traits a value of it needs to be compared, copied and printed.
 	/// The reason a plain struct derives nothing, that one of its fields might not implement them,
 	/// cannot apply to a fieldless enumeration, and without them <c>a == b</c> is E0369, a record
-	/// holding one is E0277, and reading one out of <c>&amp;self</c> is E0507.
+	/// holding one is E0277, and reading one out of <c>&amp;self</c> is E0507. <c>PartialOrd</c> and
+	/// <c>Ord</c> are among them because every other target orders an enumeration's values, and a
+	/// derived ordering on a fieldless enumeration compares discriminants, which is the same order;
+	/// without them <c>a &lt; b</c> is E0369 too.
 	/// </para>
 	/// </remarks>
 	protected override void GenerateEnumDeclaration(EnumDeclaration enumDecl, CodeBlocker code)
@@ -1706,7 +1771,7 @@ public class RustGenerator : StandardLanguageGenerator
 		}
 
 		string name = enumDecl.Name ?? "UnnamedEnum";
-		code.WriteLine("#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]");
+		code.WriteLine("#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]");
 		code.Write($"{SpellVisibilityOf(enumDecl)}enum {name} ");
 
 		// A variant is not a value in a discriminant, so one naming another is cast to the
@@ -2009,6 +2074,7 @@ public class RustGenerator : StandardLanguageGenerator
 
 			using (Scope helper = new(code))
 			{
+				WriteModuleImport(entryPoint, code);
 				WriteBody(entryPoint.Body, code);
 			}
 
@@ -2024,12 +2090,39 @@ public class RustGenerator : StandardLanguageGenerator
 
 		using Scope body = new(code);
 
+		WriteModuleImport(entryPoint, code);
 		if (entryPoint.AcceptsArguments)
 		{
 			code.WriteLine($"let args: Vec<String> = {collect};");
 		}
 
 		WriteBody(entryPoint.Body, code);
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// The compiler looks for <c>main</c> only at the crate root; one in a module is an ordinary
+	/// private function and the crate fails with E0601.
+	/// </remarks>
+	protected override bool EntryPointsLeaveNamespaces => true;
+
+	/// <summary>
+	/// Brings the names of the module an entry point was declared in into its body.
+	/// </summary>
+	/// <param name="entryPoint">The entry point being written.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// The entry point is written at the crate root, where the compiler looks for it, and the body
+	/// still names what was declared beside it (#128). A <c>use</c> inside the function reaches the
+	/// module without adding anything to the crate root's own names.
+	/// </remarks>
+	private void WriteModuleImport(EntryPoint entryPoint, CodeBlocker code)
+	{
+		if (NamespacesLeftBy(entryPoint) is [_, ..] modules)
+		{
+			code.WriteLine("#[allow(unused_imports)]");
+			code.WriteLine($"use self::{string.Join("::", modules)}::*;");
+		}
 	}
 
 	/// <summary>
@@ -2078,7 +2171,7 @@ public class RustGenerator : StandardLanguageGenerator
 	/// <c>&amp;str</c> and <c>&amp;[T]</c>, never <c>&amp;String</c> or <c>&amp;Vec&lt;T&gt;</c>.
 	/// </para>
 	/// </remarks>
-	private static string SpellType(TypeReference type)
+	private string SpellType(TypeReference type)
 	{
 		string core = SpellCoreType(type);
 
@@ -2100,11 +2193,31 @@ public class RustGenerator : StandardLanguageGenerator
 	/// </summary>
 	/// <param name="type">The type to spell.</param>
 	/// <returns>The owned form.</returns>
-	private static string SpellCoreType(TypeReference type)
+	/// <remarks>
+	/// A trait is not a type a value can have, so a type naming one the document declares as an
+	/// interface is a trait object: <c>dyn Shape</c> behind a reference or a pointer, and
+	/// <c>Box&lt;dyn Shape&gt;</c> where it is held by value or as an element, since a trait object
+	/// has no size of its own (#298).
+	/// </remarks>
+	private string SpellCoreType(TypeReference type)
 	{
 		string core = SpellTypeName(type);
+
+		if (NamesTrait(type))
+		{
+			core = type.IsArray || type.Indirection == TypeIndirection.None ? $"Box<dyn {core}>" : $"dyn {core}";
+		}
+
 		return type.IsArray ? $"Vec<{core}>" : core;
 	}
+
+	/// <summary>
+	/// Says whether a type names an interface the document declares, which Rust writes as a trait.
+	/// </summary>
+	/// <param name="type">The type to look up.</param>
+	/// <returns>True when the name is a declared interface.</returns>
+	private bool NamesTrait(TypeReference type) =>
+		DeclaredTypes(GenerationRoot).Any(declared => declared.Kind == TypeDeclarationKind.Interface && declared.Name == type.Name);
 
 	/// <summary>
 	/// Spells a type's name and its arguments.
@@ -2116,7 +2229,7 @@ public class RustGenerator : StandardLanguageGenerator
 	/// library rather than from the name. A container named without arguments is a container of the
 	/// most general thing there is, which is what the caller left unsaid.
 	/// </remarks>
-	private static string SpellTypeName(TypeReference type)
+	private string SpellTypeName(TypeReference type)
 	{
 		string unknown = TypeMappings[UnknownTypeName];
 
