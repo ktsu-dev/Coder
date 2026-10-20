@@ -80,6 +80,27 @@ public class FloatingRemainderTests
 	}
 
 	/// <summary>
+	/// Tests that a floating remainder found only in a property setter, or only in an entry point,
+	/// imports its call once (#278).
+	/// </summary>
+	/// <param name="language">The generator's display name.</param>
+	/// <param name="import">The line the file should carry.</param>
+	/// <param name="call">The call the remainder should be written as.</param>
+	[TestMethod]
+	[DataRow("C", "#include <math.h>", "fmod(")]
+	[DataRow("C++", "#include <cmath>", "std::fmod(")]
+	[DataRow("Go", "\"math\"", "math.Mod(")]
+	[DataRow("Python", "import math", "math.fmod(")]
+	public void ARemainderInAnAccessorOrEntryPointImportsItsCall(string language, string import, string call)
+	{
+		foreach (string code in new[] { FileOfAccessorRemainder(), FileOfEntryPointRemainder() }.Select(GeneratorFor(language).Generate))
+		{
+			StringAssert.Contains(code, call, StringComparison.Ordinal);
+			Assert.AreEqual(1, code.Split(import).Length - 1, code);
+		}
+	}
+
+	/// <summary>
 	/// Tests that C, C++ and Go output for floating and integer remainders compiles without warnings.
 	/// </summary>
 	/// <param name="language">The generator's display name.</param>
@@ -98,7 +119,7 @@ public class FloatingRemainderTests
 			return;
 		}
 
-		SourceFile[] files = [FileOfRemainders(), FileOfIntegerRemainders()];
+		SourceFile[] files = [FileOfRemainders(), FileOfIntegerRemainders(), FileOfAccessorRemainder(), FileOfEntryPointRemainder()];
 		foreach (SourceFile file in files)
 		{
 			ToolchainHarness.InTemporaryDirectory(directory =>
@@ -144,6 +165,37 @@ public class FloatingRemainderTests
 			File.WriteAllText(Path.Combine(directory, "check.py"), source);
 			(int exitCode, string output) = ToolchainHarness.Run(python, "check.py", directory);
 			Assert.AreEqual(0, exitCode, $"{output}{Environment.NewLine}{source}");
+		});
+	}
+
+	/// <summary>
+	/// Tests that a generated Python setter and entry point that take a floating remainder run, which
+	/// they cannot without <c>import math</c> (#278).
+	/// </summary>
+	[TestMethod]
+	public void Python_RemaindersInAnAccessorAndAnEntryPointRun()
+	{
+		string? python = ToolchainHarness.FindOnPath("--version", "python3", "python");
+		if (python is null)
+		{
+			Assert.Inconclusive("No Python interpreter on the path, so nothing was run.");
+			return;
+		}
+
+		PythonGenerator generator = new();
+		string accessor = generator.Generate(FileOfAccessorRemainder())
+			+ Environment.NewLine
+			+ "Angle.set_degrees(-370.5)" + Environment.NewLine;
+		string entryPoint = generator.Generate(FileOfEntryPointRemainder());
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			foreach ((string name, string source) in new[] { ("accessor.py", accessor), ("entry.py", entryPoint) })
+			{
+				File.WriteAllText(Path.Combine(directory, name), source);
+				(int exitCode, string output) = ToolchainHarness.Run(python, name, directory);
+				Assert.AreEqual(0, exitCode, $"{output}{Environment.NewLine}{source}");
+			}
 		});
 	}
 
@@ -204,6 +256,60 @@ public class FloatingRemainderTests
 		function.Parameters.Add(new Parameter("b", type));
 		function.Body.Add(new VariableDeclaration("x", type, new VariableReference("a")));
 		function.Body.Add(new AssignmentStatement(new VariableReference("x"), new VariableReference("b"), AssignmentOperator.ModuloAssign));
+		function.Body.Add(new ReturnStatement(new VariableReference("x")));
+		return function;
+	}
+
+	/// <summary>
+	/// Builds a file whose only floating remainder is in a property setter, where it is floating only
+	/// because the setter's <c>value</c> is a <c>double</c>: <c>record(value % 360)</c>.
+	/// </summary>
+	/// <remarks>
+	/// The property is static so that C's lowered setter takes no instance it leaves unused, which
+	/// the compile test's <c>-Werror</c> would reject.
+	/// </remarks>
+	private static SourceFile FileOfAccessorRemainder()
+	{
+		SourceFile file = new("remainders");
+		file.Members.Add(Recorder());
+
+		PropertyDeclaration degrees = new("degrees", new TypeReference("double")) { HasGetter = false, IsStatic = true };
+		CallExpression record = new("record");
+		record.Arguments.Add(new BinaryExpression(new VariableReference("value"), BinaryOperator.Modulo, new LiteralExpression<int>(360)));
+		degrees.SetterBody.Add(new ExpressionStatement(record));
+
+		ClassDeclaration angle = new("Angle");
+		angle.Members.Add(new FieldDeclaration("turns", new TypeReference("int")));
+		angle.Members.Add(degrees);
+		file.Members.Add(angle);
+		return file;
+	}
+
+	/// <summary>
+	/// Builds a file whose only floating remainder is between two typed locals of its entry point.
+	/// </summary>
+	private static SourceFile FileOfEntryPointRemainder()
+	{
+		SourceFile file = new("remainders");
+		file.Members.Add(Recorder());
+
+		EntryPoint entryPoint = new();
+		entryPoint.Body.Add(new VariableDeclaration("x", "double", new LiteralExpression<double>(7.5)));
+		entryPoint.Body.Add(new VariableDeclaration("y", "double", new LiteralExpression<double>(2.0)));
+		CallExpression record = new("record");
+		record.Arguments.Add(new BinaryExpression(new VariableReference("x"), BinaryOperator.Modulo, new VariableReference("y")));
+		entryPoint.Body.Add(new ExpressionStatement(record));
+		file.Members.Add(entryPoint);
+		return file;
+	}
+
+	/// <summary>
+	/// A free function that hands back what it is given, so a remainder passed to it is used.
+	/// </summary>
+	private static FunctionDeclaration Recorder()
+	{
+		FunctionDeclaration function = new("record") { ReturnType = new TypeReference("double") };
+		function.Parameters.Add(new Parameter("x", "double"));
 		function.Body.Add(new ReturnStatement(new VariableReference("x")));
 		return function;
 	}
