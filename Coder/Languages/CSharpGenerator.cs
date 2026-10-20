@@ -165,13 +165,14 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// <remarks>
 	/// C#'s shift operators take an <c>int</c> count and a <c>long</c> does not convert to one, so
 	/// <c>x &lt;&lt; n</c> with a <c>long</c> <c>n</c> fails with CS0019 where every other target accepts it.
-	/// There is no static-type scope here to tell the two apart, so any count that is not an
-	/// <c>int</c> literal is cast. That changes no result: an <c>int</c> cast to <c>int</c> is itself,
-	/// and C# masks a <c>long</c> count to its low six bits, which the cast keeps.
+	/// A count is therefore cast when <see cref="ShouldCastShiftCount"/> says so. That changes no
+	/// result: C# masks a <c>long</c> count to its low six bits, which the cast keeps. What it must
+	/// not touch is a shift between values of a type that declares its own <c>&lt;&lt;</c>, where the
+	/// count is an operand of that operator and a cast to <c>int</c> is CS0030 (#305).
 	/// </remarks>
 	private void GenerateBinary(BinaryExpression binary, CodeBlocker code)
 	{
-		if (!IsShift(binary.Operator) || IsIntLiteral(binary.Right))
+		if (!IsShift(binary.Operator) || !ShouldCastShiftCount(binary.Right))
 		{
 			GenerateBinaryExpression(binary, code, GetBinaryOperator(binary.Operator));
 			return;
@@ -195,7 +196,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 		Ensure.NotNull(code);
 
 		if (assignment.Operator is not (AssignmentOperator.LeftShiftAssign or AssignmentOperator.RightShiftAssign)
-			|| IsIntLiteral(assignment.Value))
+			|| !ShouldCastShiftCount(assignment.Value))
 		{
 			base.GenerateAssignmentStatement(assignment, code);
 			return;
@@ -209,7 +210,72 @@ public class CSharpGenerator : LanguageGeneratorBase
 
 	private static bool IsShift(BinaryOperator op) => op is BinaryOperator.LeftShift or BinaryOperator.RightShift;
 
-	private static bool IsIntLiteral(Expression expression) => expression is LiteralExpression<int>;
+	/// <summary>
+	/// Decides whether a shift's count is cast to <c>int</c>.
+	/// </summary>
+	/// <param name="count">The count being shifted by.</param>
+	/// <returns>True when the count is, or may be, a wider integer than C#'s shifts take.</returns>
+	/// <remarks>
+	/// A count whose type is known decides it outright: a <c>long</c>, <c>ulong</c> or <c>uint</c> one
+	/// is cast and anything else is written as it is, a user type included. A count whose type is not
+	/// known is cast as before, unless the tree being generated declares a shift operator of its own,
+	/// since then the count may be an operand of that operator and the cast would be the error.
+	/// </remarks>
+	private bool ShouldCastShiftCount(Expression count)
+	{
+		return count switch
+		{
+			LiteralExpression<long> => true,
+			LiteralExpression<int> => false,
+			VariableReference reference when shiftCountTypes.TryGetValue(reference.Name, out TypeReference? type) =>
+				type is { IsArray: false, Indirection: TypeIndirection.None, TypeArguments.Count: 0 }
+				&& type.Name is "long" or "ulong" or "uint",
+			_ => !DeclaresShiftOperator(),
+		};
+	}
+
+	/// <summary>
+	/// Determines whether the tree being generated declares a <c>&lt;&lt;</c> or <c>&gt;&gt;</c> of its own.
+	/// </summary>
+	/// <returns>True when a shift operator is declared anywhere in the tree.</returns>
+	private bool DeclaresShiftOperator()
+	{
+		if (!ReferenceEquals(shiftOperatorRoot, GenerationRoot))
+		{
+			shiftOperatorRoot = GenerationRoot;
+			declaresShiftOperator = GenerationRoot is not null && Descendants(GenerationRoot)
+				.OfType<FunctionDeclaration>()
+				.Any(function => function.Kind == FunctionKind.Operator && function.Name is "<<" or ">>");
+		}
+
+		return declaresShiftOperator;
+	}
+
+	/// <summary>
+	/// Walks a node and everything under it.
+	/// </summary>
+	/// <param name="node">The node to start from.</param>
+	/// <returns>The node and its descendants, parents first.</returns>
+	private static IEnumerable<AstNode> Descendants(AstNode node)
+	{
+		yield return node;
+
+		IEnumerable<AstNode> children = node switch
+		{
+			SourceFile file => file.Members,
+			NamespaceDeclaration namespaceDecl => namespaceDecl.Members,
+			ClassDeclaration classDecl => classDecl.Members,
+			_ => [],
+		};
+
+		foreach (AstNode child in children)
+		{
+			foreach (AstNode descendant in Descendants(child))
+			{
+				yield return descendant;
+			}
+		}
+	}
 
 	private void WriteShiftCount(Expression count, CodeBlocker code)
 	{
@@ -1092,12 +1158,32 @@ public class CSharpGenerator : LanguageGeneratorBase
 		code.WriteLine();
 		WriteConstraintClauses(function.TypeParameters, code);
 
-		using Scope body = new(code);
-		WriteInitialisers(function, code);
-
-		foreach (AstNode statement in function.Body)
+		// The parameters' types are what decides whether a shift by one is cast; see
+		// ShouldCastShiftCount. The enclosing function's are restored afterwards, so a nested
+		// declaration does not leave its own behind.
+		Dictionary<string, TypeReference> enclosingTypes = shiftCountTypes;
+		shiftCountTypes = new(enclosingTypes, StringComparer.Ordinal);
+		foreach (Parameter parameter in function.Parameters)
 		{
-			GenerateInternal(statement, code);
+			if (parameter is { Name: string parameterName, Type: TypeReference parameterType })
+			{
+				shiftCountTypes[parameterName] = parameterType;
+			}
+		}
+
+		try
+		{
+			using Scope body = new(code);
+			WriteInitialisers(function, code);
+
+			foreach (AstNode statement in function.Body)
+			{
+				GenerateInternal(statement, code);
+			}
+		}
+		finally
+		{
+			shiftCountTypes = enclosingTypes;
 		}
 	}
 
@@ -1378,6 +1464,22 @@ public class CSharpGenerator : LanguageGeneratorBase
 	private bool memberAliasesHoisted;
 
 	/// <summary>
+	/// The declared types of the parameters and locals in scope, by name, for deciding whether a
+	/// shift's count is cast (#305).
+	/// </summary>
+	private Dictionary<string, TypeReference> shiftCountTypes = new(StringComparer.Ordinal);
+
+	/// <summary>
+	/// The root <see cref="declaresShiftOperator"/> was computed for.
+	/// </summary>
+	private AstNode? shiftOperatorRoot;
+
+	/// <summary>
+	/// Whether <see cref="shiftOperatorRoot"/> declares a shift operator of its own.
+	/// </summary>
+	private bool declaresShiftOperator;
+
+	/// <summary>
 	/// The member of a namespace or file being written into the static class that holds it, which
 	/// is written static whether or not it says so.
 	/// </summary>
@@ -1471,6 +1573,15 @@ public class CSharpGenerator : LanguageGeneratorBase
 
 	private void GenerateVariableDeclaration(VariableDeclaration varDecl, CodeBlocker code)
 	{
+		if (!varDecl.IsTypeInferred && varDecl.Type is TypeReference declaredType)
+		{
+			shiftCountTypes[varDecl.Name] = declaredType;
+		}
+		else
+		{
+			shiftCountTypes.Remove(varDecl.Name);
+		}
+
 		// Use type or var for type inference
 		string type = varDecl.IsTypeInferred || varDecl.Type is null
 			? "var"

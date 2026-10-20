@@ -247,6 +247,69 @@ public class CSharpGeneratedSourceCompilesTests
 	}
 
 	/// <summary>
+	/// The consumer of a type that declares its own shift, which shifts one value by another.
+	/// </summary>
+	private const string BitsDriver = """
+		public static class BitsDriver
+		{
+			public static Bits Use(Bits a, Bits b) => Globals.Join(a, b);
+		}
+		""";
+
+	/// <summary>
+	/// Tests that a shift and a shift-assignment between values of a type declaring its own
+	/// <c>&lt;&lt;</c> compile, which the <c>int</c> cast #271 put on every shift count turned into
+	/// CS0030, while a <c>long</c> count beside it is still cast (#305).
+	/// </summary>
+	[TestMethod]
+	public void ShiftsByAUserDeclaredOperator_Compile()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "dotnet") is null)
+		{
+			Assert.Inconclusive("No dotnet on the path, so nothing was compiled.");
+			return;
+		}
+
+		ClassDeclaration bits = new("Bits") { Kind = TypeDeclarationKind.Struct };
+		bits.Members.Add(new VariableDeclaration("value", "int") { Visibility = Visibility.Public });
+		FunctionDeclaration shift = new("<<") { Kind = FunctionKind.Operator, ReturnType = "Bits" };
+		shift.Parameters.Add(new Parameter("count", "Bits"));
+		shift.Body.Add(new ReturnStatement(new VariableReference("count")));
+		bits.Members.Add(shift);
+
+		FunctionDeclaration join = new("Join") { ReturnType = "Bits" };
+		join.Parameters.Add(new Parameter("a", "Bits"));
+		join.Parameters.Add(new Parameter("b", "Bits"));
+		join.Body.Add(new VariableDeclaration("k", "Bits", new VariableReference("a")));
+		join.Body.Add(new AssignmentStatement(new VariableReference("k"), new VariableReference("b"), AssignmentOperator.LeftShiftAssign));
+		join.Body.Add(new ReturnStatement(new BinaryExpression(new VariableReference("k"), BinaryOperator.LeftShift, new VariableReference("b"))));
+
+		FunctionDeclaration wide = new("Wide") { ReturnType = "long" };
+		wide.Parameters.Add(new Parameter("x", "long"));
+		wide.Parameters.Add(new Parameter("n", "long"));
+		wide.Body.Add(new ReturnStatement(new BinaryExpression(new VariableReference("x"), BinaryOperator.LeftShift, new VariableReference("n"))));
+
+		SourceFile file = new("Generated");
+		file.Members.Add(bits);
+		file.Members.Add(join);
+		file.Members.Add(wide);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new CSharpGenerator().Generate(file);
+			Assert.Contains("(k << b)", source, StringComparison.Ordinal, source);
+			Assert.Contains("(x << (int)(n))", source, StringComparison.Ordinal, source);
+
+			File.WriteAllText(Path.Combine(directory, "Generated.csproj"), Project);
+			File.WriteAllText(Path.Combine(directory, "Driver.cs"), BitsDriver);
+			File.WriteAllText(Path.Combine(directory, "Generated.cs"), source);
+
+			(int exitCode, string output) = ToolchainHarness.Run("dotnet", "build -nologo", directory);
+			Assert.AreEqual(0, exitCode, $"C# rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+		});
+	}
+
+	/// <summary>
 	/// Tests that a class method calling a function, or reading a constant field, declared beside it by
 	/// its bare name compiles, both at file scope and inside nested namespaces, and when a type beside
 	/// them has already claimed the holder's name (#279).
