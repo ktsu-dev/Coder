@@ -312,6 +312,7 @@ public class CppGeneratedSourceCompilesTests
 
 		// The free function taking the array, declared before what calls it.
 		file.Members.Add(Walk("walk_impl"));
+		file.Members.Add(CompiledExemplar.Widths());
 
 		ClassDeclaration holder = new("Table") { Kind = TypeDeclarationKind.Struct };
 		holder.Documentation.Add("Something taking an array through a member.");

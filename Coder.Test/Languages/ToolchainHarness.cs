@@ -3,6 +3,7 @@
 namespace ktsu.Coder.Test.Languages;
 
 using System.Diagnostics;
+using System.Threading.Tasks;
 
 /// <summary>
 /// Runs a real toolchain over generated source.
@@ -85,9 +86,13 @@ internal static class ToolchainHarness
 				return (-1, string.Empty);
 			}
 
-			string output = process.StandardOutput.ReadToEnd() + process.StandardError.ReadToEnd();
+			// Both streams are drained at once. Reading one to its end before starting the other
+			// deadlocks as soon as the other fills its pipe: rustc's warnings for a struct of unused
+			// fields are enough to do that on Windows, whose pipe buffer is small.
+			Task<string> error = process.StandardError.ReadToEndAsync();
+			string output = process.StandardOutput.ReadToEnd();
 			process.WaitForExit();
-			return (process.ExitCode, output);
+			return (process.ExitCode, output + error.GetAwaiter().GetResult());
 		}
 		catch (System.ComponentModel.Win32Exception)
 		{

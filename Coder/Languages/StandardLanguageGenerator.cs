@@ -55,6 +55,43 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	}
 
 	/// <summary>
+	/// Finds every instance member that says what it starts at, for the targets whose constructors
+	/// have to start it there because the member cannot say so itself.
+	/// </summary>
+	/// <param name="declaration">The type whose instance members are being considered.</param>
+	/// <returns>Each member's name and declared starting value, in declaration order.</returns>
+	/// <remarks>
+	/// A member of a type may be a <see cref="FieldDeclaration"/> or a <see cref="VariableDeclaration"/>,
+	/// and every struct writer treats both as an instance member, so both are gathered here. Gathering
+	/// only the first left a variable's starting value out of every constructor that did not set it:
+	/// a missing field in Rust, and a silent zero in Go and C. A static or constant field belongs to
+	/// the type rather than to each instance, so it is not one of them.
+	/// </remarks>
+	protected static IReadOnlyList<MemberInitialiser> InstanceDefaults(ClassDeclaration declaration)
+	{
+		Ensure.NotNull(declaration);
+		List<MemberInitialiser> defaults = [];
+		foreach (AstNode member in declaration.Members)
+		{
+			switch (member)
+			{
+				case VariableDeclaration { InitialValue: Expression value } variable:
+					defaults.Add(new MemberInitialiser(variable.Name ?? string.Empty, value));
+					break;
+
+				case FieldDeclaration { IsStatic: false, IsConstant: false, InitialValue: Expression value } field:
+					defaults.Add(new MemberInitialiser(field.Name ?? string.Empty, value));
+					break;
+
+				default:
+					break;
+			}
+		}
+
+		return defaults;
+	}
+
+	/// <summary>
 	/// Writes the per-instance field initializers that belong at the top of a constructor.
 	/// </summary>
 	/// <param name="declaration">The type whose instance fields are being initialized.</param>

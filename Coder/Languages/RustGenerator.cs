@@ -65,6 +65,12 @@ public class RustGenerator : StandardLanguageGenerator
 		{ "string", "String" },
 		{ "int", "i32" },
 		{ "long", "i64" },
+		{ "short", "i16" },
+		{ "ushort", "u16" },
+		{ "uint", "u32" },
+		{ "ulong", "u64" },
+		{ "byte", "u8" },
+		{ "sbyte", "i8" },
 		{ "float", "f32" },
 		{ "double", "f64" },
 		{ "bool", "bool" },
@@ -611,12 +617,13 @@ public class RustGenerator : StandardLanguageGenerator
 			switch (member)
 			{
 				case VariableDeclaration field:
+					WriteUnconstructedDefault(classDecl, field.Name, field.InitialValue, code);
 					WriteStructMember(field.Name, field.Type, VisibilityOf(field), code);
 					break;
 
 				case FieldDeclaration field when !IsAssociatedField(field):
 					WritePreamble(field, code, PreambleSite.Field);
-					WriteUnconstructedDefault(classDecl, field, code);
+					WriteUnconstructedDefault(classDecl, field.Name, field.InitialValue, code);
 					WriteStructMember(field.Name, field.Type, field.Visibility, code);
 					break;
 
@@ -632,7 +639,8 @@ public class RustGenerator : StandardLanguageGenerator
 	/// Says what a field starts at when the type has no constructor to start it there.
 	/// </summary>
 	/// <param name="classDecl">The type the field belongs to.</param>
-	/// <param name="field">The field being written.</param>
+	/// <param name="name">The name of the field being written.</param>
+	/// <param name="value">What its declaration says it starts at, if anything.</param>
 	/// <param name="code">The writer to emit into.</param>
 	/// <remarks>
 	/// A constructor builds a field it does not set from its declared value, so a type with one
@@ -640,15 +648,15 @@ public class RustGenerator : StandardLanguageGenerator
 	/// look like the declaration never asked for one — Go and C say the same thing for the same
 	/// reason.
 	/// </remarks>
-	private void WriteUnconstructedDefault(ClassDeclaration classDecl, FieldDeclaration field, CodeBlocker code)
+	private void WriteUnconstructedDefault(ClassDeclaration classDecl, string? name, Expression? value, CodeBlocker code)
 	{
-		if (field.InitialValue is not Expression initialValue
+		if (value is not Expression initialValue
 			|| classDecl.Members.OfType<FunctionDeclaration>().Any(function => function.Kind == FunctionKind.Constructor))
 		{
 			return;
 		}
 
-		WriteInexpressible(code, $"{field.Name} defaults to {GenerateExpression(initialValue)}: Rust has no field initialisers, and no constructor sets it");
+		WriteInexpressible(code, $"{name} defaults to {GenerateExpression(initialValue)}: Rust has no field initialisers, and no constructor sets it");
 	}
 
 	/// <summary>
@@ -1214,9 +1222,9 @@ public class RustGenerator : StandardLanguageGenerator
 		// A field the declaration gave a starting value, and this constructor did not set, starts
 		// at that value, as it does in every other target. Rust has no field initialisers, so the
 		// constructor's literal is the only place left to say it.
-		List<FieldDeclaration> defaulted = constructedType is null
+		List<MemberInitialiser> defaulted = constructedType is null
 			? []
-			: [.. InstanceInitialised(constructedType, field => !IsAssociatedField(field))
+			: [.. InstanceDefaults(constructedType)
 				.Where(field => !funcDecl.Initialisers.Any(initialiser => initialiser.Name == field.Name))];
 
 		if (funcDecl.Initialisers.Count == 0 && defaulted.Count == 0)
@@ -1235,9 +1243,9 @@ public class RustGenerator : StandardLanguageGenerator
 				: initialiser);
 		}
 
-		foreach (FieldDeclaration field in defaulted)
+		foreach (MemberInitialiser field in defaulted)
 		{
-			value.Arguments.Add(new MemberInitialiser(field.Name ?? string.Empty, (Expression)field.InitialValue!.DeepClone()));
+			value.Arguments.Add(new MemberInitialiser(field.Name ?? string.Empty, (Expression)field.Value!.DeepClone()));
 		}
 
 		// With no initialisers, the fields nobody gave a value still come from Default, as they
@@ -1261,7 +1269,8 @@ public class RustGenerator : StandardLanguageGenerator
 	{
 		HashSet<string?> named = [.. value.Arguments.OfType<MemberInitialiser>().Select(initialiser => initialiser.Name)];
 		return classDecl.BaseType is null
-			&& classDecl.Members.OfType<FieldDeclaration>().Where(field => !IsAssociatedField(field)).All(field => named.Contains(field.Name));
+			&& classDecl.Members.OfType<FieldDeclaration>().Where(field => !IsAssociatedField(field)).All(field => named.Contains(field.Name))
+			&& classDecl.Members.OfType<VariableDeclaration>().All(field => named.Contains(field.Name));
 	}
 
 	/// <summary>

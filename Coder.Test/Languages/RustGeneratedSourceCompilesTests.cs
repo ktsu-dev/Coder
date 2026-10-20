@@ -506,6 +506,7 @@ public class RustGeneratedSourceCompilesTests
 		geometry.Members.Add(circle);
 		geometry.Members.Add(Describe());
 		geometry.Members.Add(DescribesPoint());
+		geometry.Members.Add(CompiledExemplar.Widths());
 		geometry.Members.Add(CompiledExemplar.OriginAlias());
 		geometry.Members.Add(CompiledExemplar.OriginTable());
 		geometry.Members.Add(CompiledExemplar.Measure());

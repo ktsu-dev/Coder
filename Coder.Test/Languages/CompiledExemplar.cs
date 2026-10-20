@@ -28,6 +28,11 @@ using ktsu.Coder.Ast;
 internal static class CompiledExemplar
 {
 	/// <summary>
+	/// The integer types the AST names, in the order <see cref="Widths"/> declares them.
+	/// </summary>
+	private static readonly string[] IntegerWidths = ["short", "ushort", "int", "uint", "long", "ulong", "byte", "sbyte"];
+
+	/// <summary>
 	/// Gets the enumeration, which fixes its representation and gives one member a value.
 	/// </summary>
 	/// <returns>The declaration.</returns>
@@ -63,6 +68,35 @@ internal static class CompiledExemplar
 		point.Members.Add(zero);
 
 		return point;
+	}
+
+	/// <summary>
+	/// Gets a type holding one of every integer width the AST names, each set by its constructor.
+	/// </summary>
+	/// <returns>The declaration.</returns>
+	/// <remarks>
+	/// Only <c>int</c> and <c>long</c> used to have a spelling outside C#, so every other name was
+	/// written out as it stands — <c>uint</c> is no type in Rust or C, and in Go it is 64 bits wide.
+	/// Each width is both a member and a parameter here, because those are two different places a
+	/// generator spells a type.
+	/// </remarks>
+	public static ClassDeclaration Widths()
+	{
+		ClassDeclaration widths = new("Widths") { Kind = TypeDeclarationKind.Struct };
+		widths.Documentation.Add("One of every integer width.");
+
+		FunctionDeclaration create = new("Widths") { Kind = FunctionKind.Constructor };
+
+		foreach (string width in IntegerWidths)
+		{
+			string member = $"{width}Value";
+			widths.Members.Add(new VariableDeclaration(member, width));
+			create.Parameters.Add(new Parameter(member, width));
+			create.Initialisers.Add(new MemberInitialiser(member) { Value = new VariableReference(member) });
+		}
+
+		widths.Members.Add(create);
+		return widths;
 	}
 
 	/// <summary>
