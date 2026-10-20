@@ -93,10 +93,8 @@ public class FloatingRemainderTests
 	[DataRow("Python", "import math", "math.fmod(")]
 	public void ARemainderInAnAccessorOrEntryPointImportsItsCall(string language, string import, string call)
 	{
-		foreach (SourceFile file in new[] { FileOfAccessorRemainder(), FileOfEntryPointRemainder() })
+		foreach (string code in new[] { FileOfAccessorRemainder(), FileOfEntryPointRemainder() }.Select(GeneratorFor(language).Generate))
 		{
-			string code = GeneratorFor(language).Generate(file);
-
 			StringAssert.Contains(code, call, StringComparison.Ordinal);
 			Assert.AreEqual(1, code.Split(import).Length - 1, code);
 		}

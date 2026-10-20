@@ -319,29 +319,19 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 			return true;
 		}
 
-		foreach (AstNode node in SelfAndDescendants(file))
+		return SelfAndDescendants(file).Any(node => node switch
 		{
-			bool found = node switch
-			{
-				FunctionDeclaration function => ScopeContainsFloatingRemainder(() => OpenStaticTypeScope(function), [function]),
+			FunctionDeclaration function => ScopeContainsFloatingRemainder(() => OpenStaticTypeScope(function), [function]),
 
-				// An accessor and an entry point are bodies their emitters scope as well (#278). Go, C
-				// and C++ write a setter as a function taking `value`, which is the name this scope gives
-				// it too.
-				PropertyDeclaration property =>
-					ScopeContainsFloatingRemainder(() => OpenStaticTypeScope(property, isSetter: false), property.GetterBody)
-					|| ScopeContainsFloatingRemainder(() => OpenStaticTypeScope(property, isSetter: true), property.SetterBody),
-				EntryPoint entryPoint => ScopeContainsFloatingRemainder(() => OpenStaticTypeScope(entryPoint), entryPoint.Body),
-				_ => false,
-			};
-
-			if (found)
-			{
-				return true;
-			}
-		}
-
-		return false;
+			// An accessor and an entry point are bodies their emitters scope as well (#278). Go, C
+			// and C++ write a setter as a function taking `value`, which is the name this scope gives
+			// it too.
+			PropertyDeclaration property =>
+				ScopeContainsFloatingRemainder(() => OpenStaticTypeScope(property, isSetter: false), property.GetterBody)
+				|| ScopeContainsFloatingRemainder(() => OpenStaticTypeScope(property, isSetter: true), property.SetterBody),
+			EntryPoint entryPoint => ScopeContainsFloatingRemainder(() => OpenStaticTypeScope(entryPoint), entryPoint.Body),
+			_ => false,
+		});
 	}
 
 	/// <summary>
