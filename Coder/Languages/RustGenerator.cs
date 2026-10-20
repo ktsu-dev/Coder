@@ -148,6 +148,31 @@ public class RustGenerator : StandardLanguageGenerator
 	private IReadOnlySet<string> reassignedParameters = new HashSet<string>(StringComparer.Ordinal);
 
 	/// <summary>
+	/// The parameters and locals the function being written has bound so far.
+	/// </summary>
+	/// <remarks>
+	/// A local or parameter named like a mutable static shadows it, and is reached without
+	/// <c>unsafe</c>. Cleared once each body has been written.
+	/// </remarks>
+	private readonly HashSet<string> boundLocals = new(StringComparer.Ordinal);
+
+	/// <summary>
+	/// The root <see cref="writtenStatics"/> was worked out for.
+	/// </summary>
+	private AstNode? writtenStaticsRoot;
+
+	/// <summary>
+	/// The module-level fields something in the document assigns to, which Rust declares
+	/// <c>static mut</c>.
+	/// </summary>
+	private HashSet<string> writtenStatics = new(StringComparer.Ordinal);
+
+	/// <summary>
+	/// Whether the code being written is already inside an <c>unsafe</c> block.
+	/// </summary>
+	private bool insideUnsafe;
+
+	/// <summary>
 	/// Spells type parameters where they are being declared, bounds and all.
 	/// </summary>
 	/// <param name="parameters">The declaration's type parameters.</param>
@@ -1137,7 +1162,71 @@ public class RustGenerator : StandardLanguageGenerator
 			return;
 		}
 
+		if (assignment.Target is VariableReference { Name: string name } && IsMutableStatic(RootOf(name)))
+		{
+			// Every access to a static mut is unsafe, because nothing stops two threads reaching it at
+			// once. The block holds the whole statement so a value read from the same static is
+			// covered by it rather than needing a block of its own.
+			code.WriteLine("unsafe {");
+			code.Indent();
+			insideUnsafe = true;
+			try
+			{
+				base.GenerateAssignmentStatement(assignment, code);
+			}
+			finally
+			{
+				insideUnsafe = false;
+			}
+
+			code.Outdent();
+			code.WriteLine("}");
+			return;
+		}
+
 		base.GenerateAssignmentStatement(assignment, code);
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// A read of a <c>static mut</c> is unsafe as well as a write, so outside a block that is
+	/// already unsafe it is written as an <c>unsafe</c> expression that yields the value.
+	/// </remarks>
+	protected override void GenerateVariableReference(VariableReference reference, CodeBlocker code)
+	{
+		Ensure.NotNull(reference);
+		Ensure.NotNull(code);
+
+		if (!insideUnsafe && IsMutableStatic(RootOf(reference.Name)))
+		{
+			code.Write($"unsafe {{ {reference.Name} }}");
+			return;
+		}
+
+		base.GenerateVariableReference(reference, code);
+	}
+
+	/// <summary>
+	/// Tells whether a name, as a body sees it, is a module-level field declared <c>static mut</c>.
+	/// </summary>
+	/// <param name="name">The name to look up.</param>
+	/// <returns>Whether it names a mutable static rather than a local, parameter or constant.</returns>
+	private bool IsMutableStatic(string name) =>
+		!boundLocals.Contains(name) && WrittenStatics().Contains(name);
+
+	/// <summary>
+	/// Reads the module-level fields written to in the document being generated, once per document.
+	/// </summary>
+	/// <returns>Their names.</returns>
+	private HashSet<string> WrittenStatics()
+	{
+		if (!ReferenceEquals(writtenStaticsRoot, GenerationRoot))
+		{
+			writtenStaticsRoot = GenerationRoot;
+			writtenStatics = WrittenFileScopeFields();
+		}
+
+		return writtenStatics;
 	}
 
 	/// <summary>
@@ -1190,9 +1279,16 @@ public class RustGenerator : StandardLanguageGenerator
 	/// <param name="code">The writer to emit into.</param>
 	private void WriteBody(IEnumerable<AstNode> statements, CodeBlocker code)
 	{
-		foreach (AstNode statement in statements)
+		try
 		{
-			GenerateInternal(statement, code);
+			foreach (AstNode statement in statements)
+			{
+				GenerateInternal(statement, code);
+			}
+		}
+		finally
+		{
+			boundLocals.Clear();
 		}
 	}
 
@@ -1545,6 +1641,11 @@ public class RustGenerator : StandardLanguageGenerator
 			code.Write("mut ");
 		}
 
+		if (parameter.Name is not null)
+		{
+			boundLocals.Add(parameter.Name);
+		}
+
 		code.Write($"{parameter.Name ?? $"param{position}"}: ");
 		code.Write(SpellType(parameter.Type ?? new TypeReference(UnknownTypeName)));
 
@@ -1573,6 +1674,7 @@ public class RustGenerator : StandardLanguageGenerator
 
 		code.Write(varDecl.IsConstant ? "let " : "let mut ");
 		code.Write(varDecl.Name);
+		boundLocals.Add(varDecl.Name);
 
 		bool inferred = varDecl.IsTypeInferred || varDecl.Type is null;
 		TypeReference? annotation = !inferred ? varDecl.Type
@@ -1638,7 +1740,9 @@ public class RustGenerator : StandardLanguageGenerator
 		}
 
 		string visibility = IsAssociatedItem ? string.Empty : SpellVisibilityKeyword(field.Visibility);
-		string storage = IsAssociatedItem || field.IsConstant ? "const" : "static";
+		string storage = IsAssociatedItem || field.IsConstant ? "const"
+			: field.Name is not null && WrittenStatics().Contains(field.Name) ? "static mut"
+			: "static";
 
 		code.Write($"{visibility}{storage} ");
 		code.Write($"{field.Name}: {SpellStorageType(type)} = ");

@@ -669,9 +669,61 @@ public class RustGeneratedSourceCompilesTests
 	}
 
 	/// <summary>
+	/// Tests that a module-level field a function assigns to is a <c>static mut</c> reached through
+	/// <c>unsafe</c>, so the program compiles and the writes stick (#296).
+	/// </summary>
+	[TestMethod]
+	public void ModuleFieldWrittenByAFunction_CompilesAndKeepsItsValue()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "rustc") is null)
+		{
+			Assert.Inconclusive("No Rust compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string program = OperatingSystem.IsWindows() ? "counter.exe" : "counter";
+			string source = new RustGenerator().Generate(Counter());
+			File.WriteAllText(Path.Combine(directory, "counter.rs"), source);
+
+			(int built, string output) = ToolchainHarness.Run(
+				"rustc",
+				$"--edition 2021 -o {program} counter.rs",
+				directory);
+			Assert.AreEqual(0, built, $"rustc rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+
+			(int counted, _) = ToolchainHarness.Run(Path.Combine(directory, program), string.Empty, directory);
+			Assert.AreEqual(2, counted, source);
+		});
+	}
+
+	/// <summary>
 	/// Gets a string the holder does not own, which is the one Rust asks for wherever it is only read.
 	/// </summary>
 	/// <returns>The type.</returns>
 	private static TypeReference BorrowedString() =>
 		new("str") { Indirection = TypeIndirection.Reference, IsReadOnly = true };
+
+	/// <summary>
+	/// Builds a file whose function assigns to a module-level field and returns it, and whose entry
+	/// point calls it twice, exiting with what the second call returns (#296).
+	/// </summary>
+	/// <returns>The file to generate; run, it exits with 2.</returns>
+	private static SourceFile Counter()
+	{
+		SourceFile file = new("counter");
+		file.Members.Add(new FieldDeclaration("count", new TypeReference("int")) { InitialValue = Literal.Number(0) });
+
+		FunctionDeclaration bump = new("bump") { ReturnType = new TypeReference("int") };
+		bump.Body.Add(new AssignmentStatement(new VariableReference("count"), Literal.Number(1), AssignmentOperator.AddAssign));
+		bump.Body.Add(new ReturnStatement(new VariableReference("count")));
+		file.Members.Add(bump);
+
+		EntryPoint main = new() { ReturnsExitCode = true };
+		main.Body.Add(new ExpressionStatement(new CallExpression("bump")));
+		main.Body.Add(new ReturnStatement(new CallExpression("bump")));
+		file.Members.Add(main);
+		return file;
+	}
 }

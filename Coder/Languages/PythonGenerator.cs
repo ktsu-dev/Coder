@@ -23,6 +23,16 @@ public class PythonGenerator : StandardLanguageGenerator
 	private HashSet<FieldDeclaration>? instanceInitialisedFields;
 
 	/// <summary>
+	/// The root <see cref="writtenModuleFields"/> was worked out for.
+	/// </summary>
+	private AstNode? writtenModuleFieldsRoot;
+
+	/// <summary>
+	/// The module-level fields something in the document assigns to.
+	/// </summary>
+	private HashSet<string> writtenModuleFields = new(StringComparer.Ordinal);
+
+	/// <summary>
 	/// Gets the unique identifier for this language generator.
 	/// </summary>
 	public override string LanguageId => "python";
@@ -204,6 +214,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		code.WriteLine();
 
 		using IndentScope statements = new(code);
+		WriteGlobalDeclarations(body, [], code);
 
 		if (body.Count == 0)
 		{
@@ -487,6 +498,52 @@ public class PythonGenerator : StandardLanguageGenerator
 		code.WriteLine();
 	}
 
+	/// <summary>
+	/// Declares <c>global</c> the module-level fields a body assigns to.
+	/// </summary>
+	/// <param name="body">The statements of the body about to be written.</param>
+	/// <param name="parameters">The parameters the body can see, which shadow a module field of the same name.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// Python decides a name's scope from the whole function before running any of it: one assignment
+	/// anywhere makes the name local everywhere in that body, so the read in <c>count += 1</c> finds an
+	/// unbound local and raises <c>UnboundLocalError</c>. A <c>global</c> line is what says the
+	/// assignment means the module's. Only fields the body itself assigns are listed, because a read
+	/// alone already reaches the module and a declaration nothing needs is noise.
+	/// </remarks>
+	private void WriteGlobalDeclarations(IEnumerable<AstNode> body, IEnumerable<Parameter> parameters, CodeBlocker code)
+	{
+		if (!ReferenceEquals(writtenModuleFieldsRoot, GenerationRoot))
+		{
+			writtenModuleFieldsRoot = GenerationRoot;
+			writtenModuleFields = WrittenFileScopeFields();
+		}
+
+		if (writtenModuleFields.Count == 0)
+		{
+			return;
+		}
+
+		AstNode[] nodes = [.. body.SelectMany(SelfAndDescendants)];
+		HashSet<string> shadowed = new(
+			parameters.Select(parameter => parameter.Name).OfType<string>()
+				.Concat(nodes.OfType<VariableDeclaration>().Select(declaration => declaration.Name)),
+			StringComparer.Ordinal);
+
+		List<string> globals = [.. nodes
+			.OfType<AssignmentStatement>()
+			.Select(assignment => assignment.Target)
+			.OfType<VariableReference>()
+			.Select(reference => reference.Name.Split('.')[0])
+			.Where(name => writtenModuleFields.Contains(name) && !shadowed.Contains(name))
+			.Distinct(StringComparer.Ordinal)];
+
+		if (globals.Count > 0)
+		{
+			code.WriteLine($"global {string.Join(", ", globals)}");
+		}
+	}
+
 	/// <inheritdoc/>
 	protected override void GenerateFunctionDeclaration(FunctionDeclaration funcDecl, CodeBlocker code)
 	{
@@ -511,6 +568,7 @@ public class PythonGenerator : StandardLanguageGenerator
 
 		// Python's body is delimited by indentation alone, so there is no brace scope to open.
 		using IndentScope body = new(code);
+		WriteGlobalDeclarations(funcDecl.Body, funcDecl.Parameters, code);
 
 		// Function body
 		if (funcDecl.Body.Count == 0)
@@ -675,6 +733,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		WriteMethodSignature(method, code);
 
 		using IndentScope body = new(code);
+		WriteGlobalDeclarations(method.Body, method.Parameters, code);
 
 		// A method a derived class has to supply is a method whose body is a refusal. Python has no
 		// declaration without a definition, so the definition says what calling it means.
@@ -846,6 +905,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		using (IDisposable types = OpenStaticTypeScope(entryPoint))
 		using (IndentScope body = new(code))
 		{
+			WriteGlobalDeclarations(entryPoint.Body, [], code);
 			if (entryPoint.Body.Count == 0)
 			{
 				code.WriteLine("pass");
