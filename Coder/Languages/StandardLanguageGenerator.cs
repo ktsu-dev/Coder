@@ -465,7 +465,7 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 					}
 				}
 
-				return null;
+				return DeclaredMemberType(reference.Name);
 			default:
 				return null;
 		}
@@ -506,6 +506,45 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 			.Where(function => function.Name == callee)
 			.Take(2)];
 		return matches.Length == 1 ? matches[0].ReturnType : null;
+	}
+
+	/// <summary>
+	/// Reads the declared type of the one field or member variable a name no function scope declares
+	/// can mean.
+	/// </summary>
+	/// <param name="name">The name the reference is written with.</param>
+	/// <returns>The member's declared type, or null when no member or more than one has the name.</returns>
+	/// <remarks>
+	/// A file-scope <c>int</c> constant read by a function was otherwise of unknown type, so
+	/// <c>LIMIT / 2</c> was true division in Python and JavaScript, and C typed a local copied from it
+	/// <c>void*</c> (#304). Only a <see cref="FieldDeclaration"/>, or a <see cref="VariableDeclaration"/>
+	/// declared as a member of a file, namespace or type rather than in a body, is a candidate, and only
+	/// a name exactly one of them has is resolved, the same rule <see cref="DeclaredReturnType"/> keeps.
+	/// A parameter or local of the name is found in the scopes first and so still wins.
+	/// </remarks>
+	private TypeReference? DeclaredMemberType(string name)
+	{
+		if (GenerationRoot is null || string.IsNullOrEmpty(name))
+		{
+			return null;
+		}
+
+		IEnumerable<AstNode> containers = SelfAndDescendants(GenerationRoot);
+		IEnumerable<VariableDeclaration> memberVariables = containers.SelectMany(node => node switch
+		{
+			SourceFile file => file.Members,
+			NamespaceDeclaration space => space.Members,
+			ClassDeclaration type => type.Members,
+			_ => Enumerable.Empty<AstNode>(),
+		}).OfType<VariableDeclaration>();
+
+		TypeReference?[] matches = [.. SelfAndDescendants(GenerationRoot)
+			.OfType<FieldDeclaration>()
+			.Where(field => field.Name == name)
+			.Select(field => field.Type)
+			.Concat(memberVariables.Where(variable => variable.Name == name).Select(variable => variable.Type))
+			.Take(2)];
+		return matches.Length == 1 ? matches[0] : null;
 	}
 
 	/// <summary>
