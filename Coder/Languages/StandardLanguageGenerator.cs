@@ -307,9 +307,9 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	/// <returns>True when a <c>%</c> or <c>%=</c> in it has a floating-point operand.</returns>
 	/// <remarks>
 	/// The imports are written before anything they are for, so the question is asked of the AST
-	/// rather than of the output. Each function's parameters and locals are put in scope the way its
-	/// emitter puts them, which is what makes the answer agree with what is written; a file that
-	/// imports what it does not use does not compile in Go.
+	/// rather than of the output. Each function's, accessor's and entry point's parameters and locals
+	/// are put in scope the way its emitter puts them, which is what makes the answer agree with what
+	/// is written; a file that imports what it does not use does not compile in Go.
 	/// </remarks>
 	protected bool ContainsFloatingRemainder(SourceFile file)
 	{
@@ -319,13 +319,46 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 			return true;
 		}
 
-		foreach (FunctionDeclaration function in SelfAndDescendants(file).OfType<FunctionDeclaration>())
+		foreach (AstNode node in SelfAndDescendants(file))
 		{
-			using IDisposable types = OpenStaticTypeScope(function);
+			bool found = node switch
+			{
+				FunctionDeclaration function => ScopeContainsFloatingRemainder(() => OpenStaticTypeScope(function), [function]),
+
+				// An accessor and an entry point are bodies their emitters scope as well (#278). Go, C
+				// and C++ write a setter as a function taking `value`, which is the name this scope gives
+				// it too.
+				PropertyDeclaration property =>
+					ScopeContainsFloatingRemainder(() => OpenStaticTypeScope(property, isSetter: false), property.GetterBody)
+					|| ScopeContainsFloatingRemainder(() => OpenStaticTypeScope(property, isSetter: true), property.SetterBody),
+				EntryPoint entryPoint => ScopeContainsFloatingRemainder(() => OpenStaticTypeScope(entryPoint), entryPoint.Body),
+				_ => false,
+			};
+
+			if (found)
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/// <summary>
+	/// Reports whether a body takes a floating remainder once its locals are in the given scope.
+	/// </summary>
+	/// <param name="openScope">Opens the scope its emitter opens.</param>
+	/// <param name="body">The nodes the scope covers.</param>
+	/// <returns>True when a <c>%</c> or <c>%=</c> in the body has a floating-point operand.</returns>
+	private bool ScopeContainsFloatingRemainder(Func<IDisposable> openScope, IEnumerable<AstNode> body)
+	{
+		using (openScope())
+		{
+			AstNode[] nodes = [.. body.SelectMany(SelfAndDescendants)];
 
 			// A local can take its type from another, so one pass per local settles every chain however
 			// the walk happens to order them.
-			VariableDeclaration[] locals = [.. SelfAndDescendants(function).OfType<VariableDeclaration>()];
+			VariableDeclaration[] locals = [.. nodes.OfType<VariableDeclaration>()];
 			for (int pass = 0; pass < locals.Length; pass++)
 			{
 				foreach (VariableDeclaration local in locals)
@@ -334,13 +367,8 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 				}
 			}
 
-			if (SelfAndDescendants(function).Any(IsFloatingRemainder))
-			{
-				return true;
-			}
+			return nodes.Any(IsFloatingRemainder);
 		}
-
-		return false;
 	}
 
 	private bool IsFloatingRemainder(AstNode node) => node switch
