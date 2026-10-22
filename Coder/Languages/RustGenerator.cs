@@ -1636,6 +1636,22 @@ public class RustGenerator : StandardLanguageGenerator
 		Ensure.NotNull(code);
 
 		RegisterStaticType(varDecl);
+
+		// `let` is a statement, so a variable of a module or a file is the item that holds one there:
+		// a `const` or a `static`, each of which has to say its type.
+		if (IsModuleVariable(varDecl))
+		{
+			TypeReference? declared = varDecl.IsTypeInferred ? null : varDecl.Type;
+			GenerateFieldDeclaration(new FieldDeclaration(varDecl.Name)
+			{
+				Type = declared ?? (varDecl.InitialValue is Expression initialValue ? StaticType(initialValue) : null),
+				InitialValue = varDecl.InitialValue,
+				Visibility = varDecl.Visibility,
+				IsConstant = varDecl.IsConstant,
+			}, code);
+			return;
+		}
+
 		code.Write(varDecl.IsConstant ? "let " : "let mut ");
 		code.Write(varDecl.Name);
 
