@@ -2,7 +2,23 @@
 
 Changes since v3.19.0:
 
+- Cover entry points in a type or namespace generated on its own [patch] (Claude)
+- Use Path.Join for test driver paths [patch] (Claude)
+- Spell parameter default values per language instead of pasting text [patch] (Claude)
+- Write entry points where each toolchain looks for them [patch] (Claude)
+- Widen narrower numbers explicitly in Rust and Go output [patch] (Claude)
+- Write a function's type parameters down in Python, JavaScript and C [patch] (Claude)
+- Write keyed children under a dedicated children mapping [patch] (Claude)
+- [patch] Spell an interface parameter as a trait object in Rust and as the interface in Go (Claude)
+- [patch] Read a member's declared type when deciding integer division (Claude)
+- [patch] Give a C# struct with initialised fields a parameterless constructor (Claude)
+- [patch] Move a free operator into the type it operates on in C# (#261) (Claude)
+- [patch] Let a record declare its own equality in C# and Rust (#301) (Claude)
+- [patch] Order enum values in Python and Rust (#295) (Claude)
+- [patch] Cover Ctrl+S and the empty-target paths of Save and Export (Claude)
+- [patch] Write a friend operator with the operands it declares (#231) (Claude)
 - [patch] Cast a C# shift count only when it may be wider than int (#305) (Claude)
+- [patch] Save and Export follow the editor's Path box (Claude)
 - Express the remainder scan and its test loop with LINQ (matt-edmondson)
 - Give the exit-code helper another name when the user declares run [patch] (matt-edmondson)
 - Import the floating-remainder call when the remainder is in a setter or entry point [patch] (matt-edmondson)

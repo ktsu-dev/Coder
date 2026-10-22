@@ -860,17 +860,12 @@ public class CGenerator : CFamilyGenerator
 	/// the declaration — <c>Point_translate(Point* self, …)</c>. A call site that kept the dot would
 	/// not reach the function this generator emitted for it.
 	/// <para>
-	/// Its address is taken, because that <c>self</c> parameter is a pointer. That assumes the
-	/// receiver is an instance rather than already a pointer to one, which is an assumption rather
-	/// than a deduction: a <see cref="CallExpression"/> knows the receiver's spelling and not its
-	/// type. It is the assumption worth making, because taking the address is the only one of the two
-	/// a caller cannot write for itself — the AST has no address-of operator — and because what this
-	/// generator emits elsewhere is instances. A caller holding a pointer spells the call as a free
-	/// function and passes the pointer as an ordinary argument.
+	/// Because that <c>self</c> parameter is a pointer, the receiver has to become one:
+	/// <see cref="WriteSelfArgument"/> decides how from what the receiver's type is known to be.
 	/// </para>
 	/// <para>
 	/// What is not done is mangling the name: the declaration's is built from the type it belongs to,
-	/// and the receiver's type is exactly what is not known here, so
+	/// and the receiver's type is not always known here, so
 	/// <see cref="CallExpression.Callee"/> is written verbatim and choosing it stays the caller's —
 	/// which is what the node says it is everywhere else too.
 	/// </para>
@@ -885,8 +880,7 @@ public class CGenerator : CFamilyGenerator
 
 		if (callExpr.Receiver is not null)
 		{
-			code.Write("&");
-			GenerateInternal(callExpr.Receiver, code);
+			WriteSelfArgument(callExpr.Receiver, code);
 
 			if (callExpr.Arguments.Count > 0)
 			{
@@ -896,6 +890,74 @@ public class CGenerator : CFamilyGenerator
 
 		GenerateArgumentList(callExpr.Arguments, code);
 		code.Write(")");
+	}
+
+	/// <summary>
+	/// Writes a call's receiver as the pointer to the instance its lowered function takes first.
+	/// </summary>
+	/// <param name="receiver">The receiver the call is made on.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// Three receivers are written three ways (#170). One known to be a pointer or a reference is
+	/// already the pointer C wants, since this generator spells both with <c>*</c>, so it is passed as
+	/// it is: taking its address would pass a pointer to the pointer. A variable is an lvalue, so its
+	/// address is taken. Anything else — a call's result, above all, which is what a chain is made of
+	/// — has no address, so it is put in a one-element array compound literal of its type,
+	/// <c>(Vec[]){ Vec_twice(&amp;v) }</c>, which is an lvalue living to the end of the enclosing
+	/// block and decays to the pointer wanted. An array rather than <c>&amp;(Vec){ … }</c>, because a
+	/// braced list initialises a struct's members one by one and only an array's element may be
+	/// initialised from a whole struct.
+	/// <para>
+	/// A value whose type the AST does not establish keeps the address-of, which is the assumption
+	/// the call site made before any of this was known.
+	/// </para>
+	/// </remarks>
+	private void WriteSelfArgument(Expression receiver, CodeBlocker code)
+	{
+		TypeReference? type = StaticType(receiver) ?? (receiver is CallExpression call ? LoweredReturnType(call.Callee) : null);
+
+		if (type is { Indirection: not TypeIndirection.None, IsArray: false })
+		{
+			GenerateInternal(receiver, code);
+			return;
+		}
+
+		if (receiver is VariableReference || type is null or { IsArray: true })
+		{
+			code.Write("&");
+			GenerateInternal(receiver, code);
+			return;
+		}
+
+		code.Write($"({MapToCType(type)}[]){{ ");
+		GenerateInternal(receiver, code);
+		code.Write(" }");
+	}
+
+	/// <summary>
+	/// Reads the return type of the one member function a call names by the name C gives it.
+	/// </summary>
+	/// <param name="callee">The name the call is written with.</param>
+	/// <returns>The function's return type, or null when no member function or more than one has the name.</returns>
+	/// <remarks>
+	/// A call on a receiver names the free function a member function lowers to,
+	/// <c>Vec_twice</c>, which is not the name the class declares and so not one the shared
+	/// reading of a call's type can find.
+	/// </remarks>
+	private TypeReference? LoweredReturnType(string callee)
+	{
+		if (GenerationRoot is null || string.IsNullOrEmpty(callee))
+		{
+			return null;
+		}
+
+		FunctionDeclaration[] matches = [.. SelfAndDescendants(GenerationRoot)
+			.OfType<ClassDeclaration>()
+			.SelectMany(type => type.Members
+				.OfType<FunctionDeclaration>()
+				.Where(function => SpellFunctionName(function, type.Name) == callee))
+			.Take(2)];
+		return matches.Length == 1 ? matches[0].ReturnType : null;
 	}
 
 	/// <summary>
@@ -1155,6 +1217,36 @@ public class CGenerator : CFamilyGenerator
 			GenerateInternal(statement, code);
 		}
 	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// Joining strings is written down rather than translated. A string is a <c>const char*</c>, and
+	/// <c>+</c> on two pointers does not compile; joining them needs a buffer somebody allocates and
+	/// owns, which is a decision about the program rather than a spelling of the expression. So the
+	/// <c>+</c> stays, and a note in front of it says why the compiler rejects it and what to write
+	/// instead, rather than leaving the reader with <c>invalid operands to binary +</c> alone.
+	/// </remarks>
+	protected override void GenerateBinary(BinaryExpression binary, CodeBlocker code)
+	{
+		Ensure.NotNull(binary);
+		Ensure.NotNull(code);
+
+		if (binary.Operator == BinaryOperator.Add
+			&& (IsCString(StaticType(binary.Left)) || IsCString(StaticType(binary.Right))))
+		{
+			code.Write("/* C has no string concatenation: join these into a buffer with snprintf or strcat */ ");
+		}
+
+		base.GenerateBinary(binary, code);
+	}
+
+	/// <summary>
+	/// Reports whether a type is spelled as C's string, a pointer to constant characters.
+	/// </summary>
+	/// <param name="type">The type, or null where none is known.</param>
+	/// <returns>True for <c>str</c> and <c>string</c> as a plain value.</returns>
+	private static bool IsCString(TypeReference? type) =>
+		type is not null && MapToCType(type) == TypeMappings["string"];
 
 	/// <inheritdoc/>
 	/// <remarks>

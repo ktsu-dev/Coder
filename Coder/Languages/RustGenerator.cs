@@ -332,6 +332,45 @@ public class RustGenerator : StandardLanguageGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
+	/// The strict keywords and the ones reserved for later, from the 2018 edition on, which is the
+	/// first to have raw identifiers. <c>gen</c> is reserved by 2024 and escaped here so the output
+	/// reads the same under it.
+	/// </remarks>
+	protected override IReadOnlySet<string> ReservedWords { get; } = new HashSet<string>(StringComparer.Ordinal)
+	{
+		"as", "async", "await", "break", "const", "continue", "crate", "dyn", "else", "enum", "extern", "false",
+		"fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref", "return",
+		"self", "Self", "static", "struct", "super", "trait", "true", "type", "unsafe", "use", "where", "while",
+		"abstract", "become", "box", "do", "final", "gen", "macro", "override", "priv", "try", "typeof",
+		"unsized", "virtual", "yield",
+	};
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// A raw identifier, <c>r#type</c>, which is the keyword used as a name rather than a different
+	/// name, so nothing is renamed. The four path keywords cannot be raw — <c>r#self</c> is an error —
+	/// so those, alone, have an underscore appended.
+	/// </remarks>
+	protected override string EscapeIdentifier(string name)
+	{
+		Ensure.NotNull(name);
+
+		if (!ReservedWords.Contains(name))
+		{
+			return name;
+		}
+
+		return name is "self" or "Self" or "crate" or "super" ? $"{name}_" : $"r#{name}";
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// The receiver, the path keywords that start a path, and the literal words.
+	/// </remarks>
+	protected override bool IsReceiverWord(string word) => word is "self" or "Self" or "crate" or "super" or "true" or "false";
+
+	/// <inheritdoc/>
+	/// <remarks>
 	/// Enforced rather than conventional: rustc warns on a member name that is not snake case, so an invented one in any other convention makes the generated file noisy to build.
 	/// </remarks>
 	protected override NamingStyle MemberNaming => NamingStyle.Snake;
@@ -746,7 +785,7 @@ public class RustGenerator : StandardLanguageGenerator
 
 		TypeReference type = field.Type ?? new TypeReference(UnknownTypeName);
 
-		code.Write($"{SpellVisibilityKeyword(field.Visibility)}const {field.Name}: {SpellStorageType(type)} = ");
+		code.Write($"{SpellVisibilityKeyword(field.Visibility)}const {EscapeIdentifier(field.Name ?? string.Empty)}: {SpellStorageType(type)} = ");
 
 		if (type.IsArray)
 		{
@@ -770,7 +809,7 @@ public class RustGenerator : StandardLanguageGenerator
 	/// Where there is no constructor, <see cref="WriteUnconstructedDefault"/> says so instead.
 	/// </remarks>
 	private void WriteStructMember(string? name, TypeReference? type, Visibility visibility, CodeBlocker code) =>
-		code.WriteLine($"{SpellVisibilityKeyword(visibility)}{name}: {SpellType(type ?? new TypeReference(UnknownTypeName))},");
+		code.WriteLine($"{SpellVisibilityKeyword(visibility)}{EscapeIdentifier(name ?? string.Empty)}: {SpellType(type ?? new TypeReference(UnknownTypeName))},");
 
 	/// <summary>
 	/// Writes an interface as the trait it is.
@@ -1082,7 +1121,8 @@ public class RustGenerator : StandardLanguageGenerator
 
 		using Scope body = new(code);
 
-		// The parameters' and locals' types are what says where a number has to be widened.
+		// The parameters' and locals' types are what tells a join of strings from an addition of
+		// numbers, and what says where a number has to be widened.
 		using IDisposable types = OpenStaticTypeScope(funcDecl);
 
 		if (funcDecl.Kind == FunctionKind.Constructor)
@@ -1095,6 +1135,32 @@ public class RustGenerator : StandardLanguageGenerator
 		returnType = ReturnsAValue(funcDecl) ? funcDecl.ReturnType : null;
 		WriteBody(funcDecl.Body, code);
 		returnType = outerReturnType;
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// A raw pointer is not dereferenced for a method call the way a reference is, so a call through
+	/// one is written <c>unsafe { (*p).length() }</c>, which says what the call does: reads through a
+	/// pointer the compiler cannot vouch for (#170). Every other receiver is written as the base
+	/// writes it.
+	/// </remarks>
+	protected override void GenerateCallExpression(CallExpression callExpr, CodeBlocker code)
+	{
+		Ensure.NotNull(callExpr);
+		Ensure.NotNull(code);
+
+		if (callExpr.Receiver is not Expression receiver
+			|| StaticType(receiver) is not { Indirection: TypeIndirection.Pointer, IsArray: false })
+		{
+			base.GenerateCallExpression(callExpr, code);
+			return;
+		}
+
+		code.Write("unsafe { (*");
+		GenerateInternal(receiver, code);
+		code.Write($").{callExpr.Callee}(");
+		GenerateArgumentList(callExpr.Arguments, code);
+		code.Write(") }");
 	}
 
 	/// <inheritdoc/>
@@ -1266,7 +1332,7 @@ public class RustGenerator : StandardLanguageGenerator
 
 		if (!insideUnsafe && IsMutableStatic(RootOf(reference.Name)))
 		{
-			code.Write($"unsafe {{ {reference.Name} }}");
+			code.Write($"unsafe {{ {EscapeReference(reference.Name)} }}");
 			return;
 		}
 
@@ -1480,11 +1546,11 @@ public class RustGenerator : StandardLanguageGenerator
 	/// constructors, and an associated function returning <c>Self</c> is what every type writes
 	/// instead.
 	/// </remarks>
-	private static string SpellFunctionName(FunctionDeclaration funcDecl) => funcDecl.Kind switch
+	private string SpellFunctionName(FunctionDeclaration funcDecl) => funcDecl.Kind switch
 	{
 		FunctionKind.Constructor => "new",
 		FunctionKind.Destructor => "drop",
-		_ => funcDecl.Name ?? "unnamed_function",
+		_ => EscapeIdentifier(funcDecl.Name ?? "unnamed_function"),
 	};
 
 	/// <summary>
@@ -1713,7 +1779,7 @@ public class RustGenerator : StandardLanguageGenerator
 			boundLocals.Add(parameter.Name);
 		}
 
-		code.Write($"{parameter.Name ?? $"param{position}"}: ");
+		code.Write($"{EscapeIdentifier(parameter.Name ?? $"param{position}")}: ");
 		code.Write(SpellType(parameter.Type ?? new TypeReference(UnknownTypeName)));
 
 		AppendDefaultValueComment(parameter, code);
@@ -1737,8 +1803,24 @@ public class RustGenerator : StandardLanguageGenerator
 		Ensure.NotNull(code);
 
 		RegisterStaticType(varDecl);
+
+		// `let` is a statement, so a variable of a module or a file is the item that holds one there:
+		// a `const` or a `static`, each of which has to say its type.
+		if (IsModuleVariable(varDecl))
+		{
+			TypeReference? declared = varDecl.IsTypeInferred ? null : varDecl.Type;
+			GenerateFieldDeclaration(new FieldDeclaration(varDecl.Name)
+			{
+				Type = declared ?? (varDecl.InitialValue is Expression initialValue ? StaticType(initialValue) : null),
+				InitialValue = varDecl.InitialValue,
+				Visibility = varDecl.Visibility,
+				IsConstant = varDecl.IsConstant,
+			}, code);
+			return;
+		}
+
 		code.Write(varDecl.IsConstant ? "let " : "let mut ");
-		code.Write(varDecl.Name);
+		code.Write(EscapeIdentifier(varDecl.Name));
 		boundLocals.Add(varDecl.Name);
 
 		bool inferred = varDecl.IsTypeInferred || varDecl.Type is null;
@@ -1793,7 +1875,7 @@ public class RustGenerator : StandardLanguageGenerator
 		// holds. That is a requirement rather than a value with something missing.
 		if (insideTrait && field.InitialValue is null)
 		{
-			code.Write($"const {field.Name}: {SpellStorageType(type)}");
+			code.Write($"const {EscapeIdentifier(field.Name ?? string.Empty)}: {SpellStorageType(type)}");
 			EndStatement(code);
 			return;
 		}
@@ -1810,7 +1892,7 @@ public class RustGenerator : StandardLanguageGenerator
 			: "static";
 
 		code.Write($"{visibility}{storage} ");
-		code.Write($"{field.Name}: {SpellStorageType(type)} = ");
+		code.Write($"{EscapeIdentifier(field.Name ?? string.Empty)}: {SpellStorageType(type)} = ");
 
 		// A slice borrows the array literal it is written from, which is what makes a table with no
 		// length a constant at all.
@@ -1970,6 +2052,63 @@ public class RustGenerator : StandardLanguageGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
+	/// Joining strings is written <c>format!</c> rather than <c>+</c>. Rust implements <c>+</c> only
+	/// as <c>String + &amp;str</c>, so a literal on the left, or a <c>String</c> on the right, does
+	/// not compile; <c>format!</c> takes any mix of the two by reference and moves neither. A chain
+	/// of joins is one call with one placeholder per operand.
+	/// </remarks>
+	protected override void GenerateBinary(BinaryExpression binary, CodeBlocker code)
+	{
+		Ensure.NotNull(binary);
+		Ensure.NotNull(code);
+
+		if (!IsStringJoin(binary))
+		{
+			base.GenerateBinary(binary, code);
+			return;
+		}
+
+		List<Expression> operands = [];
+		CollectJoined(binary, operands);
+
+		code.Write($"format!(\"{string.Concat(Enumerable.Repeat("{}", operands.Count))}\"");
+		foreach (Expression operand in operands)
+		{
+			code.Write(", ");
+			GenerateInternal(operand, code);
+		}
+
+		code.Write(")");
+	}
+
+	/// <summary>
+	/// Reports whether a binary expression joins two strings.
+	/// </summary>
+	/// <param name="binary">The expression to inspect.</param>
+	/// <returns>True for an addition either of whose operands is known to be a string.</returns>
+	private bool IsStringJoin(BinaryExpression binary) =>
+		binary.Operator == BinaryOperator.Add
+		&& (IsOwnedString(StaticType(binary.Left)) || IsOwnedString(StaticType(binary.Right)));
+
+	/// <summary>
+	/// Flattens a chain of string joins into its operands, in order.
+	/// </summary>
+	/// <param name="operand">The join, or one of its operands.</param>
+	/// <param name="operands">Receives the operands.</param>
+	private void CollectJoined(Expression operand, List<Expression> operands)
+	{
+		if (operand is BinaryExpression binary && IsStringJoin(binary))
+		{
+			CollectJoined(binary.Left, operands);
+			CollectJoined(binary.Right, operands);
+			return;
+		}
+
+		operands.Add(operand);
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
 	/// Three shapes, and which one is written depends on what the expression is rather than on where
 	/// it stands: a construction naming its members is a struct literal, one that does not is a call,
 	/// and one with no type at all is an array literal — which is what initialises a declaration that
@@ -2060,7 +2199,7 @@ public class RustGenerator : StandardLanguageGenerator
 		if (argument is MemberInitialiser { Value: VariableReference reference } designated
 			&& string.Equals(designated.Name, reference.Name, StringComparison.Ordinal))
 		{
-			code.Write(reference.Name);
+			code.Write(EscapeReference(reference.Name));
 			return;
 		}
 
@@ -2073,7 +2212,7 @@ public class RustGenerator : StandardLanguageGenerator
 			literalType = null;
 			try
 			{
-				WriteDesignator(field.Name ?? string.Empty, code);
+				WriteDesignator(EscapeIdentifier(field.Name ?? string.Empty), code);
 				WriteValue(value, fieldType, code);
 			}
 			finally

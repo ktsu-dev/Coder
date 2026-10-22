@@ -33,6 +33,11 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	private readonly Stack<StaticTypeScope> staticTypeScopes = new();
 
 	/// <summary>
+	/// The variables declared directly in a namespace or a file, which are items rather than locals.
+	/// </summary>
+	private readonly HashSet<VariableDeclaration> moduleVariables = new(ReferenceEqualityComparer.Instance);
+
+	/// <summary>
 	/// Determines whether this generator can generate code for the specified AST node.
 	/// </summary>
 	/// <param name="astNode">The AST node to check.</param>
@@ -394,6 +399,30 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	}
 
 	/// <summary>
+	/// Reports whether a variable is declared directly in a namespace or a file rather than in a body.
+	/// </summary>
+	/// <param name="declaration">The declaration to test.</param>
+	/// <returns>True when it is a module-scope variable.</returns>
+	/// <remarks>
+	/// Several targets spell a local as a statement — Rust's <c>let</c>, Go's <c>:=</c> — which is
+	/// refused outside a function, so a variable of a namespace or a file has to be told apart by
+	/// where it was declared rather than by its own shape.
+	/// </remarks>
+	protected bool IsModuleVariable(VariableDeclaration declaration) => moduleVariables.Contains(declaration);
+
+	/// <summary>
+	/// Records the variables a namespace or a file declares directly.
+	/// </summary>
+	/// <param name="members">The scope's members.</param>
+	private void HoldModuleVariables(IEnumerable<AstNode> members)
+	{
+		foreach (VariableDeclaration variable in members.OfType<VariableDeclaration>())
+		{
+			moduleVariables.Add(variable);
+		}
+	}
+
+	/// <summary>
 	/// Reads the width an inferred local must be written with, because the target would infer another.
 	/// </summary>
 	/// <param name="initialValue">The local's initialiser.</param>
@@ -489,14 +518,15 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	/// <param name="reference">The reference to emit.</param>
 	/// <param name="code">The writer to emit into.</param>
 	/// <remarks>
-	/// The name is written as it stands. A language that reaches some names through more than the
-	/// name itself, such as Rust's mutable statics, overrides this.
+	/// The name is written as it stands, with any segment that is a reserved word escaped. A language
+	/// that reaches some names through more than the name itself, such as Rust's mutable statics,
+	/// overrides this.
 	/// </remarks>
 	protected virtual void GenerateVariableReference(VariableReference reference, CodeBlocker code)
 	{
 		Ensure.NotNull(reference);
 		Ensure.NotNull(code);
-		code.Write(reference.Name);
+		code.Write(EscapeReference(reference.Name));
 	}
 
 	/// <summary>
@@ -830,10 +860,12 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 				break;
 
 			case SourceFile file:
+				HoldModuleVariables(file.Members);
 				GenerateSourceFile(WithEntryPointsAtFileScope(file), code);
 				break;
 
 			case NamespaceDeclaration namespaceDecl:
+				HoldModuleVariables(namespaceDecl.Members);
 				GenerateNamespaceDeclaration(namespaceDecl, code);
 				break;
 
@@ -890,7 +922,7 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 				break;
 
 			case UnaryExpression unaryExpr:
-				GenerateUnaryExpression(unaryExpr, code, GetUnaryOperatorSpelling(unaryExpr.Operator));
+				GenerateUnary(unaryExpr, code);
 				break;
 
 			case ReturnStatement returnStmt:
@@ -1691,7 +1723,7 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	{
 		if (argument is MemberInitialiser designated)
 		{
-			WriteDesignator(designated.Name ?? string.Empty, code);
+			WriteDesignator(EscapeIdentifier(designated.Name ?? string.Empty), code);
 			WriteListValue(designated.Value!, code);
 			return;
 		}
@@ -1857,6 +1889,21 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 		}
 
 		GenerateBinaryExpression(binary, code, GetOperatorSpelling(binary.Operator));
+	}
+
+	/// <summary>
+	/// Emits a unary expression in the target language.
+	/// </summary>
+	/// <param name="unary">The expression to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// Defaults to the operator's spelling before its operand. A language whose operator means
+	/// something else for some operands, rather than being spelled differently, overrides this.
+	/// </remarks>
+	protected virtual void GenerateUnary(UnaryExpression unary, CodeBlocker code)
+	{
+		Ensure.NotNull(unary);
+		GenerateUnaryExpression(unary, code, GetUnaryOperatorSpelling(unary.Operator));
 	}
 
 	/// <inheritdoc/>

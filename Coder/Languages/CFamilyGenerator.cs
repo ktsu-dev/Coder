@@ -170,7 +170,7 @@ public abstract class CFamilyGenerator : StandardLanguageGenerator
 			element.IsArray = false;
 		}
 
-		string declared = name.Length == 0 ? string.Empty : $" {name}";
+		string declared = name.Length == 0 ? string.Empty : $" {EscapeIdentifier(name)}";
 
 		return $"{SpellType(element)}{declared}{(type.IsArray ? "[]" : string.Empty)}";
 	}

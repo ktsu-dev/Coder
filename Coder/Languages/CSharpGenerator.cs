@@ -34,11 +34,31 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// </summary>
 	/// <param name="node">The AST node to generate code for.</param>
 	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// The root of a generation starts with no locals in scope, so nothing declared by an earlier
+	/// <see cref="LanguageGeneratorBase.Generate"/> call decides how this one casts a shift (#320).
+	/// </remarks>
 	protected override void GenerateInternal(AstNode node, CodeBlocker code)
 	{
 		Ensure.NotNull(node);
 		Ensure.NotNull(code);
 
+		if (ReferenceEquals(node, GenerationRoot))
+		{
+			InShiftCountScope(new(StringComparer.Ordinal), () => GenerateNode(node, code));
+			return;
+		}
+
+		GenerateNode(node, code);
+	}
+
+	/// <summary>
+	/// Emits one node, whatever scope it is in.
+	/// </summary>
+	/// <param name="node">The AST node to generate code for.</param>
+	/// <param name="code">The writer to emit into.</param>
+	private void GenerateNode(AstNode node, CodeBlocker code)
+	{
 		switch (node)
 		{
 			case ClassDeclaration classDecl:
@@ -1112,12 +1132,15 @@ public class CSharpGenerator : LanguageGeneratorBase
 	{
 		code.WriteLine();
 
-		using Scope statements = new(code);
-
-		foreach (AstNode statement in body)
+		InShiftCountScope(new(shiftCountTypes, StringComparer.Ordinal), () =>
 		{
-			GenerateInternal(statement, code);
-		}
+			using Scope statements = new(code);
+
+			foreach (AstNode statement in body)
+			{
+				GenerateInternal(statement, code);
+			}
+		});
 	}
 
 	/// <summary>
@@ -1294,17 +1317,16 @@ public class CSharpGenerator : LanguageGeneratorBase
 		// The parameters' types are what decides whether a shift by one is cast; see
 		// ShouldCastShiftCount. The enclosing function's are restored afterwards, so a nested
 		// declaration does not leave its own behind.
-		Dictionary<string, TypeReference> enclosingTypes = shiftCountTypes;
-		shiftCountTypes = new(enclosingTypes, StringComparer.Ordinal);
+		Dictionary<string, TypeReference> scope = new(shiftCountTypes, StringComparer.Ordinal);
 		foreach (Parameter parameter in function.Parameters)
 		{
 			if (parameter is { Name: string parameterName, Type: TypeReference parameterType })
 			{
-				shiftCountTypes[parameterName] = parameterType;
+				scope[parameterName] = parameterType;
 			}
 		}
 
-		try
+		InShiftCountScope(scope, () =>
 		{
 			using Scope body = new(code);
 			WriteInitialisers(function, code);
@@ -1313,6 +1335,27 @@ public class CSharpGenerator : LanguageGeneratorBase
 			{
 				GenerateInternal(statement, code);
 			}
+		});
+	}
+
+	/// <summary>
+	/// Runs <paramref name="body"/> with <paramref name="scope"/> as the locals in scope, and puts the
+	/// enclosing ones back afterwards.
+	/// </summary>
+	/// <param name="scope">The declared types in scope for the body.</param>
+	/// <param name="body">What to emit in that scope.</param>
+	/// <remarks>
+	/// Every body that can declare a local opens one, so a local never outlives the body that
+	/// declared it and cannot lend its type to a field of the same name (#320).
+	/// </remarks>
+	private void InShiftCountScope(Dictionary<string, TypeReference> scope, Action body)
+	{
+		Dictionary<string, TypeReference> enclosingTypes = shiftCountTypes;
+		shiftCountTypes = scope;
+
+		try
+		{
+			body();
 		}
 		finally
 		{
@@ -1766,6 +1809,21 @@ public class CSharpGenerator : LanguageGeneratorBase
 		// by whether one was set: emitting it only when present keeps both correct. A variable of a
 		// namespace or file is a field of the class holding it, and as visible as the scope it was in.
 		bool isHeld = ReferenceEquals(varDecl, heldMember);
+
+		// `var` is only for a local (CS0825), so a held variable says the type its initialiser
+		// establishes, and one whose initialiser establishes none is an object with a note saying so.
+		if (isHeld && string.Equals(type, "var", StringComparison.Ordinal))
+		{
+			if (InferredFieldType(varDecl.InitialValue) is string inferred)
+			{
+				type = inferred;
+			}
+			else
+			{
+				WriteInexpressible(code, $"{varDecl.Name}: C# infers no type for a field, and nothing here says one");
+				type = UnknownTypeName;
+			}
+		}
 		if ((isHeld ? SpellVisibility(varDecl.Visibility) ?? DefaultVisibility : SpellVisibility(varDecl.Visibility)) is string modifier)
 		{
 			code.Write($"{modifier} ");
@@ -1774,7 +1832,12 @@ public class CSharpGenerator : LanguageGeneratorBase
 		// A C# constant must name its type and hold a compile-time value, so an inferred one, or one
 		// computed from a parameter or a call, stays a plain declaration rather than becoming source
 		// that does not compile. C# has no readonly local to say the rest with.
-		bool isConst = IsWrittenAsConst(varDecl);
+		// A held variable has had its type said for it above, which is as good as declaring one.
+		bool isConst = IsWrittenAsConst(varDecl)
+			|| (isHeld
+				&& varDecl.IsConstant
+				&& !string.Equals(type, UnknownTypeName, StringComparison.Ordinal)
+				&& IsCompileTimeValue(varDecl.InitialValue));
 		if (isConst)
 		{
 			code.Write("const ");
@@ -1795,6 +1858,24 @@ public class CSharpGenerator : LanguageGeneratorBase
 
 		code.WriteLine(";");
 	}
+
+	/// <summary>
+	/// Reads the type a field's initialiser establishes, for a field C# will not let infer it.
+	/// </summary>
+	/// <param name="initialValue">The initialiser, if there is one.</param>
+	/// <returns>The C# type, or null when the initialiser does not establish one.</returns>
+	private static string? InferredFieldType(Expression? initialValue) => initialValue switch
+	{
+		{ ExpectedType: string expected } => MapToCSType(new TypeReference(expected)),
+		LiteralExpression<string> => "string",
+		LiteralExpression<int> => "int",
+		LiteralExpression<long> => "long",
+		LiteralExpression<float> => "float",
+		LiteralExpression<double> => "double",
+		LiteralExpression<bool> => "bool",
+		ConstructionExpression { Type: TypeReference constructed } => MapToCSType(constructed),
+		_ => null,
+	};
 
 	/// <summary>
 	/// Emits the program's entry point as C#'s <c>Main</c> method.
@@ -1819,10 +1900,13 @@ public class CSharpGenerator : LanguageGeneratorBase
 		// The line is ended before the scope opens, so C#'s brace lands on its own line.
 		code.WriteLine(")");
 
-		using Scope body = new(code);
-		foreach (AstNode statement in entryPoint.Body)
+		InShiftCountScope(new(shiftCountTypes, StringComparer.Ordinal), () =>
 		{
-			GenerateInternal(statement, code);
-		}
+			using Scope body = new(code);
+			foreach (AstNode statement in entryPoint.Body)
+			{
+				GenerateInternal(statement, code);
+			}
+		});
 	}
 }
