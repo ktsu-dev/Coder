@@ -872,7 +872,7 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 				code.Write(")");
 			}
 
-			code.Write(".");
+			code.Write(SpellMemberAccess(callExpr.Receiver));
 		}
 
 		code.Write(callExpr.Callee);
@@ -889,6 +889,17 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 
 		code.Write(")");
 	}
+
+	/// <summary>
+	/// Spells what stands between a call's receiver and its callee.
+	/// </summary>
+	/// <param name="receiver">The receiver the call is made on.</param>
+	/// <returns>The separator, which is a dot unless a language reaches through a pointer differently.</returns>
+	/// <remarks>
+	/// C++ overrides this: a member call through a pointer is written with <c>-&gt;</c>, and a dot
+	/// there does not compile (#170).
+	/// </remarks>
+	protected virtual string SpellMemberAccess(Expression receiver) => ".";
 
 	/// <summary>
 	/// Emits one argument of a call.

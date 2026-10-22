@@ -151,6 +151,15 @@ public class CppGenerator : CFamilyGenerator
 		: "-std::numeric_limits<float>::infinity()";
 
 	/// <inheritdoc/>
+	/// <remarks>
+	/// An arrow when the receiver is known to be a pointer, which a dot cannot reach through (#170). A
+	/// reference is reached with a dot like the value it refers to, and a receiver whose type the AST
+	/// does not establish is assumed to be a value.
+	/// </remarks>
+	protected override string SpellMemberAccess(Expression receiver) =>
+		StaticType(receiver) is { Indirection: TypeIndirection.Pointer, IsArray: false } ? "->" : ".";
+
+	/// <inheritdoc/>
 	protected override IEnumerable<string> RequiredImports(SourceFile file)
 	{
 		Ensure.NotNull(file);
