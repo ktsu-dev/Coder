@@ -307,6 +307,45 @@ public class RustGenerator : StandardLanguageGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
+	/// The strict keywords and the ones reserved for later, from the 2018 edition on, which is the
+	/// first to have raw identifiers. <c>gen</c> is reserved by 2024 and escaped here so the output
+	/// reads the same under it.
+	/// </remarks>
+	protected override IReadOnlySet<string> ReservedWords { get; } = new HashSet<string>(StringComparer.Ordinal)
+	{
+		"as", "async", "await", "break", "const", "continue", "crate", "dyn", "else", "enum", "extern", "false",
+		"fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref", "return",
+		"self", "Self", "static", "struct", "super", "trait", "true", "type", "unsafe", "use", "where", "while",
+		"abstract", "become", "box", "do", "final", "gen", "macro", "override", "priv", "try", "typeof",
+		"unsized", "virtual", "yield",
+	};
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// A raw identifier, <c>r#type</c>, which is the keyword used as a name rather than a different
+	/// name, so nothing is renamed. The four path keywords cannot be raw — <c>r#self</c> is an error —
+	/// so those, alone, have an underscore appended.
+	/// </remarks>
+	protected override string EscapeIdentifier(string name)
+	{
+		Ensure.NotNull(name);
+
+		if (!ReservedWords.Contains(name))
+		{
+			return name;
+		}
+
+		return name is "self" or "Self" or "crate" or "super" ? $"{name}_" : $"r#{name}";
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// The receiver, the path keywords that start a path, and the literal words.
+	/// </remarks>
+	protected override bool IsReceiverWord(string word) => word is "self" or "Self" or "crate" or "super" or "true" or "false";
+
+	/// <inheritdoc/>
+	/// <remarks>
 	/// Enforced rather than conventional: rustc warns on a member name that is not snake case, so an invented one in any other convention makes the generated file noisy to build.
 	/// </remarks>
 	protected override NamingStyle MemberNaming => NamingStyle.Snake;
@@ -721,7 +760,7 @@ public class RustGenerator : StandardLanguageGenerator
 
 		TypeReference type = field.Type ?? new TypeReference(UnknownTypeName);
 
-		code.Write($"{SpellVisibilityKeyword(field.Visibility)}const {field.Name}: {SpellStorageType(type)} = ");
+		code.Write($"{SpellVisibilityKeyword(field.Visibility)}const {EscapeIdentifier(field.Name ?? string.Empty)}: {SpellStorageType(type)} = ");
 
 		if (type.IsArray)
 		{
@@ -745,7 +784,7 @@ public class RustGenerator : StandardLanguageGenerator
 	/// Where there is no constructor, <see cref="WriteUnconstructedDefault"/> says so instead.
 	/// </remarks>
 	private void WriteStructMember(string? name, TypeReference? type, Visibility visibility, CodeBlocker code) =>
-		code.WriteLine($"{SpellVisibilityKeyword(visibility)}{name}: {SpellType(type ?? new TypeReference(UnknownTypeName))},");
+		code.WriteLine($"{SpellVisibilityKeyword(visibility)}{EscapeIdentifier(name ?? string.Empty)}: {SpellType(type ?? new TypeReference(UnknownTypeName))},");
 
 	/// <summary>
 	/// Writes an interface as the trait it is.
@@ -1411,11 +1450,11 @@ public class RustGenerator : StandardLanguageGenerator
 	/// constructors, and an associated function returning <c>Self</c> is what every type writes
 	/// instead.
 	/// </remarks>
-	private static string SpellFunctionName(FunctionDeclaration funcDecl) => funcDecl.Kind switch
+	private string SpellFunctionName(FunctionDeclaration funcDecl) => funcDecl.Kind switch
 	{
 		FunctionKind.Constructor => "new",
 		FunctionKind.Destructor => "drop",
-		_ => funcDecl.Name ?? "unnamed_function",
+		_ => EscapeIdentifier(funcDecl.Name ?? "unnamed_function"),
 	};
 
 	/// <summary>
@@ -1639,7 +1678,7 @@ public class RustGenerator : StandardLanguageGenerator
 			code.Write("mut ");
 		}
 
-		code.Write($"{parameter.Name ?? $"param{position}"}: ");
+		code.Write($"{EscapeIdentifier(parameter.Name ?? $"param{position}")}: ");
 		code.Write(SpellType(parameter.Type ?? new TypeReference(UnknownTypeName)));
 
 		AppendDefaultValueComment(parameter, code);
@@ -1680,7 +1719,7 @@ public class RustGenerator : StandardLanguageGenerator
 		}
 
 		code.Write(varDecl.IsConstant ? "let " : "let mut ");
-		code.Write(varDecl.Name);
+		code.Write(EscapeIdentifier(varDecl.Name));
 
 		bool inferred = varDecl.IsTypeInferred || varDecl.Type is null;
 		TypeReference? annotation = !inferred ? varDecl.Type
@@ -1734,7 +1773,7 @@ public class RustGenerator : StandardLanguageGenerator
 		// holds. That is a requirement rather than a value with something missing.
 		if (insideTrait && field.InitialValue is null)
 		{
-			code.Write($"const {field.Name}: {SpellStorageType(type)}");
+			code.Write($"const {EscapeIdentifier(field.Name ?? string.Empty)}: {SpellStorageType(type)}");
 			EndStatement(code);
 			return;
 		}
@@ -1749,7 +1788,7 @@ public class RustGenerator : StandardLanguageGenerator
 		string storage = IsAssociatedItem || field.IsConstant ? "const" : "static";
 
 		code.Write($"{visibility}{storage} ");
-		code.Write($"{field.Name}: {SpellStorageType(type)} = ");
+		code.Write($"{EscapeIdentifier(field.Name ?? string.Empty)}: {SpellStorageType(type)} = ");
 
 		// A slice borrows the array literal it is written from, which is what makes a table with no
 		// length a constant at all.
@@ -2056,7 +2095,7 @@ public class RustGenerator : StandardLanguageGenerator
 		if (argument is MemberInitialiser { Value: VariableReference reference } designated
 			&& string.Equals(designated.Name, reference.Name, StringComparison.Ordinal))
 		{
-			code.Write(reference.Name);
+			code.Write(EscapeReference(reference.Name));
 			return;
 		}
 
@@ -2069,7 +2108,7 @@ public class RustGenerator : StandardLanguageGenerator
 			literalType = null;
 			try
 			{
-				WriteDesignator(field.Name ?? string.Empty, code);
+				WriteDesignator(EscapeIdentifier(field.Name ?? string.Empty), code);
 				WriteValue(value, fieldType, code);
 			}
 			finally

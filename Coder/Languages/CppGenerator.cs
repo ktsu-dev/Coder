@@ -112,6 +112,32 @@ public class CppGenerator : CFamilyGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
+	/// The C++20 keywords and the alternative operator tokens (<c>and</c>, <c>not</c> and the rest),
+	/// which the standard reserves just as firmly. An escaped name has an underscore appended, which
+	/// is a rename: C++ has no way to use a keyword as a name.
+	/// </remarks>
+	protected override IReadOnlySet<string> ReservedWords { get; } = new HashSet<string>(StringComparer.Ordinal)
+	{
+		"alignas", "alignof", "and", "and_eq", "asm", "auto", "bitand", "bitor", "bool", "break", "case",
+		"catch", "char", "char8_t", "char16_t", "char32_t", "class", "compl", "concept", "const", "consteval",
+		"constexpr", "constinit", "const_cast", "continue", "co_await", "co_return", "co_yield", "decltype",
+		"default", "delete", "do", "double", "dynamic_cast", "else", "enum", "explicit", "export", "extern",
+		"false", "float", "for", "friend", "goto", "if", "inline", "int", "long", "mutable", "namespace",
+		"new", "noexcept", "not", "not_eq", "nullptr", "operator", "or", "or_eq", "private", "protected",
+		"public", "register", "reinterpret_cast", "requires", "return", "short", "signed", "sizeof", "static",
+		"static_assert", "static_cast", "struct", "switch", "template", "this", "thread_local", "throw", "true",
+		"try", "typedef", "typeid", "typename", "union", "unsigned", "using", "virtual", "void", "volatile",
+		"wchar_t", "while", "xor", "xor_eq",
+	};
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// <c>this</c> and the literal words, which a reference written as text means as C++ means them.
+	/// </remarks>
+	protected override bool IsReceiverWord(string word) => word is "this" or "true" or "false" or "nullptr";
+
+	/// <inheritdoc/>
+	/// <remarks>
 	/// The standard library spells an invented accessor <c>set_value</c>, and that is the convention a reader of any C++ header already has.
 	/// </remarks>
 	protected override NamingStyle MemberNaming => NamingStyle.Snake;
@@ -361,7 +387,7 @@ public class CppGenerator : CFamilyGenerator
 			}
 
 			MemberInitialiser initialiser = funcDecl.Initialisers[index];
-			code.Write($"{initialiser.Name}(");
+			code.Write($"{EscapeIdentifier(initialiser.Name ?? string.Empty)}(");
 
 			if (initialiser.Value is not null)
 			{
@@ -381,7 +407,7 @@ public class CppGenerator : CFamilyGenerator
 	/// <param name="funcDecl">The declaration being emitted.</param>
 	/// <param name="enclosingType">The name of the type it belongs to, when it belongs to one.</param>
 	/// <returns>The name as C++ writes it.</returns>
-	private static string SpellFunctionName(FunctionDeclaration funcDecl, string? enclosingType)
+	private string SpellFunctionName(FunctionDeclaration funcDecl, string? enclosingType)
 	{
 		string typeName = enclosingType ?? funcDecl.Name ?? "UnnamedType";
 
@@ -392,7 +418,7 @@ public class CppGenerator : CFamilyGenerator
 			FunctionKind.Operator => $"operator{funcDecl.Name}",
 			FunctionKind.ConversionOperator =>
 				$"operator {MapToCppType(funcDecl.ReturnType ?? new TypeReference("void"))}",
-			_ => funcDecl.Name ?? "unnamedFunction",
+			_ => EscapeIdentifier(funcDecl.Name ?? "unnamedFunction"),
 		};
 	}
 
@@ -858,7 +884,7 @@ public class CppGenerator : CFamilyGenerator
 			return SpellDeclarator(declared, varDecl.Name);
 		}
 
-		return $"{(varDecl.InitialValue is not null ? "auto" : "std::any")} {varDecl.Name}";
+		return $"{(varDecl.InitialValue is not null ? "auto" : "std::any")} {EscapeIdentifier(varDecl.Name)}";
 	}
 
 	/// <summary>
