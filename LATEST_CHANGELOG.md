@@ -2,9 +2,11 @@
 
 Changes since v3.19.0:
 
+- Merge main into claude/project-thread-kddtpg-296 (Claude)
 - Merge main into claude/project-thread-kddtpg-170 (Claude)
 - Merge main into claude/project-thread-kddtpg-232 (Claude)
 - Merge main into claude/project-thread-kddtpg-240 (Claude)
+- Merge main into claude/project-thread-kddtpg-296 (Claude)
 - Merge remote-tracking branch 'origin/main' into claude/project-thread-kddtpg-106 (Claude)
 - Merge main into claude/project-thread-kddtpg-106 (Claude)
 - Cover entry points in a type or namespace generated on its own [patch] (Claude)
@@ -20,6 +22,8 @@ Changes since v3.19.0:
 - Scope C# shift-count locals to the body that declared them [patch] (Claude)
 - Write string joins as format! in Rust and note them in C [patch] (Claude)
 - Keep long, ulong and uint bits in JavaScript bitwise and shift operators [patch] (Claude)
+- Type an integer mixed with a floating value as the floating type [patch] (Claude)
+- [patch] Let functions write module-level fields in Rust and Python (#296) (Claude)
 - [patch] Spell an interface parameter as a trait object in Rust and as the interface in Go (Claude)
 - [patch] Read a member's declared type when deciding integer division (Claude)
 - [patch] Give a C# struct with initialised fields a parameterless constructor (Claude)
