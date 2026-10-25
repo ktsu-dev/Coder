@@ -352,6 +352,30 @@ public class PythonGeneratedSourceImportsTests
 	}
 
 	/// <summary>
+	/// Tests that a function assigning to a module-level field declares it <c>global</c>, so the
+	/// write reaches the module instead of raising <c>UnboundLocalError</c> (#296).
+	/// </summary>
+	[TestMethod]
+	public void ModuleFieldWrittenByAFunction_RunsAndKeepsItsValue()
+	{
+		string? python = ToolchainHarness.FindOnPath("--version", "python3", "python");
+		if (python is null)
+		{
+			Assert.Inconclusive("No Python interpreter on the path, so nothing was run.");
+			return;
+		}
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new PythonGenerator().Generate(Counter());
+			File.WriteAllText(Path.Combine(directory, "counter.py"), source);
+
+			(int exitCode, string output) = ToolchainHarness.Run(python, "counter.py", directory);
+			Assert.AreEqual(2, exitCode, $"{output}{Environment.NewLine}{source}");
+		});
+	}
+
+	/// <summary>
 	/// Builds a file whose declarations are each written over themselves.
 	/// </summary>
 	/// <returns>The file to generate.</returns>
@@ -374,6 +398,28 @@ public class PythonGeneratedSourceImportsTests
 		file.Members.Add(length);
 		file.Members.Add(node);
 
+		return file;
+	}
+
+	/// <summary>
+	/// Builds a file whose function assigns to a module-level field and returns it, and whose entry
+	/// point calls it twice, exiting with what the second call returns (#296).
+	/// </summary>
+	/// <returns>The file to generate; run, it exits with 2.</returns>
+	private static SourceFile Counter()
+	{
+		SourceFile file = new("counter");
+		file.Members.Add(new FieldDeclaration("count", new TypeReference("int")) { InitialValue = Literal.Number(0) });
+
+		FunctionDeclaration bump = new("bump") { ReturnType = new TypeReference("int") };
+		bump.Body.Add(new AssignmentStatement(new VariableReference("count"), Literal.Number(1), AssignmentOperator.AddAssign));
+		bump.Body.Add(new ReturnStatement(new VariableReference("count")));
+		file.Members.Add(bump);
+
+		EntryPoint main = new() { ReturnsExitCode = true };
+		main.Body.Add(new ExpressionStatement(new CallExpression("bump")));
+		main.Body.Add(new ReturnStatement(new CallExpression("bump")));
+		file.Members.Add(main);
 		return file;
 	}
 }

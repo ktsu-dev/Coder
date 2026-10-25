@@ -513,6 +513,83 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	}
 
 	/// <summary>
+	/// Emits a reference to a variable, field or parameter by name.
+	/// </summary>
+	/// <param name="reference">The reference to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// The name is written as it stands, with any segment that is a reserved word escaped. A language
+	/// that reaches some names through more than the name itself, such as Rust's mutable statics,
+	/// overrides this.
+	/// </remarks>
+	protected virtual void GenerateVariableReference(VariableReference reference, CodeBlocker code)
+	{
+		Ensure.NotNull(reference);
+		Ensure.NotNull(code);
+		code.Write(EscapeReference(reference.Name));
+	}
+
+	/// <summary>
+	/// Finds the file-scope fields some statement in what is being generated assigns to.
+	/// </summary>
+	/// <returns>The names of the written fields.</returns>
+	/// <remarks>
+	/// A field is file-scope when it is a member of a <see cref="SourceFile"/> or of a namespace in
+	/// one, rather than of a type. A constant is never counted: an assignment to one is the document's
+	/// mistake, and treating it as written would quietly make it mutable. A target that names a member
+	/// of the field (<c>count.total</c>) writes the field too, so the name it starts from is what is
+	/// matched. A function's own local or parameter of the same name is not told apart here; each
+	/// language decides what shadowing means for the names this returns.
+	/// </remarks>
+	protected HashSet<string> WrittenFileScopeFields()
+	{
+		HashSet<string> written = new(StringComparer.Ordinal);
+		if (GenerationRoot is null)
+		{
+			return written;
+		}
+
+		HashSet<string> fields = new(StringComparer.Ordinal);
+		foreach (AstNode node in SelfAndDescendants(GenerationRoot))
+		{
+			IEnumerable<AstNode> members = node switch
+			{
+				SourceFile file => file.Members,
+				NamespaceDeclaration space => space.Members,
+				_ => [],
+			};
+
+			foreach (FieldDeclaration field in members.OfType<FieldDeclaration>())
+			{
+				if (!field.IsConstant && !string.IsNullOrEmpty(field.Name))
+				{
+					fields.Add(field.Name);
+				}
+			}
+		}
+
+		if (fields.Count == 0)
+		{
+			return written;
+		}
+
+		foreach (AssignmentStatement assignment in SelfAndDescendants(GenerationRoot).OfType<AssignmentStatement>())
+		{
+			if (assignment.Target is VariableReference { Name: string name })
+			{
+				int dot = name.IndexOf('.', StringComparison.Ordinal);
+				string root = dot < 0 ? name : name[..dot];
+				if (fields.Contains(root))
+				{
+					written.Add(root);
+				}
+			}
+		}
+
+		return written;
+	}
+
+	/// <summary>
 	/// Reads the return type of the one function a receiver-less call can name.
 	/// </summary>
 	/// <param name="callee">The name the call is written with.</param>
@@ -869,6 +946,10 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 
 			case AssignmentStatement assignment:
 				GenerateAssignmentStatement(assignment, code);
+				break;
+
+			case VariableReference reference:
+				GenerateVariableReference(reference, code);
 				break;
 
 			default:
