@@ -59,6 +59,11 @@ public class RustGenerator : StandardLanguageGenerator
 	/// </summary>
 	private const string SelfName = "self";
 
+	/// <summary>
+	/// What a record derives, and what every struct a record holds derives with it.
+	/// </summary>
+	private const string RecordDerive = "#[derive(Clone, Debug, PartialEq)]";
+
 	private static readonly Dictionary<string, string> TypeMappings = new(StringComparer.OrdinalIgnoreCase)
 	{
 		{ "str", "String" },
@@ -481,9 +486,11 @@ public class RustGenerator : StandardLanguageGenerator
 	/// field is written with a note rather than pretending <c>Deref</c> makes it inheritance.
 	/// </para>
 	/// <para>
-	/// Nothing is derived. <c>#[derive(Clone, Debug)]</c> would be the obvious thing to write on a
-	/// generated data type and would stop it compiling the moment one field does not implement them,
-	/// which is a decision about the type rather than about the declaration.
+	/// Nothing is derived on a plain struct. <c>#[derive(Clone, Debug)]</c> would be the obvious thing
+	/// to write on a generated data type and would stop it compiling the moment one field does not
+	/// implement them, which is a decision about the type rather than about the declaration. A record
+	/// is the exception, since comparing by value is what it asks for, and the structs a record holds
+	/// derive with it, because its derive does not compile otherwise.
 	/// </para>
 	/// </remarks>
 	protected override void GenerateClassDeclaration(ClassDeclaration classDecl, CodeBlocker code)
@@ -659,14 +666,18 @@ public class RustGenerator : StandardLanguageGenerator
 		// besides C# that has a word for it rather than a comment about it. Clone is the copy,
 		// PartialEq the comparison, Debug the readable form. Written last of the lines above the
 		// struct, so that it sits against the item it applies to rather than behind the notes.
-		// A record that declares its own == already implements PartialEq, and a second
+		// A type that declares its own == already implements PartialEq, and a second
 		// implementation does not compile (E0119), so the declared one is what it compares by.
-		if (classDecl.IsRecord)
+		if (Derives(classDecl, out string? underivable))
 		{
 			bool declaresEquality = classDecl.Members
 				.OfType<FunctionDeclaration>()
 				.Any(function => function.Kind == FunctionKind.Operator && function.Name == "==");
-			code.WriteLine(declaresEquality ? "#[derive(Clone, Debug)]" : "#[derive(Clone, Debug, PartialEq)]");
+			code.WriteLine(declaresEquality ? "#[derive(Clone, Debug)]" : RecordDerive);
+		}
+		else if (underivable is not null)
+		{
+			WriteInexpressible(code, underivable);
 		}
 
 		code.Write($"{SpellVisibilityOf(classDecl)}struct {name}{SpellParameterDeclarations(classDecl.TypeParameters)} ");
@@ -703,6 +714,178 @@ public class RustGenerator : StandardLanguageGenerator
 
 		insideType--;
 	}
+
+	/// <summary>
+	/// Decides whether a struct derives what a record asks for.
+	/// </summary>
+	/// <param name="classDecl">The declaration being written.</param>
+	/// <param name="underivable">
+	/// For a record that cannot derive, why not, written down in place of the derive. Null otherwise.
+	/// </param>
+	/// <returns>Whether the derive is written.</returns>
+	/// <remarks>
+	/// A derive compiles only when every field implements what it derives, so a record is not the
+	/// only struct that needs one: every struct a record holds needs it too, and every struct those
+	/// hold, through type arguments and array elements as well as plain fields. A struct no record
+	/// reaches still derives nothing, for the reason the type's remarks give. Where a record reaches
+	/// something that cannot derive (an interface, or a type the document does not declare) the
+	/// derive could not compile, so the record says why instead, and the structs it holds derive
+	/// nothing on its account.
+	/// <para>
+	/// Types are matched by name, because the declaration being written is a copy of the one in the
+	/// document rather than the same object.
+	/// </para>
+	/// </remarks>
+	private bool Derives(ClassDeclaration classDecl, out string? underivable)
+	{
+		underivable = null;
+
+		Dictionary<string, AstNode> declared = DerivationLookup(classDecl);
+
+		if (classDecl.IsRecord)
+		{
+			underivable = UnderivableReason(classDecl, declared, []);
+			return underivable is null;
+		}
+
+		if (classDecl.Name is not string name)
+		{
+			return false;
+		}
+
+		foreach (ClassDeclaration record in declared.Values.OfType<ClassDeclaration>().Where(type => type.IsRecord && type.Kind != TypeDeclarationKind.Interface))
+		{
+			HashSet<string> reached = new(StringComparer.Ordinal);
+			if (UnderivableReason(record, declared, reached) is null && reached.Contains(name))
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/// <summary>
+	/// Finds the types, enumerations and aliases a derive decision can name.
+	/// </summary>
+	/// <param name="classDecl">The declaration being written, which counts as declared whatever the root is.</param>
+	/// <returns>Each declaration by name; the first wins where two share one.</returns>
+	private Dictionary<string, AstNode> DerivationLookup(ClassDeclaration classDecl)
+	{
+		Dictionary<string, AstNode> declared = new(StringComparer.Ordinal);
+		IEnumerable<AstNode> nodes = GenerationRoot is null ? [] : SelfAndDescendants(GenerationRoot);
+
+		foreach (AstNode node in nodes.Append(classDecl))
+		{
+			string? name = node switch
+			{
+				ClassDeclaration type => type.Name,
+				EnumDeclaration enumeration => enumeration.Name,
+				UsingAlias alias => alias.Name,
+				_ => null,
+			};
+
+			if (name is not null)
+			{
+				declared.TryAdd(name, node);
+			}
+		}
+
+		return declared;
+	}
+
+	/// <summary>
+	/// Walks what a struct holds, collecting the structs a derive on it needs to reach.
+	/// </summary>
+	/// <param name="type">The struct whose fields to walk.</param>
+	/// <param name="declared">What the document declares, by name.</param>
+	/// <param name="reached">The structs reached so far, which also stops a cycle.</param>
+	/// <returns>Why the derive cannot compile, or null when it can.</returns>
+	private static string? UnderivableReason(ClassDeclaration type, Dictionary<string, AstNode> declared, HashSet<string> reached)
+	{
+		if (type.Name is string name && !reached.Add(name))
+		{
+			return null;
+		}
+
+		HashSet<string> parameters = new(type.TypeParameters.Select(parameter => parameter.Name), StringComparer.Ordinal);
+
+		IEnumerable<TypeReference?> held = type.Members
+			.Select(member => member switch
+			{
+				VariableDeclaration field => field.Type,
+				FieldDeclaration field when !IsAssociatedField(field) => field.Type,
+				_ => null,
+			})
+			.Prepend(type.BaseType);
+
+		foreach (TypeReference? fieldType in held)
+		{
+			if (fieldType is not null
+				&& UnderivableReason(fieldType, parameters, declared, reached) is string reason)
+			{
+				return reason;
+			}
+		}
+
+		return null;
+	}
+
+	/// <summary>
+	/// Walks one field type, and the types it is written over.
+	/// </summary>
+	/// <param name="type">The field type.</param>
+	/// <param name="parameters">The type parameters of the struct holding it, which the derive bounds rather than requires.</param>
+	/// <param name="declared">What the document declares, by name.</param>
+	/// <param name="reached">The structs reached so far.</param>
+	/// <returns>Why the derive cannot compile, or null when it can.</returns>
+	private static string? UnderivableReason(TypeReference type, HashSet<string> parameters, Dictionary<string, AstNode> declared, HashSet<string> reached)
+	{
+		foreach (TypeReference argument in type.TypeArguments)
+		{
+			if (UnderivableReason(argument, parameters, declared, reached) is string reason)
+			{
+				return reason;
+			}
+		}
+
+		string name = type.Name;
+
+		if (parameters.Contains(name)
+			|| string.Equals(name, "list", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(name, "dict", StringComparison.OrdinalIgnoreCase))
+		{
+			return null;
+		}
+
+		if (declared.TryGetValue(name, out AstNode? declaration))
+		{
+			return declaration switch
+			{
+				ClassDeclaration { Kind: TypeDeclarationKind.Interface } => NotDerived($"{name} is a trait, which a field cannot hold by value"),
+				ClassDeclaration held => UnderivableReason(held, declared, reached),
+				UsingAlias { AliasedType: TypeReference aliased } => UnderivableReason(aliased, parameters, declared, reached),
+				_ => null,
+			};
+		}
+
+		if (TypeMappings.TryGetValue(name, out string? mapped))
+		{
+			return mapped == TypeMappings[UnknownTypeName]
+				? NotDerived($"{name} is {mapped}, which implements none of them")
+				: null;
+		}
+
+		return NotDerived($"{name} is not declared here, so whether it implements them is not known");
+	}
+
+	/// <summary>
+	/// Words the note a record writes where its derive could not compile.
+	/// </summary>
+	/// <param name="why">What stops it.</param>
+	/// <returns>The note.</returns>
+	private static string NotDerived(string why) =>
+		$"record: Clone, Debug and PartialEq are not derived, because {why}";
 
 	/// <summary>
 	/// Says what a field starts at when the type has no constructor to start it there.
