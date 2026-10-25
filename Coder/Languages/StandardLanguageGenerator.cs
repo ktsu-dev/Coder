@@ -665,12 +665,27 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	/// The wider of two numeric types, so <c>1 + 0.5</c> and <c>ready ? 1 : 2.5</c> are a
 	/// <c>double</c> as they are in every C-family language; otherwise the first known type.
 	/// </returns>
+	/// <remarks>
+	/// A floating type wins over any integer type whichever side it is on, including the integer types
+	/// <see cref="NumericPromotionOrder"/> does not rank, so <c>s * 1.5</c> with <c>short s</c> is a
+	/// <c>double</c> rather than a <c>short</c> (#292). Two integer types keep the first known type.
+	/// </remarks>
 	protected static TypeReference? Promoted(TypeReference? first, TypeReference? second)
 	{
 		int firstRank = NumericRank(first);
 		int secondRank = NumericRank(second);
+		if (secondRank >= FirstFloatingRank && firstRank < FirstFloatingRank)
+		{
+			return second;
+		}
+
 		return firstRank >= 0 && secondRank > firstRank ? second : first ?? second;
 	}
+
+	/// <summary>
+	/// The position of the narrowest floating type in <see cref="NumericPromotionOrder"/>.
+	/// </summary>
+	private static readonly int FirstFloatingRank = Array.IndexOf(NumericPromotionOrder, "float");
 
 	/// <summary>
 	/// Reports where a type stands in <see cref="NumericPromotionOrder"/>.
