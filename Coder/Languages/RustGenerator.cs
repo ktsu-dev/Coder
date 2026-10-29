@@ -685,34 +685,38 @@ public class RustGenerator : StandardLanguageGenerator
 		using Scope body = new(code);
 
 		insideType++;
-
-		if (classDecl.BaseType is TypeReference baseType)
+		try
 		{
-			WriteInexpressible(code, "the base: Rust has no inheritance, so it is held rather than derived from");
-			code.WriteLine($"pub {BaseMemberName}: {SpellType(baseType)},");
-		}
-
-		foreach (AstNode member in classDecl.Members)
-		{
-			switch (member)
+			if (classDecl.BaseType is TypeReference baseType)
 			{
-				case VariableDeclaration field:
-					WriteUnconstructedDefault(classDecl, field.Name, field.InitialValue, code);
-					WriteStructMember(field.Name, field.Type, VisibilityOf(field), code);
-					break;
+				WriteInexpressible(code, "the base: Rust has no inheritance, so it is held rather than derived from");
+				code.WriteLine($"pub {BaseMemberName}: {SpellType(baseType)},");
+			}
 
-				case FieldDeclaration field when !IsAssociatedField(field):
-					WritePreamble(field, code, PreambleSite.Field);
-					WriteUnconstructedDefault(classDecl, field.Name, field.InitialValue, code);
-					WriteStructMember(field.Name, field.Type, field.Visibility, code);
-					break;
+			foreach (AstNode member in classDecl.Members)
+			{
+				switch (member)
+				{
+					case VariableDeclaration field:
+						WriteUnconstructedDefault(classDecl, field.Name, field.InitialValue, code);
+						WriteStructMember(field.Name, field.Type, VisibilityOf(field), code);
+						break;
 
-				default:
-					break;
+					case FieldDeclaration field when !IsAssociatedField(field):
+						WritePreamble(field, code, PreambleSite.Field);
+						WriteUnconstructedDefault(classDecl, field.Name, field.InitialValue, code);
+						WriteStructMember(field.Name, field.Type, field.Visibility, code);
+						break;
+
+					default:
+						break;
+				}
 			}
 		}
-
-		insideType--;
+		finally
+		{
+			insideType--;
+		}
 	}
 
 	/// <summary>

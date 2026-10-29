@@ -640,42 +640,46 @@ public class CGenerator : CFamilyGenerator
 		code.Indent();
 
 		insideType++;
-
-		WriteEmbeddedBases(classDecl, fields.Count, code);
-
-		if (fields.Count == 0 && classDecl.BaseType is null && classDecl.Interfaces.Count == 0)
+		try
 		{
-			WriteInexpressible(code, $"{name} holds no data: C has no empty struct, so this member stands in");
-			code.WriteLine($"char {UnusedMemberName};");
-		}
+			WriteEmbeddedBases(classDecl, fields.Count, code);
 
-		AstNode? previous = null;
-		foreach (AstNode member in fields)
-		{
-			if (previous is not null && NeedsSeparation(previous, member))
+			if (fields.Count == 0 && classDecl.BaseType is null && classDecl.Interfaces.Count == 0)
 			{
-				code.NewLine();
+				WriteInexpressible(code, $"{name} holds no data: C has no empty struct, so this member stands in");
+				code.WriteLine($"char {UnusedMemberName};");
 			}
 
-			previous = member;
-
-			switch (member)
+			AstNode? previous = null;
+			foreach (AstNode member in fields)
 			{
-				case FunctionDeclaration method:
-					GenerateFunctionPointer(method, code);
-					break;
+				if (previous is not null && NeedsSeparation(previous, member))
+				{
+					code.NewLine();
+				}
 
-				case VariableDeclaration field:
-					GenerateStructMember(field.Name, field.Type, field.InitialValue, field.IsConstant, code);
-					break;
+				previous = member;
 
-				default:
-					GenerateInternal(member, code);
-					break;
+				switch (member)
+				{
+					case FunctionDeclaration method:
+						GenerateFunctionPointer(method, code);
+						break;
+
+					case VariableDeclaration field:
+						GenerateStructMember(field.Name, field.Type, field.InitialValue, field.IsConstant, code);
+						break;
+
+					default:
+						GenerateInternal(member, code);
+						break;
+				}
 			}
 		}
-
-		insideType--;
+		finally
+		{
+			insideType--;
+		}
 
 		code.Outdent();
 		code.WriteLine($"}} {name};");
