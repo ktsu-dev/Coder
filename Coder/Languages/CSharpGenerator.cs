@@ -260,9 +260,9 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// <returns>True when a shift operator is declared anywhere in the tree.</returns>
 	private bool DeclaresShiftOperator()
 	{
-		if (!ReferenceEquals(shiftOperatorRoot, GenerationRoot))
+		if (shiftOperatorGeneration != GenerationNumber)
 		{
-			shiftOperatorRoot = GenerationRoot;
+			shiftOperatorGeneration = GenerationNumber;
 			declaresShiftOperator = GenerationRoot is not null && Descendants(GenerationRoot)
 				.OfType<FunctionDeclaration>()
 				.Any(function => function.Kind == FunctionKind.Operator && function.Name is "<<" or ">>");
@@ -1688,12 +1688,15 @@ public class CSharpGenerator : LanguageGeneratorBase
 	private Dictionary<string, TypeReference> shiftCountTypes = new(StringComparer.Ordinal);
 
 	/// <summary>
-	/// The root <see cref="declaresShiftOperator"/> was computed for.
+	/// The <see cref="LanguageGeneratorBase.GenerationNumber"/> <see cref="declaresShiftOperator"/>
+	/// was computed in. Not the root: the same root, edited in place, can gain or lose an operator
+	/// between two generations (#333).
 	/// </summary>
-	private AstNode? shiftOperatorRoot;
+	private int shiftOperatorGeneration;
 
 	/// <summary>
-	/// Whether <see cref="shiftOperatorRoot"/> declares a shift operator of its own.
+	/// Whether the tree generated in <see cref="shiftOperatorGeneration"/> declares a shift operator
+	/// of its own.
 	/// </summary>
 	private bool declaresShiftOperator;
 

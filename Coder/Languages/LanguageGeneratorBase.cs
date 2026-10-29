@@ -40,6 +40,21 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	protected AstNode? GenerationRoot { get; private set; }
 
 	/// <summary>
+	/// Gets a number that is different for every <see cref="Generate"/> call, or zero outside one.
+	/// </summary>
+	/// <remarks>
+	/// What an answer worked out from the whole tree is remembered against. The root alone does not
+	/// say the tree is the same: the editor edits its tree in place and regenerates it on the same
+	/// generator, so an answer remembered by the root outlives the edit that changed it.
+	/// </remarks>
+	protected int GenerationNumber { get; private set; }
+
+	/// <summary>
+	/// The <see cref="GenerationNumber"/> the last <see cref="Generate"/> call started was given.
+	/// </summary>
+	private int lastGenerationNumber;
+
+	/// <summary>
 	/// Gets the indentation one level of nesting adds.
 	/// </summary>
 	/// <remarks>
@@ -85,7 +100,9 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 		HashSet<object>? previousItems = emittedPreambleItems;
 		Dictionary<object, object>? previousOrigins = preambleCloneOrigins;
 		AstNode? previousRoot = GenerationRoot;
+		int previousNumber = GenerationNumber;
 		GenerationRoot = astNode;
+		GenerationNumber = ++lastGenerationNumber;
 		emittedPreambleItems = new HashSet<object>(ReferenceEqualityComparer.Instance);
 		preambleCloneOrigins = new Dictionary<object, object>(ReferenceEqualityComparer.Instance);
 
@@ -106,6 +123,7 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 			emittedPreambleItems = previousItems;
 			preambleCloneOrigins = previousOrigins;
 			GenerationRoot = previousRoot;
+			GenerationNumber = previousNumber;
 		}
 	}
 
