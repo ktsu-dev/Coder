@@ -132,6 +132,22 @@ public class FunctionShapeTests
 	}
 
 	/// <summary>
+	/// C# has no attribute that makes a caller use a result, and suppressing CA1806 on the member
+	/// silences the warning inside its own body rather than at any call, which is the opposite of what
+	/// was asked. So C# says it cannot, as it does for anything else it cannot declare.
+	/// </summary>
+	[TestMethod]
+	public void CSharp_SaysItCannotRequireTheResultRatherThanSuppressingTheWarning()
+	{
+		FunctionDeclaration spawn = new("spawn") { ReturnType = "Result", MustUseResult = true };
+		string code = new CSharpGenerator().Generate(spawn);
+
+		Assert.DoesNotContain("SuppressMessage", code, StringComparison.Ordinal, code);
+		Assert.DoesNotContain("CA1806", code, StringComparison.Ordinal, code);
+		Assert.Contains("// the result of spawn must be used, which C# has no way to require", code, StringComparison.Ordinal, code);
+	}
+
+	/// <summary>
 	/// C# expresses a deleted member by not declaring it, and says which one went rather than dropping
 	/// it silently.
 	/// </summary>

@@ -1278,7 +1278,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 			return;
 		}
 
-		WriteFunctionAttributes(function, code);
+		WriteFunctionAttributes(function, name, code);
 		WriteFunctionModifiers(function, code, enclosingType);
 
 		code.Write(name);
@@ -1480,12 +1480,19 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// Writes the attributes a declaration earns.
 	/// </summary>
 	/// <param name="function">The declaration being emitted.</param>
+	/// <param name="name">The name the declaration is written under.</param>
 	/// <param name="code">The writer to emit into.</param>
 	/// <remarks>
 	/// Purity already says the result must be used, so a declaration carrying both gets the one
 	/// attribute that says the stronger thing rather than two saying overlapping ones.
+	/// <para>
+	/// A result that must be used on its own has no attribute: C# has nothing like C++'s
+	/// <c>[[nodiscard]]</c> or Rust's <c>#[must_use]</c>. Suppressing CA1806 on the member is not one,
+	/// since a suppression applies inside the member's own body and never at a call, so it would turn
+	/// the warning off where nobody asked and leave every caller unwarned. It is written down instead.
+	/// </para>
 	/// </remarks>
-	private static void WriteFunctionAttributes(FunctionDeclaration function, CodeBlocker code)
+	private void WriteFunctionAttributes(FunctionDeclaration function, string name, CodeBlocker code)
 	{
 		if (function.IsPure)
 		{
@@ -1495,7 +1502,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 
 		if (function.MustUseResult)
 		{
-			code.WriteLine("[System.Diagnostics.CodeAnalysis.SuppressMessage(\"Usage\", \"CA1806\", Justification = \"The result must be used.\")]");
+			WriteInexpressible(code, $"the result of {name} must be used, which C# has no way to require");
 		}
 	}
 
