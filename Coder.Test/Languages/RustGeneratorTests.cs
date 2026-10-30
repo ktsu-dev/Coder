@@ -719,6 +719,18 @@ public class RustGeneratorTests
 	}
 
 	/// <summary>
+	/// Tests that a numeric escape in an assertion's message keeps single braces, because doubling
+	/// the braces of <c>\u{0007}</c> makes an escape rustc rejects (issue #382).
+	/// </summary>
+	[TestMethod]
+	public void CompileTimeAssertion_KeepsNumericEscapeBracesSingle()
+	{
+		CompileTimeAssertion assertion = new("true", "tab\tbell\u0007 {N}");
+
+		StringAssert.Contains(Generator.Generate(assertion), "\"tab\\tbell\\u{0007} {{N}}\");", StringComparison.Ordinal);
+	}
+
+	/// <summary>
 	/// Tests that an alias is a type alias.
 	/// </summary>
 	[TestMethod]

@@ -728,6 +728,11 @@ public class RustGeneratedSourceCompilesTests
 			Condition = "std::mem::size_of::<u8>() == 1",
 			Message = "size {N} fits, brace {} here",
 		});
+		geometry.Members.Add(new CompileTimeAssertion
+		{
+			Condition = "std::mem::size_of::<u16>() == 2",
+			Message = "bell\u0007 {N}\nnext line",
+		});
 
 		file.Members.Add(geometry);
 		return file;

@@ -2185,6 +2185,8 @@ public class RustGenerator : StandardLanguageGenerator
 	/// <para>
 	/// The message is <c>assert!</c>'s format string rather than a plain literal, so its braces are
 	/// doubled: a single <c>{N}</c> would be read as a placeholder naming a value that does not exist.
+	/// They are doubled before the message is escaped, because a numeric escape is spelled
+	/// <c>\u{XXXX}</c> and doubling its braces too makes an escape rustc rejects.
 	/// </para>
 	/// </remarks>
 	protected override void GenerateCompileTimeAssertion(CompileTimeAssertion assertion, CodeBlocker code)
@@ -2200,9 +2202,9 @@ public class RustGenerator : StandardLanguageGenerator
 		{
 			code.WriteLine(",");
 			code.Indent();
-			string message = EscapeString(assertion.Message)
+			string message = EscapeString(assertion.Message
 				.Replace("{", "{{", StringComparison.Ordinal)
-				.Replace("}", "}}", StringComparison.Ordinal);
+				.Replace("}", "}}", StringComparison.Ordinal));
 			code.Write($"\"{message}\"");
 			code.Outdent();
 		}
