@@ -256,6 +256,17 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	protected virtual string CommentPrefix => "//";
 
 	/// <summary>
+	/// Every sequence a target ends a line at, and so ends a line comment at.
+	/// </summary>
+	/// <remarks>
+	/// Beyond CR and LF, C# also ends a line at U+0085, U+2028 and U+2029, and JavaScript at U+2028
+	/// and U+2029. Text pasted from a PDF or a word processor carries them, and the YAML serializer
+	/// preserves them. A target that does not treat one as a line break just gets an extra comment
+	/// line, which is harmless, so every target splits on all of them.
+	/// </remarks>
+	protected static readonly string[] CommentLineBreaks = ["\r\n", "\n", "\r", "\u0085", "\u2028", "\u2029"];
+
+	/// <summary>
 	/// Writes caller-provided text as comment lines without letting it escape the comment.
 	/// </summary>
 	/// <param name="code">The writer to emit into.</param>
@@ -267,7 +278,7 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 		Ensure.NotNull(prefix);
 		Ensure.NotNull(text);
 
-		foreach (string line in text.Split(["\r\n", "\n", "\r"], StringSplitOptions.None))
+		foreach (string line in text.Split(CommentLineBreaks, StringSplitOptions.None))
 		{
 			code.WriteLine(line.Length == 0 ? prefix : $"{prefix} {line}");
 		}

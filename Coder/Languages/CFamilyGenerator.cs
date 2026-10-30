@@ -125,7 +125,7 @@ public abstract class CFamilyGenerator : StandardLanguageGenerator
 	{
 		Ensure.NotNull(text);
 
-		string[] lines = text.Split(["\r\n", "\n", "\r"], StringSplitOptions.None);
+		string[] lines = text.Split(CommentLineBreaks, StringSplitOptions.None);
 		base.WriteComment(code, prefix, string.Join("\n", lines.Select(EndWithoutSplice)));
 	}
 
