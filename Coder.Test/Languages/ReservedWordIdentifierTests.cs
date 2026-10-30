@@ -7,10 +7,10 @@ using ktsu.Coder.Languages;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 /// <summary>
-/// Compiles and runs what the Rust and C++ generators write for names that are keywords of the
-/// target: a property called <c>Type</c> or <c>Default</c>, which are ordinary C# names, and fields,
+/// Compiles and runs what the Rust, C++ and Python generators write for names that are keywords of
+/// the target: a property called <c>Type</c> or <c>Default</c>, which are ordinary C# names, fields,
 /// parameters and locals called <c>where</c>, <c>virtual</c>, <c>match</c>, <c>delete</c>,
-/// <c>loop</c> and <c>new</c>. Each name has to come out escaped where it is declared and spelled the
+/// <c>loop</c> and <c>new</c>, and, for Python, an enumeration member called <c>None</c>. Each name has to come out escaped where it is declared and spelled the
 /// same way wherever it is used, or the output either fails to parse or fails to resolve.
 /// </summary>
 /// <remarks>
@@ -117,6 +117,74 @@ public class ReservedWordIdentifierTests
 	}
 
 	/// <summary>
+	/// The Python driver. Python has no escape for a keyword either, so an escaped name has had an
+	/// underscore appended, and that is the name a caller uses.
+	/// </summary>
+	private const string PythonDriver = """
+
+
+		holder = Holder()
+		if holder.from_ != 3 or holder.lambda_ != 4:
+		    raise SystemExit(1)
+		if holder.class_ != 1:
+		    raise SystemExit(2)
+		if holder.total(5, 6) != 14:
+		    raise SystemExit(3)
+		if Flag.None_ != 0 or Flag.All != 1:
+		    raise SystemExit(4)
+		if def_(7) != 7:
+		    raise SystemExit(5)
+
+		""";
+
+	/// <summary>
+	/// Tests that Python appends an underscore to a keyword-named field, property, parameter, local,
+	/// enumeration member and function, at their declarations and where they are used.
+	/// </summary>
+	[TestMethod]
+	public void Python_KeywordNamesRunAndResolve()
+	{
+		string? python = ToolchainHarness.FindOnPath("--version", "python3", "python");
+		if (python is null)
+		{
+			Assert.Inconclusive("No Python interpreter on the path, so nothing was run.");
+			return;
+		}
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new PythonGenerator().Generate(PythonTypes()) + PythonDriver;
+			File.WriteAllText(Path.Combine(directory, "holder.py"), source);
+
+			(int ran, string output) = ToolchainHarness.Run(python, "holder.py", directory);
+			Assert.AreEqual(0, ran, $"the generated module failed, or a keyword-named member read back wrongly (driver check {ran}):{Environment.NewLine}{output}{Environment.NewLine}{source}");
+		});
+	}
+
+	/// <summary>
+	/// Tests that a Python reference keeps the literal words as written while escaping a keyword
+	/// that names a member.
+	/// </summary>
+	[TestMethod]
+	public void Python_ReferenceKeepsTheLiteralWordsAndEscapesTheMember()
+	{
+		FunctionDeclaration read = new("read") { ReturnType = "int" };
+		read.Body.Add(new VariableDeclaration("unused", "int", new VariableReference("None")));
+		read.Body.Add(new ReturnStatement(new VariableReference("self.from")));
+		ClassDeclaration holder = new("Holder");
+		holder.Members.Add(new VariableDeclaration("from", "int"));
+		holder.Members.Add(read);
+		SourceFile file = new("holder");
+		file.Members.Add(holder);
+
+		string source = new PythonGenerator().Generate(file);
+
+		Assert.Contains("unused = None", source, StringComparison.Ordinal, source);
+		Assert.Contains("return self.from_", source, StringComparison.Ordinal, source);
+		Assert.DoesNotContain("None_", source, StringComparison.Ordinal, source);
+	}
+
+	/// <summary>
 	/// Tests that a reference keeps a receiver as written and escapes only the plain names after it.
 	/// </summary>
 	[TestMethod]
@@ -153,6 +221,49 @@ public class ReservedWordIdentifierTests
 
 		Assert.Contains("fn super_(crate_: i32)", source, StringComparison.Ordinal, source);
 		Assert.DoesNotContain("r#super", source, StringComparison.Ordinal, source);
+	}
+
+	/// <summary>
+	/// Builds a class, an enumeration and a function whose names are Python keywords.
+	/// </summary>
+	/// <returns>The file to generate.</returns>
+	private static SourceFile PythonTypes()
+	{
+		ClassDeclaration holder = new("Holder");
+		holder.Members.Add(new VariableDeclaration("from", "int", new LiteralExpression<int>(3)));
+		holder.Members.Add(new VariableDeclaration("lambda", "int", new LiteralExpression<int>(4)));
+		holder.Members.Add(new PropertyDeclaration("class", "int")
+		{
+			GetterBody = { new ReturnStatement(new LiteralExpression<int>(1)) },
+		});
+
+		FunctionDeclaration total = new("total") { ReturnType = "int" };
+		total.Parameters.Add(new Parameter("in", "int"));
+		total.Parameters.Add(new Parameter("is", "int"));
+		total.Body.Add(new VariableDeclaration(
+			"pass",
+			"int",
+			new BinaryExpression(new VariableReference("in"), BinaryOperator.Add, new VariableReference("is"))));
+		total.Body.Add(new VariableDeclaration(
+			"del",
+			"int",
+			new BinaryExpression(new VariableReference("pass"), BinaryOperator.Add, new VariableReference("self.from"))));
+		total.Body.Add(new ReturnStatement(new VariableReference("del")));
+		holder.Members.Add(total);
+
+		EnumDeclaration flag = new("Flag");
+		flag.Members.Add(new EnumMember("None"));
+		flag.Members.Add(new EnumMember("All"));
+
+		FunctionDeclaration identity = new("def") { ReturnType = "int" };
+		identity.Parameters.Add(new Parameter("with", "int"));
+		identity.Body.Add(new ReturnStatement(new VariableReference("with")));
+
+		SourceFile file = new("holder");
+		file.Members.Add(holder);
+		file.Members.Add(flag);
+		file.Members.Add(identity);
+		return file;
 	}
 
 	/// <summary>

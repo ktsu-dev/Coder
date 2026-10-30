@@ -54,6 +54,28 @@ public class PythonGenerator : StandardLanguageGenerator
 	/// <returns>The keyword Python uses.</returns>
 	protected override string FormatBoolean(bool value) => value ? "True" : "False";
 
+	/// <inheritdoc/>
+	/// <remarks>
+	/// The hard keywords, which <c>keyword.kwlist</c> lists. The soft ones — <c>match</c>,
+	/// <c>case</c>, <c>type</c> and <c>_</c> — are keywords only where a statement starts with them
+	/// and are legal names everywhere else, so they are left alone. An escaped name has an underscore
+	/// appended, which is a rename: Python has no way to use a keyword as a name, and the trailing
+	/// underscore is the spelling PEP 8 gives for exactly this.
+	/// </remarks>
+	protected override IReadOnlySet<string> ReservedWords { get; } = new HashSet<string>(StringComparer.Ordinal)
+	{
+		"False", "None", "True", "and", "as", "assert", "async", "await", "break", "class", "continue", "def",
+		"del", "elif", "else", "except", "finally", "for", "from", "global", "if", "import", "in", "is",
+		"lambda", "nonlocal", "not", "or", "pass", "raise", "return", "try", "while", "with", "yield",
+	};
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// The literal words, which a reference written as text means as Python means them. <c>self</c>
+	/// is not a keyword, so it needs no exception.
+	/// </remarks>
+	protected override bool IsReceiverWord(string word) => word is "True" or "False" or "None";
+
 	/// <summary>
 	/// Ends a statement. Python has no terminator, and the function body emits the line breaks, so
 	/// this deliberately writes nothing.
@@ -120,7 +142,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		Ensure.NotNull(declaration);
 		Ensure.NotNull(code);
 
-		string name = declaration.Name ?? "value";
+		string name = EscapeIdentifier(declaration.Name ?? "value");
 		// The two spellings of a type: an annotation on a name is a colon, and on a function it is
 		// an arrow. Same type, and Python is particular about which goes where.
 		string annotation = declaration.Type is TypeReference type ? $": {PythonTypeFromGenericType(type)}" : string.Empty;
@@ -185,14 +207,14 @@ public class PythonGenerator : StandardLanguageGenerator
 		if (declaration.CanRead)
 		{
 			code.WriteLine("@staticmethod");
-			code.Write($"def {declaration.GetterName(NamingStyle.Snake)}(){result}:");
+			code.Write($"def {EscapeIdentifier(declaration.GetterName(NamingStyle.Snake))}(){result}:");
 			WriteAccessorBody(declaration, isSetter: false, code);
 		}
 
 		if (declaration.CanWrite)
 		{
 			code.WriteLine("@staticmethod");
-			code.Write($"def {declaration.SetterName(NamingStyle.Snake)}(value{annotation}) -> None:");
+			code.Write($"def {EscapeIdentifier(declaration.SetterName(NamingStyle.Snake))}(value{annotation}) -> None:");
 			WriteAccessorBody(declaration, isSetter: true, code);
 		}
 	}
@@ -352,7 +374,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		Ensure.NotNull(code);
 
 		WritePreamble(usingAlias, code, PreambleSite.Type);
-		code.WriteLine($"{usingAlias.Name} = {PythonTypeFromGenericType(usingAlias.AliasedType ?? new TypeReference("object"))}");
+		code.WriteLine($"{EscapeIdentifier(usingAlias.Name ?? string.Empty)} = {PythonTypeFromGenericType(usingAlias.AliasedType ?? new TypeReference("object"))}");
 	}
 
 	/// <inheritdoc/>
@@ -429,7 +451,7 @@ public class PythonGenerator : StandardLanguageGenerator
 
 			if (elements[index] is MemberInitialiser member)
 			{
-				code.Write($"{member.Name}=");
+				code.Write($"{EscapeIdentifier(member.Name ?? string.Empty)}=");
 				GenerateInternal(member.Value!, code);
 				continue;
 			}
@@ -456,7 +478,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		Ensure.NotNull(code);
 
 		WritePreamble(enumDecl, code, PreambleSite.Enum);
-		code.WriteLine($"class {enumDecl.Name ?? "UnnamedEnum"}(IntEnum):");
+		code.WriteLine($"class {EscapeIdentifier(enumDecl.Name ?? "UnnamedEnum")}(IntEnum):");
 
 		using IndentScope body = new(code);
 		if (enumDecl.Members.Count == 0)
@@ -467,7 +489,7 @@ public class PythonGenerator : StandardLanguageGenerator
 
 		foreach ((EnumMember member, string value) in enumDecl.Members.Zip(EnumMemberValues(enumDecl)))
 		{
-			code.WriteLine($"{member.Name ?? "UNNAMED"} = {value}");
+			code.WriteLine($"{EscapeIdentifier(member.Name ?? "UNNAMED")} = {value}");
 		}
 	}
 
@@ -483,7 +505,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		Ensure.NotNull(code);
 
 		WritePreamble(field, code, PreambleSite.Field);
-		code.Write(field.Name ?? "unnamed");
+		code.Write(EscapeIdentifier(field.Name ?? "unnamed"));
 
 		if (field.Type is TypeReference type)
 		{
@@ -545,7 +567,7 @@ public class PythonGenerator : StandardLanguageGenerator
 
 		if (globals.Count > 0)
 		{
-			code.WriteLine($"global {string.Join(", ", globals)}");
+			code.WriteLine($"global {string.Join(", ", globals.Select(EscapeIdentifier))}");
 		}
 	}
 
@@ -562,7 +584,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		WriteTypeParametersDown(funcDecl.TypeParameters, code);
 
 		// Function signature
-		code.Write($"def {funcDecl.Name ?? "unnamed_function"}(");
+		code.Write($"def {EscapeIdentifier(funcDecl.Name ?? "unnamed_function")}(");
 		GenerateParameterList(funcDecl.Parameters, code);
 		code.Write(")");
 
@@ -625,7 +647,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		// class generated on its own -- the same reason @dataclass is not written above.
 		WriteTypeParametersDown(classDecl.TypeParameters, code);
 
-		code.Write($"class {classDecl.Name ?? "UnnamedClass"}");
+		code.Write($"class {EscapeIdentifier(classDecl.Name ?? "UnnamedClass")}");
 
 		// Python inherits from as many things as it is given and has no separate notion of an
 		// interface, so the base and the interfaces are one list of bases -- which is what the
@@ -782,7 +804,7 @@ public class PythonGenerator : StandardLanguageGenerator
 
 	private void WriteInstanceInitialiser(FieldDeclaration field, CodeBlocker code)
 	{
-		code.Write($"self.{field.Name ?? "unnamed"} = ");
+		code.Write($"self.{EscapeIdentifier(field.Name ?? "unnamed")} = ");
 		GenerateInternal(field.InitialValue!, code);
 		code.WriteLine();
 	}
@@ -849,7 +871,7 @@ public class PythonGenerator : StandardLanguageGenerator
 	{
 		foreach (MemberInitialiser initialiser in method.Initialisers)
 		{
-			code.Write($"self.{initialiser.Name} = ");
+			code.Write($"self.{EscapeIdentifier(initialiser.Name ?? string.Empty)} = ");
 
 			if (initialiser.Value is not null)
 			{
@@ -873,11 +895,11 @@ public class PythonGenerator : StandardLanguageGenerator
 	/// A constructor and a destructor have fixed names in Python rather than the type's, so whatever
 	/// the declaration is called is ignored for those two.
 	/// </remarks>
-	private static string SpellMethodName(FunctionDeclaration method) => method.Kind switch
+	private string SpellMethodName(FunctionDeclaration method) => method.Kind switch
 	{
 		FunctionKind.Constructor => "__init__",
 		FunctionKind.Destructor => "__del__",
-		_ => method.Name ?? "unnamed_method",
+		_ => EscapeIdentifier(method.Name ?? "unnamed_method"),
 	};
 
 	/// <inheritdoc/>
@@ -946,7 +968,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		Ensure.NotNull(parameter);
 		Ensure.NotNull(code);
 
-		code.Write(parameter.Name ?? $"param{position}");
+		code.Write(EscapeIdentifier(parameter.Name ?? $"param{position}"));
 
 		// Type hints are optional in Python, so they are emitted only when the AST carries one.
 		if (parameter.Type is not null)
@@ -1080,7 +1102,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		Ensure.NotNull(code);
 		RegisterStaticType(varDecl);
 
-		code.Write(varDecl.Name);
+		code.Write(EscapeIdentifier(varDecl.Name));
 
 		if (varDecl.InitialValue != null)
 		{
