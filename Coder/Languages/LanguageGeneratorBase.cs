@@ -893,7 +893,7 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 			code.Write(SpellMemberAccess(callExpr.Receiver));
 		}
 
-		code.Write(callExpr.Callee);
+		code.Write(SpellCallee(callExpr.Callee));
 		code.Write("(");
 		for (int index = 0; index < callExpr.Arguments.Count; index++)
 		{
@@ -1224,6 +1224,31 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 		}
 
 		return string.Join(".", segments);
+	}
+
+	/// <summary>
+	/// Spells a call's callee so a call to a function the document declares names it as its
+	/// declaration did.
+	/// </summary>
+	/// <param name="callee">The callee's text, as <see cref="CallExpression.Callee"/> holds it.</param>
+	/// <returns>The callee escaped when it is a reserved word some declared function is named; otherwise as written.</returns>
+	/// <remarks>
+	/// A keyword-named function is escaped where it is declared (<c>r#match</c>, <c>delete_</c>,
+	/// <c>lambda_</c>), so a call that wrote the bare word named something that no longer exists, or a
+	/// keyword. A callee is otherwise text and stays verbatim: C++'s <c>sizeof</c> and <c>delete</c>
+	/// are reserved but not declared, and escaping them would break the call. Any function or method
+	/// of the name counts, whatever its receiver, because every one of them was escaped the same way
+	/// and no target accepts the bare keyword as a callee.
+	/// </remarks>
+	protected string SpellCallee(string callee)
+	{
+		Ensure.NotNull(callee);
+
+		return ReservedWords.Contains(callee)
+			&& GenerationRoot is AstNode root
+			&& SelfAndDescendants(root).OfType<FunctionDeclaration>().Any(function => function.Name == callee)
+			? EscapeIdentifier(callee)
+			: callee;
 	}
 
 	/// <summary>
