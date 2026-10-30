@@ -1464,6 +1464,10 @@ public class RustGenerator : StandardLanguageGenerator
 	/// <remarks>
 	/// A value assigned to a field of <c>self</c> is written for the type the field was declared
 	/// with, so a string literal assigned to a String field is made into one.
+	/// <para>
+	/// A <c>String</c> appended to a <c>String</c> is passed by reference, because Rust implements
+	/// <c>+=</c> on a <c>String</c> only for a <c>&amp;str</c>. A literal already is one.
+	/// </para>
 	/// </remarks>
 	protected override void GenerateAssignmentStatement(AssignmentStatement assignment, CodeBlocker code)
 	{
@@ -1492,7 +1496,7 @@ public class RustGenerator : StandardLanguageGenerator
 			insideUnsafe = true;
 			try
 			{
-				base.GenerateAssignmentStatement(assignment, code);
+				GenerateAssignmentOrAppend(assignment, code);
 			}
 			finally
 			{
@@ -1501,6 +1505,28 @@ public class RustGenerator : StandardLanguageGenerator
 
 			code.Outdent();
 			code.WriteLine("}");
+			return;
+		}
+
+		GenerateAssignmentOrAppend(assignment, code);
+	}
+
+	/// <summary>
+	/// Emits an assignment, writing a <c>String</c> appended to a <c>String</c> by reference.
+	/// </summary>
+	/// <param name="assignment">The statement to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	private void GenerateAssignmentOrAppend(AssignmentStatement assignment, CodeBlocker code)
+	{
+		if (assignment.Operator == AssignmentOperator.AddAssign
+			&& assignment.Value is not LiteralExpression<string>
+			&& IsOwnedString(StaticType(assignment.Target))
+			&& IsOwnedString(StaticType(assignment.Value)))
+		{
+			GenerateInternal(assignment.Target, code);
+			code.Write($" {GetAssignmentOperator(AssignmentOperator.AddAssign)} &");
+			GenerateInternal(assignment.Value, code);
+			EndStatement(code);
 			return;
 		}
 
