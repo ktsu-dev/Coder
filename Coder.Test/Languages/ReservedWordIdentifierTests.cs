@@ -162,6 +162,51 @@ public class ReservedWordIdentifierTests
 	}
 
 	/// <summary>
+	/// Tests that a Python enumeration member whose value names a keyword-escaped sibling, explicitly
+	/// or through the <c>(origin) + n</c> a following member derives from it, names the escaped
+	/// member rather than the keyword, so the module imports and the values resolve.
+	/// </summary>
+	[TestMethod]
+	public void Python_EnumValueNamingAnEscapedSiblingRunsAndResolves()
+	{
+		string? python = ToolchainHarness.FindOnPath("--version", "python3", "python");
+		if (python is null)
+		{
+			Assert.Inconclusive("No Python interpreter on the path, so nothing was run.");
+			return;
+		}
+
+		EnumDeclaration access = new("Access");
+		access.Members.Add(new EnumMember("None") { Value = "0" });
+		access.Members.Add(new EnumMember("Read") { Value = "1" });
+		access.Members.Add(new EnumMember("Default") { Value = "None" });
+		access.Members.Add(new EnumMember("Next"));
+		SourceFile file = new("access");
+		file.Members.Add(access);
+
+		string source = new PythonGenerator().Generate(file);
+		Assert.Contains("Default = None_", source, StringComparison.Ordinal, source);
+		Assert.Contains("Next = (None_) + 1", source, StringComparison.Ordinal, source);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string driver = """
+
+
+				if Access.Default != Access.None_:
+				    raise SystemExit(1)
+				if Access.Next != 1:
+				    raise SystemExit(2)
+
+				""";
+			File.WriteAllText(Path.Combine(directory, "access.py"), source + driver);
+
+			(int ran, string output) = ToolchainHarness.Run(python, "access.py", directory);
+			Assert.AreEqual(0, ran, $"the generated module failed, or a sibling-named value read back wrongly (driver check {ran}):{Environment.NewLine}{output}{Environment.NewLine}{source}");
+		});
+	}
+
+	/// <summary>
 	/// Tests that a Python reference keeps the literal words as written while escaping a keyword
 	/// that names a member.
 	/// </summary>
