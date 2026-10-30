@@ -2,6 +2,10 @@
 
 Changes since v3.19.0:
 
+- Work out the C# shift-operator answer again on every generation [patch] (Claude)
+- Stop suppressing CA1806 on a C# method whose result must be used [patch] (Claude)
+- Escape keyword-named identifiers in the Python generator [patch] (Claude)
+- Leave the inside-type count as it was when a type member throws [patch] (matt-edmondson)
 - Merge main into claude/project-thread-kddtpg-296 (Claude)
 - Merge main into claude/project-thread-kddtpg-170 (Claude)
 - Merge main into claude/project-thread-kddtpg-232 (Claude)
