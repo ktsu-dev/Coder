@@ -1,4 +1,4 @@
-// Copyright (c) 2023-2026 ktsu-dev contributors
+﻿// Copyright (c) 2023-2026 ktsu-dev contributors
 
 namespace ktsu.Coder.Test.Languages;
 
@@ -221,6 +221,182 @@ public class ReservedWordIdentifierTests
 
 		Assert.Contains("fn super_(crate_: i32)", source, StringComparison.Ordinal, source);
 		Assert.DoesNotContain("r#super", source, StringComparison.Ordinal, source);
+	}
+
+	/// <summary>
+	/// Tests that Rust calls a keyword-named free function and method by the raw identifiers they
+	/// were declared with: with no receiver, through <c>self</c>, and through a raw pointer, which is
+	/// written <c>unsafe { (*p).callee() }</c>.
+	/// </summary>
+	[TestMethod]
+	public void Rust_KeywordNamedCalleesCompileAndResolve()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "rustc") is null)
+		{
+			Assert.Inconclusive("No Rust compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string program = OperatingSystem.IsWindows() ? "calls.exe" : "calls";
+			SourceFile file = KeywordCalls("match", "loop", "self");
+			FunctionDeclaration through = new("through") { ReturnType = "int" };
+			through.Parameters.Add(new Parameter("other", "const Holder*"));
+			through.Body.Add(new ReturnStatement(new CallExpression(new VariableReference("other"), "loop")));
+			file.Members.Add(through);
+
+			string generated = new RustGenerator().Generate(file);
+			Assert.Contains("unsafe { (*other).r#loop() }", generated, StringComparison.Ordinal, generated);
+
+			string source = generated + """
+
+				fn main() {
+				    let mut holder = Holder::make();
+				    if relay() != 5 { std::process::exit(1); }
+				    if holder.twice() != 3 { std::process::exit(2); }
+				    if through(&holder) != 2 { std::process::exit(3); }
+				}
+
+				""";
+			File.WriteAllText(Path.Combine(directory, "calls.rs"), source);
+
+			(int built, string output) = ToolchainHarness.Run("rustc", $"--edition 2021 -o {program} calls.rs", directory);
+			Assert.AreEqual(0, built, $"rustc rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+
+			(int ran, _) = ToolchainHarness.Run(Path.Combine(directory, program), string.Empty, directory);
+			Assert.AreEqual(0, ran, $"a keyword-named callee resolved wrongly (driver check {ran}):{Environment.NewLine}{source}");
+		});
+	}
+
+	/// <summary>
+	/// Tests that C++ calls a keyword-named free function and method by the suffixed names they were
+	/// declared with, and that a reserved callee nothing declares, <c>sizeof</c>, stays as written.
+	/// </summary>
+	[TestMethod]
+	public void Cpp_KeywordNamedCalleesCompileAndResolve()
+	{
+		string? compiler = ToolchainHarness.FindOnPath("--version", CppCompilers);
+		if (compiler is null)
+		{
+			Assert.Inconclusive("No C++ compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string program = OperatingSystem.IsWindows() ? "calls.exe" : "calls";
+			SourceFile file = KeywordCalls("delete", "default", null);
+			FunctionDeclaration width = new("width") { ReturnType = "int" };
+			width.Parameters.Add(new Parameter("value", "int"));
+			CallExpression size = new("sizeof");
+			size.Arguments.Add(new VariableReference("value"));
+			width.Body.Add(new ReturnStatement(size));
+			file.Members.Add(width);
+
+			string header = new CppGenerator().Generate(file);
+			File.WriteAllText(Path.Combine(directory, "calls.hpp"), header);
+			File.WriteAllText(Path.Combine(directory, "driver.cpp"), """
+				#include "calls.hpp"
+
+				int main()
+				{
+					Holder holder = Holder::make();
+					if (relay() != 5) { return 1; }
+					if (holder.twice() != 3) { return 2; }
+					if (width(0) != static_cast<int>(sizeof(int))) { return 3; }
+					return 0;
+				}
+
+				""");
+
+			(int built, string output) = ToolchainHarness.Run(
+				compiler,
+				$"-std=c++20 -Wall -Wextra -pedantic -o {program} driver.cpp",
+				directory);
+			Assert.AreEqual(0, built, $"{compiler} rejected the generated header:{Environment.NewLine}{output}{Environment.NewLine}{header}");
+
+			(int ran, _) = ToolchainHarness.Run(Path.Combine(directory, program), string.Empty, directory);
+			Assert.AreEqual(0, ran, $"a keyword-named callee resolved wrongly (driver check {ran}):{Environment.NewLine}{header}");
+		});
+	}
+
+	/// <summary>
+	/// Tests that Python calls a keyword-named free function and method by the suffixed names they
+	/// were declared with.
+	/// </summary>
+	[TestMethod]
+	public void Python_KeywordNamedCalleesRunAndResolve()
+	{
+		string? python = ToolchainHarness.FindOnPath("--version", "python3", "python");
+		if (python is null)
+		{
+			Assert.Inconclusive("No Python interpreter on the path, so nothing was run.");
+			return;
+		}
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new PythonGenerator().Generate(KeywordCalls("lambda", "pass", "self")) + """
+
+
+				holder = Holder()
+				if relay() != 5:
+				    raise SystemExit(1)
+				if holder.twice() != 3:
+				    raise SystemExit(2)
+
+				""";
+			File.WriteAllText(Path.Combine(directory, "calls.py"), source);
+
+			(int ran, string output) = ToolchainHarness.Run(python, "calls.py", directory);
+			Assert.AreEqual(0, ran, $"the generated module failed, or a keyword-named callee resolved wrongly (driver check {ran}):{Environment.NewLine}{output}{Environment.NewLine}{source}");
+		});
+	}
+
+	/// <summary>
+	/// Builds a free function and a method named after keywords, and the generated code that calls
+	/// each of them: <c>relay</c> calls the free function, and <c>twice</c> calls the method on its
+	/// own instance.
+	/// </summary>
+	/// <param name="function">The free function's name.</param>
+	/// <param name="method">The method's name.</param>
+	/// <param name="receiver">How the target's method body names its own instance, or null to call the method with no receiver.</param>
+	/// <returns>The file to generate.</returns>
+	private static SourceFile KeywordCalls(string function, string method, string? receiver)
+	{
+		ClassDeclaration holder = new("Holder") { Kind = TypeDeclarationKind.Struct };
+		holder.Members.Add(new VariableDeclaration("seed", "int"));
+
+		ConstructionExpression built = new(new TypeReference("Holder"));
+		built.Arguments.Add(new MemberInitialiser("seed", new LiteralExpression<int>(0)));
+		FunctionDeclaration make = new("make") { ReturnType = "Holder", IsStatic = true };
+		make.Body.Add(new ReturnStatement(built));
+		holder.Members.Add(make);
+
+		FunctionDeclaration keywordMethod = new(method) { ReturnType = "int", IsReadOnly = true };
+		keywordMethod.Body.Add(new ReturnStatement(new LiteralExpression<int>(2)));
+		holder.Members.Add(keywordMethod);
+
+		CallExpression callMethod = receiver is null ? new(method) : new(new VariableReference(receiver), method);
+		FunctionDeclaration twice = new("twice") { ReturnType = "int" };
+		twice.Body.Add(new ReturnStatement(new BinaryExpression(callMethod, BinaryOperator.Add, new LiteralExpression<int>(1))));
+		holder.Members.Add(twice);
+
+		FunctionDeclaration keywordFunction = new(function) { ReturnType = "int" };
+		keywordFunction.Parameters.Add(new Parameter("value", "int"));
+		keywordFunction.Body.Add(new ReturnStatement(new VariableReference("value")));
+
+		CallExpression callFunction = new(function);
+		callFunction.Arguments.Add(new LiteralExpression<int>(5));
+		FunctionDeclaration relay = new("relay") { ReturnType = "int" };
+		relay.Body.Add(new ReturnStatement(callFunction));
+
+		SourceFile file = new("calls");
+		file.Members.Add(holder);
+		file.Members.Add(keywordFunction);
+		file.Members.Add(relay);
+		return file;
 	}
 
 	/// <summary>
