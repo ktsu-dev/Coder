@@ -852,6 +852,40 @@ public class RustGeneratedSourceCompilesTests
 	}
 
 	/// <summary>
+	/// Tests that string defaults containing <c>/*</c> and <c>*/</c> leave the default-value comment
+	/// terminated, because Rust's block comments nest and an unterminated one is error E0758 (#384).
+	/// </summary>
+	[TestMethod]
+	public void DefaultsContainingCommentDelimiters_Compile()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "rustc") is null)
+		{
+			Assert.Inconclusive("No Rust compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			FunctionDeclaration find = new("find") { ReturnType = "int" };
+			find.Parameters.Add(new Parameter("pattern", "string") { IsOptional = true, DefaultValue = new LiteralExpression<string>("src/**/*.rs") });
+			find.Parameters.Add(new Parameter("opener", "string") { IsOptional = true, DefaultValue = new LiteralExpression<string>("/*") });
+			find.Parameters.Add(new Parameter("closer", "string") { IsOptional = true, DefaultValue = new LiteralExpression<string>("a */ b") });
+			find.Body.Add(new ReturnStatement(new LiteralExpression<int>(1)));
+
+			string source = new RustGenerator().Generate(find);
+			string allowed = "#![allow(dead_code, unused_variables)]";
+			File.WriteAllText(Path.Combine(directory, "find.rs"), $"{allowed}{Environment.NewLine}{source}");
+
+			(int exitCode, string output) = ToolchainHarness.Run(
+				"rustc",
+				"--crate-type lib --edition 2021 -o find.rlib find.rs",
+				directory);
+
+			Assert.AreEqual(0, exitCode, $"rustc rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+		});
+	}
+
+	/// <summary>
 	/// Gets a string the holder does not own, which is the one Rust asks for wherever it is only read.
 	/// </summary>
 	/// <returns>The type.</returns>

@@ -1594,7 +1594,9 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	/// <param name="code">The writer to emit into.</param>
 	/// <remarks>
 	/// A <c>*/</c> in the value would end the comment early and leave the rest of it as source, so
-	/// it is broken apart.
+	/// it is broken apart. So is a <c>/*</c>, because Rust's block comments nest: one inside the
+	/// comment opens another that nothing closes, and breaking <c>*/</c> apart can make one, as
+	/// <c>"src/**/*.rs"</c> does.
 	/// </remarks>
 	protected void AppendDefaultValueComment(Parameter parameter, CodeBlocker code)
 	{
@@ -1605,7 +1607,9 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 		{
 			using CodeBlocker inline = CodeBlocker.Create(IndentString);
 			GenerateInternal(value, inline);
-			string spelled = inline.ToString().TrimEnd('\r', '\n').Replace("*/", "* /", StringComparison.Ordinal);
+			string spelled = inline.ToString().TrimEnd('\r', '\n')
+				.Replace("*/", "* /", StringComparison.Ordinal)
+				.Replace("/*", "/ *", StringComparison.Ordinal);
 			code.Write($" /* = {spelled} */");
 		}
 	}
