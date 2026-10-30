@@ -2153,11 +2153,11 @@ public class RustGenerator : StandardLanguageGenerator
 		using Scope body = new(code);
 		foreach (EnumMember member in enumDecl.Members)
 		{
-			code.Write(member.Name ?? "Unnamed");
+			code.Write(EscapeIdentifier(member.Name ?? "Unnamed"));
 
 			if (member.Value is not null)
 			{
-				code.Write($" = {RenameSiblingMembers(enumDecl, member.Value, sibling => $"{name}::{sibling} as {discriminant}")}");
+				code.Write($" = {RenameSiblingMembers(enumDecl, member.Value, sibling => $"{name}::{EscapeIdentifier(sibling)} as {discriminant}")}");
 			}
 
 			// A trailing comma on the last variant too, so adding one after it is a one-line diff.
