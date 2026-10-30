@@ -111,7 +111,7 @@ public sealed partial class CommentWritingTests
 			string source = new JavaScriptGenerator().Generate(Widget(separator));
 			ToolchainHarness.InTemporaryDirectory(directory =>
 			{
-				File.WriteAllText(Path.Combine(directory, "widget.js"), source);
+				File.WriteAllText(Path.Join(directory, "widget.js"), source);
 				(int exitCode, string output) = ToolchainHarness.Run(node, "--check widget.js", directory);
 				Assert.AreEqual(0, exitCode, $"JavaScript rejected the source with U+{(int)separator:X4}:{Environment.NewLine}{output}{Environment.NewLine}{source}");
 			});
@@ -132,7 +132,7 @@ public sealed partial class CommentWritingTests
 
 		ToolchainHarness.InTemporaryDirectory(directory =>
 		{
-			File.WriteAllText(Path.Combine(directory, "Widgets.csproj"), Project);
+			File.WriteAllText(Path.Join(directory, "Widgets.csproj"), Project);
 			foreach (char separator in UnicodeLineBreaks)
 			{
 				SourceFile file = Widget(separator);
@@ -144,7 +144,7 @@ public sealed partial class CommentWritingTests
 
 				file.Members.Clear();
 				file.Members.Add(scope);
-				File.WriteAllText(Path.Combine(directory, $"Widget{(int)separator:X4}.cs"), new CSharpGenerator().Generate(file));
+				File.WriteAllText(Path.Join(directory, $"Widget{(int)separator:X4}.cs"), new CSharpGenerator().Generate(file));
 			}
 
 			(int exitCode, string output) = ToolchainHarness.Run("dotnet", "build -nologo", directory);
