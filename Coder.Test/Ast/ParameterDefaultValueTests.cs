@@ -171,6 +171,34 @@ public class ParameterDefaultValueTests
 	}
 
 	/// <summary>
+	/// Tests that a default containing <c>/*</c>, or one that breaking <c>*/</c> apart would leave
+	/// containing it, opens no comment inside the default's comment, because Rust's block comments
+	/// nest and a nested one leaves the file unterminated (issue #384).
+	/// </summary>
+	/// <param name="language">The language, which names the generator.</param>
+	[TestMethod]
+	[DataRow("c")]
+	[DataRow("go")]
+	[DataRow("rust")]
+	public void ACommentedDefaultCannotOpenANestedComment(string language)
+	{
+		ILanguageGenerator generator = language switch
+		{
+			"c" => new CGenerator(),
+			"go" => new GoGenerator(),
+			_ => new RustGenerator(),
+		};
+
+		FunctionDeclaration function = new("find") { ReturnType = "int" };
+		function.Parameters.Add(new Parameter("pattern", "string") { IsOptional = true, DefaultValue = Literal.Text("src/**/*.rs") });
+		function.Body.Add(new ReturnStatement(Literal.Number(0)));
+
+		string generated = generator.Generate(function);
+
+		Assert.Contains("/* = \"src/ ** / *.rs\" */", generated, StringComparison.Ordinal, generated);
+	}
+
+	/// <summary>
 	/// Tests that the text form reads into literals, and that anything else is a name.
 	/// </summary>
 	[TestMethod]
