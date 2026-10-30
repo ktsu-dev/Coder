@@ -10,13 +10,15 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 /// <summary>
 /// Tests that the bitwise and shift operators on a <c>long</c>, <c>ulong</c> or <c>uint</c> give C#'s
-/// answer in JavaScript (#256).
+/// answer in JavaScript (#256), and that <c>~</c> and <c>&lt;&lt;</c> on the fixed-width integers give it
+/// in Python (#351).
 /// </summary>
 /// <remarks>
 /// JavaScript converts the operands of these operators to a signed 32-bit integer, so
 /// <c>1 | 4294967296</c> was <c>1</c> and a <c>uint</c> of three billion shifted right by one was
-/// negative. The generated code is run rather than read, since the wrong answer is a number like the
-/// right one.
+/// negative. Python's integers are unbounded, so <c>~</c> on a <c>uint</c> was negative and
+/// <c>1 &lt;&lt; 31</c> on an <c>int</c> did not wrap. The generated code is run rather than read, since the
+/// wrong answer is a number like the right one.
 /// </remarks>
 [TestClass]
 public class WideIntegerBitwiseOperatorTests
@@ -43,6 +45,22 @@ public class WideIntegerBitwiseOperatorTests
 		new("xor_assign_uint", "uint", "2147483648", Invariant(2147483648U ^ 1U), f => Assigning(f, AssignmentOperator.BitwiseXorAssign, new LiteralExpression<int>(1))),
 	];
 
+	/// <summary>
+	/// Python only: results past 2^53 are rounded by JavaScript's number conversion, which #256 accepted.
+	/// </summary>
+	private static readonly Case[] FixedWidthCases =
+	[
+		new("not_uint_5", "uint", "5", Invariant(~5U), f => Returning(f, new UnaryExpression(UnaryOperator.BitwiseNot, X()))),
+		new("not_ulong", "ulong", "5", Invariant(~5UL), f => Returning(f, new UnaryExpression(UnaryOperator.BitwiseNot, X()))),
+		new("not_int", "int", "5", Invariant(~5), f => Returning(f, new UnaryExpression(UnaryOperator.BitwiseNot, X()))),
+		new("shl_int", "int", "1", Invariant(1 << 31), f => Returning(f, new BinaryExpression(X(), BinaryOperator.LeftShift, new LiteralExpression<int>(31)))),
+		new("shl_int_overflow", "int", "3", Invariant(3 << 31), f => Returning(f, new BinaryExpression(X(), BinaryOperator.LeftShift, new LiteralExpression<int>(31)))),
+		new("shl_long_wrap", "long", "1", Invariant(1L << 63), f => Returning(f, new BinaryExpression(X(), BinaryOperator.LeftShift, new LiteralExpression<int>(63)))),
+		new("shl_ulong", "ulong", "3", Invariant(3UL << 63), f => Returning(f, new BinaryExpression(X(), BinaryOperator.LeftShift, new LiteralExpression<int>(63)))),
+		new("shl_assign_int", "int", "1", Invariant(1 << 31), f => Assigning(f, AssignmentOperator.LeftShiftAssign, new LiteralExpression<int>(31))),
+		new("shl_assign_uint", "uint", "2147483649", Invariant(2147483649U << 1), f => Assigning(f, AssignmentOperator.LeftShiftAssign, new LiteralExpression<int>(1))),
+	];
+
 	private static string Invariant(long value) => value.ToString(CultureInfo.InvariantCulture);
 
 	private static string Invariant(ulong value) => value.ToString(CultureInfo.InvariantCulture);
@@ -62,10 +80,12 @@ public class WideIntegerBitwiseOperatorTests
 		return function;
 	}
 
-	private static SourceFile File()
+	private static SourceFile File() => File(Cases);
+
+	private static SourceFile File(IEnumerable<Case> cases)
 	{
 		SourceFile file = new("main");
-		foreach (Case entry in Cases)
+		foreach (Case entry in cases)
 		{
 			FunctionDeclaration function = new(entry.Name) { ReturnType = new TypeReference(entry.Type) };
 			function.Parameters.Add(new Parameter("x", entry.Type));
@@ -105,6 +125,60 @@ public class WideIntegerBitwiseOperatorTests
 			Assert.AreEqual(0, exitCode, $"{output}{Environment.NewLine}{source}");
 			Assert.AreEqual(expected.ToString().Trim(), output.Trim().ReplaceLineEndings("\n"), source);
 		});
+	}
+
+	/// <summary>
+	/// Tests that the Python output computes <c>~</c> and <c>&lt;&lt;</c> at the width the operands declare.
+	/// </summary>
+	[TestMethod]
+	public void Python_FixedWidthBitwiseOperators_MatchCSharp()
+	{
+		string? python = ToolchainHarness.FindOnPath("--version", "python3", "python");
+		if (python is null)
+		{
+			Assert.Inconclusive("No Python interpreter on the path, so nothing was run.");
+			return;
+		}
+
+		Case[] cases = [.. Cases, .. FixedWidthCases];
+		string source = new PythonGenerator().Generate(File(cases));
+		StringBuilder module = new(source);
+		module.AppendLine();
+		StringBuilder expected = new();
+		foreach (Case entry in cases)
+		{
+			module.AppendLine(FormattableString.Invariant($"print(f\"{entry.Name} {{{entry.Name}({entry.Input})}}\")"));
+			expected.Append(FormattableString.Invariant($"{entry.Name} {entry.Expected}\n"));
+		}
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			System.IO.File.WriteAllText(Path.Combine(directory, "check.py"), module.ToString());
+			(int exitCode, string output) = ToolchainHarness.Run(python, "check.py", directory);
+			Assert.AreEqual(0, exitCode, $"{output}{Environment.NewLine}{source}");
+			Assert.AreEqual(expected.ToString().Trim(), output.Trim().ReplaceLineEndings("\n"), source);
+		});
+	}
+
+	/// <summary>
+	/// Tests that <c>~</c> on a signed integer, and the operators other than <c>&lt;&lt;</c>, are written as before in Python.
+	/// </summary>
+	[TestMethod]
+	public void Python_SignedNotAndOtherOperators_AreNotWrapped()
+	{
+		SourceFile file = new("main");
+		FunctionDeclaration function = new("mask") { ReturnType = new TypeReference("int") };
+		function.Parameters.Add(new Parameter("a", "int"));
+		function.Body.Add(new ReturnStatement(new BinaryExpression(new VariableReference("a"), BinaryOperator.RightShift, new LiteralExpression<int>(1))));
+		function.Body.Add(new ReturnStatement(new BinaryExpression(new VariableReference("u"), BinaryOperator.LeftShift, new VariableReference("a"))));
+		function.Body.Add(new ReturnStatement(new UnaryExpression(UnaryOperator.BitwiseNot, new VariableReference("a"))));
+		file.Members.Add(function);
+
+		string python = new PythonGenerator().Generate(file);
+		Assert.Contains("(a >> 1)", python, StringComparison.Ordinal, python);
+		Assert.Contains("(u << a)", python, StringComparison.Ordinal, python);
+		Assert.Contains("(~a)", python, StringComparison.Ordinal, python);
+		Assert.DoesNotContain("0xFFFFFFFF", python, StringComparison.Ordinal, python);
 	}
 
 	/// <summary>
