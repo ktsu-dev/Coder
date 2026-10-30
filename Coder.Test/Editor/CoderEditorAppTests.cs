@@ -613,6 +613,39 @@ public sealed class CoderEditorAppTests
 	}
 
 	/// <summary>
+	/// Tests that a document marked as a header is exported under a header's extension in C and C++,
+	/// and that one that is not keeps the implementation file's (issue #367).
+	/// </summary>
+	/// <remarks>
+	/// The export named every C++ file <c>.cpp</c> and every C file <c>.c</c>, so a header came out as
+	/// an implementation file starting with <c>#pragma once</c>, which an <c>#include</c> of the
+	/// header's name cannot find.
+	/// </remarks>
+	/// <param name="languageId">The language the pane previews.</param>
+	/// <param name="isHeader">Whether the document's root is marked as a header.</param>
+	/// <param name="extension">The extension the export should write.</param>
+	[TestMethod]
+	[DataRow("cpp", true, "hpp")]
+	[DataRow("cpp", false, "cpp")]
+	[DataRow("c", true, "h")]
+	[DataRow("c", false, "c")]
+	public void Export_NamesAHeaderDocumentAsAHeader(string languageId, bool isHeader, string extension)
+	{
+		DocumentStore store = NewStore();
+		CoderEditorApp app = NewApp(store, new EditorSettings { PreviewLanguageId = languageId });
+		SourceFile file = new("Physics") { IsHeader = isHeader };
+		file.Members.Add(new FieldDeclaration("limit", new TypeReference("int")) { IsConstant = true, InitialValue = Literal.Number(4) });
+		string document = WriteDocument(store, file, PathIn("physics"));
+		Assert.IsTrue(app.Open(document), app.Status);
+
+		string? written = app.Export(document);
+
+		Assert.IsNotNull(written, app.Status);
+		Assert.AreEqual(Path.Combine(root, $"physics.{extension}"), written);
+		Assert.AreEqual(isHeader, File.ReadAllText(written).Contains("#pragma once", StringComparison.Ordinal));
+	}
+
+	/// <summary>
 	/// Tests that an incomplete document is not written out, since what it would generate is not
 	/// source anybody wants on disk.
 	/// </summary>
