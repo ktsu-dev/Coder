@@ -617,9 +617,18 @@ public class RustGenerator : StandardLanguageGenerator
 
 		using Scope body = new(code);
 
+		// Restored in finally, so a member that throws cannot leave later output on this instance
+		// generated as though it were still inside the impl.
+		bool enclosingIsTraitImplementation = insideTraitImplementation;
 		insideTraitImplementation = true;
-		WriteMembers(classDecl.Members, code);
-		insideTraitImplementation = false;
+		try
+		{
+			WriteMembers(classDecl.Members, code);
+		}
+		finally
+		{
+			insideTraitImplementation = enclosingIsTraitImplementation;
+		}
 	}
 
 	/// <summary>
@@ -1034,28 +1043,35 @@ public class RustGenerator : StandardLanguageGenerator
 
 		using Scope body = new(code);
 
+		// Restored in finally, so a member that throws cannot leave later output on this instance
+		// generated as trait items.
+		bool enclosingIsTrait = insideTrait;
 		insideTrait = true;
-
-		bool first = true;
-		foreach (AstNode member in classDecl.Members.Where(member => member is FunctionDeclaration or FieldDeclaration))
+		try
 		{
-			if (!first)
+			bool first = true;
+			foreach (AstNode member in classDecl.Members.Where(member => member is FunctionDeclaration or FieldDeclaration))
 			{
-				code.NewLine();
+				if (!first)
+				{
+					code.NewLine();
+				}
+
+				first = false;
+
+				if (member is FunctionDeclaration function)
+				{
+					GenerateFunction(function, code, name);
+					continue;
+				}
+
+				GenerateInternal(member, code);
 			}
-
-			first = false;
-
-			if (member is FunctionDeclaration function)
-			{
-				GenerateFunction(function, code, name);
-				continue;
-			}
-
-			GenerateInternal(member, code);
 		}
-
-		insideTrait = false;
+		finally
+		{
+			insideTrait = enclosingIsTrait;
+		}
 	}
 
 	/// <summary>

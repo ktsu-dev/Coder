@@ -916,20 +916,27 @@ public class GoGenerator : StandardLanguageGenerator
 			code.WriteLine(contract);
 		}
 
+		// Restored in finally, so a member that throws cannot leave later output on this instance
+		// generated as interface members.
+		bool enclosingIsInterface = insideInterface;
 		insideInterface = true;
-
-		foreach (AstNode member in members)
+		try
 		{
-			if (member is FunctionDeclaration function)
+			foreach (AstNode member in members)
 			{
-				GenerateFunction(function, code, name);
-				continue;
+				if (member is FunctionDeclaration function)
+				{
+					GenerateFunction(function, code, name);
+					continue;
+				}
+
+				GenerateInternal(member, code);
 			}
-
-			GenerateInternal(member, code);
 		}
-
-		insideInterface = false;
+		finally
+		{
+			insideInterface = enclosingIsInterface;
+		}
 	}
 
 	/// <inheritdoc/>
