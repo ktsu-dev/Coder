@@ -540,56 +540,61 @@ public class CppGenerator : CFamilyGenerator
 		AstNode? previous = null;
 
 		insideType++;
-		foreach (AstNode member in classDecl.Members)
+		try
 		{
-			Visibility access = classDecl.Kind == TypeDeclarationKind.Interface
-				? Visibility.Public
-				: AccessOf(member);
-
-			// A blank line goes between two members when either says something about itself, when
-			// they are different kinds of thing, or where the access changes. A documented member
-			// needs air above it or its first comment line butts against the member before it and
-			// reads as belonging to that one; the member after a documented one needs the same, or it
-			// is swallowed into that block. Two of the same kind that say nothing stay together,
-			// which is what keeps a run of aliases, or of defaulted and deleted declarations, reading
-			// as one group rather than as four paragraphs.
-			if (!first && (NeedsSeparation(previous!, member) || access != current))
+			foreach (AstNode member in classDecl.Members)
 			{
-				// NewLine rather than WriteLine: a separator carrying the current indent is a line of
-				// trailing whitespace, which every formatter strips and every diff then shows.
-				code.NewLine();
-			}
+				Visibility access = classDecl.Kind == TypeDeclarationKind.Interface
+					? Visibility.Public
+					: AccessOf(member);
 
-			first = false;
-			previous = member;
+				// A blank line goes between two members when either says something about itself, when
+				// they are different kinds of thing, or where the access changes. A documented member
+				// needs air above it or its first comment line butts against the member before it and
+				// reads as belonging to that one; the member after a documented one needs the same, or it
+				// is swallowed into that block. Two of the same kind that say nothing stay together,
+				// which is what keeps a run of aliases, or of defaulted and deleted declarations, reading
+				// as one group rather than as four paragraphs.
+				if (!first && (NeedsSeparation(previous!, member) || access != current))
+				{
+					// NewLine rather than WriteLine: a separator carrying the current indent is a line of
+					// trailing whitespace, which every formatter strips and every diff then shows.
+					code.NewLine();
+				}
 
-			if (access != current)
-			{
-				// An access label sits at the class's own indentation rather than the members', which
-				// is what makes it read as dividing them rather than as one of them.
-				code.Outdent();
-				code.WriteLine($"{SpellVisibility(access)}:");
-				code.Indent();
-				current = access;
-			}
+				first = false;
+				previous = member;
 
-			switch (member)
-			{
-				case VariableDeclaration field:
-					GenerateField(field, code);
-					break;
+				if (access != current)
+				{
+					// An access label sits at the class's own indentation rather than the members', which
+					// is what makes it read as dividing them rather than as one of them.
+					code.Outdent();
+					code.WriteLine($"{SpellVisibility(access)}:");
+					code.Indent();
+					current = access;
+				}
 
-				case FunctionDeclaration method:
-					GenerateFunction(method, code, classDecl.Name);
-					break;
+				switch (member)
+				{
+					case VariableDeclaration field:
+						GenerateField(field, code);
+						break;
 
-				default:
-					GenerateInternal(member, code);
-					break;
+					case FunctionDeclaration method:
+						GenerateFunction(method, code, classDecl.Name);
+						break;
+
+					default:
+						GenerateInternal(member, code);
+						break;
+				}
 			}
 		}
-
-		insideType--;
+		finally
+		{
+			insideType--;
+		}
 	}
 
 	/// <inheritdoc/>
