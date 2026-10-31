@@ -161,6 +161,54 @@ public class RustGeneratedSourceCompilesTests
 	}
 
 	/// <summary>
+	/// Tests that <c>&lt;</c> and <c>&gt;=</c> between two strings, and between a string and a literal
+	/// on either side, compile and order by content: Rust compares a <c>String</c> with a
+	/// <c>String</c> or a <c>&amp;str</c> with a <c>&amp;str</c>, but not one with the other (#372).
+	/// </summary>
+	[TestMethod]
+	public void StringOrderingComparisons_CompileAndRun()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "rustc") is null)
+		{
+			Assert.Inconclusive("No Rust compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		SourceFile file = StringOrderingFixture.Build();
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new RustGenerator().Generate(file);
+			string allowed = "#![allow(dead_code, unused_variables, unused_mut, unused_parens)]";
+			string driver = """
+				fn main() {
+				    let checks = [
+				        before(String::from("a"), String::from("b")),
+				        !before(String::from("b"), String::from("a")),
+				        atLeast(String::from("b"), String::from("a")),
+				        early(String::from("a")),
+				        !early(String::from("z")),
+				        lateOrLater(String::from("m")),
+				        literalFirst(String::from("z")),
+				        !literalFirst(String::from("a")),
+				    ];
+				    std::process::exit(if checks.iter().all(|c| *c) { 0 } else { 1 });
+				}
+				""";
+
+			File.WriteAllText(
+				Path.Combine(directory, "ordering.rs"),
+				$"{allowed}{Environment.NewLine}#![allow(non_snake_case)]{Environment.NewLine}{source}{Environment.NewLine}{driver}");
+
+			(int exitCode, string output) = ToolchainHarness.Run("rustc", "--edition 2021 -o ordering ordering.rs", directory);
+			Assert.AreEqual(0, exitCode, $"rustc rejected the generated source:{Environment.NewLine}{source}{Environment.NewLine}{output}");
+
+			(int runExit, string runOutput) = ToolchainHarness.Run(Path.Combine(directory, "ordering"), string.Empty, directory);
+			Assert.AreEqual(0, runExit, $"The generated comparisons ordered strings wrongly:{Environment.NewLine}{source}{Environment.NewLine}{runOutput}");
+		});
+	}
+
+	/// <summary>
 	/// Tests that a string literal compiles in every other place an owned <c>String</c> receives one:
 	/// a constant, a constructor's initialiser, a struct literal's field, an assignment to a field,
 	/// and both branches of a conditional answering one.

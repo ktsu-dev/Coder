@@ -2243,11 +2243,26 @@ public class RustGenerator : StandardLanguageGenerator
 	/// as <c>String + &amp;str</c>, so a literal on the left, or a <c>String</c> on the right, does
 	/// not compile; <c>format!</c> takes any mix of the two by reference and moves neither. A chain
 	/// of joins is one call with one placeholder per operand.
+	/// <para>
+	/// An ordering comparison between a <c>String</c> and a string literal borrows the
+	/// <c>String</c> as a <c>&amp;str</c>, because <c>String</c> implements <c>PartialOrd</c> with
+	/// itself only, so <c>a &lt; "m"</c> is E0308 where <c>a == "m"</c> compiles (#372).
+	/// </para>
 	/// </remarks>
 	protected override void GenerateBinary(BinaryExpression binary, CodeBlocker code)
 	{
 		Ensure.NotNull(binary);
 		Ensure.NotNull(code);
+
+		if (IsOwnedStringAgainstLiteral(binary))
+		{
+			code.Write("(");
+			WriteBorrowedString(binary.Left, code);
+			code.Write($" {GetOperatorSpelling(binary.Operator)} ");
+			WriteBorrowedString(binary.Right, code);
+			code.Write(")");
+			return;
+		}
 
 		if (!IsStringJoin(binary))
 		{
@@ -2276,6 +2291,32 @@ public class RustGenerator : StandardLanguageGenerator
 	private bool IsStringJoin(BinaryExpression binary) =>
 		binary.Operator == BinaryOperator.Add
 		&& (IsOwnedString(StaticType(binary.Left)) || IsOwnedString(StaticType(binary.Right)));
+
+	/// <summary>
+	/// Reports whether an ordering comparison sets an owned <c>String</c> against a string literal.
+	/// </summary>
+	/// <param name="binary">The expression to inspect.</param>
+	/// <returns>True for <c>&lt;</c>, <c>&lt;=</c>, <c>&gt;</c> or <c>&gt;=</c> with a literal on one side
+	/// and a value known to be a <c>String</c> on the other.</returns>
+	private bool IsOwnedStringAgainstLiteral(BinaryExpression binary) =>
+		binary.Operator is BinaryOperator.LessThan or BinaryOperator.LessThanOrEqual
+			or BinaryOperator.GreaterThan or BinaryOperator.GreaterThanOrEqual
+		&& ((binary.Left is LiteralExpression<string> && binary.Right is not LiteralExpression<string> && IsOwnedString(StaticType(binary.Right)))
+			|| (binary.Right is LiteralExpression<string> && binary.Left is not LiteralExpression<string> && IsOwnedString(StaticType(binary.Left))));
+
+	/// <summary>
+	/// Writes one side of a string comparison as a <c>&amp;str</c>.
+	/// </summary>
+	/// <param name="operand">The operand: a literal, which already is one, or a <c>String</c>.</param>
+	/// <param name="code">The writer to emit into.</param>
+	private void WriteBorrowedString(Expression operand, CodeBlocker code)
+	{
+		GenerateInternal(operand, code);
+		if (operand is not LiteralExpression<string>)
+		{
+			code.Write(".as_str()");
+		}
+	}
 
 	/// <summary>
 	/// Flattens a chain of string joins into its operands, in order.
