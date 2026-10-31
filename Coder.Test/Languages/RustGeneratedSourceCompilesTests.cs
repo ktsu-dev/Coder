@@ -852,6 +852,53 @@ public class RustGeneratedSourceCompilesTests
 	}
 
 	/// <summary>
+	/// Tests that a trait requirement's parameter does not hide a same-named mutable static from a
+	/// function written after it, so the function's assignment is still wrapped in <c>unsafe</c> and
+	/// compiles (#397).
+	/// </summary>
+	[TestMethod]
+	public void BodilessParameterNamedLikeAStatic_LeavesLaterAssignmentsUnsafe()
+	{
+		SourceFile file = new("counter");
+		file.Members.Add(new FieldDeclaration("count", new TypeReference("int")) { InitialValue = Literal.Number(0) });
+
+		ClassDeclaration counter = new("ICounter") { Kind = TypeDeclarationKind.Interface };
+		FunctionDeclaration reset = new("Reset");
+		reset.Parameters.Add(new Parameter("count", "int"));
+		counter.Members.Add(reset);
+		file.Members.Add(counter);
+
+		FunctionDeclaration increment = new("increment");
+		increment.Body.Add(new AssignmentStatement(new VariableReference("count"), Literal.Number(1), AssignmentOperator.AddAssign));
+		file.Members.Add(increment);
+
+		string source = new RustGenerator().Generate(file);
+		StringAssert.Contains(source, "unsafe {", StringComparison.Ordinal, source);
+
+		if (ToolchainHarness.FindOnPath("--version", "rustc") is null)
+		{
+			Assert.Inconclusive("No Rust compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string allowed = "#![allow(dead_code, non_snake_case)]";
+
+			File.WriteAllText(
+				Path.Combine(directory, "counter.rs"),
+				$"{allowed}{Environment.NewLine}{source}");
+
+			(int exitCode, string output) = ToolchainHarness.Run(
+				"rustc",
+				"--crate-type lib --edition 2021 -o counter.rlib counter.rs",
+				directory);
+
+			Assert.AreEqual(0, exitCode, $"rustc rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+		});
+	}
+
+	/// <summary>
 	/// Gets a string the holder does not own, which is the one Rust asks for wherever it is only read.
 	/// </summary>
 	/// <returns>The type.</returns>
