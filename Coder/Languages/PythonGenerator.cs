@@ -332,8 +332,8 @@ public class PythonGenerator : StandardLanguageGenerator
 	{
 		LiteralExpression<int> literal => literal.Value != 0,
 		LiteralExpression<long> literal => literal.Value != 0,
-		LiteralExpression<float> literal => literal.Value != 0,
-		LiteralExpression<double> literal => literal.Value != 0,
+		LiteralExpression<float> literal => literal.Value.CompareTo(0f) != 0,
+		LiteralExpression<double> literal => literal.Value.CompareTo(0d) != 0,
 		_ => false,
 	};
 
