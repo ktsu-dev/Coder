@@ -1819,19 +1819,19 @@ public class CSharpGenerator : LanguageGeneratorBase
 
 	private void GenerateVariableDeclaration(VariableDeclaration varDecl, CodeBlocker code)
 	{
-		if (!varDecl.IsTypeInferred && varDecl.Type is TypeReference declaredType)
+		// C# infers a type only from an initialiser (CS0818), so a declaration without one says the
+		// type it was given, whether or not it asked for inference.
+		TypeReference? saidType = varDecl.IsTypeInferred && varDecl.InitialValue is not null ? null : varDecl.Type;
+		if (saidType is not null)
 		{
-			shiftCountTypes[varDecl.Name] = declaredType;
+			shiftCountTypes[varDecl.Name] = saidType;
 		}
 		else
 		{
 			shiftCountTypes.Remove(varDecl.Name);
 		}
 
-		// Use type or var for type inference
-		string type = varDecl.IsTypeInferred || varDecl.Type is null
-			? "var"
-			: MapToCSType(varDecl.Type);
+		string type = saidType is null ? "var" : MapToCSType(saidType);
 
 		// A local has no access modifier and a field does. A variable of a namespace or file is a field
 		// of the class holding it, and as visible as the scope it was in; a variable of a type is a
@@ -1853,6 +1853,12 @@ public class CSharpGenerator : LanguageGeneratorBase
 				WriteInexpressible(code, $"{varDecl.Name}: C# infers no type for a field, and nothing here says one");
 				type = UnknownTypeName;
 			}
+		}
+		else if (varDecl.InitialValue is null && string.Equals(type, "var", StringComparison.Ordinal))
+		{
+			// A local with neither a type nor an initialiser has nothing to infer from.
+			WriteInexpressible(code, $"{varDecl.Name}: C# infers a type only from an initialiser, and nothing here says one");
+			type = UnknownTypeName;
 		}
 		if ((isField ? SpellVisibility(varDecl.Visibility) ?? DefaultVisibility : SpellVisibility(varDecl.Visibility)) is string modifier)
 		{

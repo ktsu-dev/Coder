@@ -2,6 +2,7 @@
 
 Changes since v3.19.0:
 
+- Say a C# local's type when it has no initialiser to infer from [patch] (Claude)
 - Work out the C# shift-operator answer again on every generation [patch] (Claude)
 - Stop suppressing CA1806 on a C# method whose result must be used [patch] (Claude)
 - Escape keyword-named identifiers in the Python generator [patch] (Claude)
