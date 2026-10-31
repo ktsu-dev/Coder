@@ -302,14 +302,52 @@ public class PythonGenerator : StandardLanguageGenerator
 			yield return "from enum import IntEnum";
 		}
 
-		if (ContainsFloatingRemainder(file))
+		if (ContainsFloatingRemainder(file) || ContainsInScope(file, IsGuardedFloatingDivision))
 		{
 			yield return MathModule;
 		}
 	}
 
 	/// <summary>
-	/// The module that defines <c>math.fmod</c>.
+	/// Reads whether a node is a floating quotient that <see cref="WriteFloatingDivision"/> guards,
+	/// and so needs <c>math</c>.
+	/// </summary>
+	private bool IsGuardedFloatingDivision(AstNode node) => node switch
+	{
+		BinaryExpression { Operator: BinaryOperator.Divide } binary => NeedsDivisionGuard(binary.Left, binary.Right),
+		AssignmentStatement { Operator: AssignmentOperator.DivideAssign } assignment => NeedsDivisionGuard(assignment.Target, assignment.Value),
+		_ => false,
+	};
+
+	/// <summary>
+	/// Reads whether a quotient is floating and its divisor can be zero.
+	/// </summary>
+	/// <remarks>
+	/// A divisor that is a literal other than zero cannot raise, so <c>x / 2.0</c> is left as it is.
+	/// </remarks>
+	private bool NeedsDivisionGuard(Expression dividend, Expression divisor) =>
+		FloatingRemainderType(dividend, divisor) is not null && !IsNonZeroLiteral(divisor);
+
+	private static bool IsNonZeroLiteral(Expression operand) => operand switch
+	{
+		LiteralExpression<int> literal => literal.Value != 0,
+		LiteralExpression<long> literal => literal.Value != 0,
+		LiteralExpression<float> literal => literal.Value != 0,
+		LiteralExpression<double> literal => literal.Value != 0,
+		_ => false,
+	};
+
+	private static bool IsFiniteLiteral(Expression operand) => operand switch
+	{
+		LiteralExpression<int> or LiteralExpression<long> => true,
+		LiteralExpression<float> literal => float.IsFinite(literal.Value),
+		LiteralExpression<double> literal => double.IsFinite(literal.Value),
+		_ => false,
+	};
+
+	/// <summary>
+	/// The module that defines <c>math.fmod</c>, and the IEEE 754 results a floating quotient or
+	/// remainder by zero gives everywhere else.
 	/// </summary>
 	private const string MathModule = "math";
 
@@ -325,14 +363,117 @@ public class PythonGenerator : StandardLanguageGenerator
 	/// <remarks>
 	/// <c>math.fmod</c> truncates, matching C's <c>fmod</c>. Python has one floating type, so a
 	/// remainder taken in <c>float</c> is written the same as one taken in <c>double</c>.
+	/// <para>
+	/// <c>math.fmod</c> raises where IEEE 754 gives NaN, for a zero divisor or an infinite dividend,
+	/// and every other target returns NaN there (#425). Those two cases are answered before it is
+	/// called, each only where the operand could be one. <c>math.fmod(a, inf)</c> is already <c>a</c>,
+	/// and a NaN operand already gives NaN.
+	/// </para>
 	/// </remarks>
 	protected override void WriteFloatingRemainder(Expression dividend, Expression divisor, string floatingType, CodeBlocker code)
 	{
+		Ensure.NotNull(dividend);
+		Ensure.NotNull(divisor);
 		Ensure.NotNull(code);
-		code.Write("math.fmod(");
-		GenerateInternal(dividend, code);
+		bool divisorCanBeZero = !IsNonZeroLiteral(divisor);
+		bool dividendCanBeInfinite = !IsFiniteLiteral(dividend);
+		if (!divisorCanBeZero && !dividendCanBeInfinite)
+		{
+			code.Write("math.fmod(");
+			GenerateInternal(dividend, code);
+			code.Write(", ");
+			GenerateInternal(divisor, code);
+			code.Write(")");
+			return;
+		}
+
+		WriteReadingTwice(dividend, divisor, code, (left, right) =>
+		{
+			code.Write("(math.nan if ");
+			if (divisorCanBeZero)
+			{
+				right();
+				code.Write(" == 0");
+			}
+
+			if (divisorCanBeZero && dividendCanBeInfinite)
+			{
+				code.Write(" or ");
+			}
+
+			if (dividendCanBeInfinite)
+			{
+				code.Write("math.isinf(");
+				left();
+				code.Write(")");
+			}
+
+			code.Write(" else math.fmod(");
+			left();
+			code.Write(", ");
+			right();
+			code.Write("))");
+		});
+	}
+
+	/// <summary>
+	/// Writes the IEEE 754 quotient of two operands, at least one of them floating.
+	/// </summary>
+	/// <param name="dividend">The left operand.</param>
+	/// <param name="divisor">The right operand.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// Python's <c>/</c> raises <c>ZeroDivisionError</c> for a zero divisor, where every other target
+	/// gives an infinity signed by both operands, or NaN when the dividend is zero or NaN (#425). The
+	/// zero divisor is answered before <c>/</c> is reached. <c>-0.0</c> is a zero, so it reaches the
+	/// same branch, and <c>math.copysign</c> reads its sign.
+	/// </remarks>
+	private void WriteFloatingDivision(Expression dividend, Expression divisor, CodeBlocker code) =>
+		WriteReadingTwice(dividend, divisor, code, (left, right) =>
+		{
+			code.Write("(");
+			left();
+			code.Write(" / ");
+			right();
+			code.Write(" if ");
+			right();
+			code.Write(" != 0 else math.copysign(math.inf, ");
+			left();
+			code.Write(") * math.copysign(1.0, ");
+			right();
+			code.Write(") if ");
+			left();
+			code.Write(" != 0 and not math.isnan(");
+			left();
+			code.Write(") else math.nan)");
+		});
+
+	/// <summary>
+	/// Writes an expression that reads each of two operands more than once.
+	/// </summary>
+	/// <param name="left">The left operand.</param>
+	/// <param name="right">The right operand.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <param name="write">Writes the expression, given a writer for each operand.</param>
+	/// <remarks>
+	/// An operand that is a literal or a variable reads the same every time; when either is anything
+	/// else both are bound once, as the parameters of a lambda called where it stands, so a call is not
+	/// made twice.
+	/// </remarks>
+	private void WriteReadingTwice(Expression left, Expression right, CodeBlocker code, Action<Action, Action> write)
+	{
+		if (IsReadTwiceSafely(left) && IsReadTwiceSafely(right))
+		{
+			write(() => GenerateInternal(left, code), () => GenerateInternal(right, code));
+			return;
+		}
+
+		code.Write("(lambda a, b: ");
+		write(() => code.Write("a"), () => code.Write("b"));
+		code.Write(")(");
+		GenerateInternal(left, code);
 		code.Write(", ");
-		GenerateInternal(divisor, code);
+		GenerateInternal(right, code);
 		code.Write(")");
 	}
 
@@ -1142,6 +1283,12 @@ public class PythonGenerator : StandardLanguageGenerator
 		Ensure.NotNull(binary);
 		Ensure.NotNull(code);
 
+		if (binary.Operator == BinaryOperator.Divide && NeedsDivisionGuard(binary.Left, binary.Right))
+		{
+			WriteFloatingDivision(binary.Left, binary.Right, code);
+			return;
+		}
+
 		if (binary.Operator is not (BinaryOperator.Divide or BinaryOperator.Modulo) || !IsIntegerArithmetic(binary))
 		{
 			base.GenerateBinary(binary, code);
@@ -1149,20 +1296,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		}
 
 		bool divide = binary.Operator == BinaryOperator.Divide;
-
-		if (IsReadTwiceSafely(binary.Left) && IsReadTwiceSafely(binary.Right))
-		{
-			WriteTruncated(code, divide, () => GenerateInternal(binary.Left, code), () => GenerateInternal(binary.Right, code));
-			return;
-		}
-
-		code.Write("(lambda a, b: ");
-		WriteTruncated(code, divide, () => code.Write("a"), () => code.Write("b"));
-		code.Write(")(");
-		GenerateInternal(binary.Left, code);
-		code.Write(", ");
-		GenerateInternal(binary.Right, code);
-		code.Write(")");
+		WriteReadingTwice(binary.Left, binary.Right, code, (left, right) => WriteTruncated(code, divide, left, right));
 	}
 
 	/// <inheritdoc/>
@@ -1187,6 +1321,15 @@ public class PythonGenerator : StandardLanguageGenerator
 		};
 
 		BinaryExpression? binary = op is null ? null : new(assignment.Target, op.Value, assignment.Value);
+		if (binary is { Operator: BinaryOperator.Divide } && NeedsDivisionGuard(binary.Left, binary.Right))
+		{
+			GenerateInternal(assignment.Target, code);
+			code.Write(" = ");
+			WriteFloatingDivision(binary.Left, binary.Right, code);
+			EndStatement(code);
+			return;
+		}
+
 		if (binary is null || !IsIntegerArithmetic(binary))
 		{
 			base.GenerateAssignmentStatement(assignment, code);
@@ -1240,7 +1383,9 @@ public class PythonGenerator : StandardLanguageGenerator
 	private static bool IsReadTwiceSafely(Expression operand) =>
 		operand is VariableReference
 			or LiteralExpression<int>
-			or LiteralExpression<long>;
+			or LiteralExpression<long>
+			or LiteralExpression<float>
+			or LiteralExpression<double>;
 
 	/// <summary>
 	/// Maps a binary operator to its Python spelling.
