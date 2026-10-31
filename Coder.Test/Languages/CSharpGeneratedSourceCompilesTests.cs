@@ -442,4 +442,68 @@ public class CSharpGeneratedSourceCompilesTests
 			Assert.AreEqual(0, exitCode, $"C# rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
 		});
 	}
+
+	/// <summary>
+	/// Tests that the class holding a scope's functions does not take the name of a nested namespace
+	/// beside it, at namespace and at file scope, nor fall back to a name a sibling already has (#429).
+	/// </summary>
+	[TestMethod]
+	public void ScopeHolderBesideASameNamedNamespace_Compiles()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "dotnet") is null)
+		{
+			Assert.Inconclusive("No dotnet on the path, so nothing was compiled.");
+			return;
+		}
+
+		static FunctionDeclaration Returning(string name)
+		{
+			FunctionDeclaration function = new(name) { ReturnType = "int" };
+			function.Body.Add(new ReturnStatement(Literal.Number(2)));
+			return function;
+		}
+
+		// namespace Physics { namespace Physics { class Body } int gravity(); class World }
+		NamespaceDeclaration physics = new("Physics");
+		NamespaceDeclaration inner = new("Physics");
+		inner.Members.Add(new ClassDeclaration("Body"));
+		physics.Members.Add(inner);
+		physics.Members.Add(Returning("gravity"));
+		physics.Members.Add(new ClassDeclaration("World"));
+
+		// At file scope the holder wants Globals, which a namespace has, and then GlobalsGlobals,
+		// which a class has.
+		NamespaceDeclaration globals = new("Globals.Inner");
+		globals.Members.Add(new ClassDeclaration("Marker"));
+
+		SourceFile file = new("Generated");
+		file.Members.Add(physics);
+		file.Members.Add(globals);
+		file.Members.Add(new ClassDeclaration("GlobalsGlobals"));
+		file.Members.Add(Returning("half"));
+
+		const string HolderDriver = """
+			public static class Driver
+			{
+				public static int Use() =>
+					global::Physics.PhysicsGlobals.gravity()
+					+ global::GlobalsGlobals2.half()
+					+ (new global::Physics.Physics.Body() is null ? 0 : 1)
+					+ (new global::Physics.World() is null ? 0 : 1)
+					+ (new global::Globals.Inner.Marker() is null ? 0 : 1)
+					+ (new global::GlobalsGlobals() is null ? 0 : 1);
+			}
+			""";
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new CSharpGenerator().Generate(file);
+			File.WriteAllText(Path.Combine(directory, "Generated.csproj"), Project);
+			File.WriteAllText(Path.Combine(directory, "Driver.cs"), HolderDriver);
+			File.WriteAllText(Path.Combine(directory, "Generated.cs"), source);
+
+			(int exitCode, string output) = ToolchainHarness.Run("dotnet", "build -nologo", directory);
+			Assert.AreEqual(0, exitCode, $"C# rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+		});
+	}
 }

@@ -884,18 +884,38 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// </summary>
 	/// <param name="name">The name wanted.</param>
 	/// <param name="siblings">Everything else declared in the scope.</param>
-	/// <returns>The name, or the name with a suffix when a sibling has it (CS0101).</returns>
+	/// <returns>
+	/// The name, or the name with a suffix when a sibling has it (CS0101), and a number after the
+	/// suffix when a sibling has that too.
+	/// </returns>
+	/// <remarks>
+	/// A nested namespace claims the first segment of its name, because that is the name it declares
+	/// in this scope: <c>namespace Physics.Units</c> beside the class takes <c>Physics</c> (#429).
+	/// </remarks>
 	private static string UnclaimedName(string name, IEnumerable<AstNode> siblings)
 	{
-		bool claimed = siblings.Any(sibling => sibling switch
+		HashSet<string> claimed = new(siblings.Select(sibling => sibling switch
 		{
-			ClassDeclaration type => string.Equals(type.Name, name, StringComparison.Ordinal),
-			EnumDeclaration type => string.Equals(type.Name, name, StringComparison.Ordinal),
-			UsingAlias alias => string.Equals(alias.Name, name, StringComparison.Ordinal),
-			_ => false,
-		});
+			ClassDeclaration type => type.Name,
+			EnumDeclaration type => type.Name,
+			UsingAlias alias => alias.Name,
+			NamespaceDeclaration ns => NamespaceDeclaration.Split(ns.Name) is [string head, ..] ? head : null,
+			_ => null,
+		}).OfType<string>(), StringComparer.Ordinal);
 
-		return claimed ? $"{name}{GlobalsClassName}" : name;
+		if (!claimed.Contains(name))
+		{
+			return name;
+		}
+
+		string suffixed = $"{name}{GlobalsClassName}";
+		string candidate = suffixed;
+		for (int counter = 2; claimed.Contains(candidate); counter++)
+		{
+			candidate = $"{suffixed}{counter}";
+		}
+
+		return candidate;
 	}
 
 	/// <summary>
