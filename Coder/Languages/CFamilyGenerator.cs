@@ -175,6 +175,50 @@ public abstract class CFamilyGenerator : StandardLanguageGenerator
 		return $"{SpellType(element)}{declared}{(type.IsArray ? "[]" : string.Empty)}";
 	}
 
+	/// <summary>
+	/// Spells a declaration whose value never changes, up to and including its name.
+	/// </summary>
+	/// <param name="type">The type being declared.</param>
+	/// <param name="name">The name being declared, or empty for an unnamed one.</param>
+	/// <returns>The declarator with <c>const</c> written once, where it makes the value constant.</returns>
+	/// <remarks>
+	/// A constant's <c>const</c> qualifies what the name holds. For a pointer that is the pointer, so it
+	/// goes after the <c>*</c>: a leading one qualifies what is pointed at and leaves the pointer
+	/// assignable, which is how a C <c>string</c> constant, spelled <c>const char*</c>, stayed
+	/// reassignable. For anything else it goes in front, unless the type already starts with one,
+	/// because <c>const const T</c> is an error in C++ and a warning in C (#415).
+	/// </remarks>
+	protected string SpellConstantDeclarator(TypeReference type, string name)
+	{
+		Ensure.NotNull(type);
+		Ensure.NotNull(name);
+
+		TypeReference element = type.IsArray ? type.Clone() : type;
+		if (type.IsArray)
+		{
+			element.IsArray = false;
+		}
+
+		string spelled = SpellType(element);
+		string qualified;
+		if (spelled.EndsWith('*'))
+		{
+			qualified = $"{spelled} const";
+		}
+		else if (spelled.StartsWith("const ", StringComparison.Ordinal))
+		{
+			qualified = spelled;
+		}
+		else
+		{
+			qualified = $"const {spelled}";
+		}
+
+		string declared = name.Length == 0 ? string.Empty : $" {EscapeIdentifier(name)}";
+
+		return $"{qualified}{declared}{(type.IsArray ? "[]" : string.Empty)}";
+	}
+
 	/// <inheritdoc/>
 	/// <remarks>
 	/// A designated initialiser, which C invented and C++20 adopted — with the one difference that
