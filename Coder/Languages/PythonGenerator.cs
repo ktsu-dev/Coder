@@ -152,7 +152,9 @@ public class PythonGenerator : StandardLanguageGenerator
 
 		if (declaration.IsAutomatic)
 		{
-			code.WriteLine($"{name}{annotation} = None");
+			code.Write($"{name}{annotation} = ");
+			WriteUnassignedValue(declaration.Type, code);
+			code.WriteLine();
 			return;
 		}
 
@@ -495,9 +497,11 @@ public class PythonGenerator : StandardLanguageGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
-	/// A field is written as an annotated class attribute. One with no initialiser is left as a bare
-	/// annotation, which is what a dataclass and a type checker both read as "this field exists and
-	/// has this type" without also claiming a value for it.
+	/// A field is written as an annotated class attribute. One with no initialiser is given its type's
+	/// zero, or <c>None</c> where the type has none, because a bare annotation creates no attribute:
+	/// <c>self.count += 1</c> would raise <c>AttributeError</c> on a fresh instance, where every other
+	/// target starts the field at zero (#345). Each value it can be given is immutable, so a class-level
+	/// default is safe to share between instances.
 	/// </remarks>
 	protected override void GenerateFieldDeclaration(FieldDeclaration field, CodeBlocker code)
 	{
@@ -517,12 +521,29 @@ public class PythonGenerator : StandardLanguageGenerator
 			code.Write(" = ");
 			GenerateInternal(field.InitialValue, code);
 		}
-		else if (field.Type is null && field.InitialValue is null)
+		else if (field.InitialValue is null)
 		{
-			code.Write(" = None");
+			code.Write(" = ");
+			WriteUnassignedValue(field.Type, code);
 		}
 
 		code.WriteLine();
+	}
+
+	/// <summary>
+	/// Writes the value a field or automatic property holds before anything is assigned to it.
+	/// </summary>
+	/// <param name="type">The declared type, or null where none is declared.</param>
+	/// <param name="code">The writer to emit into.</param>
+	private void WriteUnassignedValue(TypeReference? type, CodeBlocker code)
+	{
+		if (ZeroValue(type) is Expression zero)
+		{
+			GenerateInternal(zero, code);
+			return;
+		}
+
+		code.Write("None");
 	}
 
 	/// <summary>

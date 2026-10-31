@@ -375,6 +375,38 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 		_ => false,
 	};
 
+	/// <summary>
+	/// Reads the value a field or automatic property of a type holds before anything is assigned to it.
+	/// </summary>
+	/// <param name="type">The declared type, or null where none is declared.</param>
+	/// <returns>The type's zero as a literal, or null where the type has no obvious one.</returns>
+	/// <remarks>
+	/// A field with no initialiser is value-initialised, so a default-constructed instance is the one
+	/// the declaration described: C++ writes <c>{}</c>, C# and Go start at zero and Rust uses
+	/// <c>Default</c>. A target that leaves an undeclared value unset writes this instead (#345). The
+	/// answer is a literal rather than its text, so each target spells it with its own literal writer.
+	/// </remarks>
+	protected static Expression? ZeroValue(TypeReference? type)
+	{
+		if (type is not { IsArray: false, Indirection: TypeIndirection.None, TypeArguments.Count: 0, Name: string name })
+		{
+			return null;
+		}
+
+		if (IntegerTypeNames.Contains(name))
+		{
+			return Literal.Number(0);
+		}
+
+		return name switch
+		{
+			"float" or "double" => Literal.DecimalValue(0.0),
+			"bool" => Literal.Bool(false),
+			"string" or "str" => Literal.Text(string.Empty),
+			_ => null,
+		};
+	}
+
 	private static readonly HashSet<string> IntegerTypeNames = new(StringComparer.Ordinal)
 	{
 		"int", "long", "short", "byte", "sbyte", "uint", "ulong", "ushort",
