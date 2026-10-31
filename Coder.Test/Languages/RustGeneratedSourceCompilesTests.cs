@@ -911,4 +911,89 @@ public class RustGeneratedSourceCompilesTests
 			Assert.AreEqual(0, exitCode, $"rustc rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
 		});
 	}
+
+	/// <summary>
+	/// Tests that a generic struct whose type parameters no field mentions compiles, built through a
+	/// constructor and through a struct literal, and that a parameter a field does mention gets no
+	/// marker (#387).
+	/// </summary>
+	[TestMethod]
+	public void GenericStructsWithUnusedTypeParameters_CompileAndRun()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "rustc") is null)
+		{
+			Assert.Inconclusive("No Rust compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		// struct Holder<T> { count: int } with a static method and a constructor setting count.
+		ClassDeclaration holder = new("Holder") { Kind = TypeDeclarationKind.Struct };
+		holder.TypeParameters.Add(new TypeParameter("T"));
+		holder.Members.Add(new FieldDeclaration("count", "int") { Visibility = Visibility.Public });
+		FunctionDeclaration size = new("size") { ReturnType = "int", IsStatic = true };
+		size.Body.Add(new ReturnStatement(Literal.Number(2)));
+		holder.Members.Add(size);
+		FunctionDeclaration ctor = new("Holder") { Kind = FunctionKind.Constructor };
+		ctor.Parameters.Add(new Parameter("count", "int"));
+		ctor.Initialisers.Add(new MemberInitialiser("count", new VariableReference("count")));
+		holder.Members.Add(ctor);
+
+		// struct Tagged<T, U> { id: int }, built with a struct literal outside its own impl.
+		ClassDeclaration tagged = new("Tagged") { Kind = TypeDeclarationKind.Struct };
+		tagged.TypeParameters.Add(new TypeParameter("T"));
+		tagged.TypeParameters.Add(new TypeParameter("U"));
+		tagged.Members.Add(new FieldDeclaration("id", "int") { Visibility = Visibility.Public });
+
+		ConstructionExpression literal = new(new TypeReference("Tagged"));
+		literal.Arguments.Add(new MemberInitialiser("id", Literal.Number(7)));
+		FunctionDeclaration tag = new("tag")
+		{
+			ReturnType = new TypeReference("Tagged") { TypeArguments = { new TypeReference("int"), new TypeReference("bool") } },
+		};
+		tag.Body.Add(new ReturnStatement(literal));
+
+		// struct Wrapper<T> { value: list<T> } mentions T, so it needs no marker.
+		ClassDeclaration wrapper = new("Wrapper") { Kind = TypeDeclarationKind.Struct };
+		wrapper.TypeParameters.Add(new TypeParameter("T"));
+		wrapper.Members.Add(new FieldDeclaration("value", new TypeReference("list") { TypeArguments = { new TypeReference("T") } }) { Visibility = Visibility.Public });
+
+		SourceFile file = new("phantom");
+		file.Members.Add(holder);
+		file.Members.Add(tagged);
+		file.Members.Add(wrapper);
+		file.Members.Add(tag);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new RustGenerator().Generate(file);
+			Assert.Contains("pub _phantom: std::marker::PhantomData<T>,", source, StringComparison.Ordinal, source);
+			Assert.Contains("pub _phantom: std::marker::PhantomData<(T, U)>,", source, StringComparison.Ordinal, source);
+			Assert.AreEqual(2, source.Split("pub _phantom:").Length - 1, source);
+
+			const string Driver = """
+				fn main() {
+				    let h: Holder<String> = Holder::new(3);
+				    let t = tag();
+				    let w = Wrapper::<i32> { value: vec![1, 2] };
+				    let total = h.count + Holder::<u8>::size() + t.id + w.value.len() as i32;
+				    if total != 14 {
+				        std::process::exit(1);
+				    }
+				}
+				""";
+
+			File.WriteAllText(
+				Path.Combine(directory, "phantom.rs"),
+				$"#![allow(unused_parens, dead_code)]{Environment.NewLine}{source}{Environment.NewLine}{Driver}");
+
+			(int exitCode, string output) = ToolchainHarness.Run(
+				"rustc",
+				"--edition 2021 -o phantom phantom.rs",
+				directory);
+			Assert.AreEqual(0, exitCode, $"rustc rejected the generated source:{Environment.NewLine}{source}{Environment.NewLine}{output}");
+
+			(int ran, string printed) = ToolchainHarness.Run(Path.Combine(directory, "phantom"), string.Empty, directory);
+			Assert.AreEqual(0, ran, $"The program computed the wrong total:{Environment.NewLine}{printed}");
+		});
+	}
 }
