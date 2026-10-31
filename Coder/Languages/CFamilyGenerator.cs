@@ -200,9 +200,19 @@ public abstract class CFamilyGenerator : StandardLanguageGenerator
 		}
 
 		string spelled = SpellType(element);
-		string qualified = spelled.EndsWith('*')
-			? $"{spelled} const"
-			: spelled.StartsWith("const ", StringComparison.Ordinal) ? spelled : $"const {spelled}";
+		string qualified;
+		if (spelled.EndsWith('*'))
+		{
+			qualified = $"{spelled} const";
+		}
+		else if (spelled.StartsWith("const ", StringComparison.Ordinal))
+		{
+			qualified = spelled;
+		}
+		else
+		{
+			qualified = $"const {spelled}";
+		}
 
 		string declared = name.Length == 0 ? string.Empty : $" {EscapeIdentifier(name)}";
 
