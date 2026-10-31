@@ -442,4 +442,63 @@ public class CSharpGeneratedSourceCompilesTests
 			Assert.AreEqual(0, exitCode, $"C# rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
 		});
 	}
+
+	/// <summary>
+	/// Tests that virtual and abstract methods that are private, belong to a struct, or are static,
+	/// which C++ allows and C# rejects (CS0621, CS0106, CS0112), compile with what was changed or
+	/// dropped written down (#412).
+	/// </summary>
+	[TestMethod]
+	public void MethodsCSharpCannotOverride_Compile()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "dotnet") is null)
+		{
+			Assert.Inconclusive("No dotnet on the path, so nothing was compiled.");
+			return;
+		}
+
+		ClassDeclaration widget = new("Widget");
+		FunctionDeclaration doDraw = new("DoDraw") { ReturnType = "int", IsVirtual = true, Visibility = Visibility.Private };
+		doDraw.Body.Add(new ReturnStatement(Literal.Number(1)));
+		widget.Members.Add(doDraw);
+		widget.Members.Add(new FunctionDeclaration("Area") { ReturnType = "int", IsAbstract = true, Visibility = Visibility.Private });
+
+		ClassDeclaration factory = new("Factory");
+		FunctionDeclaration make = new("Make") { ReturnType = "int", IsStatic = true, IsVirtual = true };
+		make.Body.Add(new ReturnStatement(Literal.Number(2)));
+		factory.Members.Add(make);
+		factory.Members.Add(new FunctionDeclaration("Build") { ReturnType = "int", IsStatic = true, IsAbstract = true });
+
+		ClassDeclaration span = new("Span") { Kind = TypeDeclarationKind.Struct };
+		FunctionDeclaration len = new("Len") { ReturnType = "int", IsVirtual = true };
+		len.Body.Add(new ReturnStatement(Literal.Number(3)));
+		span.Members.Add(len);
+		span.Members.Add(new FunctionDeclaration("Area") { ReturnType = "int", IsAbstract = true });
+
+		SourceFile file = new("Generated");
+		file.Members.Add(widget);
+		file.Members.Add(factory);
+		file.Members.Add(span);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new CSharpGenerator().Generate(file);
+			Assert.Contains("protected virtual int DoDraw()", source, StringComparison.Ordinal, source);
+			Assert.Contains("protected abstract int Area();", source, StringComparison.Ordinal, source);
+			Assert.Contains("// private: DoDraw is protected, because C# cannot override a private member", source, StringComparison.Ordinal, source);
+			Assert.Contains("public static int Make()", source, StringComparison.Ordinal, source);
+			Assert.Contains("// virtual: Make is static, which C# cannot override outside an interface", source, StringComparison.Ordinal, source);
+			Assert.Contains("// Build is abstract and static", source, StringComparison.Ordinal, source);
+			Assert.Contains("public class Factory", source, StringComparison.Ordinal, source);
+			Assert.Contains("public int Len()", source, StringComparison.Ordinal, source);
+			Assert.Contains("// virtual: Len belongs to a struct, which C# cannot derive from", source, StringComparison.Ordinal, source);
+			Assert.Contains("// Area is abstract, which a C# struct cannot declare", source, StringComparison.Ordinal, source);
+
+			File.WriteAllText(Path.Combine(directory, "Generated.csproj"), Project);
+			File.WriteAllText(Path.Combine(directory, "Generated.cs"), source);
+
+			(int exitCode, string output) = ToolchainHarness.Run("dotnet", "build -nologo", directory);
+			Assert.AreEqual(0, exitCode, $"C# rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+		});
+	}
 }

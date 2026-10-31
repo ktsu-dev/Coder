@@ -160,4 +160,35 @@ public class CSharpMemberModifierTests
 		Assert.Contains("// abstract: operator + is static", code, StringComparison.Ordinal, code);
 		Assert.Contains("// protected: operator + is public", code, StringComparison.Ordinal, code);
 	}
+
+	/// <summary>
+	/// Tests that an interface's static abstract and virtual members keep what C# allows there (#412).
+	/// </summary>
+	[TestMethod]
+	public void InterfaceStaticAbstractMember_IsUnchanged()
+	{
+		ClassDeclaration parser = new("IParser") { Kind = TypeDeclarationKind.Interface };
+		parser.Members.Add(new FunctionDeclaration("Create") { ReturnType = "int", IsStatic = true, IsAbstract = true });
+
+		string code = new CSharpGenerator().Generate(parser);
+
+		Assert.Contains("public static int Create();", code, StringComparison.Ordinal, code);
+		Assert.DoesNotContain("// ", code.Replace("// Copyright", string.Empty, StringComparison.Ordinal), StringComparison.Ordinal, code);
+	}
+
+	/// <summary>
+	/// Tests that a class whose only abstract member is static, which is written down rather than
+	/// declared, is not marked abstract (#412).
+	/// </summary>
+	[TestMethod]
+	public void ClassWithOnlyAStaticAbstractMember_IsNotAbstract()
+	{
+		ClassDeclaration factory = new("Factory");
+		factory.Members.Add(new FunctionDeclaration("Build") { ReturnType = "int", IsStatic = true, IsAbstract = true });
+
+		string code = new CSharpGenerator().Generate(factory);
+
+		Assert.Contains("public class Factory", code, StringComparison.Ordinal, code);
+		Assert.DoesNotContain("abstract int", code, StringComparison.Ordinal, code);
+	}
 }
