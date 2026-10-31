@@ -64,7 +64,9 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 
 		if (declaration.IsAutomatic)
 		{
-			code.WriteLine($"{(declaration.IsStatic ? StaticKeyword : string.Empty)}{name};");
+			code.Write($"{(declaration.IsStatic ? StaticKeyword : string.Empty)}{name}");
+			WriteZeroInitialiser(declaration.Type, code);
+			EndStatement(code);
 			return;
 		}
 
@@ -343,7 +345,9 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	/// <remarks>
 	/// JavaScript writes a class field without a type, since it has none to write. A field with no
 	/// initialiser is still declared: the property then exists on every instance, which is what makes
-	/// the shape of an object predictable rather than growing as it is assigned to. A static field, and
+	/// the shape of an object predictable rather than growing as it is assigned to. It starts at its
+	/// type's zero where the type has one, as it does in every typed target, rather than at
+	/// <c>undefined</c>, which makes <c>count + 1</c> <c>NaN</c> (#345). A static field, and
 	/// a constant one, which is static whether or not it says so, is written <c>static</c>, so the
 	/// class holds one value rather than each instance holding its own.
 	/// </remarks>
@@ -367,8 +371,30 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 			code.Write(" = ");
 			GenerateInternal(field.InitialValue, code);
 		}
+		else
+		{
+			WriteZeroInitialiser(field.Type, code);
+		}
 
 		EndStatement(code);
+	}
+
+	/// <summary>
+	/// Writes <c> = </c> and a type's zero, where the type has one.
+	/// </summary>
+	/// <param name="type">The declared type, or null where none is declared.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// A type with no obvious zero is left uninitialised, so it reads as <c>undefined</c>, which is
+	/// JavaScript's own value for a property nothing has set.
+	/// </remarks>
+	private void WriteZeroInitialiser(TypeReference? type, CodeBlocker code)
+	{
+		if (ZeroValue(type) is Expression zero)
+		{
+			code.Write(" = ");
+			GenerateInternal(zero, code);
+		}
 	}
 
 	/// <inheritdoc/>
