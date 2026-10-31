@@ -135,6 +135,57 @@ public class CppGeneratedSourceCompilesTests
 	}
 
 	/// <summary>
+	/// Tests that a void function marked pure or must-use compiles under <c>-Werror</c>, and that a
+	/// function returning a value keeps <c>[[nodiscard]]</c>.
+	/// </summary>
+	/// <remarks>
+	/// <c>[[nodiscard]]</c> on a <c>void</c> function is a warning in g++ and clang rather than a
+	/// promise, so a project building the output with <c>-Werror</c> failed (issue #404).
+	/// </remarks>
+	[TestMethod]
+	public void AVoidPureOrMustUseFunctionCompilesWithoutNodiscard()
+	{
+		string? compiler = ToolchainHarness.FindOnPath("--version", Compilers);
+		if (compiler is null)
+		{
+			Assert.Inconclusive("No C++ compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		ClassDeclaration counter = new("Counter");
+		counter.Members.Add(new FunctionDeclaration("Reset") { MustUseResult = true });
+		counter.Members.Add(new FunctionDeclaration("Touch") { IsPure = true, IsStatic = true });
+		counter.Members.Add(new FunctionDeclaration("Limit")
+		{
+			ReturnType = "int",
+			IsPure = true,
+			IsStatic = true,
+			Body = { new ReturnStatement(new LiteralExpression<int>(10)) },
+		});
+		SourceFile file = new("counter");
+		file.Members.Add(counter);
+
+		string header = new CppGenerator().Generate(file);
+		Assert.DoesNotContain("[[nodiscard]] void", header, StringComparison.Ordinal, header);
+		Assert.Contains("[[nodiscard]] static int Limit()", header, StringComparison.Ordinal, header);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			File.WriteAllText(Path.Combine(directory, "counter.h"), header);
+			File.WriteAllText(
+				Path.Combine(directory, "driver.cpp"),
+				$"#include \"counter.h\"{Environment.NewLine}{Environment.NewLine}int main() {{ Counter c; c.Reset(); Counter::Touch(); return Counter::Limit() == 10 ? 0 : 1; }}{Environment.NewLine}");
+
+			(int exitCode, string output) = ToolchainHarness.Run(
+				compiler,
+				"-std=c++20 -Wall -Wextra -pedantic -Werror -c driver.cpp -o driver.o",
+				directory);
+
+			Assert.AreEqual(0, exitCode, $"{compiler} rejected the generated header:{Environment.NewLine}{output}{Environment.NewLine}{header}");
+		});
+	}
+
+	/// <summary>
 	/// Tests that a property with bodies over a same-named backing field compiles, and a driver can
 	/// call both accessors.
 	/// </summary>
