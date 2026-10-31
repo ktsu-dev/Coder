@@ -1600,23 +1600,9 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// <param name="enclosingType">The type it belongs to, when it belongs to one.</param>
 	private void WriteFunctionModifiers(FunctionDeclaration function, CodeBlocker code, ClassDeclaration? enclosingType)
 	{
-		// A function nobody has given a visibility to is public: an inaccessible method is not what
-		// someone who wrote no modifier meant. A finalizer is the exception, because it takes no
-		// access modifier at all (CS0106): only the runtime calls it.
-		// A user-defined operator must be public as well as static (CS0558), whatever it declared.
-		if (IsOperator(function))
+		if (SpellAccessModifier(function, enclosingType) is string access)
 		{
-			code.Write("public ");
-		}
-		else if (OverrideObstacle(function, enclosingType) == OverrideObstacleKind.Private)
-		{
-			// A private member cannot be virtual or abstract (CS0621); protected is the nearest
-			// visibility that a derived type can override, and the note above says so.
-			code.Write("protected ");
-		}
-		else if (function.Kind != FunctionKind.Destructor)
-		{
-			code.Write($"{SpellVisibility(function.Visibility) ?? DefaultVisibility} ");
+			code.Write($"{access} ");
 		}
 
 		if (function.IsStatic
@@ -1656,6 +1642,37 @@ public class CSharpGenerator : LanguageGeneratorBase
 		{
 			code.Write($"{MapToCSType(function.ReturnType ?? new TypeReference("void"))} ");
 		}
+	}
+
+	/// <summary>
+	/// Spells the access modifier a declaration is written with.
+	/// </summary>
+	/// <param name="function">The declaration being emitted.</param>
+	/// <param name="enclosingType">The type it belongs to, when it belongs to one.</param>
+	/// <returns>The modifier, or null when the declaration takes none.</returns>
+	/// <remarks>
+	/// A function nobody has given a visibility to is public: an inaccessible method is not what
+	/// someone who wrote no modifier meant. A finalizer is the exception, because it takes no access
+	/// modifier at all (CS0106): only the runtime calls it. A user-defined operator must be public as
+	/// well as static (CS0558), whatever it declared. A private member cannot be virtual or abstract
+	/// (CS0621), so it is protected, the nearest visibility a derived type can override, and the note
+	/// above the declaration says so.
+	/// </remarks>
+	private string? SpellAccessModifier(FunctionDeclaration function, ClassDeclaration? enclosingType)
+	{
+		if (IsOperator(function))
+		{
+			return "public";
+		}
+
+		if (OverrideObstacle(function, enclosingType) == OverrideObstacleKind.Private)
+		{
+			return "protected";
+		}
+
+		return function.Kind == FunctionKind.Destructor
+			? null
+			: SpellVisibility(function.Visibility) ?? DefaultVisibility;
 	}
 
 	/// <summary>
