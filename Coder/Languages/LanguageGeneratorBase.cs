@@ -1202,8 +1202,10 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// <returns>The reference with each reserved segment escaped.</returns>
 	/// <remarks>
 	/// Only a segment that is exactly a reserved word changes. Anything else — a call such as
-	/// <c>args.len()</c>, an index such as <c>steps[0]</c>, a path such as <c>Self::CAPACITY</c> — is
-	/// written as given, since a reference is text and only its plain names are the AST's.
+	/// <c>args.len()</c>, an index such as <c>steps[0]</c> — is written as given, since a reference is
+	/// text and only its plain names are the AST's. A path in the target's own form, such as
+	/// <c>Kind::type</c>, names a member in its last word, so that word escapes as the member's
+	/// declaration did; the words before it are a scope or a path keyword and stay as written.
 	/// </remarks>
 	protected string EscapeReference(string reference)
 	{
@@ -1217,6 +1219,18 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 		string[] segments = reference.Split('.');
 		for (int i = 0; i < segments.Length; i++)
 		{
+			string[] path = segments[i].Split("::");
+			if (path.Length > 1)
+			{
+				if (ReservedWords.Contains(path[^1]))
+				{
+					path[^1] = EscapeIdentifier(path[^1]);
+					segments[i] = string.Join("::", path);
+				}
+
+				continue;
+			}
+
 			if (ReservedWords.Contains(segments[i]) && !(i == 0 && IsReceiverWord(segments[i])))
 			{
 				segments[i] = EscapeIdentifier(segments[i]);

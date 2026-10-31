@@ -1,4 +1,4 @@
-// Copyright (c) 2023-2026 ktsu-dev contributors
+﻿// Copyright (c) 2023-2026 ktsu-dev contributors
 
 namespace ktsu.Coder.Test.Languages;
 
@@ -221,6 +221,125 @@ public class ReservedWordIdentifierTests
 
 		Assert.Contains("fn super_(crate_: i32)", source, StringComparison.Ordinal, source);
 		Assert.DoesNotContain("r#super", source, StringComparison.Ordinal, source);
+	}
+
+	/// <summary>
+	/// Tests that Rust declares a keyword-named enumeration member as a raw identifier, and that a
+	/// <c>Kind::type</c> path and a sibling's value naming it are spelled the same way. <c>public</c>
+	/// and <c>private</c> are not Rust keywords, so they stay as written.
+	/// </summary>
+	[TestMethod]
+	public void Rust_KeywordNamedEnumMembersCompileAndResolve()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "rustc") is null)
+		{
+			Assert.Inconclusive("No Rust compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string program = OperatingSystem.IsWindows() ? "kinds.exe" : "kinds";
+			string source = new RustGenerator().Generate(KeywordEnums()) + RustEnumDriver;
+			File.WriteAllText(Path.Combine(directory, "kinds.rs"), source);
+
+			(int built, string output) = ToolchainHarness.Run("rustc", $"--edition 2021 -o {program} kinds.rs", directory);
+			Assert.AreEqual(0, built, $"rustc rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+
+			(int ran, _) = ToolchainHarness.Run(Path.Combine(directory, program), string.Empty, directory);
+			Assert.AreEqual(0, ran, $"a keyword-named member read back wrongly (driver check {ran}):{Environment.NewLine}{source}");
+		});
+	}
+
+	/// <summary>
+	/// Tests that C++ appends an underscore to a keyword-named enumeration member, and that a
+	/// <c>Access::public</c> path and a sibling's value naming one are spelled the same way.
+	/// <c>type</c> is not a C++ keyword, so it stays as written.
+	/// </summary>
+	[TestMethod]
+	public void Cpp_KeywordNamedEnumMembersCompileAndResolve()
+	{
+		string? compiler = ToolchainHarness.FindOnPath("--version", CppCompilers);
+		if (compiler is null)
+		{
+			Assert.Inconclusive("No C++ compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string program = OperatingSystem.IsWindows() ? "kinds.exe" : "kinds";
+			string header = new CppGenerator().Generate(KeywordEnums());
+			File.WriteAllText(Path.Combine(directory, "kinds.hpp"), header);
+			File.WriteAllText(Path.Combine(directory, "driver.cpp"), CppEnumDriver);
+
+			(int built, string output) = ToolchainHarness.Run(
+				compiler,
+				$"-std=c++20 -Wall -Wextra -pedantic -o {program} driver.cpp",
+				directory);
+			Assert.AreEqual(0, built, $"{compiler} rejected the generated header:{Environment.NewLine}{output}{Environment.NewLine}{header}");
+
+			(int ran, _) = ToolchainHarness.Run(Path.Combine(directory, program), string.Empty, directory);
+			Assert.AreEqual(0, ran, $"a keyword-named member read back wrongly (driver check {ran}):{Environment.NewLine}{header}");
+		});
+	}
+
+	/// <summary>
+	/// The Rust driver for <see cref="KeywordEnums"/>.
+	/// </summary>
+	private const string RustEnumDriver = """
+
+		fn main() {
+		    if pick() != Kind::r#type || Kind::Other as isize != 2 { std::process::exit(1); }
+		    if open() != Access::public || Access::Hidden as i32 != 2 { std::process::exit(2); }
+		}
+
+		""";
+
+	/// <summary>
+	/// The C++ driver for <see cref="KeywordEnums"/>.
+	/// </summary>
+	private const string CppEnumDriver = """
+		#include "kinds.hpp"
+
+		int main()
+		{
+			if (pick() != Kind::type || static_cast<int>(Kind::Other) != 2) { return 1; }
+			if (open() != Access::public_ || static_cast<int>(Access::Hidden) != 2) { return 2; }
+			return 0;
+		}
+
+		""";
+
+	/// <summary>
+	/// Builds two enumerations whose members are C++ and Rust keywords, one member whose value names a
+	/// keyword-named sibling, and two functions that return a keyword-named member by its path.
+	/// </summary>
+	/// <returns>The file to generate.</returns>
+	private static SourceFile KeywordEnums()
+	{
+		EnumDeclaration access = new("Access") { UnderlyingType = new TypeReference("int") };
+		access.Members.Add(new EnumMember("public") { Value = "0" });
+		access.Members.Add(new EnumMember("private") { Value = "1" });
+		access.Members.Add(new EnumMember("Hidden") { Value = "private + 1" });
+
+		EnumDeclaration kind = new("Kind");
+		kind.Members.Add(new EnumMember("None"));
+		kind.Members.Add(new EnumMember("type") { Value = "1" });
+		kind.Members.Add(new EnumMember("Other") { Value = "type + 1" });
+
+		FunctionDeclaration pick = new("pick") { ReturnType = "Kind" };
+		pick.Body.Add(new ReturnStatement(new VariableReference("Kind::type")));
+
+		FunctionDeclaration open = new("open") { ReturnType = "Access" };
+		open.Body.Add(new ReturnStatement(new VariableReference("Access::public")));
+
+		SourceFile file = new("kinds");
+		file.Members.Add(access);
+		file.Members.Add(kind);
+		file.Members.Add(pick);
+		file.Members.Add(open);
+		return file;
 	}
 
 	/// <summary>
