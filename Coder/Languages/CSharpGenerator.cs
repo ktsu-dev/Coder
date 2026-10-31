@@ -1438,8 +1438,83 @@ public class CSharpGenerator : LanguageGeneratorBase
 				WriteInexpressible(code, $"{modifier}: {name} is static, which a C# operator outside an interface cannot override");
 			}
 		}
+		else if (OverrideObstacle(function, enclosingType) is OverrideObstacleKind obstacle)
+		{
+			string modifier = function.IsAbstract ? "abstract" : "virtual";
+			switch (obstacle)
+			{
+				// A static or struct member that is abstract has no body to fall back on once the
+				// modifier goes, so the note stands in for the whole declaration.
+				case OverrideObstacleKind.Static when function.IsAbstract:
+					WriteInexpressible(code, $"{name} is abstract and static, which C# allows only in an interface, so it has no body to declare.");
+					return false;
+				case OverrideObstacleKind.Struct when function.IsAbstract:
+					WriteInexpressible(code, $"{name} is abstract, which a C# struct cannot declare: nothing can derive from it to supply a body.");
+					return false;
+				case OverrideObstacleKind.Static:
+					WriteInexpressible(code, $"{modifier}: {name} is static, which C# cannot override outside an interface");
+					break;
+				case OverrideObstacleKind.Struct:
+					WriteInexpressible(code, $"{modifier}: {name} belongs to a struct, which C# cannot derive from");
+					break;
+				case OverrideObstacleKind.Private:
+					WriteInexpressible(code, $"private: {name} is protected, because C# cannot override a private member");
+					break;
+				default:
+					break;
+			}
+		}
 
 		return true;
+	}
+
+	/// <summary>
+	/// Why C# cannot write a member's <c>virtual</c> or <c>abstract</c> where the member is.
+	/// </summary>
+	private enum OverrideObstacleKind
+	{
+		/// <summary>The member is static, which only an interface lets be overridden (CS0112).</summary>
+		Static,
+
+		/// <summary>The member belongs to a struct, which nothing derives from (CS0106).</summary>
+		Struct,
+
+		/// <summary>The member is private, which nothing outside the type can override (CS0621).</summary>
+		Private,
+	}
+
+	/// <summary>
+	/// Determines what stops C# from writing a member's <c>virtual</c> or <c>abstract</c>.
+	/// </summary>
+	/// <param name="function">The declaration being emitted.</param>
+	/// <param name="enclosingType">The type it belongs to, when it belongs to one.</param>
+	/// <returns>The obstacle, or null when the modifier is written as declared.</returns>
+	/// <remarks>
+	/// C++ lets any member function be virtual, and a private virtual is its non-virtual-interface
+	/// idiom. C# lets a member be overridden only where a derived type can reach it. An interface
+	/// member is left as it was, since an interface may declare static abstract and virtual members,
+	/// and an operator has its own note in <see cref="WriteMemberNotes"/>.
+	/// </remarks>
+	private OverrideObstacleKind? OverrideObstacle(FunctionDeclaration function, ClassDeclaration? enclosingType)
+	{
+		if (!(function.IsVirtual || function.IsAbstract)
+			|| IsOperator(function)
+			|| enclosingType?.Kind == TypeDeclarationKind.Interface)
+		{
+			return null;
+		}
+
+		if (function.IsStatic || ReferenceEquals(function, heldMember))
+		{
+			return OverrideObstacleKind.Static;
+		}
+
+		if (enclosingType?.Kind == TypeDeclarationKind.Struct)
+		{
+			return OverrideObstacleKind.Struct;
+		}
+
+		return function.Visibility == Visibility.Private ? OverrideObstacleKind.Private : null;
 	}
 
 	/// <summary>
@@ -1522,6 +1597,12 @@ public class CSharpGenerator : LanguageGeneratorBase
 		{
 			code.Write("public ");
 		}
+		else if (OverrideObstacle(function, enclosingType) == OverrideObstacleKind.Private)
+		{
+			// A private member cannot be virtual or abstract (CS0621); protected is the nearest
+			// visibility that a derived type can override, and the note above says so.
+			code.Write("protected ");
+		}
 		else if (function.Kind != FunctionKind.Destructor)
 		{
 			code.Write($"{SpellVisibility(function.Visibility) ?? DefaultVisibility} ");
@@ -1535,9 +1616,11 @@ public class CSharpGenerator : LanguageGeneratorBase
 			code.Write("static ");
 		}
 
-		// An operator outside an interface can be neither virtual nor abstract (CS0106); the note
-		// written above the declaration says what was dropped.
-		bool canOverride = !IsOperator(function) || enclosingType?.Kind == TypeDeclarationKind.Interface;
+		// An operator outside an interface can be neither virtual nor abstract (CS0106), and neither
+		// can a static or struct member (CS0112, CS0106); the note written above the declaration says
+		// what was dropped. A private one is written protected instead, so it keeps its modifier.
+		bool canOverride = (!IsOperator(function) || enclosingType?.Kind == TypeDeclarationKind.Interface)
+			&& OverrideObstacle(function, enclosingType) is null or OverrideObstacleKind.Private;
 
 		// An interface member with no body is abstract already, and says so by having none.
 		if (function.IsAbstract)
@@ -1621,10 +1704,17 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// <remarks>
 	/// The AST says abstract of a member, as C++ does, and a C++ class with a pure virtual member is
 	/// abstract without saying so. C# requires the class to say it (CS0513).
+	/// <para>
+	/// A static member does not count: C# cannot declare it abstract outside an interface, so it is
+	/// written down rather than declared, and a class marked abstract for it could not be constructed
+	/// for no reason the text shows.
+	/// </para>
 	/// </remarks>
-	private static bool IsAbstractClass(ClassDeclaration classDecl) =>
+	private bool IsAbstractClass(ClassDeclaration classDecl) =>
 		classDecl.Kind == TypeDeclarationKind.Class
-		&& classDecl.Members.OfType<FunctionDeclaration>().Any(member => member.IsAbstract);
+		&& classDecl.Members.OfType<FunctionDeclaration>().Any(member =>
+			member.IsAbstract
+			&& OverrideObstacle(member, classDecl) is null or OverrideObstacleKind.Private);
 
 	/// <summary>
 	/// Spells the name a declaration is written under.
