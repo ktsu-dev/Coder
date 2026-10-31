@@ -1440,32 +1440,43 @@ public class CSharpGenerator : LanguageGeneratorBase
 		}
 		else if (OverrideObstacle(function, enclosingType) is OverrideObstacleKind obstacle)
 		{
-			string modifier = function.IsAbstract ? "abstract" : "virtual";
-			switch (obstacle)
-			{
-				// A static or struct member that is abstract has no body to fall back on once the
-				// modifier goes, so the note stands in for the whole declaration.
-				case OverrideObstacleKind.Static when function.IsAbstract:
-					WriteInexpressible(code, $"{name} is abstract and static, which C# allows only in an interface, so it has no body to declare.");
-					return false;
-				case OverrideObstacleKind.Struct when function.IsAbstract:
-					WriteInexpressible(code, $"{name} is abstract, which a C# struct cannot declare: nothing can derive from it to supply a body.");
-					return false;
-				case OverrideObstacleKind.Static:
-					WriteInexpressible(code, $"{modifier}: {name} is static, which C# cannot override outside an interface");
-					break;
-				case OverrideObstacleKind.Struct:
-					WriteInexpressible(code, $"{modifier}: {name} belongs to a struct, which C# cannot derive from");
-					break;
-				case OverrideObstacleKind.Private:
-					WriteInexpressible(code, $"private: {name} is protected, because C# cannot override a private member");
-					break;
-				default:
-					break;
-			}
+			return WriteOverrideNote(function, name, obstacle, code);
 		}
 
 		return true;
+	}
+
+	/// <summary>
+	/// Writes down a <c>virtual</c> or <c>abstract</c> that C# cannot write where the member is.
+	/// </summary>
+	/// <param name="function">The declaration being emitted.</param>
+	/// <param name="name">The name it is written under.</param>
+	/// <param name="obstacle">What stops C# from writing the modifier.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <returns>False when the note stands in for the whole declaration, so nothing else is written.</returns>
+	private bool WriteOverrideNote(FunctionDeclaration function, string name, OverrideObstacleKind obstacle, CodeBlocker code)
+	{
+		string modifier = function.IsAbstract ? "abstract" : "virtual";
+		switch (obstacle)
+		{
+			// A static or struct member that is abstract has no body to fall back on once the
+			// modifier goes, so the note stands in for the whole declaration.
+			case OverrideObstacleKind.Static when function.IsAbstract:
+				WriteInexpressible(code, $"{name} is abstract and static, which C# allows only in an interface, so it has no body to declare.");
+				return false;
+			case OverrideObstacleKind.Struct when function.IsAbstract:
+				WriteInexpressible(code, $"{name} is abstract, which a C# struct cannot declare: nothing can derive from it to supply a body.");
+				return false;
+			case OverrideObstacleKind.Static:
+				WriteInexpressible(code, $"{modifier}: {name} is static, which C# cannot override outside an interface");
+				return true;
+			case OverrideObstacleKind.Struct:
+				WriteInexpressible(code, $"{modifier}: {name} belongs to a struct, which C# cannot derive from");
+				return true;
+			default:
+				WriteInexpressible(code, $"private: {name} is protected, because C# cannot override a private member");
+				return true;
+		}
 	}
 
 	/// <summary>
