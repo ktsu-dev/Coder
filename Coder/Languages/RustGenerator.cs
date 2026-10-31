@@ -1209,6 +1209,40 @@ public class RustGenerator : StandardLanguageGenerator
 		WriteBody(funcDecl.Body, code);
 	}
 
+	/// <summary>
+	/// Writes a note in place of a function declaration Rust has no way to state.
+	/// </summary>
+	/// <param name="funcDecl">The declaration.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <returns>Whether the declaration was written down, so nothing else is to be written for it.</returns>
+	private bool WritesDeclarationDown(FunctionDeclaration funcDecl, CodeBlocker code)
+	{
+		string? reason = funcDecl switch
+		{
+			// A deleted declaration exists to make a call illegal, and Rust has no way to say that of
+			// one member. Writing the signature would do the opposite of what it asks for.
+			{ Definition: FunctionDefinition.Deleted } => "is deleted: Rust cannot refuse a call",
+
+			// A defaulted declaration is one the language supplies. Rust supplies it too, through a
+			// derive rather than through the declaration, which is the caller's line to write.
+			{ Definition: FunctionDefinition.Defaulted } => "is defaulted: derive it, or implement Default",
+
+			// An abstract member of a struct has nowhere to be implemented: a bodiless fn in an
+			// inherent impl is an error, so it is written down the way Go writes it down.
+			{ IsAbstract: true } when !insideTrait => "has no body: only a trait may require one",
+
+			_ => null,
+		};
+
+		if (reason is null)
+		{
+			return false;
+		}
+
+		WriteInexpressible(code, $"{SpellFunctionName(funcDecl)} {reason}");
+		return true;
+	}
+
 	/// <inheritdoc/>
 	protected override void GenerateFunctionDeclaration(FunctionDeclaration funcDecl, CodeBlocker code) =>
 		GenerateFunction(funcDecl, code, null);
@@ -1239,21 +1273,11 @@ public class RustGenerator : StandardLanguageGenerator
 
 		WritePreamble(funcDecl, code, enclosingType is null ? PreambleSite.Function : PreambleSite.Method);
 
-		// A deleted declaration exists to make a call illegal, and Rust has no way to say that of one
-		// member. Writing the signature would do the opposite of what it asks for.
-		if (funcDecl.Definition == FunctionDefinition.Deleted)
+		if (WritesDeclarationDown(funcDecl, code))
 		{
-			WriteInexpressible(code, $"{SpellFunctionName(funcDecl)} is deleted: Rust cannot refuse a call");
 			return;
 		}
 
-		// A defaulted declaration is one the language supplies. Rust supplies it too, through a
-		// derive rather than through the declaration, which is the caller's line to write.
-		if (funcDecl.Definition == FunctionDefinition.Defaulted)
-		{
-			WriteInexpressible(code, $"{SpellFunctionName(funcDecl)} is defaulted: derive it, or implement Default");
-			return;
-		}
 		// #[must_use] says what a pure function's purity means to a caller, and is worth nothing on
 		// one that answers nothing.
 		if ((funcDecl.IsPure || funcDecl.MustUseResult) && ReturnsAValue(funcDecl))
@@ -1295,9 +1319,8 @@ public class RustGenerator : StandardLanguageGenerator
 			code.Write($" -> {SpellType(funcDecl.ReturnType!)}");
 		}
 
-		// A declaration with no definition is a requirement, which is a thing only a trait can hold:
-		// an abstract member of a struct has nowhere to be implemented.
-		if (funcDecl.IsAbstract || (insideTrait && funcDecl.Body.Count == 0))
+		// A declaration with no definition is a requirement, which is a thing only a trait can hold.
+		if (insideTrait && (funcDecl.IsAbstract || funcDecl.Body.Count == 0))
 		{
 			code.WriteLine(";");
 			return;

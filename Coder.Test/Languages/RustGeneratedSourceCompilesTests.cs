@@ -911,4 +911,53 @@ public class RustGeneratedSourceCompilesTests
 			Assert.AreEqual(0, exitCode, $"rustc rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
 		});
 	}
+
+	/// <summary>
+	/// Tests that an abstract method of a struct is written down rather than declared without a body
+	/// in an inherent <c>impl</c>, which rustc rejects, while a trait's abstract and bodiless methods
+	/// are still requirements (#413).
+	/// </summary>
+	[TestMethod]
+	public void AbstractMembers_CompileInStructsAndTraits()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "rustc") is null)
+		{
+			Assert.Inconclusive("No Rust compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		ClassDeclaration shape = new("Shape") { Kind = TypeDeclarationKind.Class };
+		shape.Members.Add(new FieldDeclaration("sides", new TypeReference("int")));
+		shape.Members.Add(new FunctionDeclaration("Area") { ReturnType = "int", IsAbstract = true });
+
+		ClassDeclaration measured = new("Measured") { Kind = TypeDeclarationKind.Interface };
+		measured.Members.Add(new FunctionDeclaration("Width") { ReturnType = "int", IsAbstract = true });
+		measured.Members.Add(new FunctionDeclaration("Height") { ReturnType = "int" });
+
+		SourceFile file = new("shapes");
+		file.Members.Add(shape);
+		file.Members.Add(measured);
+
+		string source = new RustGenerator().Generate(file);
+
+		StringAssert.Contains(source, "Area has no body", StringComparison.Ordinal, source);
+		StringAssert.Contains(source, "fn Width(&mut self) -> i32;", StringComparison.Ordinal, source);
+		StringAssert.Contains(source, "fn Height(&mut self) -> i32;", StringComparison.Ordinal, source);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string allowed = "#![allow(dead_code, non_snake_case)]";
+
+			File.WriteAllText(
+				Path.Combine(directory, "shapes.rs"),
+				$"{allowed}{Environment.NewLine}{source}");
+
+			(int exitCode, string output) = ToolchainHarness.Run(
+				"rustc",
+				"--crate-type lib --edition 2021 -o shapes.rlib shapes.rs",
+				directory);
+
+			Assert.AreEqual(0, exitCode, $"rustc rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+		});
+	}
 }
