@@ -89,6 +89,12 @@ public class CppGenerator : CFamilyGenerator
 	/// </summary>
 	public override string FileExtension => "cpp";
 
+	/// <inheritdoc/>
+	/// <remarks>
+	/// <c>.hpp</c> rather than <c>.h</c>, so a C++ header is not mistaken for one a C compiler can read.
+	/// </remarks>
+	public override string HeaderFileExtension => "hpp";
+
 	/// <summary>
 	/// Writes the template head a declaration written over types needs.
 	/// </summary>
