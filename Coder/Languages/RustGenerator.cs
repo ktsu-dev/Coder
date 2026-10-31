@@ -2197,13 +2197,14 @@ public class RustGenerator : StandardLanguageGenerator
 
 		code.Write($"impl {name} ");
 		using Scope constants = new(code);
-		foreach (EnumMember member in enumDecl.Members)
+		IEnumerable<string> aliasNames = enumDecl.Members
+			.Select(member => member.Name)
+			.OfType<string>()
+			.Where(aliases.ContainsKey);
+		foreach (string memberName in aliasNames)
 		{
-			if (member.Name is string memberName && aliases.TryGetValue(memberName, out string? target))
-			{
-				code.WriteLine("#[allow(non_upper_case_globals)]");
-				code.WriteLine($"{SpellVisibilityOf(enumDecl)}const {memberName}: {name} = {name}::{target};");
-			}
+			code.WriteLine("#[allow(non_upper_case_globals)]");
+			code.WriteLine($"{SpellVisibilityOf(enumDecl)}const {memberName}: {name} = {name}::{aliases[memberName]};");
 		}
 	}
 
