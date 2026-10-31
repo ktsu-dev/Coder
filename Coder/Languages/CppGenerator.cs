@@ -714,8 +714,22 @@ public class CppGenerator : CFamilyGenerator
 
 		WritePreamble(field, code, PreambleSite.Field);
 
-		code.Write(SpellStorage(field));
-		code.Write(SpellDeclarator(field.Type ?? new TypeReference(UnknownTypeName), field.Name ?? string.Empty));
+		string storage = SpellStorage(field);
+		TypeReference fieldType = field.Type ?? new TypeReference(UnknownTypeName);
+		string fieldName = field.Name ?? string.Empty;
+
+		// A storage that ends in const leaves the type's own const, or a pointer's, to the
+		// declarator, so it is said once and of the right thing; see SpellConstantDeclarator.
+		if (storage.EndsWith("const ", StringComparison.Ordinal))
+		{
+			code.Write(storage[..^"const ".Length]);
+			code.Write(SpellConstantDeclarator(fieldType, fieldName));
+		}
+		else
+		{
+			code.Write(storage);
+			code.Write(SpellDeclarator(fieldType, fieldName));
+		}
 
 		if (field.InitialValue is not null)
 		{
@@ -756,17 +770,25 @@ public class CppGenerator : CFamilyGenerator
 	/// </remarks>
 	private void GenerateField(VariableDeclaration field, CodeBlocker code)
 	{
-		if (field.IsConstant && field.InitialValue is not null)
+		bool literal = field.IsTypeInferred || field.Type is null || IsLiteralType(field.Type);
+		if (field.IsConstant && field.InitialValue is not null && literal)
 		{
-			bool literal = field.IsTypeInferred || field.Type is null || IsLiteralType(field.Type);
-			code.Write(literal ? "static constexpr " : "inline static const ");
+			code.Write("static constexpr ");
+			code.Write(SpellVariableDeclarator(field));
 		}
 		else if (field.IsConstant)
 		{
-			code.Write("const ");
-		}
+			if (field.InitialValue is not null)
+			{
+				code.Write("inline static ");
+			}
 
-		code.Write(SpellVariableDeclarator(field));
+			code.Write(SpellConstantVariableDeclarator(field));
+		}
+		else
+		{
+			code.Write(SpellVariableDeclarator(field));
+		}
 
 		if (field.InitialValue is not null)
 		{
@@ -853,12 +875,7 @@ public class CppGenerator : CFamilyGenerator
 		Ensure.NotNull(code);
 		RegisterStaticType(varDecl);
 
-		if (varDecl.IsConstant)
-		{
-			code.Write("const ");
-		}
-
-		code.Write(SpellVariableDeclarator(varDecl));
+		code.Write(varDecl.IsConstant ? SpellConstantVariableDeclarator(varDecl) : SpellVariableDeclarator(varDecl));
 
 		if (varDecl.InitialValue is not null)
 		{
@@ -868,6 +885,21 @@ public class CppGenerator : CFamilyGenerator
 
 		EndStatement(code);
 	}
+
+	/// <summary>
+	/// Spells a constant declaration up to its name.
+	/// </summary>
+	/// <param name="varDecl">The declaration being emitted.</param>
+	/// <returns>The type and the name, with <c>const</c> said once and of the right thing.</returns>
+	/// <remarks>
+	/// A declared type goes through <see cref="CFamilyGenerator.SpellConstantDeclarator"/>, which
+	/// knows whether the type already says <c>const</c> and where a pointer's goes. An inferred one
+	/// has no type text to inspect, so its <c>const</c> stands in front of <c>auto</c>.
+	/// </remarks>
+	private string SpellConstantVariableDeclarator(VariableDeclaration varDecl) =>
+		!varDecl.IsTypeInferred && varDecl.Type is TypeReference declared
+			? SpellConstantDeclarator(declared, varDecl.Name)
+			: $"const {SpellVariableDeclarator(varDecl)}";
 
 	/// <summary>
 	/// Spells a local declaration up to its name.
