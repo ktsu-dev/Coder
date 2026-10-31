@@ -116,11 +116,99 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	/// A number is a double, which rounds any integer past <see cref="MaxSafeInteger"/>:
 	/// <c>9007199254740993</c> reads back as <c>9007199254740992</c>. Such a value is written as a BigInt
 	/// literal instead, which keeps it exact, and mixing it with number arithmetic throws a
-	/// <c>TypeError</c> rather than computing with a different value. A value in the safe range stays a
-	/// plain number.
+	/// <c>TypeError</c> rather than computing with a different value. A value in the safe range, or
+	/// ±2^53 itself, which a double holds exactly, stays a plain number (#424).
 	/// </remarks>
 	protected override string FormatLong(long value) =>
-		value is > MaxSafeInteger or < -MaxSafeInteger ? $"{base.FormatLong(value)}n" : base.FormatLong(value);
+		IsBigIntLong(value) ? $"{base.FormatLong(value)}n" : base.FormatLong(value);
+
+	/// <summary>
+	/// Reads whether a <c>long</c> literal is written as a BigInt.
+	/// </summary>
+	private static bool IsBigIntLong(long value) => value is > MaxSafeInteger + 1 or < -(MaxSafeInteger + 1);
+
+	/// <summary>
+	/// Reads whether an expression is a <c>long</c> literal written as a BigInt.
+	/// </summary>
+	private static bool IsBigIntLiteral(Expression expression) =>
+		expression is LiteralExpression<long> literal && IsBigIntLong(literal.Value);
+
+	/// <summary>
+	/// Writes <c>==</c> or <c>!=</c> between a BigInt literal and an operand that is not one.
+	/// </summary>
+	/// <param name="binary">The comparison.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <returns>False when neither or both operands are BigInt literals, and nothing was written.</returns>
+	/// <remarks>
+	/// <c>===</c> between a BigInt and a number is always <c>false</c>, whatever their values, so
+	/// <c>x == 9007199254740993</c> would never hold and <c>!=</c> always would (#424). The other operand
+	/// is converted with <c>BigInt(...)</c>, which is exact for any integral number, so the comparison is
+	/// of values. A floating operand is compared the way every other target compares it, against the
+	/// literal converted to a double, which is what the digits written as a number read as.
+	/// <c>&lt;</c>, <c>&gt;</c>, <c>&lt;=</c> and <c>&gt;=</c> already compare a BigInt and a number by
+	/// value.
+	/// </remarks>
+	private bool TryWriteBigIntEquality(BinaryExpression binary, CodeBlocker code)
+	{
+		if (binary.Operator is not (BinaryOperator.Equal or BinaryOperator.NotEqual)
+			|| IsBigIntLiteral(binary.Left) == IsBigIntLiteral(binary.Right))
+		{
+			return false;
+		}
+
+		bool literalOnLeft = IsBigIntLiteral(binary.Left);
+		Expression literal = literalOnLeft ? binary.Left : binary.Right;
+		Expression other = literalOnLeft ? binary.Right : binary.Left;
+		bool otherIsFloating = StaticType(other) is { IsArray: false, Indirection: TypeIndirection.None, TypeArguments.Count: 0, Name: "float" or "double" };
+
+		void WriteLiteral()
+		{
+			if (otherIsFloating)
+			{
+				code.Write(base.FormatLong(((LiteralExpression<long>)literal).Value));
+			}
+			else
+			{
+				GenerateInternal(literal, code);
+			}
+		}
+
+		void WriteOther()
+		{
+			if (otherIsFloating)
+			{
+				GenerateInternal(other, code);
+				return;
+			}
+
+			code.Write("BigInt(");
+			GenerateInternal(other, code);
+			code.Write(")");
+		}
+
+		code.Write("(");
+		if (literalOnLeft)
+		{
+			WriteLiteral();
+		}
+		else
+		{
+			WriteOther();
+		}
+
+		code.Write($" {GetOperatorSpelling(binary.Operator)} ");
+		if (literalOnLeft)
+		{
+			WriteOther();
+		}
+		else
+		{
+			WriteLiteral();
+		}
+
+		code.Write(")");
+		return true;
+	}
 
 	/// <inheritdoc/>
 	protected override string? SpellImport(string import)
@@ -789,6 +877,11 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		if (IntegerWidthOf(binary) is IntegerWidth width)
 		{
 			WriteWideBitwise(binary, width, code);
+			return;
+		}
+
+		if (TryWriteBigIntEquality(binary, code))
+		{
 			return;
 		}
 
