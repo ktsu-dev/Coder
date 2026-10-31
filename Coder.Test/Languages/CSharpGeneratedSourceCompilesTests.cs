@@ -402,4 +402,44 @@ public class CSharpGeneratedSourceCompilesTests
 			Assert.AreEqual(0, exitCode, $"C# rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
 		});
 	}
+
+	/// <summary>
+	/// Tests that a local with no initialiser compiles whether or not it says a type, which C# can
+	/// only infer from an initialiser (CS0818), and that one with an initialiser is still <c>var</c> (#355).
+	/// </summary>
+	[TestMethod]
+	public void LocalsWithoutAnInitialiser_Compile()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "dotnet") is null)
+		{
+			Assert.Inconclusive("No dotnet on the path, so nothing was compiled.");
+			return;
+		}
+
+		FunctionDeclaration locals = new("locals") { ReturnType = "int" };
+		locals.Body.Add(new VariableDeclaration("untyped"));
+		locals.Body.Add(new VariableDeclaration("typed", "int") { IsTypeInferred = true });
+		locals.Body.Add(new VariableDeclaration("started", "int", Literal.Number(2)) { IsTypeInferred = true });
+		locals.Body.Add(new AssignmentStatement(new VariableReference("untyped"), Literal.Number(1)));
+		locals.Body.Add(new AssignmentStatement(new VariableReference("typed"), Literal.Number(3)));
+		locals.Body.Add(new ReturnStatement(new BinaryExpression(new VariableReference("typed"), BinaryOperator.Add, new VariableReference("started"))));
+
+		SourceFile file = new("Generated");
+		file.Members.Add(locals);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new CSharpGenerator().Generate(file);
+			Assert.Contains("object untyped;", source, StringComparison.Ordinal, source);
+			Assert.Contains("untyped: C# infers a type only from an initialiser", source, StringComparison.Ordinal, source);
+			Assert.Contains("int typed;", source, StringComparison.Ordinal, source);
+			Assert.Contains("var started = 2;", source, StringComparison.Ordinal, source);
+
+			File.WriteAllText(Path.Combine(directory, "Generated.csproj"), Project);
+			File.WriteAllText(Path.Combine(directory, "Generated.cs"), source);
+
+			(int exitCode, string output) = ToolchainHarness.Run("dotnet", "build -nologo", directory);
+			Assert.AreEqual(0, exitCode, $"C# rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+		});
+	}
 }
