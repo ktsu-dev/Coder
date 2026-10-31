@@ -1,4 +1,4 @@
-// Copyright (c) 2023-2026 ktsu-dev contributors
+﻿// Copyright (c) 2023-2026 ktsu-dev contributors
 
 namespace ktsu.Coder.Test.Languages;
 
@@ -30,7 +30,7 @@ public class FloatingRemainderTests
 	[DataRow("C", "return fmod(a, b);", "return fmodf(a, b);", "x = fmod(x, b);")]
 	[DataRow("C++", "return std::fmod(a, b);", "return std::fmod(a, b);", "x = std::fmod(x, b);")]
 	[DataRow("Go", "return math.Mod(a, b)", "return float32(math.Mod(float64(a), float64(b)))", "x = math.Mod(x, b)")]
-	[DataRow("Python", "return math.fmod(a, b)", "return math.fmod(a, b)", "x = math.fmod(x, b)")]
+	[DataRow("Python", "return (math.nan if b == 0 or math.isinf(a) else math.fmod(a, b))", "return (math.nan if b == 0 or math.isinf(a) else math.fmod(a, b))", "x = (math.nan if b == 0 or math.isinf(x) else math.fmod(x, b))")]
 	public void AFloatingRemainderIsACall(string language, string doubleRemainder, string floatRemainder, string compoundRemainder)
 	{
 		string code = GeneratorFor(language).Generate(FileOfRemainders());
