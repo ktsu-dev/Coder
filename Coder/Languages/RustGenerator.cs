@@ -1254,6 +1254,15 @@ public class RustGenerator : StandardLanguageGenerator
 			WriteInexpressible(code, $"{SpellFunctionName(funcDecl)} is defaulted: derive it, or implement Default");
 			return;
 		}
+
+		// An abstract member of a struct has nowhere to be implemented: a bodiless fn in an inherent
+		// impl is an error, so it is written down the way Go writes it down.
+		if (funcDecl.IsAbstract && !insideTrait)
+		{
+			WriteInexpressible(code, $"{SpellFunctionName(funcDecl)} has no body: only a trait may require one");
+			return;
+		}
+
 		// #[must_use] says what a pure function's purity means to a caller, and is worth nothing on
 		// one that answers nothing.
 		if ((funcDecl.IsPure || funcDecl.MustUseResult) && ReturnsAValue(funcDecl))
@@ -1295,9 +1304,8 @@ public class RustGenerator : StandardLanguageGenerator
 			code.Write($" -> {SpellType(funcDecl.ReturnType!)}");
 		}
 
-		// A declaration with no definition is a requirement, which is a thing only a trait can hold:
-		// an abstract member of a struct has nowhere to be implemented.
-		if (funcDecl.IsAbstract || (insideTrait && funcDecl.Body.Count == 0))
+		// A declaration with no definition is a requirement, which is a thing only a trait can hold.
+		if (insideTrait && (funcDecl.IsAbstract || funcDecl.Body.Count == 0))
 		{
 			code.WriteLine(";");
 			return;
