@@ -267,8 +267,9 @@ public class CppGenerator : CFamilyGenerator
 		WriteTemplateHead(funcDecl.TypeParameters, code);
 
 		// Purity earns [[nodiscard]] on its own: a call that does nothing else and whose result is
-		// thrown away did nothing at all.
-		if (funcDecl.IsPure || funcDecl.MustUseResult)
+		// thrown away did nothing at all. A call that answers nothing has no result to keep, and
+		// compilers warn about the attribute there rather than honour it.
+		if ((funcDecl.IsPure || funcDecl.MustUseResult) && ReturnsAValue(funcDecl))
 		{
 			code.Write("[[nodiscard]] ");
 		}
@@ -904,6 +905,23 @@ public class CppGenerator : CFamilyGenerator
 	{
 		{ "list", "<std::any>" },
 		{ "dict", "<std::string, std::any>" }
+	};
+
+	/// <summary>
+	/// Determines whether a call to a declaration answers something a caller could discard.
+	/// </summary>
+	/// <param name="funcDecl">The declaration being emitted.</param>
+	/// <returns>True for a constructor, a conversion, and a method or operator that returns other than <c>void</c>.</returns>
+	/// <remarks>
+	/// A constructor answers the object it builds, which is why C++20 lets it be <c>[[nodiscard]]</c>;
+	/// a destructor answers nothing, and a method or operator with no return type is <c>void</c>.
+	/// </remarks>
+	private static bool ReturnsAValue(FunctionDeclaration funcDecl) => funcDecl.Kind switch
+	{
+		FunctionKind.Destructor => false,
+		FunctionKind.Method or FunctionKind.Operator =>
+			funcDecl.ReturnType is TypeReference declared && MapToCppType(declared) != "void",
+		_ => true,
 	};
 
 	/// <summary>
