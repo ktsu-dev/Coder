@@ -4,6 +4,7 @@ namespace ktsu.Coder.Languages;
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using ktsu.Coder.Ast;
 using ktsu.CodeBlocker;
@@ -2150,19 +2151,148 @@ public class RustGenerator : StandardLanguageGenerator
 		// discriminant's type: Perm::Read as i32, or as isize where no representation is fixed.
 		string discriminant = enumDecl.UnderlyingType is TypeReference fixedType ? SpellType(fixedType) : "isize";
 
-		using Scope body = new(code);
+		// A variant's discriminant must be unique, so a member that repeats an earlier one's value is
+		// not a variant at all but a constant naming that one. A reference to it in a later
+		// discriminant goes to the variant it names, because the constant is of the enumeration's own
+		// type and the type's layout is what the discriminant is being evaluated for.
+		Dictionary<string, string> aliases = FindEnumAliases(enumDecl);
+		string Discriminant(string sibling) => $"{name}::{aliases.GetValueOrDefault(sibling, sibling)} as {discriminant}";
+
+		using (Scope body = new(code))
+		{
+			string? previous = null;
+			foreach (EnumMember member in enumDecl.Members)
+			{
+				string memberName = member.Name ?? "Unnamed";
+				if (aliases.ContainsKey(memberName))
+				{
+					previous = memberName;
+					continue;
+				}
+
+				code.Write(memberName);
+
+				if (member.Value is not null)
+				{
+					code.Write($" = {RenameSiblingMembers(enumDecl, member.Value, Discriminant)}");
+				}
+				else if (previous is not null && aliases.ContainsKey(previous))
+				{
+					// Rust counts an implicit discriminant on from the previous variant, and the
+					// member before this one became a constant rather than a variant, so the count
+					// it continues from is spelled out.
+					code.Write($" = {Discriminant(previous)} + 1");
+				}
+
+				// A trailing comma on the last variant too, so adding one after it is a one-line diff.
+				code.WriteLine(",");
+				previous = memberName;
+			}
+		}
+
+		if (aliases.Count == 0)
+		{
+			return;
+		}
+
+		code.Write($"impl {name} ");
+		using Scope constants = new(code);
 		foreach (EnumMember member in enumDecl.Members)
 		{
-			code.Write(member.Name ?? "Unnamed");
-
-			if (member.Value is not null)
+			if (member.Name is string memberName && aliases.TryGetValue(memberName, out string? target))
 			{
-				code.Write($" = {RenameSiblingMembers(enumDecl, member.Value, sibling => $"{name}::{sibling} as {discriminant}")}");
+				code.WriteLine("#[allow(non_upper_case_globals)]");
+				code.WriteLine($"{SpellVisibilityOf(enumDecl)}const {memberName}: {name} = {name}::{target};");
+			}
+		}
+	}
+
+	/// <summary>
+	/// Finds the members of an enumeration whose value repeats an earlier member's.
+	/// </summary>
+	/// <param name="enumDecl">The enumeration.</param>
+	/// <returns>Each repeating member's name, mapped to the earliest member with the same value.</returns>
+	/// <remarks>
+	/// Values are compared by what they are written as rather than what they evaluate to, which is
+	/// all a generator can know without evaluating C# expressions: a number is its value, a bare
+	/// sibling name is that sibling's value, an implicit value is one past the member before it, and
+	/// anything else is a value of its own. That is enough for <c>Default = Low</c> and for the
+	/// implicit successor of an alias landing on the successor of what it aliases.
+	/// </remarks>
+	private static Dictionary<string, string> FindEnumAliases(EnumDeclaration enumDecl)
+	{
+		Dictionary<string, (string Base, long Offset)> values = [];
+		Dictionary<(string Base, long Offset), string> first = [];
+		Dictionary<string, string> aliases = [];
+		(string Base, long Offset)? previous = null;
+
+		foreach (EnumMember member in enumDecl.Members)
+		{
+			string? text = member.Value?.Trim();
+			(string Base, long Offset) value = text switch
+			{
+				null => previous is (string b, long o) ? (b, o + 1) : (string.Empty, 0),
+				_ when TryParseIntegerLiteral(text, out long number) => (string.Empty, number),
+				_ when values.TryGetValue(text, out (string Base, long Offset) sibling) => sibling,
+				_ => (text, 0),
+			};
+
+			if (member.Name is string memberName)
+			{
+				if (first.TryGetValue(value, out string? earlier))
+				{
+					aliases[memberName] = earlier;
+				}
+				else
+				{
+					first[value] = memberName;
+				}
+
+				values.TryAdd(memberName, value);
 			}
 
-			// A trailing comma on the last variant too, so adding one after it is a one-line diff.
-			code.WriteLine(",");
+			previous = value;
 		}
+
+		return aliases;
+	}
+
+	/// <summary>
+	/// Reads an integer literal as C# writes one.
+	/// </summary>
+	/// <param name="text">The literal's text.</param>
+	/// <param name="value">The value, when the text is a literal.</param>
+	/// <returns>True when the text is a decimal, hexadecimal or binary integer literal.</returns>
+	private static bool TryParseIntegerLiteral(string text, out long value)
+	{
+		string digits = text.Replace("_", string.Empty, StringComparison.Ordinal).TrimEnd('u', 'U', 'l', 'L');
+		bool negative = digits.StartsWith('-');
+		if (negative)
+		{
+			digits = digits[1..];
+		}
+
+		bool parsed;
+		if (digits.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+		{
+			parsed = long.TryParse(digits[2..], NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out value);
+		}
+		else if (digits.StartsWith("0b", StringComparison.OrdinalIgnoreCase))
+		{
+			parsed = digits.Length > 2 && digits[2..].All(digit => digit is '0' or '1');
+			value = parsed ? Convert.ToInt64(digits[2..], 2) : 0;
+		}
+		else
+		{
+			parsed = long.TryParse(digits, NumberStyles.None, CultureInfo.InvariantCulture, out value);
+		}
+
+		if (negative)
+		{
+			value = -value;
+		}
+
+		return parsed;
 	}
 
 	/// <inheritdoc/>

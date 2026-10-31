@@ -622,6 +622,69 @@ public class RustGeneratedSourceCompilesTests
 	}
 
 	/// <summary>
+	/// Tests that an enumeration member repeating an earlier member's value compiles and keeps that
+	/// value, whether it names the member (<c>Default = Low</c>) or is the implicit successor of one
+	/// that does (#388).
+	/// </summary>
+	/// <remarks>
+	/// Rust gives every variant a unique discriminant, so an alias written as a variant was E0081.
+	/// </remarks>
+	[TestMethod]
+	public void EnumMembersRepeatingAValue_CompileAndKeepIt()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "rustc") is null)
+		{
+			Assert.Inconclusive("No Rust compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		EnumDeclaration level = new("Level") { UnderlyingType = "int" };
+		level.Members.Add(new EnumMember("Low"));
+		level.Members.Add(new EnumMember("Mid"));
+		level.Members.Add(new EnumMember("High"));
+		level.Members.Add(new EnumMember("Default") { Value = "Low" });
+
+		EnumDeclaration bits = new("Bits") { UnderlyingType = "int" };
+		bits.Members.Add(new EnumMember("A") { Value = "0x10" });
+		bits.Members.Add(new EnumMember("B"));
+		bits.Members.Add(new EnumMember("C") { Value = "1 << 3" });
+		bits.Members.Add(new EnumMember("D"));
+		bits.Members.Add(new EnumMember("E") { Value = "A" });
+		bits.Members.Add(new EnumMember("F"));
+		bits.Members.Add(new EnumMember("G"));
+
+		SourceFile file = new("aliases");
+		file.Members.Add(level);
+		file.Members.Add(bits);
+
+		string source = new RustGenerator().Generate(file);
+		const string checks = """
+			const _: () = assert!(Level::Default as i32 == 0);
+			const _: () = assert!(Level::High as i32 == 2);
+			const _: () = assert!(Bits::B as i32 == 17);
+			const _: () = assert!(Bits::D as i32 == 9);
+			const _: () = assert!(Bits::E as i32 == 16);
+			const _: () = assert!(Bits::F as i32 == 17);
+			const _: () = assert!(Bits::G as i32 == 18);
+
+			""";
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			File.WriteAllText(
+				Path.Combine(directory, "aliases.rs"),
+				$"#![allow(unused_parens, dead_code)]{Environment.NewLine}{source}{Environment.NewLine}{checks}");
+
+			(int exitCode, string output) = ToolchainHarness.Run(
+				"rustc",
+				"--crate-type lib --edition 2021 -o aliases.rlib aliases.rs",
+				directory);
+
+			Assert.AreEqual(0, exitCode, $"rustc rejected the generated source:{Environment.NewLine}{source}{Environment.NewLine}{output}");
+		});
+	}
+
+	/// <summary>
 	/// A record holding a plain struct, and a record holding another record, both compile: the
 	/// derive reaches every struct a record holds.
 	/// </summary>
