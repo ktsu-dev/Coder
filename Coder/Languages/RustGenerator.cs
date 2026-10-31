@@ -712,11 +712,73 @@ public class RustGenerator : StandardLanguageGenerator
 						break;
 				}
 			}
+
+			// Rust rejects a type parameter no field mentions (E0392), which a typed handle or a
+			// marker type does on purpose, so a zero-sized field mentions it instead (#387).
+			if (PhantomType(classDecl) is string phantom)
+			{
+				code.WriteLine($"pub {PhantomFieldName}: {phantom},");
+			}
 		}
 		finally
 		{
 			insideType--;
 		}
+	}
+
+	/// <summary>
+	/// The field a struct holds its otherwise unused type parameters in.
+	/// </summary>
+	private const string PhantomFieldName = "_phantom";
+
+	/// <summary>
+	/// The value of <see cref="PhantomFieldName"/>, which is the same whatever it holds.
+	/// </summary>
+	private const string PhantomValue = "std::marker::PhantomData";
+
+	/// <summary>
+	/// Spells the marker a struct holds for the type parameters none of its fields mention.
+	/// </summary>
+	/// <param name="classDecl">The struct.</param>
+	/// <returns>
+	/// <c>std::marker::PhantomData&lt;T&gt;</c> for one such parameter, <c>PhantomData&lt;(T, U)&gt;</c>
+	/// for several, or null when every parameter appears in a field.
+	/// </returns>
+	private static string? PhantomType(ClassDeclaration classDecl)
+	{
+		if (classDecl.TypeParameters.Count == 0 || classDecl.Kind == TypeDeclarationKind.Interface)
+		{
+			return null;
+		}
+
+		List<TypeReference> fieldTypes = [.. classDecl.Members
+			.Select(member => member switch
+			{
+				FieldDeclaration field when !IsAssociatedField(field) => field.Type,
+				VariableDeclaration field => field.Type,
+				_ => null,
+			})
+			.OfType<TypeReference>()];
+
+		if (classDecl.BaseType is TypeReference baseType)
+		{
+			fieldTypes.Add(baseType);
+		}
+
+		string[] unused = [.. classDecl.TypeParameters
+			.Select(parameter => parameter.Name)
+			.Where(name => !fieldTypes.Any(type => Mentions(type, name)))];
+
+		return unused.Length switch
+		{
+			0 => null,
+			1 => $"{PhantomValue}<{unused[0]}>",
+			_ => $"{PhantomValue}<({string.Join(", ", unused)})>",
+		};
+
+		static bool Mentions(TypeReference type, string name) =>
+			string.Equals(type.Name, name, StringComparison.Ordinal)
+			|| type.TypeArguments.Any(argument => Mentions(argument, name));
 	}
 
 	/// <summary>
@@ -2326,6 +2388,24 @@ public class RustGenerator : StandardLanguageGenerator
 			literalType = BuiltType(construction.Type);
 			try
 			{
+				// A literal names every field, the marker a struct holds for an unused type parameter
+				// as well, unless struct update syntax fills in the rest.
+				if (literalType is not null
+					&& PhantomType(literalType) is not null
+					&& !construction.Arguments.Any(argument =>
+						(argument is MemberInitialiser { Name: PhantomFieldName })
+						|| (argument is CallExpression call && call.Callee.StartsWith("..", StringComparison.Ordinal))))
+				{
+					ConstructionExpression marked = new(construction.Type);
+					foreach (AstNode argument in construction.Arguments)
+					{
+						marked.Arguments.Add(argument);
+					}
+
+					marked.Arguments.Add(new MemberInitialiser(PhantomFieldName, new VariableReference(PhantomValue)));
+					construction = marked;
+				}
+
 				WriteElementList(construction, code, "{", "}", "{}");
 			}
 			finally
