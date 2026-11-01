@@ -502,6 +502,17 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	}
 
 	/// <summary>
+	/// Reads the type of a return statement from its enclosing function.
+	/// </summary>
+	/// <param name="statement">The return statement.</param>
+	/// <returns>The function's return type, or null when it has none.</returns>
+	protected TypeReference? StaticType(ReturnStatement statement)
+	{
+		Ensure.NotNull(statement);
+		return staticTypeScopes.TryPeek(out StaticTypeScope? scope) ? scope.ReturnType : null;
+	}
+
+	/// <summary>
 	/// Reads the type of a dotted reference that reaches a field through a receiver.
 	/// </summary>
 	/// <param name="name">The name the reference is written with, such as <c>self.total</c>.</param>
@@ -603,17 +614,6 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 		: SelfAndDescendants(GenerationRoot)
 			.OfType<ClassDeclaration>()
 			.FirstOrDefault(declaration => declaration.Members.Contains(member));
-
-	/// <summary>
-	/// Reads the type of a return statement from its enclosing function.
-	/// </summary>
-	/// <param name="statement">The return statement.</param>
-	/// <returns>The function's return type, or null when it has none.</returns>
-	protected TypeReference? StaticType(ReturnStatement statement)
-	{
-		Ensure.NotNull(statement);
-		return staticTypeScopes.TryPeek(out StaticTypeScope? scope) ? scope.ReturnType : null;
-	}
 
 	/// <summary>
 	/// Emits a reference to a variable, field or parameter by name.
