@@ -1009,20 +1009,10 @@ public class PythonGenerator : StandardLanguageGenerator
 	/// <returns>The name Python knows it by.</returns>
 	private static string PythonTypeName(TypeReference type) => type.Name.ToLowerInvariant() switch
 	{
-		"int" => "int",
-		"long" => "int",
-		"short" => "int",
-		"ushort" => "int",
-		"uint" => "int",
-		"ulong" => "int",
-		"byte" => "int",
-		"sbyte" => "int",
-		"string" => "str",
+		"int" or "long" or "short" or "ushort" or "uint" or "ulong" or "byte" or "sbyte" => "int",
+		"string" or "char" => "str",
 		"bool" => "bool",
-		"float" => "float",
-		"double" => "float",
-		"decimal" => "float",
-		"char" => "str",
+		"float" or "double" or "decimal" => "float",
 		"object" => "object",
 		"void" => "None",
 		_ => type.Name
