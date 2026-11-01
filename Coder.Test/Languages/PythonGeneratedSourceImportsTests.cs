@@ -139,7 +139,7 @@ public class PythonGeneratedSourceImportsTests
 	}
 
 	/// <summary>
-	/// Tests that the C# integral, character and decimal names Python has no builtin for are spelled
+	/// Tests that the C# integral, character, decimal and object names Python has no builtin for are spelled
 	/// as one it has, so a module typed with them imports and its annotations resolve (#109).
 	/// </summary>
 	[TestMethod]
@@ -157,6 +157,7 @@ public class PythonGeneratedSourceImportsTests
 		widen.Parameters.Add(new Parameter("count", "long"));
 		widen.Parameters.Add(new Parameter("letter", "char"));
 		widen.Parameters.Add(new Parameter("amount", "decimal"));
+		widen.Parameters.Add(new Parameter("tag", "Object"));
 		widen.Body.Add(new ReturnStatement(new VariableReference("count")));
 		file.Members.Add(widen);
 
@@ -171,11 +172,12 @@ public class PythonGeneratedSourceImportsTests
 				import typing
 				import widths
 
-				assert widths.widen(7, "a", 1.5) == 7
+				assert widths.widen(7, "a", 1.5, None) == 7
 				hints = typing.get_type_hints(widths.widen)
 				assert hints["count"] is int, hints
 				assert hints["letter"] is str, hints
 				assert hints["amount"] is float, hints
+				assert hints["tag"] is object, hints
 				assert hints["return"] is int, hints
 				""");
 
