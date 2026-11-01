@@ -138,6 +138,52 @@ public class PythonGeneratedSourceImportsTests
 		});
 	}
 
+	/// <summary>
+	/// Tests that the C# integral, character and decimal names Python has no builtin for are spelled
+	/// as one it has, so a module typed with them imports and its annotations resolve (#109).
+	/// </summary>
+	[TestMethod]
+	public void LongCharAndDecimalTypes_Import()
+	{
+		string? python = ToolchainHarness.FindOnPath("--version", "python3", "python");
+		if (python is null)
+		{
+			Assert.Inconclusive("No Python interpreter on the path, so nothing was run.");
+			return;
+		}
+
+		SourceFile file = new("widths");
+		FunctionDeclaration widen = new("widen") { ReturnType = "long" };
+		widen.Parameters.Add(new Parameter("count", "long"));
+		widen.Parameters.Add(new Parameter("letter", "char"));
+		widen.Parameters.Add(new Parameter("amount", "decimal"));
+		widen.Body.Add(new ReturnStatement(new VariableReference("count")));
+		file.Members.Add(widen);
+
+		string generated = new PythonGenerator().Generate(file);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			File.WriteAllText(Path.Combine(directory, "widths.py"), generated);
+			File.WriteAllText(
+				Path.Combine(directory, "driver.py"),
+				"""
+				import typing
+				import widths
+
+				assert widths.widen(7, "a", 1.5) == 7
+				hints = typing.get_type_hints(widths.widen)
+				assert hints["count"] is int, hints
+				assert hints["letter"] is str, hints
+				assert hints["amount"] is float, hints
+				assert hints["return"] is int, hints
+				""");
+
+			(int exitCode, string output) = ToolchainHarness.Run(python, "driver.py", directory);
+			Assert.AreEqual(0, exitCode, $"Python rejected the generated module:{Environment.NewLine}{output}{Environment.NewLine}{generated}");
+		});
+	}
+
 	[TestMethod]
 	public void MutableFields_ArePerInstanceAndEnumsImport()
 	{
