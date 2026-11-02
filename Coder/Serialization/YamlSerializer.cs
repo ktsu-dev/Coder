@@ -186,6 +186,10 @@ public class YamlSerializer
 			case UnaryExpression unaryExpr:
 				SerializeUnaryExpression(unaryExpr, nodeData);
 				break;
+			case UnfilledExpression:
+				// The placeholder is written under its own key with nothing in it, so that it reloads
+				// as a placeholder rather than as a deliberate empty string.
+				break;
 			case LiteralExpression<string> stringLit:
 				SerializeLiteralExpression(stringLit, nodeData);
 				break;
