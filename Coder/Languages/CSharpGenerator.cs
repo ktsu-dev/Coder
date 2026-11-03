@@ -924,8 +924,11 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// the member they are for become an object initialiser — <c>new T { Name = value }</c> — which
 	/// is what C# has in place of a designated initialiser, and it is written in the order given
 	/// because C# does not care about declaration order the way C++ does. A construction with no
-	/// type at all is the braced list on its own, which C# accepts where the declaration has
-	/// already named an array type. Everything else is a constructor call.
+	/// type at all is the list on its own, written as a collection expression — <c>[1, 2]</c> —
+	/// because that is the one spelling C# takes for an array and a <c>List&lt;T&gt;</c> alike, and
+	/// in a return, an assignment or an argument as well as an initialiser. The bare braces
+	/// <c>{ 1, 2 }</c> are only an array's initialiser and not an expression at all (#418).
+	/// Everything else is a constructor call.
 	/// </remarks>
 	private void GenerateConstruction(ConstructionExpression construction, CodeBlocker code)
 	{
@@ -933,7 +936,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 
 		if (construction.Type is null)
 		{
-			WriteBracedList(construction, code);
+			WriteBracedList(construction, code, asCollection: !designated);
 			return;
 		}
 
@@ -942,7 +945,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 		if (designated)
 		{
 			code.Write(" ");
-			WriteBracedList(construction, code);
+			WriteBracedList(construction, code, asCollection: false);
 			return;
 		}
 
@@ -966,18 +969,19 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// </summary>
 	/// <param name="construction">The expression whose arguments to write.</param>
 	/// <param name="code">The writer to emit into.</param>
+	/// <param name="asCollection">True to write a collection expression in square brackets; false for an initialiser in braces.</param>
 	/// <remarks>
 	/// A list whose elements are themselves lists is a table, and a table on one line is a diff
 	/// nobody can read, so it goes one element per line with a trailing comma. A list of plain
 	/// values is a value and stays where it is.
 	/// </remarks>
-	private void WriteBracedList(ConstructionExpression construction, CodeBlocker code)
+	private void WriteBracedList(ConstructionExpression construction, CodeBlocker code, bool asCollection)
 	{
 		IReadOnlyList<AstNode> elements = WrittenElements(construction);
 
 		if (elements.Count == 0)
 		{
-			code.Write("{ }");
+			code.Write(asCollection ? "[]" : "{ }");
 			return;
 		}
 
@@ -986,7 +990,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 
 		if (stacked)
 		{
-			code.WriteLine("{");
+			code.WriteLine(asCollection ? "[" : "{");
 			code.Indent();
 
 			foreach (AstNode argument in elements)
@@ -996,11 +1000,11 @@ public class CSharpGenerator : LanguageGeneratorBase
 			}
 
 			code.Outdent();
-			code.Write("}");
+			code.Write(asCollection ? "]" : "}");
 			return;
 		}
 
-		code.Write("{ ");
+		code.Write(asCollection ? "[" : "{ ");
 
 		for (int index = 0; index < elements.Count; index++)
 		{
@@ -1012,7 +1016,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 			WriteListElement(elements[index], code);
 		}
 
-		code.Write(" }");
+		code.Write(asCollection ? "]" : " }");
 	}
 
 	/// <summary>

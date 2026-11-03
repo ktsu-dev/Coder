@@ -442,4 +442,83 @@ public class CSharpGeneratedSourceCompilesTests
 			Assert.AreEqual(0, exitCode, $"C# rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
 		});
 	}
+
+	/// <summary>
+	/// The consumer of the generated lists, which reads each one back.
+	/// </summary>
+	private const string ListDriver = """
+		public static class ListDriver
+		{
+			public static int Use()
+			{
+				Bag bag = new Bag();
+				bag.reset();
+				return bag.items.Count + bag.make().Count + bag.table.Length + bag.grid[1][0] + Bag.empty().Count;
+			}
+		}
+		""";
+
+	/// <summary>
+	/// Tests that a typeless list compiles wherever C# can meet one — initialising a
+	/// <c>List&lt;T&gt;</c> field or local, an array and a table of arrays, and as a return value and
+	/// an assigned value — rather than only as an array's initialiser (#418).
+	/// </summary>
+	[TestMethod]
+	public void TypelessLists_Compile()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "dotnet") is null)
+		{
+			Assert.Inconclusive("No dotnet on the path, so nothing was compiled.");
+			return;
+		}
+
+		static ConstructionExpression List(params Expression[] elements)
+		{
+			ConstructionExpression list = new();
+			foreach (Expression element in elements)
+			{
+				list.Arguments.Add(element);
+			}
+
+			return list;
+		}
+
+		ClassDeclaration bag = new("Bag");
+		bag.Members.Add(new FieldDeclaration("items", TypeReference.Parse("list<int>")) { Visibility = Visibility.Public, InitialValue = List(Literal.Number(1), Literal.Number(2)) });
+		bag.Members.Add(new FieldDeclaration("table", new TypeReference("int") { IsArray = true }) { Visibility = Visibility.Public, InitialValue = List(Literal.Number(3), Literal.Number(4)) });
+		bag.Members.Add(new FieldDeclaration("grid", new TypeReference("int[]") { IsArray = true })
+		{
+			Visibility = Visibility.Public,
+			InitialValue = List(List(Literal.Number(1), Literal.Number(2)), List(Literal.Number(3), Literal.Number(4))),
+		});
+
+		FunctionDeclaration make = new("make") { ReturnType = "list<int>", Visibility = Visibility.Public };
+		make.Body.Add(new VariableDeclaration("xs", "list<int>", List(Literal.Number(1), Literal.Number(2))));
+		make.Body.Add(new ReturnStatement(List(Literal.Number(5), Literal.Number(6))));
+		bag.Members.Add(make);
+
+		FunctionDeclaration reset = new("reset") { ReturnType = "void", Visibility = Visibility.Public };
+		reset.Body.Add(new AssignmentStatement(new VariableReference("items"), List(Literal.Number(7))));
+		bag.Members.Add(reset);
+
+		FunctionDeclaration empty = new("empty") { ReturnType = "list<int>", Visibility = Visibility.Public, IsStatic = true };
+		empty.Body.Add(new ReturnStatement(List()));
+		bag.Members.Add(empty);
+
+		// The using is the file's to declare; that a list<T> parameter does not bring one is #334.
+		SourceFile file = new("Generated");
+		file.Imports.Add("System.Collections.Generic");
+		file.Members.Add(bag);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new CSharpGenerator().Generate(file);
+			File.WriteAllText(Path.Combine(directory, "Generated.csproj"), Project);
+			File.WriteAllText(Path.Combine(directory, "ListDriver.cs"), ListDriver);
+			File.WriteAllText(Path.Combine(directory, "Generated.cs"), source);
+
+			(int exitCode, string output) = ToolchainHarness.Run("dotnet", "build -nologo", directory);
+			Assert.AreEqual(0, exitCode, $"C# rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+		});
+	}
 }
