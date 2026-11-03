@@ -978,10 +978,13 @@ public class CSharpGenerator : LanguageGeneratorBase
 	private void WriteBracedList(ConstructionExpression construction, CodeBlocker code, bool asCollection)
 	{
 		IReadOnlyList<AstNode> elements = WrittenElements(construction);
+		string open = asCollection ? "[" : "{";
+		string close = asCollection ? "]" : "}";
+		string padding = asCollection ? string.Empty : " ";
 
 		if (elements.Count == 0)
 		{
-			code.Write(asCollection ? "[]" : "{ }");
+			code.Write($"{open}{padding}{close}");
 			return;
 		}
 
@@ -990,7 +993,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 
 		if (stacked)
 		{
-			code.WriteLine(asCollection ? "[" : "{");
+			code.WriteLine(open);
 			code.Indent();
 
 			foreach (AstNode argument in elements)
@@ -1000,11 +1003,11 @@ public class CSharpGenerator : LanguageGeneratorBase
 			}
 
 			code.Outdent();
-			code.Write(asCollection ? "]" : "}");
+			code.Write(close);
 			return;
 		}
 
-		code.Write(asCollection ? "[" : "{ ");
+		code.Write($"{open}{padding}");
 
 		for (int index = 0; index < elements.Count; index++)
 		{
@@ -1016,7 +1019,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 			WriteListElement(elements[index], code);
 		}
 
-		code.Write(asCollection ? "]" : " }");
+		code.Write($"{padding}{close}");
 	}
 
 	/// <summary>
