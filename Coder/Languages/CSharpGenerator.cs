@@ -111,7 +111,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 		switch (node)
 		{
 			case VariableReference varRef:
-				code.Write(varRef.Name);
+				code.Write(SpellReference(varRef.Name));
 				break;
 			case LiteralExpression<string> stringLit:
 				code.Write($"\"{EscapeString(stringLit.Value ?? string.Empty)}\"");
@@ -204,6 +204,68 @@ public class CSharpGenerator : LanguageGeneratorBase
 		WriteShiftCount(binary.Right, code);
 		code.Write(")");
 	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// The reserved keywords. The contextual ones — <c>var</c>, <c>value</c>, <c>where</c>,
+	/// <c>record</c>, <c>nameof</c> and the rest — are keywords only where the grammar expects one
+	/// and are legal names everywhere else, so they are left alone.
+	/// </remarks>
+	protected override IReadOnlySet<string> ReservedWords { get; } = new HashSet<string>(StringComparer.Ordinal)
+	{
+		"abstract", "as", "base", "bool", "break", "byte", "case", "catch", "char", "checked", "class", "const",
+		"continue", "decimal", "default", "delegate", "do", "double", "else", "enum", "event", "explicit",
+		"extern", "false", "finally", "fixed", "float", "for", "foreach", "goto", "if", "implicit", "in", "int",
+		"interface", "internal", "is", "lock", "long", "namespace", "new", "null", "object", "operator", "out",
+		"override", "params", "private", "protected", "public", "readonly", "ref", "return", "sbyte", "sealed",
+		"short", "sizeof", "stackalloc", "static", "string", "struct", "switch", "this", "throw", "true", "try",
+		"typeof", "uint", "ulong", "unchecked", "unsafe", "ushort", "using", "virtual", "void", "volatile", "while",
+	};
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// C# has a real escape, the verbatim identifier, so nothing is renamed: <c>default</c> is
+	/// declared and used as <c>@default</c>, and a caller written in C# names it that way too.
+	/// </remarks>
+	protected override string EscapeIdentifier(string name)
+	{
+		Ensure.NotNull(name);
+		return ReservedWords.Contains(name) ? $"@{name}" : name;
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// <c>this</c> and <c>base</c> name the receiver, and <c>true</c>, <c>false</c> and <c>null</c>
+	/// are the literals a reference written as text means by them.
+	/// </remarks>
+	protected override bool IsReceiverWord(string word) => word is "this" or "base" or "true" or "false" or "null";
+
+	/// <summary>
+	/// Spells a reference, escaping its keyword-named segments as their declarations were.
+	/// </summary>
+	/// <param name="reference">The reference's text.</param>
+	/// <returns>The reference as C# writes it.</returns>
+	/// <remarks>
+	/// A built-in type's keyword leading a member access — <c>int.MaxValue</c>,
+	/// <c>string.Empty</c> — names the type, so it is kept as written. On its own it can only be a
+	/// declared name, and is escaped like one.
+	/// </remarks>
+	private string SpellReference(string reference)
+	{
+		int dot = reference.IndexOf('.', StringComparison.Ordinal);
+		return dot > 0 && BuiltInTypeKeywords.Contains(reference[..dot])
+			? $"{reference[..dot]}.{EscapeReference(reference[(dot + 1)..])}"
+			: EscapeReference(reference);
+	}
+
+	/// <summary>
+	/// The keywords that are also the names of built-in types.
+	/// </summary>
+	private static readonly HashSet<string> BuiltInTypeKeywords = new(StringComparer.Ordinal)
+	{
+		"bool", "byte", "char", "decimal", "double", "float", "int", "long", "object", "sbyte", "short", "string",
+		"uint", "ulong", "ushort",
+	};
 
 	/// <inheritdoc/>
 	/// <remarks>
@@ -1024,7 +1086,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 	{
 		if (argument is MemberInitialiser designated)
 		{
-			code.Write($"{designated.Name} = ");
+			code.Write($"{EscapeIdentifier(designated.Name ?? string.Empty)} = ");
 			GenerateInternal(designated.Value!, code);
 			return;
 		}
@@ -1058,7 +1120,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 		using Scope members = new(code);
 		foreach (EnumMember member in enumDecl.Members)
 		{
-			code.Write(member.Name ?? "Unnamed");
+			code.Write(EscapeIdentifier(member.Name ?? "Unnamed"));
 
 			if (member.Value is not null)
 			{
@@ -1086,7 +1148,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 		string type = property.Type is TypeReference declared ? MapToCSType(declared) : "object";
 		string modifiers = property.IsStatic ? " static" : string.Empty;
 
-		code.Write($"{SpellVisibility(property.Visibility) ?? DefaultVisibility}{modifiers} {type} {property.Name ?? "Value"}");
+		code.Write($"{SpellVisibility(property.Visibility) ?? DefaultVisibility}{modifiers} {type} {EscapeIdentifier(property.Name ?? "Value")}");
 
 		// init rather than set where the declaration asked for it: the two differ only in when the
 		// call is legal, and nothing else here has a word for the difference. A readonly struct asks
@@ -1175,7 +1237,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 			code.Write("readonly ");
 		}
 
-		code.Write($"{MapToCSType(field.Type ?? new TypeReference(UnknownTypeName))} {field.Name}");
+		code.Write($"{MapToCSType(field.Type ?? new TypeReference(UnknownTypeName))} {EscapeIdentifier(field.Name ?? string.Empty)}");
 
 		if (field.InitialValue is not null)
 		{
@@ -1375,7 +1437,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 		// value value-initialises the member, as C++'s `x()` does, and `default` is C#'s spelling.
 		foreach (MemberInitialiser initialiser in function.Initialisers)
 		{
-			code.Write($"this.{initialiser.Name} = ");
+			code.Write($"this.{EscapeIdentifier(initialiser.Name ?? string.Empty)} = ");
 
 			if (initialiser.Value is not null)
 			{
@@ -1632,7 +1694,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// <param name="function">The declaration being emitted.</param>
 	/// <param name="enclosingType">The name of the type it belongs to, when it belongs to one.</param>
 	/// <returns>The name as C# writes it.</returns>
-	private static string SpellFunctionName(FunctionDeclaration function, string? enclosingType)
+	private string SpellFunctionName(FunctionDeclaration function, string? enclosingType)
 	{
 		string typeName = enclosingType ?? function.Name ?? "UnnamedType";
 
@@ -1643,13 +1705,13 @@ public class CSharpGenerator : LanguageGeneratorBase
 			FunctionKind.Operator => $"operator {function.Name}",
 			FunctionKind.ConversionOperator =>
 				$"{(function.IsExplicit ? "explicit" : "implicit")} operator {MapToCSType(function.ReturnType ?? new TypeReference(UnknownTypeName))}",
-			_ => function.Name ?? "UnnamedFunction",
+			_ => EscapeIdentifier(function.Name ?? "UnnamedFunction"),
 		};
 	}
 
 	private void GenerateParameter(Parameter parameter, CodeBlocker code)
 	{
-		code.Write($"{MapToCSType(parameter.Type ?? new TypeReference(UnknownTypeName))} {parameter.Name}");
+		code.Write($"{MapToCSType(parameter.Type ?? new TypeReference(UnknownTypeName))} {EscapeIdentifier(parameter.Name ?? string.Empty)}");
 
 		if (parameter.IsOptional && parameter.DefaultValue is Expression value)
 		{
@@ -1864,7 +1926,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 			code.Write("static ");
 		}
 
-		code.Write($"{type} {varDecl.Name}");
+		code.Write($"{type} {EscapeIdentifier(varDecl.Name)}");
 
 		if (varDecl.InitialValue != null)
 		{
