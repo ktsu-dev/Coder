@@ -83,6 +83,13 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// </summary>
 	public abstract string FileExtension { get; }
 
+	/// <inheritdoc/>
+	public virtual string FileExtensionFor(AstNode astNode)
+	{
+		Ensure.NotNull(astNode);
+		return FileExtension;
+	}
+
 	/// <summary>
 	/// Generates code in the target language from an AST node.
 	/// </summary>

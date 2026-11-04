@@ -25,6 +25,17 @@ public interface ILanguageGenerator
 	public string FileExtension { get; }
 
 	/// <summary>
+	/// Gets the file extension (without the dot) for the source generated from a particular node.
+	/// </summary>
+	/// <param name="astNode">The AST node the source is generated from.</param>
+	/// <returns>The extension a file holding that source should have.</returns>
+	/// <remarks>
+	/// Usually <see cref="FileExtension"/>. A language that splits a program into headers and
+	/// implementation files names the two differently, and only the node says which one it is.
+	/// </remarks>
+	public string FileExtensionFor(AstNode astNode) => FileExtension;
+
+	/// <summary>
 	/// Generates code in the target language from an AST node.
 	/// </summary>
 	/// <param name="astNode">The AST node to generate code from.</param>

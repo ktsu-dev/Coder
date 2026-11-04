@@ -66,6 +66,23 @@ public abstract class CFamilyGenerator : StandardLanguageGenerator
 	/// </remarks>
 	protected abstract string SpellType(TypeReference type);
 
+	/// <summary>
+	/// Gets the file extension (without the dot) used for a header in this language.
+	/// </summary>
+	public virtual string HeaderFileExtension => "h";
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// A <see cref="SourceFile"/> marked as a header is written with <c>#pragma once</c>, and a file
+	/// named as an implementation file holding one cannot be found by an <c>#include</c> of the
+	/// header's name and is compiled as its own translation unit by a build that globs sources.
+	/// </remarks>
+	public override string FileExtensionFor(AstNode astNode)
+	{
+		Ensure.NotNull(astNode);
+		return astNode is SourceFile { IsHeader: true } ? HeaderFileExtension : FileExtension;
+	}
+
 	/// <inheritdoc/>
 	/// <remarks>
 	/// <c>#pragma once</c> rather than an include guard, for the reason a guard cannot answer: the
