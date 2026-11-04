@@ -142,15 +142,17 @@ public class TypeMemberDeclarationTests
 	{
 		JavaScriptGenerator generator = new();
 
-		StringAssert.Contains(generator.Generate(Holder()), "static Id = int;", StringComparison.Ordinal);
+		StringAssert.Contains(generator.Generate(Holder()), "static Id = Number;", StringComparison.Ordinal);
 		StringAssert.Contains(generator.Generate(Outer()), "static Inner = class Inner {", StringComparison.Ordinal);
 	}
 
 	/// <summary>
-	/// Tests that Node.js parses a class holding an alias and one holding a nested class.
+	/// Tests that Node.js loads a class holding an alias and one holding a nested class. Parsing alone
+	/// is not enough: an alias is evaluated as the module loads, so one bound to a name JavaScript does
+	/// not have is a <c>ReferenceError</c> that <c>--check</c> cannot see.
 	/// </summary>
 	[TestMethod]
-	public void JavaScript_MemberAliasAndNestedClass_Parse()
+	public void JavaScript_MemberAliasAndNestedClass_Load()
 	{
 		string? node = ToolchainHarness.FindOnPath("--version", "node");
 		if (node is null)
@@ -168,8 +170,57 @@ public class TypeMemberDeclarationTests
 		{
 			string path = Path.Combine(directory, "members.mjs");
 			File.WriteAllText(path, generated);
-			(int exitCode, string output) = ToolchainHarness.Run(node, $"--check {path}", directory);
-			Assert.AreEqual(0, exitCode, $"Node.js rejected the generated source:{Environment.NewLine}{generated}{Environment.NewLine}{output}");
+			(int exitCode, string output) = ToolchainHarness.Run(node, path, directory);
+			Assert.AreEqual(0, exitCode, $"Node.js could not load the generated source:{Environment.NewLine}{generated}{Environment.NewLine}{output}");
+		});
+	}
+
+	/// <summary>
+	/// Tests that an alias of every built-in type name, at file scope and as a class member, loads
+	/// under Node.js and binds the constructor JavaScript has in that type's place, while an alias of a
+	/// class declared in the document still binds the class.
+	/// </summary>
+	[TestMethod]
+	public void JavaScript_AliasesOfBuiltInTypes_LoadAndBindConstructors()
+	{
+		string? node = ToolchainHarness.FindOnPath("--version", "node");
+		if (node is null)
+		{
+			Assert.Inconclusive("No Node.js runtime on the path, so nothing was run.");
+			return;
+		}
+
+		(string Type, string Constructor)[] builtIns =
+		[
+			("int", "Number"), ("long", "Number"), ("short", "Number"), ("byte", "Number"), ("uint", "Number"),
+			("ulong", "Number"), ("float", "Number"), ("double", "Number"), ("bool", "Boolean"),
+			("string", "String"), ("str", "String"), ("char", "String"), ("list", "Array"), ("dict", "Map"),
+		];
+
+		SourceFile file = new("aliases");
+		ClassDeclaration holder = new("Holder");
+		file.Members.Add(new ClassDeclaration("Point"));
+		file.Members.Add(new UsingAlias("Origin", "Point"));
+		for (int index = 0; index < builtIns.Length; index++)
+		{
+			file.Members.Add(new UsingAlias($"A{index}", builtIns[index].Type));
+			holder.Members.Add(new UsingAlias($"M{index}", builtIns[index].Type));
+		}
+
+		file.Members.Add(holder);
+		string generated = new JavaScriptGenerator().Generate(file);
+		StringAssert.Contains(generated, "const Origin = Point;", StringComparison.Ordinal);
+
+		string expected = string.Join(" ", builtIns.Select(builtIn => $"{builtIn.Constructor}:{builtIn.Constructor}"));
+		string checks = string.Join(", ", Enumerable.Range(0, builtIns.Length).Select(index => $"`${{A{index}.name}}:${{Holder.M{index}.name}}`"));
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string path = Path.Combine(directory, "aliases.mjs");
+			File.WriteAllText(path, $"{generated}{Environment.NewLine}console.log([{checks}].join(' '), Origin === Point);{Environment.NewLine}");
+			(int exitCode, string output) = ToolchainHarness.Run(node, path, directory);
+			Assert.AreEqual(0, exitCode, $"Node.js could not load the generated source:{Environment.NewLine}{generated}{Environment.NewLine}{output}");
+			Assert.AreEqual($"{expected} true", output.Trim(), generated);
 		});
 	}
 

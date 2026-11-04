@@ -375,6 +375,38 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 		_ => false,
 	};
 
+	/// <summary>
+	/// Reads the value a field or automatic property of a type holds before anything is assigned to it.
+	/// </summary>
+	/// <param name="type">The declared type, or null where none is declared.</param>
+	/// <returns>The type's zero as a literal, or null where the type has no obvious one.</returns>
+	/// <remarks>
+	/// A field with no initialiser is value-initialised, so a default-constructed instance is the one
+	/// the declaration described: C++ writes <c>{}</c>, C# and Go start at zero and Rust uses
+	/// <c>Default</c>. A target that leaves an undeclared value unset writes this instead (#345). The
+	/// answer is a literal rather than its text, so each target spells it with its own literal writer.
+	/// </remarks>
+	protected static Expression? ZeroValue(TypeReference? type)
+	{
+		if (type is not { IsArray: false, Indirection: TypeIndirection.None, TypeArguments.Count: 0, Name: string name })
+		{
+			return null;
+		}
+
+		if (IntegerTypeNames.Contains(name))
+		{
+			return Literal.Number(0);
+		}
+
+		return name switch
+		{
+			"float" or "double" => Literal.DecimalValue(0.0),
+			"bool" => Literal.Bool(false),
+			"string" or "str" => Literal.Text(string.Empty),
+			_ => null,
+		};
+	}
+
 	private static readonly HashSet<string> IntegerTypeNames = new(StringComparer.Ordinal)
 	{
 		"int", "long", "short", "byte", "sbyte", "uint", "ulong", "ushort",
@@ -1594,7 +1626,9 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	/// <param name="code">The writer to emit into.</param>
 	/// <remarks>
 	/// A <c>*/</c> in the value would end the comment early and leave the rest of it as source, so
-	/// it is broken apart.
+	/// it is broken apart. So is a <c>/*</c>, because Rust's block comments nest: one inside the
+	/// comment opens another that nothing closes, and breaking <c>*/</c> apart can make one, as
+	/// <c>"src/**/*.rs"</c> does.
 	/// </remarks>
 	protected void AppendDefaultValueComment(Parameter parameter, CodeBlocker code)
 	{
@@ -1605,7 +1639,9 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 		{
 			using CodeBlocker inline = CodeBlocker.Create(IndentString);
 			GenerateInternal(value, inline);
-			string spelled = inline.ToString().TrimEnd('\r', '\n').Replace("*/", "* /", StringComparison.Ordinal);
+			string spelled = inline.ToString().TrimEnd('\r', '\n')
+				.Replace("*/", "* /", StringComparison.Ordinal)
+				.Replace("/*", "/ *", StringComparison.Ordinal);
 			code.Write($" /* = {spelled} */");
 		}
 	}

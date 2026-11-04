@@ -132,6 +132,37 @@ public class FunctionShapeTests
 	}
 
 	/// <summary>
+	/// <c>[[nodiscard]]</c> goes only where a call answers something: a constructor answers the
+	/// object it builds, while a destructor and a <c>void</c> method answer nothing, and compilers
+	/// warn about the attribute there (#404).
+	/// </summary>
+	[TestMethod]
+	public void Cpp_WritesNodiscardOnlyWhereACallAnswersSomething()
+	{
+		ClassDeclaration handle = new("Handle");
+		handle.Members.Add(new FunctionDeclaration("Handle")
+		{
+			Kind = FunctionKind.Constructor,
+			MustUseResult = true,
+			Definition = FunctionDefinition.Defaulted,
+		});
+		handle.Members.Add(new FunctionDeclaration("ignored")
+		{
+			Kind = FunctionKind.Destructor,
+			IsPure = true,
+			Definition = FunctionDefinition.Defaulted,
+		});
+		handle.Members.Add(new FunctionDeclaration("reset") { MustUseResult = true, ReturnType = "void" });
+
+		string code = new CppGenerator().Generate(handle);
+
+		Assert.Contains("[[nodiscard]] Handle() = default;", code, StringComparison.Ordinal, code);
+		Assert.Contains("    ~Handle() = default;", code, StringComparison.Ordinal, code);
+		Assert.DoesNotContain("[[nodiscard]] ~Handle", code, StringComparison.Ordinal, code);
+		Assert.DoesNotContain("[[nodiscard]] void", code, StringComparison.Ordinal, code);
+	}
+
+	/// <summary>
 	/// C# has no attribute that makes a caller use a result, and suppressing CA1806 on the member
 	/// silences the warning inside its own body rather than at any call, which is the opposite of what
 	/// was asked. So C# says it cannot, as it does for anything else it cannot declare.

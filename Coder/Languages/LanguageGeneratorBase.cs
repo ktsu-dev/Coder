@@ -83,6 +83,13 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// </summary>
 	public abstract string FileExtension { get; }
 
+	/// <inheritdoc/>
+	public virtual string FileExtensionFor(AstNode astNode)
+	{
+		Ensure.NotNull(astNode);
+		return FileExtension;
+	}
+
 	/// <summary>
 	/// Generates code in the target language from an AST node.
 	/// </summary>
@@ -256,6 +263,17 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	protected virtual string CommentPrefix => "//";
 
 	/// <summary>
+	/// Every sequence a target ends a line at, and so ends a line comment at.
+	/// </summary>
+	/// <remarks>
+	/// Beyond CR and LF, C# also ends a line at U+0085, U+2028 and U+2029, and JavaScript at U+2028
+	/// and U+2029. Text pasted from a PDF or a word processor carries them, and the YAML serializer
+	/// preserves them. A target that does not treat one as a line break just gets an extra comment
+	/// line, which is harmless, so every target splits on all of them.
+	/// </remarks>
+	protected static readonly string[] CommentLineBreaks = ["\r\n", "\n", "\r", "\u0085", "\u2028", "\u2029"];
+
+	/// <summary>
 	/// Writes caller-provided text as comment lines without letting it escape the comment.
 	/// </summary>
 	/// <param name="code">The writer to emit into.</param>
@@ -267,7 +285,7 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 		Ensure.NotNull(prefix);
 		Ensure.NotNull(text);
 
-		foreach (string line in text.Split(["\r\n", "\n", "\r"], StringSplitOptions.None))
+		foreach (string line in text.Split(CommentLineBreaks, StringSplitOptions.None))
 		{
 			code.WriteLine(line.Length == 0 ? prefix : $"{prefix} {line}");
 		}
@@ -1202,8 +1220,10 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// <returns>The reference with each reserved segment escaped.</returns>
 	/// <remarks>
 	/// Only a segment that is exactly a reserved word changes. Anything else — a call such as
-	/// <c>args.len()</c>, an index such as <c>steps[0]</c>, a path such as <c>Self::CAPACITY</c> — is
-	/// written as given, since a reference is text and only its plain names are the AST's.
+	/// <c>args.len()</c>, an index such as <c>steps[0]</c> — is written as given, since a reference is
+	/// text and only its plain names are the AST's. A path in the target's own form, such as
+	/// <c>Kind::type</c>, names a member in its last word, so that word escapes as the member's
+	/// declaration did; the words before it are a scope or a path keyword and stay as written.
 	/// </remarks>
 	protected string EscapeReference(string reference)
 	{
@@ -1217,6 +1237,18 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 		string[] segments = reference.Split('.');
 		for (int i = 0; i < segments.Length; i++)
 		{
+			string[] path = segments[i].Split("::");
+			if (path.Length > 1)
+			{
+				if (ReservedWords.Contains(path[^1]))
+				{
+					path[^1] = EscapeIdentifier(path[^1]);
+					segments[i] = string.Join("::", path);
+				}
+
+				continue;
+			}
+
 			if (ReservedWords.Contains(segments[i]) && !(i == 0 && IsReceiverWord(segments[i])))
 			{
 				segments[i] = EscapeIdentifier(segments[i]);

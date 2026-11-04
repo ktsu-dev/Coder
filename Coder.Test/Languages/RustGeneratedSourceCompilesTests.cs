@@ -161,6 +161,54 @@ public class RustGeneratedSourceCompilesTests
 	}
 
 	/// <summary>
+	/// Tests that <c>&lt;</c> and <c>&gt;=</c> between two strings, and between a string and a literal
+	/// on either side, compile and order by content: Rust compares a <c>String</c> with a
+	/// <c>String</c> or a <c>&amp;str</c> with a <c>&amp;str</c>, but not one with the other (#372).
+	/// </summary>
+	[TestMethod]
+	public void StringOrderingComparisons_CompileAndRun()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "rustc") is null)
+		{
+			Assert.Inconclusive("No Rust compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		SourceFile file = StringOrderingFixture.Build();
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new RustGenerator().Generate(file);
+			string allowed = "#![allow(dead_code, unused_variables, unused_mut, unused_parens)]";
+			string driver = """
+				fn main() {
+				    let checks = [
+				        before(String::from("a"), String::from("b")),
+				        !before(String::from("b"), String::from("a")),
+				        atLeast(String::from("b"), String::from("a")),
+				        early(String::from("a")),
+				        !early(String::from("z")),
+				        lateOrLater(String::from("m")),
+				        literalFirst(String::from("z")),
+				        !literalFirst(String::from("a")),
+				    ];
+				    std::process::exit(if checks.iter().all(|c| *c) { 0 } else { 1 });
+				}
+				""";
+
+			File.WriteAllText(
+				Path.Combine(directory, "ordering.rs"),
+				$"{allowed}{Environment.NewLine}#![allow(non_snake_case)]{Environment.NewLine}{source}{Environment.NewLine}{driver}");
+
+			(int exitCode, string output) = ToolchainHarness.Run("rustc", "--edition 2021 -o ordering ordering.rs", directory);
+			Assert.AreEqual(0, exitCode, $"rustc rejected the generated source:{Environment.NewLine}{source}{Environment.NewLine}{output}");
+
+			(int runExit, string runOutput) = ToolchainHarness.Run(Path.Combine(directory, "ordering"), string.Empty, directory);
+			Assert.AreEqual(0, runExit, $"The generated comparisons ordered strings wrongly:{Environment.NewLine}{source}{Environment.NewLine}{runOutput}");
+		});
+	}
+
+	/// <summary>
 	/// Tests that a string literal compiles in every other place an owned <c>String</c> receives one:
 	/// a constant, a constructor's initialiser, a struct literal's field, an assignment to a field,
 	/// and both branches of a conditional answering one.
@@ -728,6 +776,11 @@ public class RustGeneratedSourceCompilesTests
 			Condition = "std::mem::size_of::<u8>() == 1",
 			Message = "size {N} fits, brace {} here",
 		});
+		geometry.Members.Add(new CompileTimeAssertion
+		{
+			Condition = "std::mem::size_of::<u16>() == 2",
+			Message = "bell\u0007 {N}\nnext line",
+		});
 
 		file.Members.Add(geometry);
 		return file;
@@ -852,6 +905,40 @@ public class RustGeneratedSourceCompilesTests
 	}
 
 	/// <summary>
+	/// Tests that string defaults containing <c>/*</c> and <c>*/</c> leave the default-value comment
+	/// terminated, because Rust's block comments nest and an unterminated one is error E0758 (#384).
+	/// </summary>
+	[TestMethod]
+	public void DefaultsContainingCommentDelimiters_Compile()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "rustc") is null)
+		{
+			Assert.Inconclusive("No Rust compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			FunctionDeclaration find = new("find") { ReturnType = "int" };
+			find.Parameters.Add(new Parameter("pattern", "string") { IsOptional = true, DefaultValue = new LiteralExpression<string>("src/**/*.rs") });
+			find.Parameters.Add(new Parameter("opener", "string") { IsOptional = true, DefaultValue = new LiteralExpression<string>("/*") });
+			find.Parameters.Add(new Parameter("closer", "string") { IsOptional = true, DefaultValue = new LiteralExpression<string>("a */ b") });
+			find.Body.Add(new ReturnStatement(new LiteralExpression<int>(1)));
+
+			string source = new RustGenerator().Generate(find);
+			string allowed = "#![allow(dead_code, unused_variables)]";
+			File.WriteAllText(Path.Combine(directory, "find.rs"), $"{allowed}{Environment.NewLine}{source}");
+
+			(int exitCode, string output) = ToolchainHarness.Run(
+				"rustc",
+				"--crate-type lib --edition 2021 -o find.rlib find.rs",
+				directory);
+
+			Assert.AreEqual(0, exitCode, $"rustc rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+		});
+	}
+
+	/// <summary>
 	/// Tests that a trait requirement's parameter does not hide a same-named mutable static from a
 	/// function written after it, so the function's assignment is still wrapped in <c>unsafe</c> and
 	/// compiles (#397).
@@ -953,6 +1040,55 @@ public class RustGeneratedSourceCompilesTests
 			(int exitCode, string output) = ToolchainHarness.Run(
 				"rustc",
 				"--crate-type lib --edition 2021 -o widening.rlib widening.rs",
+				directory);
+
+			Assert.AreEqual(0, exitCode, $"rustc rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+		});
+	}
+
+	/// <summary>
+	/// Tests that an abstract method of a struct is written down rather than declared without a body
+	/// in an inherent <c>impl</c>, which rustc rejects, while a trait's abstract and bodiless methods
+	/// are still requirements (#413).
+	/// </summary>
+	[TestMethod]
+	public void AbstractMembers_CompileInStructsAndTraits()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "rustc") is null)
+		{
+			Assert.Inconclusive("No Rust compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		ClassDeclaration shape = new("Shape") { Kind = TypeDeclarationKind.Class };
+		shape.Members.Add(new FieldDeclaration("sides", new TypeReference("int")));
+		shape.Members.Add(new FunctionDeclaration("Area") { ReturnType = "int", IsAbstract = true });
+
+		ClassDeclaration measured = new("Measured") { Kind = TypeDeclarationKind.Interface };
+		measured.Members.Add(new FunctionDeclaration("Width") { ReturnType = "int", IsAbstract = true });
+		measured.Members.Add(new FunctionDeclaration("Height") { ReturnType = "int" });
+
+		SourceFile file = new("shapes");
+		file.Members.Add(shape);
+		file.Members.Add(measured);
+
+		string source = new RustGenerator().Generate(file);
+
+		StringAssert.Contains(source, "Area has no body", StringComparison.Ordinal, source);
+		StringAssert.Contains(source, "fn Width(&mut self) -> i32;", StringComparison.Ordinal, source);
+		StringAssert.Contains(source, "fn Height(&mut self) -> i32;", StringComparison.Ordinal, source);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string allowed = "#![allow(dead_code, non_snake_case)]";
+
+			File.WriteAllText(
+				Path.Combine(directory, "shapes.rs"),
+				$"{allowed}{Environment.NewLine}{source}");
+
+			(int exitCode, string output) = ToolchainHarness.Run(
+				"rustc",
+				"--crate-type lib --edition 2021 -o shapes.rlib shapes.rs",
 				directory);
 
 			Assert.AreEqual(0, exitCode, $"rustc rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
