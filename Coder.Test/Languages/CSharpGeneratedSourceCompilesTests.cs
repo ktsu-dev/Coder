@@ -248,6 +248,52 @@ public class CSharpGeneratedSourceCompilesTests
 	}
 
 	/// <summary>
+	/// The consumer of the string comparisons, which orders a pair each way.
+	/// </summary>
+	private const string StringOrderingDriver = """
+		public static class StringOrderingDriver
+		{
+			public static bool Use() =>
+				Globals.before("a", "b")
+				&& Globals.atLeast("b", "a")
+				&& Globals.early("a")
+				&& Globals.lateOrLater("z")
+				&& Globals.literalFirst("z");
+		}
+		""";
+
+	/// <summary>
+	/// Tests that <c>&lt;</c> and <c>&gt;=</c> between two strings, and between a string and a literal
+	/// on either side, compile: C# defines no ordering operator on <c>string</c>, so each is written
+	/// as an ordinal comparison rather than as the CS0019 the bare operator is (#372).
+	/// </summary>
+	[TestMethod]
+	public void StringOrderingComparisons_Compile()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "dotnet") is null)
+		{
+			Assert.Inconclusive("No dotnet on the path, so nothing was compiled.");
+			return;
+		}
+
+		SourceFile file = StringOrderingFixture.Build();
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new CSharpGenerator().Generate(file);
+			Assert.Contains("(string.CompareOrdinal(a, b) < 0)", source, StringComparison.Ordinal, source);
+			Assert.Contains("(string.CompareOrdinal(a, \"m\") >= 0)", source, StringComparison.Ordinal, source);
+
+			File.WriteAllText(Path.Combine(directory, "Generated.csproj"), Project);
+			File.WriteAllText(Path.Combine(directory, "Driver.cs"), StringOrderingDriver);
+			File.WriteAllText(Path.Combine(directory, "Generated.cs"), source);
+
+			(int exitCode, string output) = ToolchainHarness.Run("dotnet", "build -nologo", directory);
+			Assert.AreEqual(0, exitCode, $"C# rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+		});
+	}
+
+	/// <summary>
 	/// The consumer of a type that declares its own shift, which shifts one value by another.
 	/// </summary>
 	private const string BitsDriver = """

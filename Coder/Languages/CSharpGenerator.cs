@@ -192,6 +192,12 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// </remarks>
 	private void GenerateBinary(BinaryExpression binary, CodeBlocker code)
 	{
+		if (IsOrdering(binary.Operator) && IsString(binary.Left) && IsString(binary.Right))
+		{
+			GenerateStringOrdering(binary, code);
+			return;
+		}
+
 		if (!IsShift(binary.Operator) || !ShouldCastShiftCount(binary.Right))
 		{
 			GenerateBinaryExpression(binary, code, GetBinaryOperator(binary.Operator));
@@ -229,6 +235,47 @@ public class CSharpGenerator : LanguageGeneratorBase
 	}
 
 	private static bool IsShift(BinaryOperator op) => op is BinaryOperator.LeftShift or BinaryOperator.RightShift;
+
+	private static bool IsOrdering(BinaryOperator op) =>
+		op is BinaryOperator.LessThan or BinaryOperator.LessThanOrEqual
+			or BinaryOperator.GreaterThan or BinaryOperator.GreaterThanOrEqual;
+
+	/// <summary>
+	/// Emits an ordering comparison between two strings as an ordinal comparison against zero.
+	/// </summary>
+	/// <param name="binary">The comparison to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// C# defines <c>==</c> and <c>!=</c> on <c>string</c> but no <c>&lt;</c>, <c>&lt;=</c>, <c>&gt;</c> or
+	/// <c>&gt;=</c>, so the bare operator is CS0019 (#372). <c>string.CompareOrdinal</c> orders by
+	/// UTF-16 code unit, which is what C++, Go, Rust, Python and JavaScript compare by too.
+	/// </remarks>
+	private void GenerateStringOrdering(BinaryExpression binary, CodeBlocker code)
+	{
+		code.Write("(string.CompareOrdinal(");
+		GenerateInternal(binary.Left, code);
+		code.Write(", ");
+		GenerateInternal(binary.Right, code);
+		code.Write($") {GetBinaryOperator(binary.Operator)} 0)");
+	}
+
+	/// <summary>
+	/// Reports whether an expression is known to be a string.
+	/// </summary>
+	/// <param name="expression">The expression to inspect.</param>
+	/// <returns>True for a string literal, or a parameter or local declared as one.</returns>
+	/// <remarks>An expression whose type is not known is not assumed to be a string.</remarks>
+	private bool IsString(Expression expression) => expression switch
+	{
+		{ ExpectedType: string expected } => IsStringType(new TypeReference(expected)),
+		LiteralExpression<string> => true,
+		VariableReference reference when shiftCountTypes.TryGetValue(reference.Name, out TypeReference? type) => IsStringType(type),
+		_ => false,
+	};
+
+	private static bool IsStringType(TypeReference type) =>
+		type is { IsArray: false, Indirection: TypeIndirection.None, TypeArguments.Count: 0 }
+		&& string.Equals(MapToCSType(type), "string", StringComparison.Ordinal);
 
 	/// <summary>
 	/// Decides whether a shift's count is cast to <c>int</c>.
