@@ -62,7 +62,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 		switch (node)
 		{
 			case ClassDeclaration classDecl:
-				GenerateClass(classDecl, code);
+				InShiftCountScope(TypeBodyScope(classDecl), () => GenerateClass(classDecl, code));
 				break;
 			case FunctionDeclaration function:
 				GenerateFunction(function, code);
@@ -419,6 +419,39 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// <param name="astNode">The AST node to check.</param>
 	/// <returns>True if this generator can generate code for the node; otherwise, false.</returns>
 	public override bool CanGenerate(AstNode astNode) => CanGenerateStandardNodes(astNode);
+
+	/// <summary>
+	/// Opens the shift-count scope a type body is generated in.
+	/// </summary>
+	/// <param name="classDecl">The type about to be generated.</param>
+	/// <returns>The enclosing scope less every name the type declares a member under.</returns>
+	/// <remarks>
+	/// A type body is a shift-count scope of its own, as a function body is (#320), so a
+	/// <see cref="VariableDeclaration"/> member of one type does not lend its declared type to a
+	/// same-named member of a type after it (#385). A member shadows a same-named name outside the
+	/// type, and only its own declaration can say what type it is, so the outer entry is dropped.
+	/// </remarks>
+	private Dictionary<string, TypeReference> TypeBodyScope(ClassDeclaration classDecl)
+	{
+		Dictionary<string, TypeReference> scope = new(shiftCountTypes, StringComparer.Ordinal);
+		IEnumerable<string?> shadowed = classDecl.Members.Select(static member => member switch
+		{
+			FieldDeclaration field => field.Name,
+			PropertyDeclaration property => property.Name,
+			VariableDeclaration variable => variable.Name,
+			_ => null,
+		});
+
+		foreach (string? name in shadowed)
+		{
+			if (name is not null)
+			{
+				scope.Remove(name);
+			}
+		}
+
+		return scope;
+	}
 
 	/// <summary>
 	/// Emits a class declaration and its members.
