@@ -1408,7 +1408,7 @@ public class RustGenerator : StandardLanguageGenerator
 
 		code.Write("unsafe { (*");
 		GenerateInternal(receiver, code);
-		code.Write($").{callExpr.Callee}(");
+		code.Write($").{SpellCallee(callExpr.Callee)}(");
 		GenerateArgumentList(callExpr.Arguments, code);
 		code.Write(") }");
 	}
