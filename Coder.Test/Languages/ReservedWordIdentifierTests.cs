@@ -7,7 +7,7 @@ using ktsu.Coder.Languages;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 /// <summary>
-/// Compiles and runs what the Rust, C++, Python and C# generators write for names that are keywords of
+/// Compiles and runs what the Rust, C++, Python, C# and Go generators write for names that are keywords of
 /// the target: a property called <c>Type</c> or <c>Default</c>, which are ordinary C# names, fields,
 /// parameters and locals called <c>where</c>, <c>virtual</c>, <c>match</c>, <c>delete</c>,
 /// <c>loop</c> and <c>new</c>, and, for Python, an enumeration member called <c>None</c>. Each name has to come out escaped where it is declared and spelled the
@@ -605,6 +605,139 @@ public class ReservedWordIdentifierTests
 			(int ran, string output) = ToolchainHarness.Run(python, "calls.py", directory);
 			Assert.AreEqual(0, ran, $"the generated module failed, or a keyword-named callee resolved wrongly (driver check {ran}):{Environment.NewLine}{output}{Environment.NewLine}{source}");
 		});
+	}
+
+	/// <summary>
+	/// The module the generated Go is compiled as. Nothing is required, so nothing is fetched.
+	/// </summary>
+	private const string GoModule = """
+		module holder
+
+		go 1.21
+
+		""";
+
+	/// <summary>
+	/// The Go driver. Go has no escape for a keyword, so an escaped name has had an underscore
+	/// appended, and that is the name a caller uses.
+	/// </summary>
+	private const string GoDriver = """
+		package main
+
+		import "os"
+
+		func main() {
+			holder := HolderMake()
+			if holder.type_ != 3 || holder.range_ != 4 {
+				os.Exit(1)
+			}
+			if holder.total(5, 6) != 14 {
+				os.Exit(2)
+			}
+			if relay() != 5 {
+				os.Exit(3)
+			}
+			if holder.twice() != 3 {
+				os.Exit(4)
+			}
+			if map_ != 7 {
+				os.Exit(5)
+			}
+		}
+
+		""";
+
+	/// <summary>
+	/// Tests that Go appends an underscore to a keyword-named field, parameter, local, method,
+	/// function, package-level variable and designated member, at their declarations and where they
+	/// are used, and that the result is what <c>gofmt</c> writes.
+	/// </summary>
+	[TestMethod]
+	public void Go_KeywordNamesCompileAndResolve()
+	{
+		if (ToolchainHarness.FindOnPath("version", "go") is null)
+		{
+			Assert.Inconclusive("No Go toolchain on the path, so nothing was compiled.");
+			return;
+		}
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new GoGenerator().Generate(GoTypes());
+			File.WriteAllText(Path.Combine(directory, "go.mod"), GoModule);
+			File.WriteAllText(Path.Combine(directory, "driver.go"), GoDriver);
+			File.WriteAllText(Path.Combine(directory, "holder.go"), source);
+
+			(int ran, string output) = ToolchainHarness.Run("go", "run .", directory);
+			Assert.AreEqual(0, ran, $"go rejected the generated source, or a keyword-named member read back wrongly (driver check {ran}):{Environment.NewLine}{output}{Environment.NewLine}{source}");
+
+			(int formatted, string differs) = ToolchainHarness.Run("gofmt", "-l holder.go", directory);
+			Assert.AreEqual(0, formatted, $"gofmt did not run:{Environment.NewLine}{differs}");
+			Assert.AreEqual(string.Empty, differs.Trim(), $"gofmt would rewrite the generated source:{Environment.NewLine}{source}");
+		});
+	}
+
+	/// <summary>
+	/// Tests that a Go reference keeps the receiver and the predeclared identifiers as written while
+	/// escaping a keyword that names a member. <c>nil</c>, <c>true</c> and <c>len</c> are predeclared
+	/// rather than reserved, so they are names like any other and are not escaped.
+	/// </summary>
+	[TestMethod]
+	public void Go_ReferenceKeepsTheReceiverAndPredeclaredNamesAndEscapesTheMember()
+	{
+		FunctionDeclaration read = new("read") { ReturnType = "int" };
+		read.Body.Add(new VariableDeclaration("unused", "bool", new VariableReference("true")));
+		read.Body.Add(new ReturnStatement(new VariableReference("self.chan")));
+		ClassDeclaration holder = new("Holder") { Kind = TypeDeclarationKind.Struct };
+		holder.Members.Add(new VariableDeclaration("chan", "int"));
+		holder.Members.Add(read);
+		SourceFile file = new("holder");
+		file.Members.Add(holder);
+
+		string source = new GoGenerator().Generate(file);
+
+		Assert.Contains("chan_ int", source, StringComparison.Ordinal, source);
+		Assert.Contains("return self.chan_", source, StringComparison.Ordinal, source);
+		Assert.Contains("= true", source, StringComparison.Ordinal, source);
+		Assert.DoesNotContain("self_", source, StringComparison.Ordinal, source);
+		Assert.DoesNotContain("true_", source, StringComparison.Ordinal, source);
+	}
+
+	/// <summary>
+	/// Builds a struct, functions and a package-level variable whose names are Go keywords.
+	/// </summary>
+	/// <returns>The file to generate.</returns>
+	private static SourceFile GoTypes()
+	{
+		SourceFile file = KeywordCalls("func", "switch", "self");
+		file.Name = "main";
+
+		ClassDeclaration holder = file.Members.OfType<ClassDeclaration>().Single();
+		holder.Members.Insert(0, new VariableDeclaration("type", "int"));
+		holder.Members.Insert(1, new VariableDeclaration("range", "int"));
+
+		ConstructionExpression built = holder.Members.OfType<FunctionDeclaration>().Single(function => function.Name == "make")
+			.Body.OfType<ReturnStatement>().Single().Expression as ConstructionExpression
+			?? throw new InvalidOperationException("make no longer returns a construction.");
+		built.Arguments.Add(new MemberInitialiser("type", new LiteralExpression<int>(3)));
+		built.Arguments.Add(new MemberInitialiser("range", new LiteralExpression<int>(4)));
+
+		FunctionDeclaration total = new("total") { ReturnType = "int" };
+		total.Parameters.Add(new Parameter("chan", "int"));
+		total.Parameters.Add(new Parameter("select", "int"));
+		total.Body.Add(new VariableDeclaration(
+			"go",
+			"int",
+			new BinaryExpression(new VariableReference("chan"), BinaryOperator.Add, new VariableReference("select"))));
+		total.Body.Add(new VariableDeclaration(
+			"defer",
+			"int",
+			new BinaryExpression(new VariableReference("go"), BinaryOperator.Add, new VariableReference("self.type"))));
+		total.Body.Add(new ReturnStatement(new VariableReference("defer")));
+		holder.Members.Add(total);
+
+		file.Members.Add(new FieldDeclaration("map", new TypeReference("int")) { InitialValue = new LiteralExpression<int>(7) });
+		return file;
 	}
 
 	/// <summary>
