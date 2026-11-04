@@ -1238,11 +1238,36 @@ public class CGenerator : CFamilyGenerator
 		if (binary.Operator == BinaryOperator.Add
 			&& (IsCString(StaticType(binary.Left)) || IsCString(StaticType(binary.Right))))
 		{
-			code.Write("/* C has no string concatenation: join these into a buffer with snprintf or strcat */ ");
+			code.Write(NoStringConcatenationNote);
 		}
 
 		base.GenerateBinary(binary, code);
 	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// A string <c>+=</c> carries the note a string <c>+</c> does, for the same reason: <c>+=</c> on
+	/// a pointer and a pointer does not compile either.
+	/// </remarks>
+	protected override void GenerateAssignmentStatement(AssignmentStatement assignment, CodeBlocker code)
+	{
+		Ensure.NotNull(assignment);
+		Ensure.NotNull(code);
+
+		if (assignment.Operator == AssignmentOperator.AddAssign
+			&& (IsCString(StaticType(assignment.Target)) || IsCString(StaticType(assignment.Value))))
+		{
+			code.Write(NoStringConcatenationNote);
+		}
+
+		base.GenerateAssignmentStatement(assignment, code);
+	}
+
+	/// <summary>
+	/// The note written in front of a string join, saying why the compiler rejects it.
+	/// </summary>
+	private const string NoStringConcatenationNote =
+		"/* C has no string concatenation: join these into a buffer with snprintf or strcat */ ";
 
 	/// <summary>
 	/// Reports whether a type is spelled as C's string, a pointer to constant characters.
