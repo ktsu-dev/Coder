@@ -248,6 +248,52 @@ public class CSharpGeneratedSourceCompilesTests
 	}
 
 	/// <summary>
+	/// The consumer of the string comparisons, which orders a pair each way.
+	/// </summary>
+	private const string StringOrderingDriver = """
+		public static class StringOrderingDriver
+		{
+			public static bool Use() =>
+				Globals.before("a", "b")
+				&& Globals.atLeast("b", "a")
+				&& Globals.early("a")
+				&& Globals.lateOrLater("z")
+				&& Globals.literalFirst("z");
+		}
+		""";
+
+	/// <summary>
+	/// Tests that <c>&lt;</c> and <c>&gt;=</c> between two strings, and between a string and a literal
+	/// on either side, compile: C# defines no ordering operator on <c>string</c>, so each is written
+	/// as an ordinal comparison rather than as the CS0019 the bare operator is (#372).
+	/// </summary>
+	[TestMethod]
+	public void StringOrderingComparisons_Compile()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "dotnet") is null)
+		{
+			Assert.Inconclusive("No dotnet on the path, so nothing was compiled.");
+			return;
+		}
+
+		SourceFile file = StringOrderingFixture.Build();
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new CSharpGenerator().Generate(file);
+			Assert.Contains("(string.CompareOrdinal(a, b) < 0)", source, StringComparison.Ordinal, source);
+			Assert.Contains("(string.CompareOrdinal(a, \"m\") >= 0)", source, StringComparison.Ordinal, source);
+
+			File.WriteAllText(Path.Combine(directory, "Generated.csproj"), Project);
+			File.WriteAllText(Path.Combine(directory, "Driver.cs"), StringOrderingDriver);
+			File.WriteAllText(Path.Combine(directory, "Generated.cs"), source);
+
+			(int exitCode, string output) = ToolchainHarness.Run("dotnet", "build -nologo", directory);
+			Assert.AreEqual(0, exitCode, $"C# rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+		});
+	}
+
+	/// <summary>
 	/// The consumer of a type that declares its own shift, which shifts one value by another.
 	/// </summary>
 	private const string BitsDriver = """
@@ -436,6 +482,142 @@ public class CSharpGeneratedSourceCompilesTests
 			Assert.Contains("var started = 2;", source, StringComparison.Ordinal, source);
 
 			File.WriteAllText(Path.Combine(directory, "Generated.csproj"), Project);
+			File.WriteAllText(Path.Combine(directory, "Generated.cs"), source);
+
+			(int exitCode, string output) = ToolchainHarness.Run("dotnet", "build -nologo", directory);
+			Assert.AreEqual(0, exitCode, $"C# rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+		});
+	}
+
+	/// <summary>
+	/// Tests that virtual and abstract methods that are private, belong to a struct, or are static,
+	/// which C++ allows and C# rejects (CS0621, CS0106, CS0112), compile with what was changed or
+	/// dropped written down (#412).
+	/// </summary>
+	[TestMethod]
+	public void MethodsCSharpCannotOverride_Compile()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "dotnet") is null)
+		{
+			Assert.Inconclusive("No dotnet on the path, so nothing was compiled.");
+			return;
+		}
+
+		ClassDeclaration widget = new("Widget");
+		FunctionDeclaration doDraw = new("DoDraw") { ReturnType = "int", IsVirtual = true, Visibility = Visibility.Private };
+		doDraw.Body.Add(new ReturnStatement(Literal.Number(1)));
+		widget.Members.Add(doDraw);
+		widget.Members.Add(new FunctionDeclaration("Area") { ReturnType = "int", IsAbstract = true, Visibility = Visibility.Private });
+
+		ClassDeclaration factory = new("Factory");
+		FunctionDeclaration make = new("Make") { ReturnType = "int", IsStatic = true, IsVirtual = true };
+		make.Body.Add(new ReturnStatement(Literal.Number(2)));
+		factory.Members.Add(make);
+		factory.Members.Add(new FunctionDeclaration("Build") { ReturnType = "int", IsStatic = true, IsAbstract = true });
+
+		ClassDeclaration span = new("Span") { Kind = TypeDeclarationKind.Struct };
+		FunctionDeclaration len = new("Len") { ReturnType = "int", IsVirtual = true };
+		len.Body.Add(new ReturnStatement(Literal.Number(3)));
+		span.Members.Add(len);
+		span.Members.Add(new FunctionDeclaration("Area") { ReturnType = "int", IsAbstract = true });
+
+		SourceFile file = new("Generated");
+		file.Members.Add(widget);
+		file.Members.Add(factory);
+		file.Members.Add(span);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new CSharpGenerator().Generate(file);
+			Assert.Contains("protected virtual int DoDraw()", source, StringComparison.Ordinal, source);
+			Assert.Contains("protected abstract int Area();", source, StringComparison.Ordinal, source);
+			Assert.Contains("// private: DoDraw is protected, because C# cannot override a private member", source, StringComparison.Ordinal, source);
+			Assert.Contains("public static int Make()", source, StringComparison.Ordinal, source);
+			Assert.Contains("// virtual: Make is static, which C# cannot override outside an interface", source, StringComparison.Ordinal, source);
+			Assert.Contains("// Build is abstract and static", source, StringComparison.Ordinal, source);
+			Assert.Contains("public class Factory", source, StringComparison.Ordinal, source);
+			Assert.Contains("public int Len()", source, StringComparison.Ordinal, source);
+			Assert.Contains("// virtual: Len belongs to a struct, which C# cannot derive from", source, StringComparison.Ordinal, source);
+			Assert.Contains("// Area is abstract, which a C# struct cannot declare", source, StringComparison.Ordinal, source);
+
+			File.WriteAllText(Path.Combine(directory, "Generated.csproj"), Project);
+			File.WriteAllText(Path.Combine(directory, "Generated.cs"), source);
+
+			(int exitCode, string output) = ToolchainHarness.Run("dotnet", "build -nologo", directory);
+			Assert.AreEqual(0, exitCode, $"C# rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+		});
+	}
+
+	/// <summary>
+	/// The consumer of the narrow-arithmetic declarations.
+	/// </summary>
+	private const string NarrowDriver = """
+		public static class NarrowDriver
+		{
+			public static short Use(short a, short b, byte u)
+			{
+				Packet packet = new();
+				packet.Bump();
+				return (short)(Globals.F(a, b, u) + packet.Count + packet.Doubled + packet.Half);
+			}
+		}
+		""";
+
+	/// <summary>
+	/// Tests that arithmetic, bitwise and unary results on <c>short</c> and <c>byte</c> written back
+	/// into a local, a field, an assignment and a return compile, which C#'s promotion to <c>int</c>
+	/// rejects with CS0266 unless the result is cast (#411), and that a result into <c>int</c> is not
+	/// cast.
+	/// </summary>
+	[TestMethod]
+	public void NarrowArithmetic_Compiles()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "dotnet") is null)
+		{
+			Assert.Inconclusive("No dotnet on the path, so nothing was compiled.");
+			return;
+		}
+
+		// short F(short a, short b, byte u) { short c = a + b; byte d = u & 15; short e = -a; c = c * 2; return c - e; }
+		FunctionDeclaration f = new("F") { ReturnType = "short" };
+		f.Parameters.Add(new Parameter("a", "short"));
+		f.Parameters.Add(new Parameter("b", "short"));
+		f.Parameters.Add(new Parameter("u", "byte"));
+		f.Body.Add(new VariableDeclaration("c", "short", new BinaryExpression(new VariableReference("a"), BinaryOperator.Add, new VariableReference("b"))));
+		f.Body.Add(new VariableDeclaration("d", "byte", new BinaryExpression(new VariableReference("u"), BinaryOperator.BitwiseAnd, Literal.Number(15))));
+		f.Body.Add(new VariableDeclaration("e", "short", new UnaryExpression(UnaryOperator.Negate, new VariableReference("a"))));
+		f.Body.Add(new VariableDeclaration("w", "int", new BinaryExpression(new VariableReference("a"), BinaryOperator.Add, new VariableReference("d"))));
+		f.Body.Add(new AssignmentStatement(new VariableReference("c"), new BinaryExpression(new VariableReference("c"), BinaryOperator.Multiply, Literal.Number(2))));
+		f.Body.Add(new ReturnStatement(new BinaryExpression(new VariableReference("c"), BinaryOperator.Subtract, new VariableReference("e"))));
+
+		ClassDeclaration packet = new("Packet");
+		packet.Members.Add(new FieldDeclaration("Base", new TypeReference("short")) { IsStatic = true, Visibility = Visibility.Public, InitialValue = Literal.Number(3) });
+		packet.Members.Add(new FieldDeclaration("Doubled", new TypeReference("short"))
+		{
+			Visibility = Visibility.Public,
+			InitialValue = new BinaryExpression(new VariableReference("Base"), BinaryOperator.Multiply, Literal.Number(2)),
+		});
+		packet.Members.Add(new FieldDeclaration("Count", new TypeReference("sbyte")) { Visibility = Visibility.Public });
+		FunctionDeclaration bump = new("Bump") { Visibility = Visibility.Public };
+		bump.Body.Add(new AssignmentStatement(new VariableReference("Count"), new BinaryExpression(new VariableReference("Count"), BinaryOperator.Add, Literal.Number(1))));
+		packet.Members.Add(bump);
+		packet.Members.Add(new PropertyDeclaration("Half", "ushort")
+		{
+			Visibility = Visibility.Public,
+			GetterBody = { new ReturnStatement(new BinaryExpression(new VariableReference("Base"), BinaryOperator.RightShift, Literal.Number(1))) },
+		});
+
+		SourceFile file = new("Generated");
+		file.Members.Add(f);
+		file.Members.Add(packet);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new CSharpGenerator().Generate(file);
+			Assert.Contains("int w = (a + d);", source, StringComparison.Ordinal, source);
+
+			File.WriteAllText(Path.Combine(directory, "Generated.csproj"), Project);
+			File.WriteAllText(Path.Combine(directory, "Driver.cs"), NarrowDriver);
 			File.WriteAllText(Path.Combine(directory, "Generated.cs"), source);
 
 			(int exitCode, string output) = ToolchainHarness.Run("dotnet", "build -nologo", directory);

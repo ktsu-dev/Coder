@@ -340,4 +340,77 @@ public class CGeneratedSourceCompilesTests
 
 		return file;
 	}
+
+	/// <summary>
+	/// Builds a header holding a constant string at file scope, and constant locals whose types are
+	/// already const or that C maps to <c>const char*</c>.
+	/// </summary>
+	/// <returns>The source file.</returns>
+	private static SourceFile ConstantsExemplar()
+	{
+		SourceFile file = new("constants") { IsHeader = true };
+		file.Members.Add(new FieldDeclaration { Name = "Greeting", Type = "string", InitialValue = Literal.Text("hi"), IsConstant = true, IsStatic = true });
+
+		FunctionDeclaration measure = new("measure") { ReturnType = "int" };
+		measure.Body.Add(new VariableDeclaration("n", "const int", Literal.Number(1)) { IsConstant = true });
+		measure.Body.Add(new VariableDeclaration("p", "const char*", Literal.Text("x")) { IsConstant = true });
+		measure.Body.Add(new VariableDeclaration("s", "string", Literal.Text("y")) { IsConstant = true });
+		measure.Body.Add(new ReturnStatement(new VariableReference("n")));
+		file.Members.Add(measure);
+
+		return file;
+	}
+
+	/// <summary>
+	/// Tests that a constant whose type is already const, or is a C <c>string</c>, says const once and
+	/// compiles under <c>-Werror</c>, and that a constant string cannot be reassigned (#415).
+	/// </summary>
+	/// <remarks>
+	/// <c>const const T</c> is a warning in C, so it fails only once warnings are errors. The second
+	/// build is the one that has to fail: a leading const on <c>const char*</c> qualified the
+	/// characters, so assigning a different string to the "constant" compiled.
+	/// </remarks>
+	[TestMethod]
+	public void ConstantsWhoseTypeIsAlreadyConst_SayConstOnce()
+	{
+		string header = new CGenerator().Generate(ConstantsExemplar());
+
+		Assert.DoesNotContain("const const", header, StringComparison.Ordinal, header);
+		Assert.Contains("static const char* const Greeting = \"hi\";", header, StringComparison.Ordinal, header);
+		Assert.Contains("const int n = 1;", header, StringComparison.Ordinal, header);
+		Assert.Contains("const char* const p = \"x\";", header, StringComparison.Ordinal, header);
+		Assert.Contains("const char* const s = \"y\";", header, StringComparison.Ordinal, header);
+
+		string? compiler = ToolchainHarness.FindOnPath("--version", Compilers);
+		if (compiler is null)
+		{
+			Assert.Inconclusive("No C compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			File.WriteAllText(Path.Combine(directory, "constants.h"), header);
+			File.WriteAllText(
+				Path.Combine(directory, "driver.c"),
+				"#include \"constants.h\"\n\nint main(void)\n{\n\treturn (measure() + Greeting[0]) * 0;\n}\n");
+			File.WriteAllText(
+				Path.Combine(directory, "reassign.c"),
+				"#include \"constants.h\"\n\nint main(void)\n{\n\tGreeting = \"other\";\n\treturn measure() * 0;\n}\n");
+
+			(int exitCode, string output) = ToolchainHarness.Run(
+				compiler,
+				"-std=c11 -Wall -Wextra -Wno-unused-variable -pedantic -Werror -c driver.c -o driver.o",
+				directory);
+
+			Assert.AreEqual(0, exitCode, $"{compiler} rejected the generated constants:{Environment.NewLine}{output}{Environment.NewLine}{header}");
+
+			(exitCode, output) = ToolchainHarness.Run(
+				compiler,
+				"-std=c11 -c reassign.c -o reassign.o",
+				directory);
+
+			Assert.AreNotEqual(0, exitCode, $"{compiler} let a constant string be reassigned:{Environment.NewLine}{header}");
+		});
+	}
 }

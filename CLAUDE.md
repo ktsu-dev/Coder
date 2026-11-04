@@ -55,7 +55,7 @@ source in seven target languages. The solution uses:
   `TypeReference` is structure: `False` is Python's spelling and fails to compile in C# and C++, and
   no spelling of a flag or a null works in every target. Each generator writes it with its own
   literal writer; C, Go and Rust, which have no default arguments, write it into a comment with any
-  `*/` broken apart. `ParseDefaultValue`/`FormatDefaultValue` are the text form the YAML and the
+  `*/` or `/*` broken apart (Rust's block comments nest). `ParseDefaultValue`/`FormatDefaultValue` are the text form the YAML and the
   editor's field hold, so a document from when it was text still reads: `true`/`false` in any case,
   numbers and double-quoted strings become literals, and anything else is a name, written verbatim.
 - `Coder/Ast/SourceFile.cs`, `NamespaceDeclaration.cs`, `EnumDeclaration.cs`, `FieldDeclaration.cs` —

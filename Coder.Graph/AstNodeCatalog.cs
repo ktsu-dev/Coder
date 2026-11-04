@@ -17,7 +17,7 @@ using ktsu.Coder.Ast;
 /// <remarks>
 /// Each entry builds a node that is valid on its own, so a freshly created node can be connected
 /// straight away rather than needing fields filled in first. An operand a new node cannot have yet
-/// is the same empty literal <see cref="AstSchema.Unfilled"/> produces, which
+/// is the same placeholder <see cref="AstSchema.Unfilled"/> produces, which
 /// <see cref="AstGraph.Validate"/> then reports as outstanding.
 /// <para>
 /// <paramref name="Group"/> exists because there are eighteen binary operators: listing them flat
