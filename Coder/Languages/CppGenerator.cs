@@ -688,11 +688,11 @@ public class CppGenerator : CFamilyGenerator
 		using ScopeWithTrailingSemicolon body = new(code);
 		foreach (EnumMember member in enumDecl.Members)
 		{
-			code.Write(member.Name ?? "Unnamed");
+			code.Write(EscapeIdentifier(member.Name ?? "Unnamed"));
 
 			if (member.Value is not null)
 			{
-				code.Write($" = {member.Value}");
+				code.Write($" = {RenameSiblingMembers(enumDecl, member.Value, EscapeIdentifier)}");
 			}
 
 			// A trailing comma on the last member too, so adding one after it is a one-line diff.
