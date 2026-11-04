@@ -1,4 +1,4 @@
-// Copyright (c) 2023-2026 ktsu-dev contributors
+﻿// Copyright (c) 2023-2026 ktsu-dev contributors
 
 namespace ktsu.Coder.Test.Languages;
 
@@ -7,7 +7,7 @@ using ktsu.Coder.Languages;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 /// <summary>
-/// Compiles and runs what the Rust, C++ and Python generators write for names that are keywords of
+/// Compiles and runs what the Rust, C++, Python and C# generators write for names that are keywords of
 /// the target: a property called <c>Type</c> or <c>Default</c>, which are ordinary C# names, fields,
 /// parameters and locals called <c>where</c>, <c>virtual</c>, <c>match</c>, <c>delete</c>,
 /// <c>loop</c> and <c>new</c>, and, for Python, an enumeration member called <c>None</c>. Each name has to come out escaped where it is declared and spelled the
@@ -162,6 +162,51 @@ public class ReservedWordIdentifierTests
 	}
 
 	/// <summary>
+	/// Tests that a Python enumeration member whose value names a keyword-escaped sibling, explicitly
+	/// or through the <c>(origin) + n</c> a following member derives from it, names the escaped
+	/// member rather than the keyword, so the module imports and the values resolve.
+	/// </summary>
+	[TestMethod]
+	public void Python_EnumValueNamingAnEscapedSiblingRunsAndResolves()
+	{
+		string? python = ToolchainHarness.FindOnPath("--version", "python3", "python");
+		if (python is null)
+		{
+			Assert.Inconclusive("No Python interpreter on the path, so nothing was run.");
+			return;
+		}
+
+		EnumDeclaration access = new("Access");
+		access.Members.Add(new EnumMember("None") { Value = "0" });
+		access.Members.Add(new EnumMember("Read") { Value = "1" });
+		access.Members.Add(new EnumMember("Default") { Value = "None" });
+		access.Members.Add(new EnumMember("Next"));
+		SourceFile file = new("access");
+		file.Members.Add(access);
+
+		string source = new PythonGenerator().Generate(file);
+		Assert.Contains("Default = None_", source, StringComparison.Ordinal, source);
+		Assert.Contains("Next = (None_) + 1", source, StringComparison.Ordinal, source);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string driver = """
+
+
+				if Access.Default != Access.None_:
+				    raise SystemExit(1)
+				if Access.Next != 1:
+				    raise SystemExit(2)
+
+				""";
+			File.WriteAllText(Path.Combine(directory, "access.py"), source + driver);
+
+			(int ran, string output) = ToolchainHarness.Run(python, "access.py", directory);
+			Assert.AreEqual(0, ran, $"the generated module failed, or a sibling-named value read back wrongly (driver check {ran}):{Environment.NewLine}{output}{Environment.NewLine}{source}");
+		});
+	}
+
+	/// <summary>
 	/// Tests that a Python reference keeps the literal words as written while escaping a keyword
 	/// that names a member.
 	/// </summary>
@@ -182,6 +227,95 @@ public class ReservedWordIdentifierTests
 		Assert.Contains("unused = None", source, StringComparison.Ordinal, source);
 		Assert.Contains("return self.from_", source, StringComparison.Ordinal, source);
 		Assert.DoesNotContain("None_", source, StringComparison.Ordinal, source);
+	}
+
+	/// <summary>
+	/// The project the generated C# is built as: a program, so the driver can check what it reads back.
+	/// </summary>
+	private const string CSharpProject = """
+		<Project Sdk="Microsoft.NET.Sdk">
+		  <PropertyGroup>
+		    <OutputType>Exe</OutputType>
+		    <TargetFramework>net10.0</TargetFramework>
+		    <Nullable>disable</Nullable>
+		    <ImplicitUsings>disable</ImplicitUsings>
+		  </PropertyGroup>
+		</Project>
+		""";
+
+	/// <summary>
+	/// The C# driver. <c>@</c> is how a C# caller names a keyword, so it reads the escaped names back
+	/// exactly as a user of the generated type would.
+	/// </summary>
+	private const string CSharpDriver = """
+		public static class Program
+		{
+			public static int Main()
+			{
+				Holder holder = Holder.make();
+				if (holder.@class != 9 || holder.@event != 4) { return 1; }
+				if (holder.@default != 1) { return 2; }
+				if (holder.total(5, 6) != 20) { return 3; }
+				if ((int)Flag.@null != 0 || (int)Flag.All != 1) { return 4; }
+				if (Globals.@return(7) != 7) { return 5; }
+				if (Globals.widest() != int.MaxValue) { return 6; }
+				return 0;
+			}
+		}
+		""";
+
+	/// <summary>
+	/// Tests that C# writes a keyword-named field, property, parameter, local, enumeration member,
+	/// function and designated member as a verbatim identifier, at their declarations and where they
+	/// are used, and keeps a built-in type's keyword leading a member access as written.
+	/// </summary>
+	[TestMethod]
+	public void CSharp_KeywordNamesCompileAndResolve()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "dotnet") is null)
+		{
+			Assert.Inconclusive("No dotnet on the path, so nothing was compiled.");
+			return;
+		}
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new CSharpGenerator().Generate(CSharpTypes());
+			File.WriteAllText(Path.Combine(directory, "Holder.csproj"), CSharpProject);
+			File.WriteAllText(Path.Combine(directory, "Program.cs"), CSharpDriver);
+			File.WriteAllText(Path.Combine(directory, "Holder.cs"), source);
+
+			(int ran, string output) = ToolchainHarness.Run("dotnet", "run -nologo", directory);
+			Assert.AreEqual(0, ran, $"C# rejected the generated source, or a keyword-named member read back wrongly (driver check {ran}):{Environment.NewLine}{output}{Environment.NewLine}{source}");
+		});
+	}
+
+	/// <summary>
+	/// Tests that a C# reference keeps the receiver and the literal words as written while escaping
+	/// a keyword that names a member.
+	/// </summary>
+	[TestMethod]
+	public void CSharp_ReferenceKeepsTheReceiverAndLiteralsAndEscapesTheMember()
+	{
+		FunctionDeclaration read = new("read") { ReturnType = "int" };
+		read.Body.Add(new VariableDeclaration("unused", "object", new VariableReference("null")));
+		read.Body.Add(new VariableDeclaration("empty", "string", new VariableReference("string.Empty")));
+		read.Body.Add(new ReturnStatement(new VariableReference("this.base")));
+		ClassDeclaration holder = new("Holder");
+		holder.Members.Add(new VariableDeclaration("base", "int"));
+		holder.Members.Add(read);
+		SourceFile file = new("holder");
+		file.Members.Add(holder);
+
+		string source = new CSharpGenerator().Generate(file);
+
+		Assert.Contains("int @base", source, StringComparison.Ordinal, source);
+		Assert.Contains("return this.@base;", source, StringComparison.Ordinal, source);
+		Assert.Contains("= null;", source, StringComparison.Ordinal, source);
+		Assert.Contains("= string.Empty;", source, StringComparison.Ordinal, source);
+		Assert.DoesNotContain("@this", source, StringComparison.Ordinal, source);
+		Assert.DoesNotContain("@null", source, StringComparison.Ordinal, source);
+		Assert.DoesNotContain("@string", source, StringComparison.Ordinal, source);
 	}
 
 	/// <summary>
@@ -224,6 +358,301 @@ public class ReservedWordIdentifierTests
 	}
 
 	/// <summary>
+	/// Tests that Rust declares a keyword-named enumeration member as a raw identifier, and that a
+	/// <c>Kind::type</c> path and a sibling's value naming it are spelled the same way. <c>public</c>
+	/// and <c>private</c> are not Rust keywords, so they stay as written.
+	/// </summary>
+	[TestMethod]
+	public void Rust_KeywordNamedEnumMembersCompileAndResolve()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "rustc") is null)
+		{
+			Assert.Inconclusive("No Rust compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string program = OperatingSystem.IsWindows() ? "kinds.exe" : "kinds";
+			string source = new RustGenerator().Generate(KeywordEnums()) + RustEnumDriver;
+			File.WriteAllText(Path.Combine(directory, "kinds.rs"), source);
+
+			(int built, string output) = ToolchainHarness.Run("rustc", $"--edition 2021 -o {program} kinds.rs", directory);
+			Assert.AreEqual(0, built, $"rustc rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+
+			(int ran, _) = ToolchainHarness.Run(Path.Combine(directory, program), string.Empty, directory);
+			Assert.AreEqual(0, ran, $"a keyword-named member read back wrongly (driver check {ran}):{Environment.NewLine}{source}");
+		});
+	}
+
+	/// <summary>
+	/// Tests that C++ appends an underscore to a keyword-named enumeration member, and that a
+	/// <c>Access::public</c> path and a sibling's value naming one are spelled the same way.
+	/// <c>type</c> is not a C++ keyword, so it stays as written.
+	/// </summary>
+	[TestMethod]
+	public void Cpp_KeywordNamedEnumMembersCompileAndResolve()
+	{
+		string? compiler = ToolchainHarness.FindOnPath("--version", CppCompilers);
+		if (compiler is null)
+		{
+			Assert.Inconclusive("No C++ compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string program = OperatingSystem.IsWindows() ? "kinds.exe" : "kinds";
+			string header = new CppGenerator().Generate(KeywordEnums());
+			File.WriteAllText(Path.Combine(directory, "kinds.hpp"), header);
+			File.WriteAllText(Path.Combine(directory, "driver.cpp"), CppEnumDriver);
+
+			(int built, string output) = ToolchainHarness.Run(
+				compiler,
+				$"-std=c++20 -Wall -Wextra -pedantic -o {program} driver.cpp",
+				directory);
+			Assert.AreEqual(0, built, $"{compiler} rejected the generated header:{Environment.NewLine}{output}{Environment.NewLine}{header}");
+
+			(int ran, _) = ToolchainHarness.Run(Path.Combine(directory, program), string.Empty, directory);
+			Assert.AreEqual(0, ran, $"a keyword-named member read back wrongly (driver check {ran}):{Environment.NewLine}{header}");
+		});
+	}
+
+	/// <summary>
+	/// The Rust driver for <see cref="KeywordEnums"/>.
+	/// </summary>
+	private const string RustEnumDriver = """
+
+		fn main() {
+		    if pick() != Kind::r#type || Kind::Other as isize != 2 { std::process::exit(1); }
+		    if open() != Access::public || Access::Hidden as i32 != 2 { std::process::exit(2); }
+		}
+
+		""";
+
+	/// <summary>
+	/// The C++ driver for <see cref="KeywordEnums"/>.
+	/// </summary>
+	private const string CppEnumDriver = """
+		#include "kinds.hpp"
+
+		int main()
+		{
+			if (pick() != Kind::type || static_cast<int>(Kind::Other) != 2) { return 1; }
+			if (open() != Access::public_ || static_cast<int>(Access::Hidden) != 2) { return 2; }
+			return 0;
+		}
+
+		""";
+
+	/// <summary>
+	/// Builds two enumerations whose members are C++ and Rust keywords, one member whose value names a
+	/// keyword-named sibling, and two functions that return a keyword-named member by its path.
+	/// </summary>
+	/// <returns>The file to generate.</returns>
+	private static SourceFile KeywordEnums()
+	{
+		EnumDeclaration access = new("Access") { UnderlyingType = new TypeReference("int") };
+		access.Members.Add(new EnumMember("public") { Value = "0" });
+		access.Members.Add(new EnumMember("private") { Value = "1" });
+		access.Members.Add(new EnumMember("Hidden") { Value = "private + 1" });
+
+		EnumDeclaration kind = new("Kind");
+		kind.Members.Add(new EnumMember("None"));
+		kind.Members.Add(new EnumMember("type") { Value = "1" });
+		kind.Members.Add(new EnumMember("Other") { Value = "type + 1" });
+
+		FunctionDeclaration pick = new("pick") { ReturnType = "Kind" };
+		pick.Body.Add(new ReturnStatement(new VariableReference("Kind::type")));
+
+		FunctionDeclaration open = new("open") { ReturnType = "Access" };
+		open.Body.Add(new ReturnStatement(new VariableReference("Access::public")));
+
+		SourceFile file = new("kinds");
+		file.Members.Add(access);
+		file.Members.Add(kind);
+		file.Members.Add(pick);
+		file.Members.Add(open);
+		return file;
+	}
+
+	/// <summary>
+	/// Tests that Rust calls a keyword-named free function and method by the raw identifiers they
+	/// were declared with: with no receiver, through <c>self</c>, and through a raw pointer, which is
+	/// written <c>unsafe { (*p).callee() }</c>.
+	/// </summary>
+	[TestMethod]
+	public void Rust_KeywordNamedCalleesCompileAndResolve()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "rustc") is null)
+		{
+			Assert.Inconclusive("No Rust compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string program = OperatingSystem.IsWindows() ? "calls.exe" : "calls";
+			SourceFile file = KeywordCalls("match", "loop", "self");
+			FunctionDeclaration through = new("through") { ReturnType = "int" };
+			through.Parameters.Add(new Parameter("other", "const Holder*"));
+			through.Body.Add(new ReturnStatement(new CallExpression(new VariableReference("other"), "loop")));
+			file.Members.Add(through);
+
+			string generated = new RustGenerator().Generate(file);
+			Assert.Contains("unsafe { (*other).r#loop() }", generated, StringComparison.Ordinal, generated);
+
+			string source = generated + """
+
+				fn main() {
+				    let mut holder = Holder::make();
+				    if relay() != 5 { std::process::exit(1); }
+				    if holder.twice() != 3 { std::process::exit(2); }
+				    if through(&holder) != 2 { std::process::exit(3); }
+				}
+
+				""";
+			File.WriteAllText(Path.Combine(directory, "calls.rs"), source);
+
+			(int built, string output) = ToolchainHarness.Run("rustc", $"--edition 2021 -o {program} calls.rs", directory);
+			Assert.AreEqual(0, built, $"rustc rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+
+			(int ran, _) = ToolchainHarness.Run(Path.Combine(directory, program), string.Empty, directory);
+			Assert.AreEqual(0, ran, $"a keyword-named callee resolved wrongly (driver check {ran}):{Environment.NewLine}{source}");
+		});
+	}
+
+	/// <summary>
+	/// Tests that C++ calls a keyword-named free function and method by the suffixed names they were
+	/// declared with, and that a reserved callee nothing declares, <c>sizeof</c>, stays as written.
+	/// </summary>
+	[TestMethod]
+	public void Cpp_KeywordNamedCalleesCompileAndResolve()
+	{
+		string? compiler = ToolchainHarness.FindOnPath("--version", CppCompilers);
+		if (compiler is null)
+		{
+			Assert.Inconclusive("No C++ compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string program = OperatingSystem.IsWindows() ? "calls.exe" : "calls";
+			SourceFile file = KeywordCalls("delete", "default", null);
+			FunctionDeclaration width = new("width") { ReturnType = "int" };
+			width.Parameters.Add(new Parameter("value", "int"));
+			CallExpression size = new("sizeof");
+			size.Arguments.Add(new VariableReference("value"));
+			width.Body.Add(new ReturnStatement(size));
+			file.Members.Add(width);
+
+			string header = new CppGenerator().Generate(file);
+			File.WriteAllText(Path.Combine(directory, "calls.hpp"), header);
+			File.WriteAllText(Path.Combine(directory, "driver.cpp"), """
+				#include "calls.hpp"
+
+				int main()
+				{
+					Holder holder = Holder::make();
+					if (relay() != 5) { return 1; }
+					if (holder.twice() != 3) { return 2; }
+					if (width(0) != static_cast<int>(sizeof(int))) { return 3; }
+					return 0;
+				}
+
+				""");
+
+			(int built, string output) = ToolchainHarness.Run(
+				compiler,
+				$"-std=c++20 -Wall -Wextra -pedantic -o {program} driver.cpp",
+				directory);
+			Assert.AreEqual(0, built, $"{compiler} rejected the generated header:{Environment.NewLine}{output}{Environment.NewLine}{header}");
+
+			(int ran, _) = ToolchainHarness.Run(Path.Combine(directory, program), string.Empty, directory);
+			Assert.AreEqual(0, ran, $"a keyword-named callee resolved wrongly (driver check {ran}):{Environment.NewLine}{header}");
+		});
+	}
+
+	/// <summary>
+	/// Tests that Python calls a keyword-named free function and method by the suffixed names they
+	/// were declared with.
+	/// </summary>
+	[TestMethod]
+	public void Python_KeywordNamedCalleesRunAndResolve()
+	{
+		string? python = ToolchainHarness.FindOnPath("--version", "python3", "python");
+		if (python is null)
+		{
+			Assert.Inconclusive("No Python interpreter on the path, so nothing was run.");
+			return;
+		}
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new PythonGenerator().Generate(KeywordCalls("lambda", "pass", "self")) + """
+
+
+				holder = Holder()
+				if relay() != 5:
+				    raise SystemExit(1)
+				if holder.twice() != 3:
+				    raise SystemExit(2)
+
+				""";
+			File.WriteAllText(Path.Combine(directory, "calls.py"), source);
+
+			(int ran, string output) = ToolchainHarness.Run(python, "calls.py", directory);
+			Assert.AreEqual(0, ran, $"the generated module failed, or a keyword-named callee resolved wrongly (driver check {ran}):{Environment.NewLine}{output}{Environment.NewLine}{source}");
+		});
+	}
+
+	/// <summary>
+	/// Builds a free function and a method named after keywords, and the generated code that calls
+	/// each of them: <c>relay</c> calls the free function, and <c>twice</c> calls the method on its
+	/// own instance.
+	/// </summary>
+	/// <param name="function">The free function's name.</param>
+	/// <param name="method">The method's name.</param>
+	/// <param name="receiver">How the target's method body names its own instance, or null to call the method with no receiver.</param>
+	/// <returns>The file to generate.</returns>
+	private static SourceFile KeywordCalls(string function, string method, string? receiver)
+	{
+		ClassDeclaration holder = new("Holder") { Kind = TypeDeclarationKind.Struct };
+		holder.Members.Add(new VariableDeclaration("seed", "int"));
+
+		ConstructionExpression built = new(new TypeReference("Holder"));
+		built.Arguments.Add(new MemberInitialiser("seed", new LiteralExpression<int>(0)));
+		FunctionDeclaration make = new("make") { ReturnType = "Holder", IsStatic = true };
+		make.Body.Add(new ReturnStatement(built));
+		holder.Members.Add(make);
+
+		FunctionDeclaration keywordMethod = new(method) { ReturnType = "int", IsReadOnly = true };
+		keywordMethod.Body.Add(new ReturnStatement(new LiteralExpression<int>(2)));
+		holder.Members.Add(keywordMethod);
+
+		CallExpression callMethod = receiver is null ? new(method) : new(new VariableReference(receiver), method);
+		FunctionDeclaration twice = new("twice") { ReturnType = "int" };
+		twice.Body.Add(new ReturnStatement(new BinaryExpression(callMethod, BinaryOperator.Add, new LiteralExpression<int>(1))));
+		holder.Members.Add(twice);
+
+		FunctionDeclaration keywordFunction = new(function) { ReturnType = "int" };
+		keywordFunction.Parameters.Add(new Parameter("value", "int"));
+		keywordFunction.Body.Add(new ReturnStatement(new VariableReference("value")));
+
+		CallExpression callFunction = new(function);
+		callFunction.Arguments.Add(new LiteralExpression<int>(5));
+		FunctionDeclaration relay = new("relay") { ReturnType = "int" };
+		relay.Body.Add(new ReturnStatement(callFunction));
+
+		SourceFile file = new("calls");
+		file.Members.Add(holder);
+		file.Members.Add(keywordFunction);
+		file.Members.Add(relay);
+		return file;
+	}
+
+	/// <summary>
 	/// Builds a class, an enumeration and a function whose names are Python keywords.
 	/// </summary>
 	/// <returns>The file to generate.</returns>
@@ -263,6 +692,59 @@ public class ReservedWordIdentifierTests
 		file.Members.Add(holder);
 		file.Members.Add(flag);
 		file.Members.Add(identity);
+		return file;
+	}
+
+	/// <summary>
+	/// Builds a class, an enumeration and functions whose names are C# keywords.
+	/// </summary>
+	/// <returns>The file to generate.</returns>
+	private static SourceFile CSharpTypes()
+	{
+		ClassDeclaration holder = new("Holder");
+		holder.Members.Add(new VariableDeclaration("class", "int", new LiteralExpression<int>(3)) { Visibility = Visibility.Public });
+		holder.Members.Add(new VariableDeclaration("event", "int", new LiteralExpression<int>(4)) { Visibility = Visibility.Public });
+		holder.Members.Add(new PropertyDeclaration("default", "int")
+		{
+			GetterBody = { new ReturnStatement(new LiteralExpression<int>(1)) },
+		});
+
+		ConstructionExpression built = new(new TypeReference("Holder"));
+		built.Arguments.Add(new MemberInitialiser("class", new LiteralExpression<int>(9)));
+		FunctionDeclaration make = new("make") { ReturnType = "Holder", IsStatic = true };
+		make.Body.Add(new ReturnStatement(built));
+		holder.Members.Add(make);
+
+		FunctionDeclaration total = new("total") { ReturnType = "int" };
+		total.Parameters.Add(new Parameter("in", "int"));
+		total.Parameters.Add(new Parameter("out", "int"));
+		total.Body.Add(new VariableDeclaration(
+			"lock",
+			"int",
+			new BinaryExpression(new VariableReference("in"), BinaryOperator.Add, new VariableReference("out"))));
+		total.Body.Add(new VariableDeclaration(
+			"fixed",
+			"int",
+			new BinaryExpression(new VariableReference("lock"), BinaryOperator.Add, new VariableReference("this.class"))));
+		total.Body.Add(new ReturnStatement(new VariableReference("fixed")));
+		holder.Members.Add(total);
+
+		EnumDeclaration flag = new("Flag");
+		flag.Members.Add(new EnumMember("null"));
+		flag.Members.Add(new EnumMember("All"));
+
+		FunctionDeclaration identity = new("return") { ReturnType = "int" };
+		identity.Parameters.Add(new Parameter("params", "int"));
+		identity.Body.Add(new ReturnStatement(new VariableReference("params")));
+
+		FunctionDeclaration widest = new("widest") { ReturnType = "int" };
+		widest.Body.Add(new ReturnStatement(new VariableReference("int.MaxValue")));
+
+		SourceFile file = new("holder");
+		file.Members.Add(holder);
+		file.Members.Add(flag);
+		file.Members.Add(identity);
+		file.Members.Add(widest);
 		return file;
 	}
 
