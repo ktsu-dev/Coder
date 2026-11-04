@@ -318,36 +318,50 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	/// are put in scope the way its emitter puts them, which is what makes the answer agree with what
 	/// is written; a file that imports what it does not use does not compile in Go.
 	/// </remarks>
-	protected bool ContainsFloatingRemainder(SourceFile file)
+	protected bool ContainsFloatingRemainder(SourceFile file) => ContainsInScope(file, IsFloatingRemainder);
+
+	/// <summary>
+	/// Reports whether any node of a file matches, with each body's parameters and locals in scope.
+	/// </summary>
+	/// <param name="file">The file being emitted.</param>
+	/// <param name="matches">The question asked of each node, which can read an operand's static type.</param>
+	/// <returns>True when a node matches.</returns>
+	/// <remarks>
+	/// What <see cref="ContainsFloatingRemainder"/> asks, for any other construct whose spelling
+	/// depends on its operands' types and needs an import.
+	/// </remarks>
+	protected bool ContainsInScope(SourceFile file, Func<AstNode, bool> matches)
 	{
 		Ensure.NotNull(file);
-		if (SelfAndDescendants(file).Any(IsFloatingRemainder))
+		Ensure.NotNull(matches);
+		if (SelfAndDescendants(file).Any(matches))
 		{
 			return true;
 		}
 
 		return SelfAndDescendants(file).Any(node => node switch
 		{
-			FunctionDeclaration function => ScopeContainsFloatingRemainder(() => OpenStaticTypeScope(function), [function]),
+			FunctionDeclaration function => ScopeContains(() => OpenStaticTypeScope(function), [function], matches),
 
 			// An accessor and an entry point are bodies their emitters scope as well (#278). Go, C
 			// and C++ write a setter as a function taking `value`, which is the name this scope gives
 			// it too.
 			PropertyDeclaration property =>
-				ScopeContainsFloatingRemainder(() => OpenStaticTypeScope(property, isSetter: false), property.GetterBody)
-				|| ScopeContainsFloatingRemainder(() => OpenStaticTypeScope(property, isSetter: true), property.SetterBody),
-			EntryPoint entryPoint => ScopeContainsFloatingRemainder(() => OpenStaticTypeScope(entryPoint), entryPoint.Body),
+				ScopeContains(() => OpenStaticTypeScope(property, isSetter: false), property.GetterBody, matches)
+				|| ScopeContains(() => OpenStaticTypeScope(property, isSetter: true), property.SetterBody, matches),
+			EntryPoint entryPoint => ScopeContains(() => OpenStaticTypeScope(entryPoint), entryPoint.Body, matches),
 			_ => false,
 		});
 	}
 
 	/// <summary>
-	/// Reports whether a body takes a floating remainder once its locals are in the given scope.
+	/// Reports whether a body has a matching node once its locals are in the given scope.
 	/// </summary>
 	/// <param name="openScope">Opens the scope its emitter opens.</param>
 	/// <param name="body">The nodes the scope covers.</param>
-	/// <returns>True when a <c>%</c> or <c>%=</c> in the body has a floating-point operand.</returns>
-	private bool ScopeContainsFloatingRemainder(Func<IDisposable> openScope, IEnumerable<AstNode> body)
+	/// <param name="matches">The question asked of each node.</param>
+	/// <returns>True when a node in the body matches.</returns>
+	private bool ScopeContains(Func<IDisposable> openScope, IEnumerable<AstNode> body, Func<AstNode, bool> matches)
 	{
 		using (openScope())
 		{
@@ -364,7 +378,7 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 				}
 			}
 
-			return nodes.Any(IsFloatingRemainder);
+			return nodes.Any(matches);
 		}
 	}
 
