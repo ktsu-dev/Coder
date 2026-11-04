@@ -184,6 +184,54 @@ public class GoGeneratedSourceCompilesTests
 	}
 
 	/// <summary>
+	/// Tests that an interface taken by reference or by pointer is passed as the interface itself,
+	/// and that a call through it reaches the implementation when run.
+	/// </summary>
+	/// <remarks>
+	/// The method set of a pointer to an interface is empty, so <c>s *Shape</c> made <c>s.Area()</c>
+	/// an error, and no implementer converts to one either (issue #298).
+	/// </remarks>
+	[TestMethod]
+	public void InterfaceParameters_AreCalledThroughWhenRun()
+	{
+		if (ToolchainHarness.FindOnPath("version", "go") is null)
+		{
+			Assert.Inconclusive("No Go toolchain on the path, so nothing was compiled.");
+			return;
+		}
+
+		SourceFile file = CompiledExemplar.Measured();
+		file.Members.Add(CompiledExemplar.Measures("measurePointer", "Shape*"));
+
+		const string driver = """
+			package main
+
+			import "fmt"
+
+			func main() {
+				square := Square{side: 2}
+				fmt.Println(measure(square), measureMutable(square), measurePointer(square))
+			}
+
+			""";
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			File.WriteAllText(Path.Combine(directory, "go.mod"), Module);
+			File.WriteAllText(Path.Combine(directory, "driver.go"), driver);
+			File.WriteAllText(Path.Combine(directory, "measured.go"), new GoGenerator().Generate(file));
+
+			(int exitCode, string output) = ToolchainHarness.Run("go", "run .", directory);
+			Assert.AreEqual(0, exitCode, $"go rejected the generated source:{Environment.NewLine}{output}");
+			Assert.AreEqual("4 4 4", output.Trim());
+
+			(int formatted, string differs) = ToolchainHarness.Run("gofmt", "-l measured.go", directory);
+			Assert.AreEqual(0, formatted, $"gofmt did not run:{Environment.NewLine}{differs}");
+			Assert.AreEqual(string.Empty, differs.Trim(), "gofmt would rewrite the generated source.");
+		});
+	}
+
+	/// <summary>
 	/// Tests that a negative-zero literal keeps its sign in a returned value, a typed local and a
 	/// package-level constant, by running the generated code rather than reading it.
 	/// </summary>
@@ -668,6 +716,7 @@ public class GoGeneratedSourceCompilesTests
 		point.Members.Add(CompiledExemplar.Shift("Shift"));
 		point.Members.Add(CompiledExemplar.Plus());
 		point.Members.Add(CompiledExemplar.Negate());
+		point.Members.Add(CompiledExemplar.Times());
 		point.Members.Add(CompiledExemplar.ToDouble("float64(self.x)"));
 		point.Members.Add(CompiledExemplar.Pick("Pick", "Shift"));
 
@@ -835,6 +884,35 @@ public class GoGeneratedSourceCompilesTests
 			(int formatted, string differs) = ToolchainHarness.Run("gofmt", "-l locals.go", directory);
 			Assert.AreEqual(0, formatted, $"gofmt did not run:{Environment.NewLine}{differs}");
 			Assert.AreEqual(string.Empty, differs.Trim(), $"gofmt would rewrite the generated source.{Environment.NewLine}{source}");
+		});
+	}
+
+	/// <summary>
+	/// Tests that numbers of different widths meeting in an operator, an initialiser, an assignment,
+	/// a return and a call argument compile, which Go only allows once the narrower is converted,
+	/// and that the result is still what <c>gofmt</c> writes (issue #238).
+	/// </summary>
+	[TestMethod]
+	public void MixedNumericWidths_Compile()
+	{
+		if (ToolchainHarness.FindOnPath("version", "go") is null)
+		{
+			Assert.Inconclusive("No Go toolchain on the path, so nothing was compiled.");
+			return;
+		}
+
+		string source = new GoGenerator().Generate(NumericWideningTests.Widening());
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			File.WriteAllText(Path.Combine(directory, "go.mod"), Module);
+			File.WriteAllText(Path.Combine(directory, "widening.go"), source);
+			(int exitCode, string output) = ToolchainHarness.Run("go", "build ./...", directory);
+			Assert.AreEqual(0, exitCode, $"Go rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+
+			(int formatted, string differs) = ToolchainHarness.Run("gofmt", "-l widening.go", directory);
+			Assert.AreEqual(0, formatted, $"gofmt did not run:{Environment.NewLine}{differs}");
+			Assert.AreEqual(string.Empty, differs.Trim(), "gofmt would rewrite the generated source.");
 		});
 	}
 }

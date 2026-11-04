@@ -66,6 +66,23 @@ public abstract class CFamilyGenerator : StandardLanguageGenerator
 	/// </remarks>
 	protected abstract string SpellType(TypeReference type);
 
+	/// <summary>
+	/// Gets the file extension (without the dot) used for a header in this language.
+	/// </summary>
+	public virtual string HeaderFileExtension => "h";
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// A <see cref="SourceFile"/> marked as a header is written with <c>#pragma once</c>, and a file
+	/// named as an implementation file holding one cannot be found by an <c>#include</c> of the
+	/// header's name and is compiled as its own translation unit by a build that globs sources.
+	/// </remarks>
+	public override string FileExtensionFor(AstNode astNode)
+	{
+		Ensure.NotNull(astNode);
+		return astNode is SourceFile { IsHeader: true } ? HeaderFileExtension : FileExtension;
+	}
+
 	/// <inheritdoc/>
 	/// <remarks>
 	/// <c>#pragma once</c> rather than an include guard, for the reason a guard cannot answer: the
@@ -125,7 +142,7 @@ public abstract class CFamilyGenerator : StandardLanguageGenerator
 	{
 		Ensure.NotNull(text);
 
-		string[] lines = text.Split(["\r\n", "\n", "\r"], StringSplitOptions.None);
+		string[] lines = text.Split(CommentLineBreaks, StringSplitOptions.None);
 		base.WriteComment(code, prefix, string.Join("\n", lines.Select(EndWithoutSplice)));
 	}
 
@@ -170,9 +187,53 @@ public abstract class CFamilyGenerator : StandardLanguageGenerator
 			element.IsArray = false;
 		}
 
-		string declared = name.Length == 0 ? string.Empty : $" {name}";
+		string declared = name.Length == 0 ? string.Empty : $" {EscapeIdentifier(name)}";
 
 		return $"{SpellType(element)}{declared}{(type.IsArray ? "[]" : string.Empty)}";
+	}
+
+	/// <summary>
+	/// Spells a declaration whose value never changes, up to and including its name.
+	/// </summary>
+	/// <param name="type">The type being declared.</param>
+	/// <param name="name">The name being declared, or empty for an unnamed one.</param>
+	/// <returns>The declarator with <c>const</c> written once, where it makes the value constant.</returns>
+	/// <remarks>
+	/// A constant's <c>const</c> qualifies what the name holds. For a pointer that is the pointer, so it
+	/// goes after the <c>*</c>: a leading one qualifies what is pointed at and leaves the pointer
+	/// assignable, which is how a C <c>string</c> constant, spelled <c>const char*</c>, stayed
+	/// reassignable. For anything else it goes in front, unless the type already starts with one,
+	/// because <c>const const T</c> is an error in C++ and a warning in C (#415).
+	/// </remarks>
+	protected string SpellConstantDeclarator(TypeReference type, string name)
+	{
+		Ensure.NotNull(type);
+		Ensure.NotNull(name);
+
+		TypeReference element = type.IsArray ? type.Clone() : type;
+		if (type.IsArray)
+		{
+			element.IsArray = false;
+		}
+
+		string spelled = SpellType(element);
+		string qualified;
+		if (spelled.EndsWith('*'))
+		{
+			qualified = $"{spelled} const";
+		}
+		else if (spelled.StartsWith("const ", StringComparison.Ordinal))
+		{
+			qualified = spelled;
+		}
+		else
+		{
+			qualified = $"const {spelled}";
+		}
+
+		string declared = name.Length == 0 ? string.Empty : $" {EscapeIdentifier(name)}";
+
+		return $"{qualified}{declared}{(type.IsArray ? "[]" : string.Empty)}";
 	}
 
 	/// <inheritdoc/>

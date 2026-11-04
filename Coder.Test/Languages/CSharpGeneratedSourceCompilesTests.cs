@@ -125,6 +125,7 @@ public class CSharpGeneratedSourceCompilesTests
 		ClassDeclaration point = CompiledExemplar.Point();
 		point.Members.Add(CompiledExemplar.Plus());
 		point.Members.Add(CompiledExemplar.Negate());
+		point.Members.Add(CompiledExemplar.Times());
 		point.Members.Add(CompiledExemplar.ToDouble("self.x"));
 
 		SourceFile file = new("Generated");
@@ -247,6 +248,52 @@ public class CSharpGeneratedSourceCompilesTests
 	}
 
 	/// <summary>
+	/// The consumer of the string comparisons, which orders a pair each way.
+	/// </summary>
+	private const string StringOrderingDriver = """
+		public static class StringOrderingDriver
+		{
+			public static bool Use() =>
+				Globals.before("a", "b")
+				&& Globals.atLeast("b", "a")
+				&& Globals.early("a")
+				&& Globals.lateOrLater("z")
+				&& Globals.literalFirst("z");
+		}
+		""";
+
+	/// <summary>
+	/// Tests that <c>&lt;</c> and <c>&gt;=</c> between two strings, and between a string and a literal
+	/// on either side, compile: C# defines no ordering operator on <c>string</c>, so each is written
+	/// as an ordinal comparison rather than as the CS0019 the bare operator is (#372).
+	/// </summary>
+	[TestMethod]
+	public void StringOrderingComparisons_Compile()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "dotnet") is null)
+		{
+			Assert.Inconclusive("No dotnet on the path, so nothing was compiled.");
+			return;
+		}
+
+		SourceFile file = StringOrderingFixture.Build();
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new CSharpGenerator().Generate(file);
+			Assert.Contains("(string.CompareOrdinal(a, b) < 0)", source, StringComparison.Ordinal, source);
+			Assert.Contains("(string.CompareOrdinal(a, \"m\") >= 0)", source, StringComparison.Ordinal, source);
+
+			File.WriteAllText(Path.Combine(directory, "Generated.csproj"), Project);
+			File.WriteAllText(Path.Combine(directory, "Driver.cs"), StringOrderingDriver);
+			File.WriteAllText(Path.Combine(directory, "Generated.cs"), source);
+
+			(int exitCode, string output) = ToolchainHarness.Run("dotnet", "build -nologo", directory);
+			Assert.AreEqual(0, exitCode, $"C# rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+		});
+	}
+
+	/// <summary>
 	/// The consumer of a type that declares its own shift, which shifts one value by another.
 	/// </summary>
 	private const string BitsDriver = """
@@ -359,5 +406,145 @@ public class CSharpGeneratedSourceCompilesTests
 			user.Members.Add(size);
 			members.Add(user);
 		}
+	}
+
+	/// <summary>
+	/// Tests that a struct whose fields start at a value compiles, which C# allows only beside a
+	/// declared constructor (CS8983), and that <c>new</c> starts the fields at those values (#270).
+	/// </summary>
+	[TestMethod]
+	public void StructsWithInitialisedFields_Compile()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "dotnet") is null)
+		{
+			Assert.Inconclusive("No dotnet on the path, so nothing was compiled.");
+			return;
+		}
+
+		SourceFile file = new("Generated");
+		ClassDeclaration counter = new("Counter") { Kind = TypeDeclarationKind.Struct };
+		counter.Members.Add(new FieldDeclaration("count", "int") { Visibility = Visibility.Public, InitialValue = Literal.Number(7) });
+		file.Members.Add(counter);
+
+		ClassDeclaration limits = new("Limits") { Kind = TypeDeclarationKind.Struct, IsReadOnly = true };
+		limits.Members.Add(new FieldDeclaration("most", "int") { Visibility = Visibility.Public, InitialValue = Literal.Number(9) });
+		file.Members.Add(limits);
+
+		const string StructDriver = """
+			public static class Driver
+			{
+				public static int Use() => new Counter().count + new Limits().most;
+			}
+			""";
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new CSharpGenerator().Generate(file);
+			File.WriteAllText(Path.Combine(directory, "Generated.csproj"), Project);
+			File.WriteAllText(Path.Combine(directory, "Driver.cs"), StructDriver);
+			File.WriteAllText(Path.Combine(directory, "Generated.cs"), source);
+
+			(int exitCode, string output) = ToolchainHarness.Run("dotnet", "build -nologo", directory);
+			Assert.AreEqual(0, exitCode, $"C# rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+		});
+	}
+
+	/// <summary>
+	/// Tests that a local with no initialiser compiles whether or not it says a type, which C# can
+	/// only infer from an initialiser (CS0818), and that one with an initialiser is still <c>var</c> (#355).
+	/// </summary>
+	[TestMethod]
+	public void LocalsWithoutAnInitialiser_Compile()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "dotnet") is null)
+		{
+			Assert.Inconclusive("No dotnet on the path, so nothing was compiled.");
+			return;
+		}
+
+		FunctionDeclaration locals = new("locals") { ReturnType = "int" };
+		locals.Body.Add(new VariableDeclaration("untyped"));
+		locals.Body.Add(new VariableDeclaration("typed", "int") { IsTypeInferred = true });
+		locals.Body.Add(new VariableDeclaration("started", "int", Literal.Number(2)) { IsTypeInferred = true });
+		locals.Body.Add(new AssignmentStatement(new VariableReference("untyped"), Literal.Number(1)));
+		locals.Body.Add(new AssignmentStatement(new VariableReference("typed"), Literal.Number(3)));
+		locals.Body.Add(new ReturnStatement(new BinaryExpression(new VariableReference("typed"), BinaryOperator.Add, new VariableReference("started"))));
+
+		SourceFile file = new("Generated");
+		file.Members.Add(locals);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new CSharpGenerator().Generate(file);
+			Assert.Contains("object untyped;", source, StringComparison.Ordinal, source);
+			Assert.Contains("untyped: C# infers a type only from an initialiser", source, StringComparison.Ordinal, source);
+			Assert.Contains("int typed;", source, StringComparison.Ordinal, source);
+			Assert.Contains("var started = 2;", source, StringComparison.Ordinal, source);
+
+			File.WriteAllText(Path.Combine(directory, "Generated.csproj"), Project);
+			File.WriteAllText(Path.Combine(directory, "Generated.cs"), source);
+
+			(int exitCode, string output) = ToolchainHarness.Run("dotnet", "build -nologo", directory);
+			Assert.AreEqual(0, exitCode, $"C# rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+		});
+	}
+
+	/// <summary>
+	/// Tests that virtual and abstract methods that are private, belong to a struct, or are static,
+	/// which C++ allows and C# rejects (CS0621, CS0106, CS0112), compile with what was changed or
+	/// dropped written down (#412).
+	/// </summary>
+	[TestMethod]
+	public void MethodsCSharpCannotOverride_Compile()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "dotnet") is null)
+		{
+			Assert.Inconclusive("No dotnet on the path, so nothing was compiled.");
+			return;
+		}
+
+		ClassDeclaration widget = new("Widget");
+		FunctionDeclaration doDraw = new("DoDraw") { ReturnType = "int", IsVirtual = true, Visibility = Visibility.Private };
+		doDraw.Body.Add(new ReturnStatement(Literal.Number(1)));
+		widget.Members.Add(doDraw);
+		widget.Members.Add(new FunctionDeclaration("Area") { ReturnType = "int", IsAbstract = true, Visibility = Visibility.Private });
+
+		ClassDeclaration factory = new("Factory");
+		FunctionDeclaration make = new("Make") { ReturnType = "int", IsStatic = true, IsVirtual = true };
+		make.Body.Add(new ReturnStatement(Literal.Number(2)));
+		factory.Members.Add(make);
+		factory.Members.Add(new FunctionDeclaration("Build") { ReturnType = "int", IsStatic = true, IsAbstract = true });
+
+		ClassDeclaration span = new("Span") { Kind = TypeDeclarationKind.Struct };
+		FunctionDeclaration len = new("Len") { ReturnType = "int", IsVirtual = true };
+		len.Body.Add(new ReturnStatement(Literal.Number(3)));
+		span.Members.Add(len);
+		span.Members.Add(new FunctionDeclaration("Area") { ReturnType = "int", IsAbstract = true });
+
+		SourceFile file = new("Generated");
+		file.Members.Add(widget);
+		file.Members.Add(factory);
+		file.Members.Add(span);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new CSharpGenerator().Generate(file);
+			Assert.Contains("protected virtual int DoDraw()", source, StringComparison.Ordinal, source);
+			Assert.Contains("protected abstract int Area();", source, StringComparison.Ordinal, source);
+			Assert.Contains("// private: DoDraw is protected, because C# cannot override a private member", source, StringComparison.Ordinal, source);
+			Assert.Contains("public static int Make()", source, StringComparison.Ordinal, source);
+			Assert.Contains("// virtual: Make is static, which C# cannot override outside an interface", source, StringComparison.Ordinal, source);
+			Assert.Contains("// Build is abstract and static", source, StringComparison.Ordinal, source);
+			Assert.Contains("public class Factory", source, StringComparison.Ordinal, source);
+			Assert.Contains("public int Len()", source, StringComparison.Ordinal, source);
+			Assert.Contains("// virtual: Len belongs to a struct, which C# cannot derive from", source, StringComparison.Ordinal, source);
+			Assert.Contains("// Area is abstract, which a C# struct cannot declare", source, StringComparison.Ordinal, source);
+
+			File.WriteAllText(Path.Combine(directory, "Generated.csproj"), Project);
+			File.WriteAllText(Path.Combine(directory, "Generated.cs"), source);
+
+			(int exitCode, string output) = ToolchainHarness.Run("dotnet", "build -nologo", directory);
+			Assert.AreEqual(0, exitCode, $"C# rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+		});
 	}
 }

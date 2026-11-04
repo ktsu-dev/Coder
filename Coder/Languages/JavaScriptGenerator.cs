@@ -64,7 +64,9 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 
 		if (declaration.IsAutomatic)
 		{
-			code.WriteLine($"{(declaration.IsStatic ? StaticKeyword : string.Empty)}{name};");
+			code.Write($"{(declaration.IsStatic ? StaticKeyword : string.Empty)}{name}");
+			WriteZeroInitialiser(declaration.Type, code);
+			EndStatement(code);
 			return;
 		}
 
@@ -116,11 +118,99 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	/// A number is a double, which rounds any integer past <see cref="MaxSafeInteger"/>:
 	/// <c>9007199254740993</c> reads back as <c>9007199254740992</c>. Such a value is written as a BigInt
 	/// literal instead, which keeps it exact, and mixing it with number arithmetic throws a
-	/// <c>TypeError</c> rather than computing with a different value. A value in the safe range stays a
-	/// plain number.
+	/// <c>TypeError</c> rather than computing with a different value. A value in the safe range, or
+	/// ±2^53 itself, which a double holds exactly, stays a plain number (#424).
 	/// </remarks>
 	protected override string FormatLong(long value) =>
-		value is > MaxSafeInteger or < -MaxSafeInteger ? $"{base.FormatLong(value)}n" : base.FormatLong(value);
+		IsBigIntLong(value) ? $"{base.FormatLong(value)}n" : base.FormatLong(value);
+
+	/// <summary>
+	/// Reads whether a <c>long</c> literal is written as a BigInt.
+	/// </summary>
+	private static bool IsBigIntLong(long value) => value is > MaxSafeInteger + 1 or < -(MaxSafeInteger + 1);
+
+	/// <summary>
+	/// Reads whether an expression is a <c>long</c> literal written as a BigInt.
+	/// </summary>
+	private static bool IsBigIntLiteral(Expression expression) =>
+		expression is LiteralExpression<long> literal && IsBigIntLong(literal.Value);
+
+	/// <summary>
+	/// Writes <c>==</c> or <c>!=</c> between a BigInt literal and an operand that is not one.
+	/// </summary>
+	/// <param name="binary">The comparison.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <returns>False when neither or both operands are BigInt literals, and nothing was written.</returns>
+	/// <remarks>
+	/// <c>===</c> between a BigInt and a number is always <c>false</c>, whatever their values, so
+	/// <c>x == 9007199254740993</c> would never hold and <c>!=</c> always would (#424). The other operand
+	/// is converted with <c>BigInt(...)</c>, which is exact for any integral number, so the comparison is
+	/// of values. A floating operand is compared the way every other target compares it, against the
+	/// literal converted to a double, which is what the digits written as a number read as.
+	/// <c>&lt;</c>, <c>&gt;</c>, <c>&lt;=</c> and <c>&gt;=</c> already compare a BigInt and a number by
+	/// value.
+	/// </remarks>
+	private bool TryWriteBigIntEquality(BinaryExpression binary, CodeBlocker code)
+	{
+		if (binary.Operator is not (BinaryOperator.Equal or BinaryOperator.NotEqual)
+			|| IsBigIntLiteral(binary.Left) == IsBigIntLiteral(binary.Right))
+		{
+			return false;
+		}
+
+		bool literalOnLeft = IsBigIntLiteral(binary.Left);
+		Expression literal = literalOnLeft ? binary.Left : binary.Right;
+		Expression other = literalOnLeft ? binary.Right : binary.Left;
+		bool otherIsFloating = StaticType(other) is { IsArray: false, Indirection: TypeIndirection.None, TypeArguments.Count: 0, Name: "float" or "double" };
+
+		void WriteLiteral()
+		{
+			if (otherIsFloating)
+			{
+				code.Write(base.FormatLong(((LiteralExpression<long>)literal).Value));
+			}
+			else
+			{
+				GenerateInternal(literal, code);
+			}
+		}
+
+		void WriteOther()
+		{
+			if (otherIsFloating)
+			{
+				GenerateInternal(other, code);
+				return;
+			}
+
+			code.Write("BigInt(");
+			GenerateInternal(other, code);
+			code.Write(")");
+		}
+
+		code.Write("(");
+		if (literalOnLeft)
+		{
+			WriteLiteral();
+		}
+		else
+		{
+			WriteOther();
+		}
+
+		code.Write($" {GetOperatorSpelling(binary.Operator)} ");
+		if (literalOnLeft)
+		{
+			WriteOther();
+		}
+		else
+		{
+			WriteLiteral();
+		}
+
+		code.Write(")");
+		return true;
+	}
 
 	/// <inheritdoc/>
 	protected override string? SpellImport(string import)
@@ -204,14 +294,58 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	private void GenerateNestedAlias(UsingAlias usingAlias, CodeBlocker code)
 	{
 		WritePreamble(usingAlias, code, PreambleSite.Type);
-		code.Write($"static {usingAlias.Name} = {usingAlias.AliasedType?.Name ?? "Object"}");
+		code.Write($"static {usingAlias.Name} = {AliasedValue(usingAlias.AliasedType)}");
 		EndStatement(code);
 	}
+
+	/// <summary>
+	/// The constructor JavaScript has in place of each of the AST's built-in type names.
+	/// </summary>
+	/// <remarks>
+	/// Nothing in JavaScript is called <c>int</c> or <c>double</c>, and an alias is evaluated as the
+	/// module loads, so binding one of these names verbatim is a <c>ReferenceError</c> that takes the
+	/// whole module with it. Every integer is a <c>Number</c> here, as it is everywhere else in the
+	/// output: the generator only reaches for BigInt inside an operation, never as a value's type.
+	/// </remarks>
+	private static readonly Dictionary<string, string> BuiltInAliasValues = new(StringComparer.Ordinal)
+	{
+		{ "int", "Number" },
+		{ "long", "Number" },
+		{ "short", "Number" },
+		{ "ushort", "Number" },
+		{ "byte", "Number" },
+		{ "sbyte", "Number" },
+		{ "uint", "Number" },
+		{ "ulong", "Number" },
+		{ "float", "Number" },
+		{ "double", "Number" },
+		{ "decimal", "Number" },
+		{ "bool", "Boolean" },
+		{ "string", "String" },
+		{ "str", "String" },
+		{ "char", "String" },
+		{ "list", "Array" },
+		{ "dict", "Map" },
+		{ "object", "Object" },
+	};
+
+	/// <summary>
+	/// Spells what an alias binds its name to.
+	/// </summary>
+	/// <param name="aliased">The type the alias names, if any.</param>
+	/// <returns>A built-in type's JavaScript constructor, an array's <c>Array</c>, or the name itself.</returns>
+	private static string AliasedValue(TypeReference? aliased) => aliased switch
+	{
+		null => "Object",
+		{ IsArray: true } => "Array",
+		_ => BuiltInAliasValues.TryGetValue(aliased.Name, out string? value) ? value : aliased.Name,
+	};
 
 	/// <inheritdoc/>
 	/// <remarks>
 	/// JavaScript has no types to alias. The name is bound to whatever the alias named, which is a
-	/// constructor often enough to be worth writing rather than dropping.
+	/// constructor often enough to be worth writing rather than dropping. A built-in type's name is
+	/// not one, so it is bound to the constructor JavaScript has in its place.
 	/// </remarks>
 	protected override void GenerateUsingAlias(UsingAlias usingAlias, CodeBlocker code)
 	{
@@ -219,7 +353,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		Ensure.NotNull(code);
 
 		WritePreamble(usingAlias, code, PreambleSite.Type);
-		code.Write($"const {usingAlias.Name} = {usingAlias.AliasedType?.Name ?? "Object"}");
+		code.Write($"const {usingAlias.Name} = {AliasedValue(usingAlias.AliasedType)}");
 		EndStatement(code);
 	}
 
@@ -343,7 +477,9 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	/// <remarks>
 	/// JavaScript writes a class field without a type, since it has none to write. A field with no
 	/// initialiser is still declared: the property then exists on every instance, which is what makes
-	/// the shape of an object predictable rather than growing as it is assigned to. A static field, and
+	/// the shape of an object predictable rather than growing as it is assigned to. It starts at its
+	/// type's zero where the type has one, as it does in every typed target, rather than at
+	/// <c>undefined</c>, which makes <c>count + 1</c> <c>NaN</c> (#345). A static field, and
 	/// a constant one, which is static whether or not it says so, is written <c>static</c>, so the
 	/// class holds one value rather than each instance holding its own.
 	/// </remarks>
@@ -367,8 +503,30 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 			code.Write(" = ");
 			GenerateInternal(field.InitialValue, code);
 		}
+		else
+		{
+			WriteZeroInitialiser(field.Type, code);
+		}
 
 		EndStatement(code);
+	}
+
+	/// <summary>
+	/// Writes <c> = </c> and a type's zero, where the type has one.
+	/// </summary>
+	/// <param name="type">The declared type, or null where none is declared.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// A type with no obvious zero is left uninitialised, so it reads as <c>undefined</c>, which is
+	/// JavaScript's own value for a property nothing has set.
+	/// </remarks>
+	private void WriteZeroInitialiser(TypeReference? type, CodeBlocker code)
+	{
+		if (ZeroValue(type) is Expression zero)
+		{
+			code.Write(" = ");
+			GenerateInternal(zero, code);
+		}
 	}
 
 	/// <inheritdoc/>
@@ -379,6 +537,9 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 
 		using IDisposable types = OpenStaticTypeScope(funcDecl);
 		WritePreamble(funcDecl, code, PreambleSite.Function);
+
+		// JavaScript has no generics, so what a function is written over is written down.
+		WriteTypeParametersDown(funcDecl.TypeParameters, code);
 
 		code.Write($"function {funcDecl.Name ?? "unnamedFunction"}(");
 		GenerateParameterList(funcDecl.Parameters, code);
@@ -563,6 +724,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	{
 		using IDisposable types = OpenStaticTypeScope(method);
 		WritePreamble(method, code, PreambleSite.Method);
+		WriteTypeParametersDown(method.TypeParameters, code);
 
 		if (method.Definition != FunctionDefinition.Provided)
 		{
@@ -757,6 +919,11 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	/// <c>1</c>, so <c>===</c> against <c>true</c> fails (#268). <c>^</c> is written <c>!==</c>, and
 	/// <c>&amp;</c> and <c>|</c> are wrapped in <c>Boolean(...)</c>; both still evaluate each side.
 	/// </para>
+	/// <para>
+	/// The bitwise and shift operators convert both operands to a signed 32-bit integer, so on a
+	/// <c>long</c> or <c>ulong</c> they drop every bit above the 32nd and on a <c>uint</c> they give a
+	/// negative number for anything above 2^31 (#256). See <see cref="WriteWideBitwise"/>.
+	/// </para>
 	/// </remarks>
 	protected override void GenerateBinary(BinaryExpression binary, CodeBlocker code)
 	{
@@ -777,6 +944,17 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 			return;
 		}
 
+		if (IntegerWidthOf(binary) is IntegerWidth width)
+		{
+			WriteWideBitwise(binary, width, code);
+			return;
+		}
+
+		if (TryWriteBigIntEquality(binary, code))
+		{
+			return;
+		}
+
 		if (binary.Operator != BinaryOperator.Divide || !IsIntegerArithmetic(binary))
 		{
 			base.GenerateBinary(binary, code);
@@ -794,23 +972,28 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	/// <c>5 /= 2</c> where the C family gives <c>2</c>. When both sides are known to be integers the
 	/// assignment is written out as <c>x = Math.trunc(x / y)</c> through <see cref="GenerateBinary"/>.
 	/// <c>&amp;=</c>, <c>|=</c> and <c>^=</c> on booleans are written out the same way, so the target
-	/// is left holding a boolean rather than a number. <c>%=</c> already matches the C family, and
-	/// every other compound assignment is left as it is.
+	/// is left holding a boolean rather than a number, and the bitwise and shift assignments on a
+	/// <c>long</c>, <c>ulong</c> or <c>uint</c> so they keep every bit. <c>%=</c> already matches the C
+	/// family, and every other compound assignment is left as it is.
 	/// </remarks>
 	protected override void GenerateAssignmentStatement(AssignmentStatement assignment, CodeBlocker code)
 	{
 		Ensure.NotNull(assignment);
 		Ensure.NotNull(code);
 
-		BinaryOperator? spelledOut = assignment.Operator == AssignmentOperator.DivideAssign
-			? BinaryOperator.Divide
-			: BitwiseOperatorOf(assignment.Operator);
+		BinaryOperator? spelledOut = assignment.Operator switch
+		{
+			AssignmentOperator.DivideAssign => BinaryOperator.Divide,
+			AssignmentOperator.LeftShiftAssign => BinaryOperator.LeftShift,
+			AssignmentOperator.RightShiftAssign => BinaryOperator.RightShift,
+			_ => BitwiseOperatorOf(assignment.Operator),
+		};
 		BinaryExpression? binary = spelledOut is BinaryOperator op
 			? new(assignment.Target, op, assignment.Value)
 			: null;
 		bool writtenOut = binary is not null && (binary.Operator == BinaryOperator.Divide
 			? IsIntegerArithmetic(binary)
-			: IsBooleanBitwise(binary.Operator, binary.Left, binary.Right));
+			: IsBooleanBitwise(binary.Operator, binary.Left, binary.Right) || IntegerWidthOf(binary) is not null);
 		if (binary is null || !writtenOut)
 		{
 			base.GenerateAssignmentStatement(assignment, code);
@@ -821,6 +1004,124 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		code.Write(" = ");
 		GenerateBinary(binary, code);
 		EndStatement(code);
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// <c>~</c> converts its operand to a signed 32-bit integer, the same as the binary bitwise
+	/// operators, so on a <c>long</c>, <c>ulong</c> or <c>uint</c> it is written out the way they are.
+	/// </remarks>
+	protected override void GenerateUnary(UnaryExpression unary, CodeBlocker code)
+	{
+		Ensure.NotNull(unary);
+		Ensure.NotNull(code);
+
+		IntegerWidth? width = unary.Operator == UnaryOperator.BitwiseNot ? IntegerWidthOf(StaticType(unary.Operand)) : null;
+		switch (width)
+		{
+			case IntegerWidth.Unsigned32:
+				code.Write("(");
+				base.GenerateUnary(unary, code);
+				code.Write(" >>> 0)");
+				return;
+			case IntegerWidth.Signed64 or IntegerWidth.Unsigned64:
+				code.Write($"Number(BigInt.{(width == IntegerWidth.Signed64 ? "asIntN" : "asUintN")}(64, ~BigInt(");
+				GenerateInternal(unary.Operand, code);
+				code.Write(")))");
+				return;
+			default:
+				base.GenerateUnary(unary, code);
+				return;
+		}
+	}
+
+	/// <summary>
+	/// The integer types whose bitwise operators JavaScript's 32-bit signed conversion gets wrong.
+	/// </summary>
+	private enum IntegerWidth
+	{
+		/// <summary><c>uint</c>.</summary>
+		Unsigned32,
+
+		/// <summary><c>long</c>.</summary>
+		Signed64,
+
+		/// <summary><c>ulong</c>.</summary>
+		Unsigned64,
+	}
+
+	/// <summary>
+	/// Reads which width a bitwise or shift operator is applied at, when JavaScript's own would differ.
+	/// </summary>
+	/// <param name="binary">The expression to inspect.</param>
+	/// <returns>The width, or null for any other operator or for operands of no wider known type.</returns>
+	/// <remarks>
+	/// A shift takes the width of its left operand alone, since the count does not widen the value.
+	/// Otherwise the widest operand decides, <c>ulong</c> over <c>long</c> over <c>uint</c>, which is
+	/// the C family's conversion of the narrower one to the wider.
+	/// </remarks>
+	private IntegerWidth? IntegerWidthOf(BinaryExpression binary)
+	{
+		if (binary.Operator is BinaryOperator.LeftShift or BinaryOperator.RightShift)
+		{
+			return IntegerWidthOf(StaticType(binary.Left));
+		}
+
+		if (binary.Operator is not (BinaryOperator.BitwiseAnd or BinaryOperator.BitwiseOr or BinaryOperator.BitwiseXor))
+		{
+			return null;
+		}
+
+		IntegerWidth? left = IntegerWidthOf(StaticType(binary.Left));
+		IntegerWidth? right = IntegerWidthOf(StaticType(binary.Right));
+		return left is null ? right : right is null ? left : (IntegerWidth)Math.Max((int)left, (int)right);
+	}
+
+	private static IntegerWidth? IntegerWidthOf(TypeReference? type) =>
+		type is { IsArray: false, Indirection: TypeIndirection.None, TypeArguments.Count: 0 }
+			? type.Name switch
+			{
+				"uint" => IntegerWidth.Unsigned32,
+				"long" => IntegerWidth.Signed64,
+				"ulong" => IntegerWidth.Unsigned64,
+				_ => null,
+			}
+			: null;
+
+	/// <summary>
+	/// Writes a bitwise or shift operator so it keeps the bits of the width it is applied at.
+	/// </summary>
+	/// <param name="binary">The expression to emit.</param>
+	/// <param name="width">The width it is applied at.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// A <c>uint</c> result is read back as unsigned with <c>&gt;&gt;&gt; 0</c>, and its right shift is
+	/// <c>&gt;&gt;&gt;</c>, which shifts in zeros rather than copies of a sign bit it does not have. A
+	/// 64-bit operation is done in BigInt, wrapped to 64 bits with <c>BigInt.asIntN</c> or
+	/// <c>BigInt.asUintN</c> and converted back to a number, which every other <c>long</c> in the output
+	/// already is; a result past 2^53 is rounded by that conversion, as it is anywhere else.
+	/// </remarks>
+	private void WriteWideBitwise(BinaryExpression binary, IntegerWidth width, CodeBlocker code)
+	{
+		if (width == IntegerWidth.Unsigned32)
+		{
+			if (binary.Operator == BinaryOperator.RightShift)
+			{
+				GenerateBinaryExpression(binary, code, ">>>");
+				return;
+			}
+
+			code.Write("(");
+			GenerateBinaryExpression(binary, code, GetOperatorSpelling(binary.Operator));
+			code.Write(" >>> 0)");
+			return;
+		}
+
+		code.Write($"Number(BigInt.{(width == IntegerWidth.Signed64 ? "asIntN" : "asUintN")}(64, BigInt(");
+		GenerateInternal(binary.Left, code);
+		code.Write($") {GetOperatorSpelling(binary.Operator)} BigInt(");
+		GenerateInternal(binary.Right, code);
+		code.Write(")))");
 	}
 
 	/// <summary>

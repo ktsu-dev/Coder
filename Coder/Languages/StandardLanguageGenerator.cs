@@ -4,6 +4,7 @@ namespace ktsu.Coder.Languages;
 
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Linq;
 using ktsu.Coder.Ast;
@@ -30,6 +31,11 @@ using ktsu.CodeBlocker;
 public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 {
 	private readonly Stack<StaticTypeScope> staticTypeScopes = new();
+
+	/// <summary>
+	/// The variables declared directly in a namespace or a file, which are items rather than locals.
+	/// </summary>
+	private readonly HashSet<VariableDeclaration> moduleVariables = new(ReferenceEqualityComparer.Instance);
 
 	/// <summary>
 	/// Determines whether this generator can generate code for the specified AST node.
@@ -129,7 +135,7 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 			}
 		}
 
-		staticTypeScopes.Push(new StaticTypeScope(types, function.ReturnType));
+		staticTypeScopes.Push(new StaticTypeScope(types, function.ReturnType, EnclosingClass(function)));
 	}
 
 	/// <summary>
@@ -154,7 +160,7 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 			types[valueName] = type;
 		}
 
-		staticTypeScopes.Push(new StaticTypeScope(types, isSetter ? null : property.Type));
+		staticTypeScopes.Push(new StaticTypeScope(types, isSetter ? null : property.Type, EnclosingClass(property)));
 		return new StaticTypeScopeGuard(this);
 	}
 
@@ -171,7 +177,7 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	{
 		Ensure.NotNull(entryPoint);
 		TypeReference? returnType = entryPoint.ReturnsExitCode ? new TypeReference("int") : null;
-		staticTypeScopes.Push(new StaticTypeScope(new Dictionary<string, TypeReference>(StringComparer.Ordinal), returnType));
+		staticTypeScopes.Push(new StaticTypeScope(new Dictionary<string, TypeReference>(StringComparer.Ordinal), returnType, null));
 		return new StaticTypeScopeGuard(this);
 	}
 
@@ -369,6 +375,38 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 		_ => false,
 	};
 
+	/// <summary>
+	/// Reads the value a field or automatic property of a type holds before anything is assigned to it.
+	/// </summary>
+	/// <param name="type">The declared type, or null where none is declared.</param>
+	/// <returns>The type's zero as a literal, or null where the type has no obvious one.</returns>
+	/// <remarks>
+	/// A field with no initialiser is value-initialised, so a default-constructed instance is the one
+	/// the declaration described: C++ writes <c>{}</c>, C# and Go start at zero and Rust uses
+	/// <c>Default</c>. A target that leaves an undeclared value unset writes this instead (#345). The
+	/// answer is a literal rather than its text, so each target spells it with its own literal writer.
+	/// </remarks>
+	protected static Expression? ZeroValue(TypeReference? type)
+	{
+		if (type is not { IsArray: false, Indirection: TypeIndirection.None, TypeArguments.Count: 0, Name: string name })
+		{
+			return null;
+		}
+
+		if (IntegerTypeNames.Contains(name))
+		{
+			return Literal.Number(0);
+		}
+
+		return name switch
+		{
+			"float" or "double" => Literal.DecimalValue(0.0),
+			"bool" => Literal.Bool(false),
+			"string" or "str" => Literal.Text(string.Empty),
+			_ => null,
+		};
+	}
+
 	private static readonly HashSet<string> IntegerTypeNames = new(StringComparer.Ordinal)
 	{
 		"int", "long", "short", "byte", "sbyte", "uint", "ulong", "ushort",
@@ -389,6 +427,30 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 			{
 				scope.Types[name] = type;
 			}
+		}
+	}
+
+	/// <summary>
+	/// Reports whether a variable is declared directly in a namespace or a file rather than in a body.
+	/// </summary>
+	/// <param name="declaration">The declaration to test.</param>
+	/// <returns>True when it is a module-scope variable.</returns>
+	/// <remarks>
+	/// Several targets spell a local as a statement — Rust's <c>let</c>, Go's <c>:=</c> — which is
+	/// refused outside a function, so a variable of a namespace or a file has to be told apart by
+	/// where it was declared rather than by its own shape.
+	/// </remarks>
+	protected bool IsModuleVariable(VariableDeclaration declaration) => moduleVariables.Contains(declaration);
+
+	/// <summary>
+	/// Records the variables a namespace or a file declares directly.
+	/// </summary>
+	/// <param name="members">The scope's members.</param>
+	private void HoldModuleVariables(IEnumerable<AstNode> members)
+	{
+		foreach (VariableDeclaration variable in members.OfType<VariableDeclaration>())
+		{
+			moduleVariables.Add(variable);
 		}
 	}
 
@@ -465,7 +527,7 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 					}
 				}
 
-				return null;
+				return DottedMemberType(reference.Name) ?? DeclaredMemberType(reference.Name);
 			default:
 				return null;
 		}
@@ -483,6 +545,186 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	}
 
 	/// <summary>
+	/// Reads the type of a dotted reference that reaches a field through a receiver.
+	/// </summary>
+	/// <param name="name">The name the reference is written with, such as <c>self.total</c>.</param>
+	/// <returns>The field's declared type, or null when the name has no dot or any step is unknown.</returns>
+	/// <remarks>
+	/// <see cref="DeclaredMemberType"/> matches a name whole, so <c>self.total</c>, <c>this.total</c>
+	/// and <c>p.total</c> were of unknown type and integer <c>/</c> and <c>%</c> on them fell back to
+	/// Python's and JavaScript's own operators (#433). The first segment is a variable a scope declares,
+	/// or <c>self</c>/<c>this</c> naming the class the body belongs to; each later segment is looked up
+	/// among the fields of exactly one class of the type before it, the rule
+	/// <see cref="DeclaredMethod"/> keeps for a call on a receiver (#280).
+	/// </remarks>
+	private TypeReference? DottedMemberType(string name)
+	{
+		string[] segments = name.Split('.');
+		if (segments.Length < 2 || segments.Any(string.IsNullOrEmpty))
+		{
+			return null;
+		}
+
+		TypeReference? type = ScopedVariableType(segments[0]);
+		if (type is null && segments[0] is "self" or "this")
+		{
+			type = staticTypeScopes.TryPeek(out StaticTypeScope? scope) && scope.EnclosingClass?.Name is string enclosing
+				? new TypeReference(enclosing)
+				: null;
+		}
+
+		for (int i = 1; i < segments.Length && type is not null; i++)
+		{
+			type = DeclaredFieldType(type, segments[i]);
+		}
+
+		return type;
+	}
+
+	/// <summary>
+	/// Reads the type a function or accessor scope declares a name with.
+	/// </summary>
+	/// <param name="name">The name to look up.</param>
+	/// <returns>The innermost declared type, or null when no scope declares the name.</returns>
+	private TypeReference? ScopedVariableType(string name)
+	{
+		foreach (StaticTypeScope scope in staticTypeScopes)
+		{
+			if (scope.Types.TryGetValue(name, out TypeReference? type))
+			{
+				return type;
+			}
+		}
+
+		return null;
+	}
+
+	/// <summary>
+	/// Reads the declared type of the one field a value of a known class type can name.
+	/// </summary>
+	/// <param name="ownerType">The type the field is read from.</param>
+	/// <param name="field">The field's name.</param>
+	/// <returns>
+	/// The field's type, or null when the owner is not exactly one class in what is being generated,
+	/// or that class declares no field or more than one with the name.
+	/// </returns>
+	private TypeReference? DeclaredFieldType(TypeReference ownerType, string field)
+	{
+		if (GenerationRoot is null || ownerType.IsArray || ownerType.TypeArguments.Count != 0)
+		{
+			return null;
+		}
+
+		ClassDeclaration[] classes = [.. SelfAndDescendants(GenerationRoot)
+			.OfType<ClassDeclaration>()
+			.Where(declaration => declaration.Name == ownerType.Name)
+			.Take(2)];
+		if (classes.Length != 1)
+		{
+			return null;
+		}
+
+		TypeReference?[] matches = [.. classes[0].Members
+			.OfType<FieldDeclaration>()
+			.Where(declaration => declaration.Name == field)
+			.Select(declaration => declaration.Type)
+			.Concat(classes[0].Members
+				.OfType<VariableDeclaration>()
+				.Where(declaration => declaration.Name == field)
+				.Select(declaration => declaration.Type))
+			.Take(2)];
+		return matches.Length == 1 ? matches[0] : null;
+	}
+
+	/// <summary>
+	/// Finds the class a member is declared in.
+	/// </summary>
+	/// <param name="member">The function or property.</param>
+	/// <returns>The class whose members hold it, or null when it is not a class member.</returns>
+	private ClassDeclaration? EnclosingClass(AstNode member) => GenerationRoot is null
+		? null
+		: SelfAndDescendants(GenerationRoot)
+			.OfType<ClassDeclaration>()
+			.FirstOrDefault(declaration => declaration.Members.Contains(member));
+
+	/// <summary>
+	/// Emits a reference to a variable, field or parameter by name.
+	/// </summary>
+	/// <param name="reference">The reference to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// The name is written as it stands, with any segment that is a reserved word escaped. A language
+	/// that reaches some names through more than the name itself, such as Rust's mutable statics,
+	/// overrides this.
+	/// </remarks>
+	protected virtual void GenerateVariableReference(VariableReference reference, CodeBlocker code)
+	{
+		Ensure.NotNull(reference);
+		Ensure.NotNull(code);
+		code.Write(EscapeReference(reference.Name));
+	}
+
+	/// <summary>
+	/// Finds the file-scope fields some statement in what is being generated assigns to.
+	/// </summary>
+	/// <returns>The names of the written fields.</returns>
+	/// <remarks>
+	/// A field is file-scope when it is a member of a <see cref="SourceFile"/> or of a namespace in
+	/// one, rather than of a type. A constant is never counted: an assignment to one is the document's
+	/// mistake, and treating it as written would quietly make it mutable. A target that names a member
+	/// of the field (<c>count.total</c>) writes the field too, so the name it starts from is what is
+	/// matched. A function's own local or parameter of the same name is not told apart here; each
+	/// language decides what shadowing means for the names this returns.
+	/// </remarks>
+	protected HashSet<string> WrittenFileScopeFields()
+	{
+		HashSet<string> written = new(StringComparer.Ordinal);
+		if (GenerationRoot is null)
+		{
+			return written;
+		}
+
+		HashSet<string> fields = new(StringComparer.Ordinal);
+		foreach (AstNode node in SelfAndDescendants(GenerationRoot))
+		{
+			IEnumerable<AstNode> members = node switch
+			{
+				SourceFile file => file.Members,
+				NamespaceDeclaration space => space.Members,
+				_ => [],
+			};
+
+			foreach (FieldDeclaration field in members.OfType<FieldDeclaration>())
+			{
+				if (!field.IsConstant && !string.IsNullOrEmpty(field.Name))
+				{
+					fields.Add(field.Name);
+				}
+			}
+		}
+
+		if (fields.Count == 0)
+		{
+			return written;
+		}
+
+		foreach (AssignmentStatement assignment in SelfAndDescendants(GenerationRoot).OfType<AssignmentStatement>())
+		{
+			if (assignment.Target is VariableReference { Name: string name })
+			{
+				int dot = name.IndexOf('.', StringComparison.Ordinal);
+				string root = dot < 0 ? name : name[..dot];
+				if (fields.Contains(root))
+				{
+					written.Add(root);
+				}
+			}
+		}
+
+		return written;
+	}
+
+	/// <summary>
 	/// Reads the return type of the one function a receiver-less call can name.
 	/// </summary>
 	/// <param name="callee">The name the call is written with.</param>
@@ -494,7 +736,14 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	/// resolved: an overload or a namesake elsewhere could return something else, and a callee
 	/// declared outside the tree says nothing here, so both keep the type unknown.
 	/// </remarks>
-	private TypeReference? DeclaredReturnType(string callee)
+	private TypeReference? DeclaredReturnType(string callee) => DeclaredFunction(callee)?.ReturnType;
+
+	/// <summary>
+	/// Finds the one function a receiver-less call can name.
+	/// </summary>
+	/// <param name="callee">The name the call is written with.</param>
+	/// <returns>The function, or null when no function or more than one has the name.</returns>
+	private FunctionDeclaration? DeclaredFunction(string callee)
 	{
 		if (GenerationRoot is null || string.IsNullOrEmpty(callee))
 		{
@@ -505,7 +754,65 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 			.OfType<FunctionDeclaration>()
 			.Where(function => function.Name == callee)
 			.Take(2)];
-		return matches.Length == 1 ? matches[0].ReturnType : null;
+		return matches.Length == 1 ? matches[0] : null;
+	}
+
+	/// <summary>
+	/// Reads the declared type of the parameter a call's argument is passed as.
+	/// </summary>
+	/// <param name="call">The call.</param>
+	/// <param name="index">The argument's position.</param>
+	/// <returns>
+	/// The parameter's type, or null when the call does not name exactly one declared function or
+	/// method, or that function has no parameter at the position.
+	/// </returns>
+	private TypeReference? DeclaredParameterType(CallExpression call, int index)
+	{
+		FunctionDeclaration? function = call.Receiver is Expression receiver
+			? DeclaredMethod(StaticType(receiver), call.Callee)
+			: DeclaredFunction(call.Callee);
+		return function is not null && index < function.Parameters.Count
+			? function.Parameters[index].Type
+			: null;
+	}
+
+	/// <summary>
+	/// Reads the declared type of the one field or member variable a name no function scope declares
+	/// can mean.
+	/// </summary>
+	/// <param name="name">The name the reference is written with.</param>
+	/// <returns>The member's declared type, or null when no member or more than one has the name.</returns>
+	/// <remarks>
+	/// A file-scope <c>int</c> constant read by a function was otherwise of unknown type, so
+	/// <c>LIMIT / 2</c> was true division in Python and JavaScript, and C typed a local copied from it
+	/// <c>void*</c> (#304). Only a <see cref="FieldDeclaration"/>, or a <see cref="VariableDeclaration"/>
+	/// declared as a member of a file, namespace or type rather than in a body, is a candidate, and only
+	/// a name exactly one of them has is resolved, the same rule <see cref="DeclaredReturnType"/> keeps.
+	/// A parameter or local of the name is found in the scopes first and so still wins.
+	/// </remarks>
+	private TypeReference? DeclaredMemberType(string name)
+	{
+		if (GenerationRoot is null || string.IsNullOrEmpty(name))
+		{
+			return null;
+		}
+
+		IEnumerable<AstNode> containers = SelfAndDescendants(GenerationRoot);
+		IEnumerable<VariableDeclaration> memberVariables = containers.SelectMany(node => node switch
+		{
+			SourceFile file => file.Members,
+			NamespaceDeclaration space => space.Members,
+			ClassDeclaration type => type.Members,
+			_ => Enumerable.Empty<AstNode>(),
+		}).OfType<VariableDeclaration>();
+
+		TypeReference?[] matches = [.. SelfAndDescendants(GenerationRoot)
+			.OfType<FieldDeclaration>()
+			.Where(field => field.Name == name)
+			.Select(field => field.Type)
+			.Concat(memberVariables.Where(variable => variable.Name == name).Select(variable => variable.Type))
+			.Take(2)];
+		return matches.Length == 1 ? matches[0] : null;
 	}
 
 	/// <summary>
@@ -523,7 +830,16 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	/// own members are looked at: a method it inherits, an overload, or a class declared outside the
 	/// tree could return something else, so each keeps the type unknown.
 	/// </remarks>
-	private TypeReference? DeclaredMethodReturnType(TypeReference? receiverType, string callee)
+	private TypeReference? DeclaredMethodReturnType(TypeReference? receiverType, string callee) =>
+		DeclaredMethod(receiverType, callee)?.ReturnType;
+
+	/// <summary>
+	/// Finds the one method a call on a receiver of a known type can name.
+	/// </summary>
+	/// <param name="receiverType">The receiver's type, or null when it is unknown.</param>
+	/// <param name="callee">The name the call is written with.</param>
+	/// <returns>The method, or null where <see cref="DeclaredMethodReturnType"/> knows no type.</returns>
+	private FunctionDeclaration? DeclaredMethod(TypeReference? receiverType, string callee)
 	{
 		if (GenerationRoot is null || receiverType is null or { IsArray: true } || string.IsNullOrEmpty(callee))
 		{
@@ -543,7 +859,7 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 			.OfType<FunctionDeclaration>()
 			.Where(function => function.Name == callee)
 			.Take(2)];
-		return matches.Length == 1 ? matches[0].ReturnType : null;
+		return matches.Length == 1 ? matches[0] : null;
 	}
 
 	/// <summary>
@@ -561,12 +877,27 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	/// The wider of two numeric types, so <c>1 + 0.5</c> and <c>ready ? 1 : 2.5</c> are a
 	/// <c>double</c> as they are in every C-family language; otherwise the first known type.
 	/// </returns>
+	/// <remarks>
+	/// A floating type wins over any integer type whichever side it is on, including the integer types
+	/// <see cref="NumericPromotionOrder"/> does not rank, so <c>s * 1.5</c> with <c>short s</c> is a
+	/// <c>double</c> rather than a <c>short</c> (#292). Two integer types keep the first known type.
+	/// </remarks>
 	protected static TypeReference? Promoted(TypeReference? first, TypeReference? second)
 	{
 		int firstRank = NumericRank(first);
 		int secondRank = NumericRank(second);
+		if (secondRank >= FirstFloatingRank && firstRank < FirstFloatingRank)
+		{
+			return second;
+		}
+
 		return firstRank >= 0 && secondRank > firstRank ? second : first ?? second;
 	}
+
+	/// <summary>
+	/// The position of the narrowest floating type in <see cref="NumericPromotionOrder"/>.
+	/// </summary>
+	private static readonly int FirstFloatingRank = Array.IndexOf(NumericPromotionOrder, "float");
 
 	/// <summary>
 	/// Reports where a type stands in <see cref="NumericPromotionOrder"/>.
@@ -576,7 +907,75 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	private static int NumericRank(TypeReference? type) =>
 		type is null ? -1 : Array.IndexOf(NumericPromotionOrder, type.ToString());
 
-	private sealed record StaticTypeScope(Dictionary<string, TypeReference> Types, TypeReference? ReturnType);
+	/// <summary>
+	/// Gets whether the target refuses to widen a number implicitly, so a narrower value meeting a
+	/// wider type has to be converted in the source.
+	/// </summary>
+	/// <remarks>
+	/// The AST follows the C family, where an <c>int</c> beside a <c>long</c> or a <c>double</c> is
+	/// widened, and an <c>int</c> can be assigned, returned or passed as either. Rust and Go convert
+	/// nothing between numeric types, so <c>a + b</c> on an <c>i64</c> and an <c>i32</c> does not
+	/// compile there (#238). Those two override this and <see cref="WriteWidened"/>.
+	/// </remarks>
+	protected virtual bool WidensNumbersExplicitly => false;
+
+	/// <summary>
+	/// Writes a value converted to a wider numeric type, for a target that does not widen implicitly.
+	/// </summary>
+	/// <param name="value">The value to write.</param>
+	/// <param name="wider">The wider type it meets.</param>
+	/// <param name="code">The writer to emit into.</param>
+	protected virtual void WriteWidened(Expression value, TypeReference wider, CodeBlocker code) => GenerateInternal(value, code);
+
+	/// <summary>
+	/// Writes a value where a type receives it, converting it first when it is a narrower number the
+	/// target does not widen on its own.
+	/// </summary>
+	/// <param name="value">The value to write.</param>
+	/// <param name="target">The type receiving it, or null where none is known.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// Only widening is converted. Narrowing is never implicit in the AST, so a value whose type is
+	/// unknown, not numeric, or already as wide is written as it is.
+	/// </remarks>
+	protected void GenerateWidenedTo(AstNode value, TypeReference? target, CodeBlocker code)
+	{
+		Ensure.NotNull(value);
+		if (WidensNumbersExplicitly
+			&& value is Expression expression
+			&& target is not null
+			&& StaticType(expression) is TypeReference from
+			&& IsWidening(from, target))
+		{
+			WriteWidened(expression, target, code);
+			return;
+		}
+
+		GenerateInternal(value, code);
+	}
+
+	/// <summary>
+	/// Reports whether a value of one numeric type is widened by meeting another.
+	/// </summary>
+	/// <param name="from">The value's type.</param>
+	/// <param name="to">The type it meets.</param>
+	/// <returns>True when <paramref name="to"/> is the wider of the two.</returns>
+	private static bool IsWidening(TypeReference from, TypeReference to)
+	{
+		int fromRank = NumericRank(from);
+		return (fromRank >= 0 && NumericRank(to) > fromRank)
+			|| (IsIntegerType(from) && FloatingTypeName(to) is not null);
+	}
+
+	/// <summary>
+	/// Reports whether a target type is a floating-point one, for the targets that write an integer
+	/// literal meeting it as a floating literal.
+	/// </summary>
+	/// <param name="type">The type to inspect.</param>
+	/// <returns>True for <c>float</c> and <c>double</c>.</returns>
+	protected static bool IsFloatingType(TypeReference? type) => FloatingTypeName(type) is not null;
+
+	private sealed record StaticTypeScope(Dictionary<string, TypeReference> Types, TypeReference? ReturnType, ClassDeclaration? EnclosingClass);
 
 	private sealed class StaticTypeScopeGuard(StandardLanguageGenerator generator) : IDisposable
 	{
@@ -594,6 +993,12 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 		Ensure.NotNull(node);
 		Ensure.NotNull(code);
 
+		if (IsRootHoldingEntryPoint(node))
+		{
+			GenerateWithEntryPointsAfter(node, code);
+			return;
+		}
+
 		switch (node)
 		{
 			case ClassDeclaration classDecl:
@@ -605,10 +1010,12 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 				break;
 
 			case SourceFile file:
-				GenerateSourceFile(file, code);
+				HoldModuleVariables(file.Members);
+				GenerateSourceFile(WithEntryPointsAtFileScope(file), code);
 				break;
 
 			case NamespaceDeclaration namespaceDecl:
+				HoldModuleVariables(namespaceDecl.Members);
 				GenerateNamespaceDeclaration(namespaceDecl, code);
 				break;
 
@@ -665,7 +1072,7 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 				break;
 
 			case UnaryExpression unaryExpr:
-				GenerateUnaryExpression(unaryExpr, code, GetUnaryOperatorSpelling(unaryExpr.Operator));
+				GenerateUnary(unaryExpr, code);
 				break;
 
 			case ReturnStatement returnStmt:
@@ -674,6 +1081,10 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 
 			case AssignmentStatement assignment:
 				GenerateAssignmentStatement(assignment, code);
+				break;
+
+			case VariableReference reference:
+				GenerateVariableReference(reference, code);
 				break;
 
 			default:
@@ -1051,6 +1462,205 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	}
 
 	/// <summary>
+	/// Gets a value indicating whether an entry point declared in a namespace is written at file scope.
+	/// </summary>
+	/// <remarks>
+	/// True for a language whose toolchain looks for its entry point only at file scope and whose
+	/// namespaces are real scopes: C++ does not link a <c>main</c> declared in a namespace, and Rust
+	/// does not find one declared in a module (#128). The languages that write a namespace's members
+	/// straight into the file have nothing to move.
+	/// </remarks>
+	protected virtual bool EntryPointsLeaveNamespaces => false;
+
+	/// <summary>
+	/// Whether the root being generated is the copy with its entry points taken out.
+	/// </summary>
+	private bool generatingView;
+
+	/// <summary>
+	/// The namespaces each entry point written at file scope was declared in, outermost first.
+	/// </summary>
+	private Dictionary<EntryPoint, IReadOnlyList<string>> relocatedEntryPoints = new(ReferenceEqualityComparer.Instance);
+
+	/// <summary>
+	/// Gets the namespaces an entry point was declared in before it was moved to file scope.
+	/// </summary>
+	/// <param name="entryPoint">The entry point being written.</param>
+	/// <returns>The namespace names, outermost first, or nothing when it was declared outside one.</returns>
+	/// <remarks>
+	/// The body was written expecting the names declared beside it to be in scope, so a generator
+	/// that moved it out of its namespace brings that namespace's names back into the body.
+	/// </remarks>
+	protected IReadOnlyList<string> NamespacesLeftBy(EntryPoint entryPoint) =>
+		relocatedEntryPoints.TryGetValue(entryPoint, out IReadOnlyList<string>? path) ? path : [];
+
+	/// <summary>
+	/// Determines whether a node is a type or namespace generated on its own with an entry point in it.
+	/// </summary>
+	/// <param name="node">The node being dispatched.</param>
+	/// <returns>True when its entry points have to be written after it, at file scope.</returns>
+	private bool IsRootHoldingEntryPoint(AstNode node) =>
+		!generatingView && ReferenceEquals(node, GenerationRoot) && HoldsEntryPoint(node);
+
+	/// <summary>
+	/// Determines whether a type or namespace has an entry point anywhere inside it.
+	/// </summary>
+	/// <param name="node">The node to search.</param>
+	/// <returns>True when one does.</returns>
+	private static bool HoldsEntryPoint(AstNode node) =>
+		node is ClassDeclaration or NamespaceDeclaration && SelfAndDescendants(node).OfType<EntryPoint>().Any();
+
+	/// <summary>
+	/// Returns a file whose entry points all stand where the toolchain looks for them.
+	/// </summary>
+	/// <param name="file">The file as the document declared it.</param>
+	/// <returns>The file itself when nothing moves, otherwise a copy with the entry points last.</returns>
+	/// <remarks>
+	/// No language here other than C# finds an entry point inside a type: C++ does not link a member
+	/// <c>main</c>, C cannot put a function in a struct, and Rust and Go route a type's members by
+	/// what they are and dropped an entry point without a word. So an entry point in a type, and in a
+	/// language that asks for it one in a namespace too, is written at file scope after everything
+	/// else (#128). The containers are copies holding the document's own members, so the members
+	/// still meet every check by identity.
+	/// </remarks>
+	private SourceFile WithEntryPointsAtFileScope(SourceFile file)
+	{
+		relocatedEntryPoints = new(ReferenceEqualityComparer.Instance);
+		if (!file.Members.Any(HoldsEntryPoint))
+		{
+			return file;
+		}
+
+		Dictionary<EntryPoint, IReadOnlyList<string>> relocated = new(ReferenceEqualityComparer.Instance);
+		List<EntryPoint> moved = [];
+		List<AstNode> kept = WithoutEntryPoints(file.Members, [], moveHere: false, relocated, moved);
+		relocatedEntryPoints = relocated;
+
+		SourceFile copy = (SourceFile)file.Clone();
+		copy.Members.Clear();
+		foreach (AstNode member in kept.Concat(moved))
+		{
+			copy.Members.Add(member);
+		}
+
+		return copy;
+	}
+
+	/// <summary>
+	/// Emits a type or namespace generated on its own, then the entry points it holds at file scope.
+	/// </summary>
+	/// <param name="root">The type or namespace being generated.</param>
+	/// <param name="code">The writer to emit into.</param>
+	private void GenerateWithEntryPointsAfter(AstNode root, CodeBlocker code)
+	{
+		Dictionary<EntryPoint, IReadOnlyList<string>> relocated = new(ReferenceEqualityComparer.Instance);
+		List<EntryPoint> moved = [];
+		AstNode view = WithoutEntryPoints([root], [], moveHere: false, relocated, moved)[0];
+		relocatedEntryPoints = relocated;
+
+		generatingView = true;
+		try
+		{
+			GenerateInternal(view, code);
+		}
+		finally
+		{
+			generatingView = false;
+		}
+
+		foreach (EntryPoint entryPoint in moved)
+		{
+			code.NewLine();
+			GenerateInternal(entryPoint, code);
+		}
+	}
+
+	/// <summary>
+	/// Copies a run of members, leaving out the entry points that belong at file scope.
+	/// </summary>
+	/// <param name="members">The members as declared.</param>
+	/// <param name="namespaces">The namespaces enclosing them, outermost first.</param>
+	/// <param name="moveHere">Whether an entry point standing directly among them is moved.</param>
+	/// <param name="relocated">Where each moved entry point is recorded with its namespaces.</param>
+	/// <param name="moved">The moved entry points, in the order declared.</param>
+	/// <returns>The members that stay, with any container that lost an entry point copied.</returns>
+	private List<AstNode> WithoutEntryPoints(
+		IEnumerable<AstNode> members,
+		IReadOnlyList<string> namespaces,
+		bool moveHere,
+		Dictionary<EntryPoint, IReadOnlyList<string>> relocated,
+		List<EntryPoint> moved)
+	{
+		List<AstNode> kept = [];
+		foreach (AstNode member in members)
+		{
+			int before = moved.Count;
+			switch (member)
+			{
+				case EntryPoint entryPoint when moveHere:
+					relocated[entryPoint] = namespaces;
+					moved.Add(entryPoint);
+					continue;
+
+				case ClassDeclaration classDecl when HoldsEntryPoint(classDecl):
+				{
+					List<AstNode> inner = WithoutEntryPoints(classDecl.Members, namespaces, moveHere: true, relocated, moved);
+					if (moved.Count == before)
+					{
+						break;
+					}
+
+					ClassDeclaration copy = (ClassDeclaration)classDecl.Clone();
+					for (int index = 0; index < classDecl.Annotations.Count; index++)
+					{
+						RememberAnnotationClone(copy.Annotations[index], classDecl.Annotations[index]);
+					}
+
+					Refill(copy.Members, inner);
+					kept.Add(copy);
+					continue;
+				}
+
+				case NamespaceDeclaration namespaceDecl when HoldsEntryPoint(namespaceDecl):
+				{
+					IReadOnlyList<string> inside = [.. namespaces, .. NamespaceDeclaration.Split(namespaceDecl.Name)];
+					List<AstNode> inner = WithoutEntryPoints(namespaceDecl.Members, inside, EntryPointsLeaveNamespaces, relocated, moved);
+					if (moved.Count == before)
+					{
+						break;
+					}
+
+					NamespaceDeclaration copy = (NamespaceDeclaration)namespaceDecl.Clone();
+					Refill(copy.Members, inner);
+					kept.Add(copy);
+					continue;
+				}
+
+				default:
+					break;
+			}
+
+			kept.Add(member);
+		}
+
+		return kept;
+	}
+
+	/// <summary>
+	/// Replaces what a collection holds.
+	/// </summary>
+	/// <param name="target">The collection to refill.</param>
+	/// <param name="members">What it should hold.</param>
+	private static void Refill(Collection<AstNode> target, IEnumerable<AstNode> members)
+	{
+		target.Clear();
+		foreach (AstNode member in members)
+		{
+			target.Add(member);
+		}
+	}
+
+	/// <summary>
 	/// Emits the program's entry point, and whatever else the language needs in order to run it.
 	/// </summary>
 	/// <param name="entryPoint">The entry point to emit.</param>
@@ -1100,14 +1710,42 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	/// A default value is how every target language expresses <see cref="Parameter.IsOptional"/>;
 	/// none of them has separate syntax for it.
 	/// </remarks>
-	protected static void AppendDefaultValue(Parameter parameter, CodeBlocker code)
+	protected void AppendDefaultValue(Parameter parameter, CodeBlocker code)
 	{
 		Ensure.NotNull(parameter);
 		Ensure.NotNull(code);
 
-		if (parameter.IsOptional && !string.IsNullOrEmpty(parameter.DefaultValue))
+		if (parameter.IsOptional && parameter.DefaultValue is Expression value)
 		{
-			code.Write($" = {parameter.DefaultValue}");
+			code.Write(" = ");
+			GenerateInternal(value, code);
+		}
+	}
+
+	/// <summary>
+	/// Appends a parameter's default value as a comment, for a language with no default arguments.
+	/// </summary>
+	/// <param name="parameter">The parameter whose default to note.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// A <c>*/</c> in the value would end the comment early and leave the rest of it as source, so
+	/// it is broken apart. So is a <c>/*</c>, because Rust's block comments nest: one inside the
+	/// comment opens another that nothing closes, and breaking <c>*/</c> apart can make one, as
+	/// <c>"src/**/*.rs"</c> does.
+	/// </remarks>
+	protected void AppendDefaultValueComment(Parameter parameter, CodeBlocker code)
+	{
+		Ensure.NotNull(parameter);
+		Ensure.NotNull(code);
+
+		if (parameter.IsOptional && parameter.DefaultValue is Expression value)
+		{
+			using CodeBlocker inline = CodeBlocker.Create(IndentString);
+			GenerateInternal(value, inline);
+			string spelled = inline.ToString().TrimEnd('\r', '\n')
+				.Replace("*/", "* /", StringComparison.Ordinal)
+				.Replace("/*", "/ *", StringComparison.Ordinal);
+			code.Write($" /* = {spelled} */");
 		}
 	}
 
@@ -1239,7 +1877,7 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	{
 		if (argument is MemberInitialiser designated)
 		{
-			WriteDesignator(designated.Name ?? string.Empty, code);
+			WriteDesignator(EscapeIdentifier(designated.Name ?? string.Empty), code);
 			WriteListValue(designated.Value!, code);
 			return;
 		}
@@ -1379,6 +2017,7 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	protected virtual void GenerateBinary(BinaryExpression binary, CodeBlocker code)
 	{
 		Ensure.NotNull(binary);
+		Ensure.NotNull(code);
 		if (SpellsFloatingRemainderAsCall
 			&& binary.Operator == BinaryOperator.Modulo
 			&& FloatingRemainderType(binary.Left, binary.Right) is string floatingType)
@@ -1387,7 +2026,38 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 			return;
 		}
 
+		// The operands meet at the wider of their types, which a target that widens nothing on its own
+		// has to be told. A shift's count is not an operand of that kind, and a logical operator's
+		// operands are booleans.
+		if (WidensNumbersExplicitly
+			&& binary.Operator is not (BinaryOperator.LeftShift or BinaryOperator.RightShift
+				or BinaryOperator.LogicalAnd or BinaryOperator.LogicalOr))
+		{
+			TypeReference? common = Promoted(StaticType(binary.Left), StaticType(binary.Right));
+			code.Write("(");
+			GenerateWidenedTo(binary.Left, common, code);
+			code.Write($" {GetOperatorSpelling(binary.Operator)} ");
+			GenerateWidenedTo(binary.Right, common, code);
+			code.Write(")");
+			return;
+		}
+
 		GenerateBinaryExpression(binary, code, GetOperatorSpelling(binary.Operator));
+	}
+
+	/// <summary>
+	/// Emits a unary expression in the target language.
+	/// </summary>
+	/// <param name="unary">The expression to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// Defaults to the operator's spelling before its operand. A language whose operator means
+	/// something else for some operands, rather than being spelled differently, overrides this.
+	/// </remarks>
+	protected virtual void GenerateUnary(UnaryExpression unary, CodeBlocker code)
+	{
+		Ensure.NotNull(unary);
+		GenerateUnaryExpression(unary, code, GetUnaryOperatorSpelling(unary.Operator));
 	}
 
 	/// <inheritdoc/>
@@ -1411,7 +2081,49 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 			return;
 		}
 
+		if (WidensNumbersExplicitly
+			&& assignment.Operator is not (AssignmentOperator.LeftShiftAssign or AssignmentOperator.RightShiftAssign)
+			&& StaticType(assignment.Target) is TypeReference targetType)
+		{
+			GenerateInternal(assignment.Target, code);
+			code.Write($" {GetAssignmentOperator(assignment.Operator)} ");
+			GenerateWidenedTo(assignment.Value, targetType, code);
+			EndStatement(code);
+			return;
+		}
+
 		base.GenerateAssignmentStatement(assignment, code);
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// The value is widened to the function's return type where the target does not do it implicitly.
+	/// </remarks>
+	protected override void GenerateReturnStatement(ReturnStatement returnStmt, CodeBlocker code)
+	{
+		Ensure.NotNull(returnStmt);
+		Ensure.NotNull(code);
+
+		if (!WidensNumbersExplicitly || returnStmt.Expression is null)
+		{
+			base.GenerateReturnStatement(returnStmt, code);
+			return;
+		}
+
+		code.Write("return ");
+		GenerateWidenedTo(returnStmt.Expression, StaticType(returnStmt), code);
+		EndStatement(code);
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// An argument is widened to its parameter's type where the target does not do it implicitly and
+	/// the call names exactly one function declared in what is being generated.
+	/// </remarks>
+	protected override void GenerateArgument(CallExpression callExpr, int index, CodeBlocker code)
+	{
+		Ensure.NotNull(callExpr);
+		GenerateWidenedTo(callExpr.Arguments[index], WidensNumbersExplicitly ? DeclaredParameterType(callExpr, index) : null, code);
 	}
 
 	/// <summary>

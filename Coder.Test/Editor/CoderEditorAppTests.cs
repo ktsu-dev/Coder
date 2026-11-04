@@ -3,6 +3,7 @@
 namespace ktsu.Coder.Test.Editor;
 
 using System.Numerics;
+using Hexa.NET.ImGui;
 using ktsu.Coder.Ast;
 using ktsu.Coder.Editor;
 using ktsu.Coder.Graph;
@@ -448,6 +449,132 @@ public sealed class CoderEditorAppTests
 	}
 
 	/// <summary>
+	/// Tests that Save writes to a new path typed into the Path box, leaving the file the document was
+	/// opened from as it was, and that the document then belongs to the new path.
+	/// </summary>
+	/// <remarks>
+	/// Save used to prefer the document's own path over the box, so once a document had been opened
+	/// or saved the box was ignored and the original file was overwritten instead.
+	/// </remarks>
+	[TestMethod]
+	public void SaveToMenuTarget_WritesToANewPathTypedIntoTheBox()
+	{
+		DocumentStore store = NewStore();
+		string original = WriteDocument(store, CoderEditorApp.NewDocument(), PathIn("a"));
+		string before = File.ReadAllText(original);
+		CoderEditorApp app = NewApp(store);
+		Assert.IsTrue(app.Open(original), app.Status);
+
+		((ClassDeclaration)app.Editor.Graph.Root).Name = "Renamed";
+		string second = PathIn("b");
+		app.PathBox = second;
+
+		Assert.IsTrue(app.SaveToMenuTarget(), app.Status);
+
+		Assert.AreEqual(before, File.ReadAllText(original), "the file the document was opened from must not change");
+		StringAssert.Contains(File.ReadAllText(second), "Renamed", StringComparison.Ordinal);
+		Assert.AreEqual(second, app.DocumentPath);
+		Assert.AreEqual(second, app.Settings.RecentFiles[0]);
+		Assert.AreEqual(second, app.PathBox);
+	}
+
+	/// <summary>
+	/// Tests that the Path box shows where Save will write after Open, Save and New, including an
+	/// Open from the Recent list, which used to leave whatever was last typed in the box.
+	/// </summary>
+	[TestMethod]
+	public void PathBox_FollowsTheDocumentPath()
+	{
+		DocumentStore store = NewStore();
+		string first = WriteDocument(store, CoderEditorApp.NewDocument(), PathIn("first"));
+		CoderEditorApp app = NewApp(store);
+
+		app.PathBox = "something typed and abandoned";
+		Assert.IsTrue(app.Open(first), app.Status);
+		Assert.AreEqual(first, app.PathBox);
+
+		string saved = PathIn("saved");
+		Assert.IsTrue(app.Save(saved), app.Status);
+		Assert.AreEqual(saved, app.PathBox);
+
+		app.NewFile();
+		Assert.AreEqual(string.Empty, app.PathBox);
+		Assert.IsNull(app.MenuTarget);
+		Assert.IsFalse(app.SaveToMenuTarget(), "with nowhere to write, Save writes nothing");
+	}
+
+	/// <summary>
+	/// Tests that an empty Path box falls back to the document's own path, so clearing the box does
+	/// not stop Save working.
+	/// </summary>
+	[TestMethod]
+	public void MenuTarget_FallsBackToTheDocumentPathWhenTheBoxIsEmpty()
+	{
+		DocumentStore store = NewStore();
+		CoderEditorApp app = NewApp(store);
+		string document = PathIn("document");
+		Assert.IsTrue(app.Save(document), app.Status);
+
+		app.PathBox = string.Empty;
+
+		Assert.AreEqual(document, app.MenuTarget);
+		Assert.IsTrue(app.SaveToMenuTarget(), app.Status);
+		Assert.AreEqual(document, app.DocumentPath);
+	}
+
+	/// <summary>
+	/// Tests that Export follows the Path box too, writing beside the path typed there rather than
+	/// beside the document's own path.
+	/// </summary>
+	[TestMethod]
+	public void ExportToMenuTarget_WritesBesideThePathInTheBox()
+	{
+		DocumentStore store = NewStore();
+		CoderEditorApp app = NewApp(store);
+		Assert.IsTrue(app.Save(PathIn("document")), app.Status);
+
+		app.PathBox = PathIn("elsewhere");
+		string? written = app.ExportToMenuTarget();
+
+		Assert.AreEqual(Path.Combine(root, "elsewhere.cs"), written);
+		Assert.IsFalse(File.Exists(Path.Combine(root, "document.cs")));
+	}
+
+	/// <summary>
+	/// Tests that Export writes nothing when neither the Path box nor the document names a file.
+	/// </summary>
+	[TestMethod]
+	public void ExportToMenuTarget_WritesNothingWithNowhereToWrite()
+	{
+		CoderEditorApp app = NewApp(NewStore());
+		app.PathBox = null!;
+
+		Assert.AreEqual(string.Empty, app.PathBox, "clearing the box leaves it empty rather than null");
+		Assert.IsNull(app.ExportToMenuTarget());
+		Assert.IsEmpty(Directory.GetFiles(root));
+	}
+
+	/// <summary>
+	/// Tests that Ctrl+S saves to the path typed into the Path box, through a real frame.
+	/// </summary>
+	[TestMethod]
+	public void CtrlS_SavesToThePathBox()
+	{
+		DocumentStore store = NewStore();
+		CoderEditorApp app = NewApp(store);
+		string target = PathIn("shortcut");
+		app.PathBox = target;
+
+		using ImGuiAppHarness harness = ImGuiAppHarness.Start(app.BuildConfig(), Options);
+		harness.Step(2);
+		harness.Keyboard.Press(ImGuiKey.S, ctrl: true);
+		harness.Step(2);
+
+		Assert.IsTrue(File.Exists(target), app.Status);
+		Assert.AreEqual(target, app.DocumentPath);
+	}
+
+	/// <summary>
 	/// Tests that the generated code can be written out beside the document, in the extension its
 	/// language uses — which is what the application exists to produce.
 	/// </summary>
@@ -483,6 +610,39 @@ public sealed class CoderEditorAppTests
 
 		settings.PreviewLanguageId = "cpp";
 		Assert.AreEqual(Path.Combine(root, "greeting.cpp"), app.Export(document));
+	}
+
+	/// <summary>
+	/// Tests that a document marked as a header is exported under a header's extension in C and C++,
+	/// and that one that is not keeps the implementation file's (issue #367).
+	/// </summary>
+	/// <remarks>
+	/// The export named every C++ file <c>.cpp</c> and every C file <c>.c</c>, so a header came out as
+	/// an implementation file starting with <c>#pragma once</c>, which an <c>#include</c> of the
+	/// header's name cannot find.
+	/// </remarks>
+	/// <param name="languageId">The language the pane previews.</param>
+	/// <param name="isHeader">Whether the document's root is marked as a header.</param>
+	/// <param name="extension">The extension the export should write.</param>
+	[TestMethod]
+	[DataRow("cpp", true, "hpp")]
+	[DataRow("cpp", false, "cpp")]
+	[DataRow("c", true, "h")]
+	[DataRow("c", false, "c")]
+	public void Export_NamesAHeaderDocumentAsAHeader(string languageId, bool isHeader, string extension)
+	{
+		DocumentStore store = NewStore();
+		CoderEditorApp app = NewApp(store, new EditorSettings { PreviewLanguageId = languageId });
+		SourceFile file = new("Physics") { IsHeader = isHeader };
+		file.Members.Add(new FieldDeclaration("limit", new TypeReference("int")) { IsConstant = true, InitialValue = Literal.Number(4) });
+		string document = WriteDocument(store, file, PathIn("physics"));
+		Assert.IsTrue(app.Open(document), app.Status);
+
+		string? written = app.Export(document);
+
+		Assert.IsNotNull(written, app.Status);
+		Assert.AreEqual(Path.Combine(root, $"physics.{extension}"), written);
+		Assert.AreEqual(isHeader, File.ReadAllText(written).Contains("#pragma once", StringComparison.Ordinal));
 	}
 
 	/// <summary>

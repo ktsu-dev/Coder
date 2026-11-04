@@ -40,6 +40,21 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	protected AstNode? GenerationRoot { get; private set; }
 
 	/// <summary>
+	/// Gets a number that is different for every <see cref="Generate"/> call, or zero outside one.
+	/// </summary>
+	/// <remarks>
+	/// What an answer worked out from the whole tree is remembered against. The root alone does not
+	/// say the tree is the same: the editor edits its tree in place and regenerates it on the same
+	/// generator, so an answer remembered by the root outlives the edit that changed it.
+	/// </remarks>
+	protected int GenerationNumber { get; private set; }
+
+	/// <summary>
+	/// The <see cref="GenerationNumber"/> the last <see cref="Generate"/> call started was given.
+	/// </summary>
+	private int lastGenerationNumber;
+
+	/// <summary>
 	/// Gets the indentation one level of nesting adds.
 	/// </summary>
 	/// <remarks>
@@ -68,6 +83,13 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// </summary>
 	public abstract string FileExtension { get; }
 
+	/// <inheritdoc/>
+	public virtual string FileExtensionFor(AstNode astNode)
+	{
+		Ensure.NotNull(astNode);
+		return FileExtension;
+	}
+
 	/// <summary>
 	/// Generates code in the target language from an AST node.
 	/// </summary>
@@ -85,7 +107,9 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 		HashSet<object>? previousItems = emittedPreambleItems;
 		Dictionary<object, object>? previousOrigins = preambleCloneOrigins;
 		AstNode? previousRoot = GenerationRoot;
+		int previousNumber = GenerationNumber;
 		GenerationRoot = astNode;
+		GenerationNumber = ++lastGenerationNumber;
 		emittedPreambleItems = new HashSet<object>(ReferenceEqualityComparer.Instance);
 		preambleCloneOrigins = new Dictionary<object, object>(ReferenceEqualityComparer.Instance);
 
@@ -106,6 +130,7 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 			emittedPreambleItems = previousItems;
 			preambleCloneOrigins = previousOrigins;
 			GenerationRoot = previousRoot;
+			GenerationNumber = previousNumber;
 		}
 	}
 
@@ -154,7 +179,7 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 		switch (node)
 		{
 			case VariableReference varRef:
-				code.Write(varRef.Name);
+				code.Write(EscapeReference(varRef.Name));
 				return true;
 
 			case LiteralExpression<string> stringLit:
@@ -238,6 +263,17 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	protected virtual string CommentPrefix => "//";
 
 	/// <summary>
+	/// Every sequence a target ends a line at, and so ends a line comment at.
+	/// </summary>
+	/// <remarks>
+	/// Beyond CR and LF, C# also ends a line at U+0085, U+2028 and U+2029, and JavaScript at U+2028
+	/// and U+2029. Text pasted from a PDF or a word processor carries them, and the YAML serializer
+	/// preserves them. A target that does not treat one as a line break just gets an extra comment
+	/// line, which is harmless, so every target splits on all of them.
+	/// </remarks>
+	protected static readonly string[] CommentLineBreaks = ["\r\n", "\n", "\r", "\u0085", "\u2028", "\u2029"];
+
+	/// <summary>
 	/// Writes caller-provided text as comment lines without letting it escape the comment.
 	/// </summary>
 	/// <param name="code">The writer to emit into.</param>
@@ -249,7 +285,7 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 		Ensure.NotNull(prefix);
 		Ensure.NotNull(text);
 
-		foreach (string line in text.Split(["\r\n", "\n", "\r"], StringSplitOptions.None))
+		foreach (string line in text.Split(CommentLineBreaks, StringSplitOptions.None))
 		{
 			code.WriteLine(line.Length == 0 ? prefix : $"{prefix} {line}");
 		}
@@ -872,13 +908,48 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 				code.Write(")");
 			}
 
-			code.Write(".");
+			code.Write(SpellMemberAccess(callExpr.Receiver));
 		}
 
 		code.Write(callExpr.Callee);
 		code.Write("(");
-		GenerateArgumentList(callExpr.Arguments, code);
+		for (int index = 0; index < callExpr.Arguments.Count; index++)
+		{
+			if (index > 0)
+			{
+				code.Write(", ");
+			}
+
+			GenerateArgument(callExpr, index, code);
+		}
+
 		code.Write(")");
+	}
+
+	/// <summary>
+	/// Spells what stands between a call's receiver and its callee.
+	/// </summary>
+	/// <param name="receiver">The receiver the call is made on.</param>
+	/// <returns>The separator, which is a dot unless a language reaches through a pointer differently.</returns>
+	/// <remarks>
+	/// C++ overrides this: a member call through a pointer is written with <c>-&gt;</c>, and a dot
+	/// there does not compile (#170).
+	/// </remarks>
+	protected virtual string SpellMemberAccess(Expression receiver) => ".";
+
+	/// <summary>
+	/// Emits one argument of a call.
+	/// </summary>
+	/// <param name="callExpr">The call the argument belongs to.</param>
+	/// <param name="index">The argument's position.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// Overridable for a target that has to convert an argument to the parameter it is passed as.
+	/// </remarks>
+	protected virtual void GenerateArgument(CallExpression callExpr, int index, CodeBlocker code)
+	{
+		Ensure.NotNull(callExpr);
+		GenerateInternal(callExpr.Arguments[index], code);
 	}
 
 	/// <summary>
@@ -1102,6 +1173,90 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// </remarks>
 	protected static Visibility VisibilityOf(AstNode node) =>
 		node is IHasVisibility declaration ? declaration.Visibility : Visibility.Unspecified;
+
+	/// <summary>
+	/// Gets the words the target language reserves, which no declared name may be spelled as.
+	/// </summary>
+	/// <remarks>
+	/// The AST is language-neutral, so a name that is ordinary in one target is a keyword in another:
+	/// a property called <c>Type</c> becomes a getter <c>type</c> in snake case, which Rust reserves,
+	/// and one called <c>Default</c> becomes <c>default</c>, which C++ does. Empty by default, so a
+	/// generator that declares nothing escapes nothing.
+	/// </remarks>
+	protected virtual IReadOnlySet<string> ReservedWords { get; } = new HashSet<string>(StringComparer.Ordinal);
+
+	/// <summary>
+	/// Spells a declared name so the target does not read it as one of its own keywords.
+	/// </summary>
+	/// <param name="name">The name as the AST holds it.</param>
+	/// <returns>The name unchanged, or escaped when it is one of <see cref="ReservedWords"/>.</returns>
+	/// <remarks>
+	/// Appends an underscore, which is the only escape most targets have: <c>default</c> becomes
+	/// <c>default_</c>. A target with a real escape — Rust's raw identifiers — overrides this. Every
+	/// site that writes a name, at its declaration and wherever it is used, goes through here or
+	/// through <see cref="EscapeReference"/>, so the two cannot come out spelled differently.
+	/// </remarks>
+	protected virtual string EscapeIdentifier(string name)
+	{
+		Ensure.NotNull(name);
+		return ReservedWords.Contains(name) ? $"{name}_" : name;
+	}
+
+	/// <summary>
+	/// Tells whether a word leading a reference means what the language means by it.
+	/// </summary>
+	/// <param name="word">The first dotted segment of a <see cref="VariableReference"/>.</param>
+	/// <returns>True when the word is left as written there; false when it is escaped like any other name.</returns>
+	/// <remarks>
+	/// A reference is text, and <c>self.x</c> or <c>this</c> names the receiver rather than something
+	/// the AST declared. Such a word is a keyword, but escaping it would break the reference.
+	/// </remarks>
+	protected virtual bool IsReceiverWord(string word) => false;
+
+	/// <summary>
+	/// Spells a reference so any segment naming a declared member escapes as its declaration did.
+	/// </summary>
+	/// <param name="reference">The reference's text, possibly a dotted member access such as <c>self.type</c>.</param>
+	/// <returns>The reference with each reserved segment escaped.</returns>
+	/// <remarks>
+	/// Only a segment that is exactly a reserved word changes. Anything else — a call such as
+	/// <c>args.len()</c>, an index such as <c>steps[0]</c> — is written as given, since a reference is
+	/// text and only its plain names are the AST's. A path in the target's own form, such as
+	/// <c>Kind::type</c>, names a member in its last word, so that word escapes as the member's
+	/// declaration did; the words before it are a scope or a path keyword and stay as written.
+	/// </remarks>
+	protected string EscapeReference(string reference)
+	{
+		Ensure.NotNull(reference);
+
+		if (ReservedWords.Count == 0)
+		{
+			return reference;
+		}
+
+		string[] segments = reference.Split('.');
+		for (int i = 0; i < segments.Length; i++)
+		{
+			string[] path = segments[i].Split("::");
+			if (path.Length > 1)
+			{
+				if (ReservedWords.Contains(path[^1]))
+				{
+					path[^1] = EscapeIdentifier(path[^1]);
+					segments[i] = string.Join("::", path);
+				}
+
+				continue;
+			}
+
+			if (ReservedWords.Contains(segments[i]) && !(i == 0 && IsReceiverWord(segments[i])))
+			{
+				segments[i] = EscapeIdentifier(segments[i]);
+			}
+		}
+
+		return string.Join(".", segments);
+	}
 
 	/// <summary>
 	/// Escapes a string literal's contents for a target language using C-style backslash escapes.

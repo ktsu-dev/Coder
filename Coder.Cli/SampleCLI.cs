@@ -109,7 +109,7 @@ public static class CoderCLI
 		// Add parameters
 		function.Parameters.Add(new Parameter("a", "int"));
 		function.Parameters.Add(new Parameter("b", "int"));
-		function.Parameters.Add(new Parameter("include_debug", "bool") { IsOptional = true, DefaultValue = "False" });
+		function.Parameters.Add(new Parameter("include_debug", "bool") { IsOptional = true, DefaultValue = Literal.Bool(false) });
 
 		// Add function body
 		function.Body.Add(new ReturnStatement(new AstLeafNode<string>("a + b")));
@@ -125,7 +125,7 @@ public static class CoderCLI
 
 		foreach (Parameter param in function.Parameters)
 		{
-			string optionalInfo = param.IsOptional ? $" (optional, default: {param.DefaultValue})" : "";
+			string optionalInfo = param.IsOptional ? $" (optional, default: {Parameter.FormatDefaultValue(param.DefaultValue)})" : "";
 			Console.WriteLine($"  - {param.Name}: {param.Type}{optionalInfo}");
 		}
 

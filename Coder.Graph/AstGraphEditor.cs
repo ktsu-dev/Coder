@@ -1083,14 +1083,18 @@ public sealed class AstGraphEditor(AstNode root)
 			() => moved = Graph.Replace(existing, replacement),
 			() =>
 			{
-				// Undone in the order the replacement was made: the original goes back into its place,
-				// then each child that moved goes back into the slot it came from.
-				Graph.Replace(replacement, existing);
-				Graph.MoveTo(existing, from);
+				// Each child that moved goes back into the slot it came from first, then the original goes
+				// back into its place. Running the replacement in reverse instead would adopt the moved
+				// children into the original from position 0, writing over the children it kept: a call
+				// converted to an operator keeps its later arguments, so o.m(a, b) came back as o.m(a)
+				// with b left loose. PutBack inserts into a sequence rather than overwriting, and the
+				// children are put back in the order they left, so each lands where it was.
 				foreach ((AstNode child, AstLocation origin) in moved)
 				{
-					Graph.MoveTo(child, origin);
+					Graph.PutBack(child, origin);
 				}
+
+				Graph.MoveTo(existing, from);
 
 				Graph.RemoveNode(replacement);
 			});

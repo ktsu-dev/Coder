@@ -58,7 +58,7 @@ internal static class CompiledExemplar
 
 		FunctionDeclaration create = new("Point") { Kind = FunctionKind.Constructor };
 		create.Parameters.Add(new Parameter("x", "int"));
-		create.Parameters.Add(new Parameter("y", "int") { IsOptional = true, DefaultValue = "0" });
+		create.Parameters.Add(new Parameter("y", "int") { IsOptional = true, DefaultValue = Literal.Number(0) });
 		create.Initialisers.Add(new MemberInitialiser("x") { Value = new VariableReference("x") });
 		create.Initialisers.Add(new MemberInitialiser("y") { Value = new VariableReference("y") });
 		point.Members.Add(create);
@@ -207,6 +207,42 @@ internal static class CompiledExemplar
 	}
 
 	/// <summary>
+	/// Gets a binary operator declared as a friend, which names both of its operands itself.
+	/// </summary>
+	/// <returns>The declaration.</returns>
+	/// <remarks>
+	/// A target that adds the instance to every operator a type declares writes this one with three
+	/// operands, which no language accepts for <c>*</c> (#231).
+	/// </remarks>
+	public static FunctionDeclaration Times()
+	{
+		FunctionDeclaration times = new("*")
+		{
+			Kind = FunctionKind.Operator,
+			ReturnType = "Point",
+			IsFriend = true,
+		};
+		times.Parameters.Add(new Parameter("a", "Point"));
+		times.Parameters.Add(new Parameter("b", "Point"));
+
+		ConstructionExpression built = new(new TypeReference("Point"));
+
+		foreach (string member in new[] { "x", "y" })
+		{
+			built.Arguments.Add(new MemberInitialiser(member)
+			{
+				Value = new BinaryExpression(
+					new VariableReference($"a.{member}"),
+					BinaryOperator.Multiply,
+					new VariableReference($"b.{member}")),
+			});
+		}
+
+		times.Body.Add(new ReturnStatement(built));
+		return times;
+	}
+
+	/// <summary>
 	/// Gets the unary operator that shares its symbol with the binary one.
 	/// </summary>
 	/// <returns>The declaration.</returns>
@@ -344,5 +380,52 @@ internal static class CompiledExemplar
 		row.Arguments.Add(new MemberInitialiser("x") { Value = new LiteralExpression<int>(offset) });
 		row.Arguments.Add(new MemberInitialiser("y") { Value = new LiteralExpression<int>(offset) });
 		return row;
+	}
+
+	/// <summary>
+	/// Gets a file whose free functions take an interface by reference and by pointer and call
+	/// through it, beside one type that implements it.
+	/// </summary>
+	/// <returns>The file.</returns>
+	/// <remarks>
+	/// Passing a value through its interface is the reason to declare one, and it is where Rust and
+	/// Go used to part from the rest (#298): Rust wrote a bare trait where a type belongs, which is an
+	/// error since the 2021 edition, and Go wrote a pointer to an interface, whose method set is
+	/// empty. Both mistakes are invisible in the text, so only a compiler can hold the fix.
+	/// </remarks>
+	public static SourceFile Measured()
+	{
+		SourceFile file = new("main");
+
+		ClassDeclaration shape = new("Shape") { Kind = TypeDeclarationKind.Interface };
+		shape.Members.Add(new FunctionDeclaration("area") { ReturnType = "int", IsReadOnly = true, IsAbstract = true });
+		file.Members.Add(shape);
+
+		ClassDeclaration square = new("Square") { Kind = TypeDeclarationKind.Struct };
+		square.Interfaces.Add(TypeReference.Parse("Shape"));
+		square.Members.Add(new VariableDeclaration("side", "int"));
+		FunctionDeclaration area = new("area") { ReturnType = "int", IsReadOnly = true };
+		area.Body.Add(new ReturnStatement(new BinaryExpression(
+			new VariableReference("self.side"), BinaryOperator.Multiply, new VariableReference("self.side"))));
+		square.Members.Add(area);
+		file.Members.Add(square);
+
+		file.Members.Add(Measures("measure", "const Shape&"));
+		file.Members.Add(Measures("measureMutable", "Shape&"));
+		return file;
+	}
+
+	/// <summary>
+	/// Gets a free function that takes a shape and answers its area.
+	/// </summary>
+	/// <param name="name">The function's name.</param>
+	/// <param name="type">How the shape is reached.</param>
+	/// <returns>The declaration.</returns>
+	public static FunctionDeclaration Measures(string name, string type)
+	{
+		FunctionDeclaration measure = new(name) { ReturnType = "int" };
+		measure.Parameters.Add(new Parameter("s", type));
+		measure.Body.Add(new ReturnStatement(new CallExpression(new VariableReference("s"), "area")));
+		return measure;
 	}
 }

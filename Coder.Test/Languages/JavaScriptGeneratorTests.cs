@@ -72,7 +72,7 @@ public class JavaScriptGeneratorTests
 	{
 		FunctionDeclaration function = new("greet");
 		function.Parameters.Add(new Parameter("name", "str"));
-		function.Parameters.Add(new Parameter("loud", "bool") { IsOptional = true, DefaultValue = "false" });
+		function.Parameters.Add(new Parameter("loud", "bool") { IsOptional = true, DefaultValue = Literal.Bool(false) });
 
 		string code = Generator.Generate(function);
 
@@ -306,7 +306,7 @@ public class JavaScriptGeneratorTests
 
 		StringAssert.Contains(code, "const Limit = 10;", StringComparison.Ordinal);
 		StringAssert.Contains(code, "let total = 0;", StringComparison.Ordinal);
-		StringAssert.Contains(code, "let Pending;", StringComparison.Ordinal);
+		StringAssert.Contains(code, "let Pending = 0;", StringComparison.Ordinal);
 	}
 
 	/// <summary>

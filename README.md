@@ -198,7 +198,8 @@ Pictures of the editor as it draws today are in the [editor gallery](docs/galler
 Documents are `.coder.yaml` files — the same YAML the serializer already round-trips, so anything the
 library can write, the editor can open. The code pane follows the document live and lists what is
 outstanding instead of generating while an operand is unfilled; clicking one of those selects the
-node it is about. Generated source can be copied to the clipboard or exported beside the document in
+node it is about. An unfilled operand is its own node, written `unfilled: {}` in the YAML, so a
+deliberate empty string `""` is a value like any other rather than a gap. Generated source can be copied to the clipboard or exported beside the document in
 the extension of whichever language is being previewed.
 
 It uses the ktsu.Essentials providers where they fit rather than reaching for `System.IO` directly:
@@ -254,7 +255,9 @@ function.Parameters.Add(new Parameter("b", "int"));
 function.Parameters.Add(new Parameter("debug", "bool")
 {
     IsOptional = true,
-    DefaultValue = "False"
+    // An expression, not source text: each generator spells it its own way
+    // (False in Python, false in C#, C++ and JavaScript).
+    DefaultValue = Literal.Bool(false)
 });
 
 // Add function body
@@ -283,7 +286,7 @@ functionDeclaration:
         - name: debug
           type: bool
           isOptional: true
-          defaultValue: False
+          defaultValue: false
     body:
         - returnStatement:
               expression:

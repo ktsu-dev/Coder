@@ -81,6 +81,81 @@ public class DeclarationRoundTripTests
 		Assert.AreEqual("attached", Assert.IsInstanceOfType<VariableReference>(child).Name);
 	}
 
+	[TestMethod]
+	public void RoundTrip_FunctionDeclaration_KeyedChildNamedLikeAPropertyLeavesThePropertyIntact()
+	{
+		FunctionDeclaration function = new("compute") { ReturnType = "int" };
+		function.Body.Add(new ReturnStatement(1));
+		function.SetChild("Name", new VariableReference("x"));
+		function.SetChild("Body", new VariableReference("y"));
+
+		FunctionDeclaration restored = Assert.IsInstanceOfType<FunctionDeclaration>(RoundTrip(function));
+
+		Assert.AreEqual("compute", restored.Name);
+		Assert.HasCount(1, restored.Body);
+		Assert.AreEqual("x", Assert.IsInstanceOfType<VariableReference>(restored.GetChild("Name")).Name);
+		Assert.AreEqual("y", Assert.IsInstanceOfType<VariableReference>(restored.GetChild("Body")).Name);
+	}
+
+	[TestMethod]
+	public void RoundTrip_ClassDeclaration_KeyedChildNamedLikeAPropertyLeavesThePropertyIntact()
+	{
+		ClassDeclaration declaration = new("Point");
+		declaration.Members.Add(new FieldDeclaration("x", new TypeReference("int")));
+		declaration.SetChild("Name", new VariableReference("x"));
+		declaration.SetChild("Members", new VariableReference("y"));
+
+		ClassDeclaration restored = Assert.IsInstanceOfType<ClassDeclaration>(RoundTrip(declaration));
+
+		Assert.AreEqual("Point", restored.Name);
+		Assert.HasCount(1, restored.Members);
+		Assert.AreEqual("x", Assert.IsInstanceOfType<VariableReference>(restored.GetChild("Name")).Name);
+		Assert.AreEqual("y", Assert.IsInstanceOfType<VariableReference>(restored.GetChild("Members")).Name);
+	}
+
+	[TestMethod]
+	[DynamicData(nameof(CompositeDeclarations))]
+	public void RoundTrip_Declaration_KeepsTheCaseOfAKeyedChildsKey(AstCompositeNode declaration)
+	{
+		Assert.IsNotNull(declaration);
+		declaration.SetChild("myChild", new VariableReference("attached"));
+
+		AstCompositeNode restored = Assert.IsInstanceOfType<AstCompositeNode>(RoundTrip(declaration));
+
+		Assert.AreEqual("attached", Assert.IsInstanceOfType<VariableReference>(restored.GetChild("myChild")).Name);
+	}
+
+	[TestMethod]
+	public void RoundTrip_ReturnStatement_KeepsAKeyedChildBesideItsExpression()
+	{
+		ReturnStatement statement = new(1);
+		statement.SetChild("extra", new VariableReference("attached"));
+
+		ReturnStatement restored = Assert.IsInstanceOfType<ReturnStatement>(RoundTrip(statement));
+
+		Assert.AreEqual(1, Assert.IsInstanceOfType<AstLeafNode<int>>(restored.Expression).Value);
+		Assert.AreEqual("attached", Assert.IsInstanceOfType<VariableReference>(restored.GetChild("extra")).Name);
+		Assert.HasCount(2, restored.Children);
+	}
+
+	[TestMethod]
+	public void Deserialize_KeyedChildInTheOldLayout_IsStillRead()
+	{
+		const string yaml = """
+			functionDeclaration:
+			  name: compute
+			  returnType: int
+			  note:
+			    variableReference:
+			      name: attached
+			""";
+
+		FunctionDeclaration restored = Assert.IsInstanceOfType<FunctionDeclaration>(new YamlDeserializer().Deserialize(yaml));
+
+		Assert.AreEqual("compute", restored.Name);
+		Assert.AreEqual("attached", Assert.IsInstanceOfType<VariableReference>(restored.GetChild("note")).Name);
+	}
+
 	private static AstNode RoundTrip(AstNode node)
 	{
 		string yaml = new YamlSerializer().Serialize(node);

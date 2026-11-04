@@ -244,11 +244,15 @@ public class CGenerator : CFamilyGenerator
 		if (funcDecl.Definition == FunctionDefinition.Deleted)
 		{
 			WritePreamble(funcDecl, code, enclosingType is null ? PreambleSite.Function : PreambleSite.Method);
+			WriteTypeParametersDown(funcDecl.TypeParameters, code);
 			WriteInexpressible(code, $"{SpellFunctionName(funcDecl, enclosingType)} is deleted: C cannot refuse a call");
 			return;
 		}
 
 		WritePreamble(funcDecl, code, enclosingType is null ? PreambleSite.Function : PreambleSite.Method);
+
+		// C has no generics, so what a function is written over is written down, as for a type.
+		WriteTypeParametersDown(funcDecl.TypeParameters, code);
 
 		// Internal linkage is the only privacy C has, and it is what a private function wants: the
 		// declaration is visible to this translation unit and to nothing else.
@@ -424,13 +428,14 @@ public class CGenerator : CFamilyGenerator
 	/// A static member acts on no instance and a constructor has none to act on yet, so neither takes
 	/// one. <see cref="FunctionDeclaration.IsReadOnly"/> — a member function that does not modify
 	/// what it is called on — becomes a pointer to <c>const</c>, which is exactly what it says and is
-	/// the only place C has to say it.
+	/// the only place C has to say it. A friend is declared beside the type rather than as a member
+	/// of it and names every operand itself, so it takes no instance either.
 	/// </remarks>
 	private static List<Parameter> ParametersOf(FunctionDeclaration funcDecl, string? enclosingType)
 	{
 		List<Parameter> parameters = [];
 
-		if (enclosingType is not null && !funcDecl.IsStatic && funcDecl.Kind != FunctionKind.Constructor)
+		if (enclosingType is not null && !funcDecl.IsStatic && !funcDecl.IsFriend && funcDecl.Kind != FunctionKind.Constructor)
 		{
 			parameters.Add(SelfParameter(enclosingType, funcDecl.IsReadOnly));
 		}
@@ -635,42 +640,46 @@ public class CGenerator : CFamilyGenerator
 		code.Indent();
 
 		insideType++;
-
-		WriteEmbeddedBases(classDecl, fields.Count, code);
-
-		if (fields.Count == 0 && classDecl.BaseType is null && classDecl.Interfaces.Count == 0)
+		try
 		{
-			WriteInexpressible(code, $"{name} holds no data: C has no empty struct, so this member stands in");
-			code.WriteLine($"char {UnusedMemberName};");
-		}
+			WriteEmbeddedBases(classDecl, fields.Count, code);
 
-		AstNode? previous = null;
-		foreach (AstNode member in fields)
-		{
-			if (previous is not null && NeedsSeparation(previous, member))
+			if (fields.Count == 0 && classDecl.BaseType is null && classDecl.Interfaces.Count == 0)
 			{
-				code.NewLine();
+				WriteInexpressible(code, $"{name} holds no data: C has no empty struct, so this member stands in");
+				code.WriteLine($"char {UnusedMemberName};");
 			}
 
-			previous = member;
-
-			switch (member)
+			AstNode? previous = null;
+			foreach (AstNode member in fields)
 			{
-				case FunctionDeclaration method:
-					GenerateFunctionPointer(method, code);
-					break;
+				if (previous is not null && NeedsSeparation(previous, member))
+				{
+					code.NewLine();
+				}
 
-				case VariableDeclaration field:
-					GenerateStructMember(field.Name, field.Type, field.InitialValue, field.IsConstant, code);
-					break;
+				previous = member;
 
-				default:
-					GenerateInternal(member, code);
-					break;
+				switch (member)
+				{
+					case FunctionDeclaration method:
+						GenerateFunctionPointer(method, code);
+						break;
+
+					case VariableDeclaration field:
+						GenerateStructMember(field.Name, field.Type, field.InitialValue, field.IsConstant, code);
+						break;
+
+					default:
+						GenerateInternal(member, code);
+						break;
+				}
 			}
 		}
-
-		insideType--;
+		finally
+		{
+			insideType--;
+		}
 
 		code.Outdent();
 		code.WriteLine($"}} {name};");
@@ -777,6 +786,7 @@ public class CGenerator : CFamilyGenerator
 	private void GenerateFunctionPointer(FunctionDeclaration funcDecl, CodeBlocker code)
 	{
 		WritePreamble(funcDecl, code, PreambleSite.Function);
+		WriteTypeParametersDown(funcDecl.TypeParameters, code);
 
 		List<Parameter> parameters = [];
 		if (!funcDecl.IsStatic)
@@ -854,17 +864,12 @@ public class CGenerator : CFamilyGenerator
 	/// the declaration — <c>Point_translate(Point* self, …)</c>. A call site that kept the dot would
 	/// not reach the function this generator emitted for it.
 	/// <para>
-	/// Its address is taken, because that <c>self</c> parameter is a pointer. That assumes the
-	/// receiver is an instance rather than already a pointer to one, which is an assumption rather
-	/// than a deduction: a <see cref="CallExpression"/> knows the receiver's spelling and not its
-	/// type. It is the assumption worth making, because taking the address is the only one of the two
-	/// a caller cannot write for itself — the AST has no address-of operator — and because what this
-	/// generator emits elsewhere is instances. A caller holding a pointer spells the call as a free
-	/// function and passes the pointer as an ordinary argument.
+	/// Because that <c>self</c> parameter is a pointer, the receiver has to become one:
+	/// <see cref="WriteSelfArgument"/> decides how from what the receiver's type is known to be.
 	/// </para>
 	/// <para>
 	/// What is not done is mangling the name: the declaration's is built from the type it belongs to,
-	/// and the receiver's type is exactly what is not known here, so
+	/// and the receiver's type is not always known here, so
 	/// <see cref="CallExpression.Callee"/> is written verbatim and choosing it stays the caller's —
 	/// which is what the node says it is everywhere else too.
 	/// </para>
@@ -879,8 +884,7 @@ public class CGenerator : CFamilyGenerator
 
 		if (callExpr.Receiver is not null)
 		{
-			code.Write("&");
-			GenerateInternal(callExpr.Receiver, code);
+			WriteSelfArgument(callExpr.Receiver, code);
 
 			if (callExpr.Arguments.Count > 0)
 			{
@@ -890,6 +894,74 @@ public class CGenerator : CFamilyGenerator
 
 		GenerateArgumentList(callExpr.Arguments, code);
 		code.Write(")");
+	}
+
+	/// <summary>
+	/// Writes a call's receiver as the pointer to the instance its lowered function takes first.
+	/// </summary>
+	/// <param name="receiver">The receiver the call is made on.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// Three receivers are written three ways (#170). One known to be a pointer or a reference is
+	/// already the pointer C wants, since this generator spells both with <c>*</c>, so it is passed as
+	/// it is: taking its address would pass a pointer to the pointer. A variable is an lvalue, so its
+	/// address is taken. Anything else — a call's result, above all, which is what a chain is made of
+	/// — has no address, so it is put in a one-element array compound literal of its type,
+	/// <c>(Vec[]){ Vec_twice(&amp;v) }</c>, which is an lvalue living to the end of the enclosing
+	/// block and decays to the pointer wanted. An array rather than <c>&amp;(Vec){ … }</c>, because a
+	/// braced list initialises a struct's members one by one and only an array's element may be
+	/// initialised from a whole struct.
+	/// <para>
+	/// A value whose type the AST does not establish keeps the address-of, which is the assumption
+	/// the call site made before any of this was known.
+	/// </para>
+	/// </remarks>
+	private void WriteSelfArgument(Expression receiver, CodeBlocker code)
+	{
+		TypeReference? type = StaticType(receiver) ?? (receiver is CallExpression call ? LoweredReturnType(call.Callee) : null);
+
+		if (type is { Indirection: not TypeIndirection.None, IsArray: false })
+		{
+			GenerateInternal(receiver, code);
+			return;
+		}
+
+		if (receiver is VariableReference || type is null or { IsArray: true })
+		{
+			code.Write("&");
+			GenerateInternal(receiver, code);
+			return;
+		}
+
+		code.Write($"({MapToCType(type)}[]){{ ");
+		GenerateInternal(receiver, code);
+		code.Write(" }");
+	}
+
+	/// <summary>
+	/// Reads the return type of the one member function a call names by the name C gives it.
+	/// </summary>
+	/// <param name="callee">The name the call is written with.</param>
+	/// <returns>The function's return type, or null when no member function or more than one has the name.</returns>
+	/// <remarks>
+	/// A call on a receiver names the free function a member function lowers to,
+	/// <c>Vec_twice</c>, which is not the name the class declares and so not one the shared
+	/// reading of a call's type can find.
+	/// </remarks>
+	private TypeReference? LoweredReturnType(string callee)
+	{
+		if (GenerationRoot is null || string.IsNullOrEmpty(callee))
+		{
+			return null;
+		}
+
+		FunctionDeclaration[] matches = [.. SelfAndDescendants(GenerationRoot)
+			.OfType<ClassDeclaration>()
+			.SelectMany(type => type.Members
+				.OfType<FunctionDeclaration>()
+				.Where(function => SpellFunctionName(function, type.Name) == callee))
+			.Take(2)];
+		return matches.Length == 1 ? matches[0].ReturnType : null;
 	}
 
 	/// <summary>
@@ -1078,24 +1150,14 @@ public class CGenerator : CFamilyGenerator
 
 		TypeReference type = field.Type ?? new TypeReference(UnknownTypeName);
 
-		if (field.IsConstant)
-		{
-			code.Write("static const ");
-
-			// The keyword has just been written, so a type that also says const would say it twice
-			// — and `const const T` is not a type.
-			if (type.IsReadOnly)
-			{
-				type = type.Clone();
-				type.IsReadOnly = false;
-			}
-		}
-		else if (field.IsStatic || field.Visibility == Visibility.Private)
+		if (field.IsConstant || field.IsStatic || field.Visibility == Visibility.Private)
 		{
 			code.Write("static ");
 		}
 
-		code.Write(SpellDeclarator(type, name));
+		// A constant's const is said once, and of the pointer when the type is one; see
+		// SpellConstantDeclarator.
+		code.Write(field.IsConstant ? SpellConstantDeclarator(type, name) : SpellDeclarator(type, name));
 
 		if (field.InitialValue is not null)
 		{
@@ -1152,6 +1214,61 @@ public class CGenerator : CFamilyGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
+	/// Joining strings is written down rather than translated. A string is a <c>const char*</c>, and
+	/// <c>+</c> on two pointers does not compile; joining them needs a buffer somebody allocates and
+	/// owns, which is a decision about the program rather than a spelling of the expression. So the
+	/// <c>+</c> stays, and a note in front of it says why the compiler rejects it and what to write
+	/// instead, rather than leaving the reader with <c>invalid operands to binary +</c> alone.
+	/// </remarks>
+	protected override void GenerateBinary(BinaryExpression binary, CodeBlocker code)
+	{
+		Ensure.NotNull(binary);
+		Ensure.NotNull(code);
+
+		if (binary.Operator == BinaryOperator.Add
+			&& (IsCString(StaticType(binary.Left)) || IsCString(StaticType(binary.Right))))
+		{
+			code.Write(NoStringConcatenationNote);
+		}
+
+		base.GenerateBinary(binary, code);
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// A string <c>+=</c> carries the note a string <c>+</c> does, for the same reason: <c>+=</c> on
+	/// a pointer and a pointer does not compile either.
+	/// </remarks>
+	protected override void GenerateAssignmentStatement(AssignmentStatement assignment, CodeBlocker code)
+	{
+		Ensure.NotNull(assignment);
+		Ensure.NotNull(code);
+
+		if (assignment.Operator == AssignmentOperator.AddAssign
+			&& (IsCString(StaticType(assignment.Target)) || IsCString(StaticType(assignment.Value))))
+		{
+			code.Write(NoStringConcatenationNote);
+		}
+
+		base.GenerateAssignmentStatement(assignment, code);
+	}
+
+	/// <summary>
+	/// The note written in front of a string join, saying why the compiler rejects it.
+	/// </summary>
+	private const string NoStringConcatenationNote =
+		"/* C has no string concatenation: join these into a buffer with snprintf or strcat */ ";
+
+	/// <summary>
+	/// Reports whether a type is spelled as C's string, a pointer to constant characters.
+	/// </summary>
+	/// <param name="type">The type, or null where none is known.</param>
+	/// <returns>True for <c>str</c> and <c>string</c> as a plain value.</returns>
+	private static bool IsCString(TypeReference? type) =>
+		type is not null && MapToCType(type) == TypeMappings["string"];
+
+	/// <inheritdoc/>
+	/// <remarks>
 	/// A parameter's default value is written as a comment beside it. C has no default arguments, so
 	/// the caller has to pass one — and the value the declaration chose is exactly what they need to
 	/// know in order to pass the same thing.
@@ -1169,10 +1286,7 @@ public class CGenerator : CFamilyGenerator
 
 		code.Write(name.Length == 0 ? MapToCType(type) : SpellDeclarator(type, name));
 
-		if (parameter.IsOptional && !string.IsNullOrEmpty(parameter.DefaultValue))
-		{
-			code.Write($" /* = {parameter.DefaultValue} */");
-		}
+		AppendDefaultValueComment(parameter, code);
 	}
 
 	/// <inheritdoc/>
@@ -1188,15 +1302,10 @@ public class CGenerator : CFamilyGenerator
 		Ensure.NotNull(code);
 		RegisterStaticType(varDecl);
 
-		if (varDecl.IsConstant)
-		{
-			code.Write("const ");
-		}
-
 		TypeReference type = varDecl.Type
 			?? (varDecl.InitialValue is Expression initialValue ? StaticType(initialValue) : null)
 			?? new TypeReference(UnknownTypeName);
-		code.Write(SpellDeclarator(type, varDecl.Name));
+		code.Write(varDecl.IsConstant ? SpellConstantDeclarator(type, varDecl.Name) : SpellDeclarator(type, varDecl.Name));
 
 		if (varDecl.InitialValue is not null)
 		{

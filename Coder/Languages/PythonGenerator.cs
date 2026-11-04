@@ -23,6 +23,16 @@ public class PythonGenerator : StandardLanguageGenerator
 	private HashSet<FieldDeclaration>? instanceInitialisedFields;
 
 	/// <summary>
+	/// The root <see cref="writtenModuleFields"/> was worked out for.
+	/// </summary>
+	private AstNode? writtenModuleFieldsRoot;
+
+	/// <summary>
+	/// The module-level fields something in the document assigns to.
+	/// </summary>
+	private HashSet<string> writtenModuleFields = new(StringComparer.Ordinal);
+
+	/// <summary>
 	/// Gets the unique identifier for this language generator.
 	/// </summary>
 	public override string LanguageId => "python";
@@ -43,6 +53,28 @@ public class PythonGenerator : StandardLanguageGenerator
 	/// <param name="value">The literal's value.</param>
 	/// <returns>The keyword Python uses.</returns>
 	protected override string FormatBoolean(bool value) => value ? "True" : "False";
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// The hard keywords, which <c>keyword.kwlist</c> lists. The soft ones — <c>match</c>,
+	/// <c>case</c>, <c>type</c> and <c>_</c> — are keywords only where a statement starts with them
+	/// and are legal names everywhere else, so they are left alone. An escaped name has an underscore
+	/// appended, which is a rename: Python has no way to use a keyword as a name, and the trailing
+	/// underscore is the spelling PEP 8 gives for exactly this.
+	/// </remarks>
+	protected override IReadOnlySet<string> ReservedWords { get; } = new HashSet<string>(StringComparer.Ordinal)
+	{
+		"False", "None", "True", "and", "as", "assert", "async", "await", "break", "class", "continue", "def",
+		"del", "elif", "else", "except", "finally", "for", "from", "global", "if", "import", "in", "is",
+		"lambda", "nonlocal", "not", "or", "pass", "raise", "return", "try", "while", "with", "yield",
+	};
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// The literal words, which a reference written as text means as Python means them. <c>self</c>
+	/// is not a keyword, so it needs no exception.
+	/// </remarks>
+	protected override bool IsReceiverWord(string word) => word is "True" or "False" or "None";
 
 	/// <summary>
 	/// Ends a statement. Python has no terminator, and the function body emits the line breaks, so
@@ -110,7 +142,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		Ensure.NotNull(declaration);
 		Ensure.NotNull(code);
 
-		string name = declaration.Name ?? "value";
+		string name = EscapeIdentifier(declaration.Name ?? "value");
 		// The two spellings of a type: an annotation on a name is a colon, and on a function it is
 		// an arrow. Same type, and Python is particular about which goes where.
 		string annotation = declaration.Type is TypeReference type ? $": {PythonTypeFromGenericType(type)}" : string.Empty;
@@ -120,7 +152,9 @@ public class PythonGenerator : StandardLanguageGenerator
 
 		if (declaration.IsAutomatic)
 		{
-			code.WriteLine($"{name}{annotation} = None");
+			code.Write($"{name}{annotation} = ");
+			WriteUnassignedValue(declaration.Type, code);
+			code.WriteLine();
 			return;
 		}
 
@@ -175,14 +209,14 @@ public class PythonGenerator : StandardLanguageGenerator
 		if (declaration.CanRead)
 		{
 			code.WriteLine("@staticmethod");
-			code.Write($"def {declaration.GetterName(NamingStyle.Snake)}(){result}:");
+			code.Write($"def {EscapeIdentifier(declaration.GetterName(NamingStyle.Snake))}(){result}:");
 			WriteAccessorBody(declaration, isSetter: false, code);
 		}
 
 		if (declaration.CanWrite)
 		{
 			code.WriteLine("@staticmethod");
-			code.Write($"def {declaration.SetterName(NamingStyle.Snake)}(value{annotation}) -> None:");
+			code.Write($"def {EscapeIdentifier(declaration.SetterName(NamingStyle.Snake))}(value{annotation}) -> None:");
 			WriteAccessorBody(declaration, isSetter: true, code);
 		}
 	}
@@ -204,6 +238,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		code.WriteLine();
 
 		using IndentScope statements = new(code);
+		WriteGlobalDeclarations(body, [], code);
 
 		if (body.Count == 0)
 		{
@@ -266,7 +301,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		Ensure.NotNull(file);
 		if (ContainsEnum(file.Members))
 		{
-			yield return "from enum import Enum";
+			yield return "from enum import IntEnum";
 		}
 
 		if (ContainsFloatingRemainder(file))
@@ -341,7 +376,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		Ensure.NotNull(code);
 
 		WritePreamble(usingAlias, code, PreambleSite.Type);
-		code.WriteLine($"{usingAlias.Name} = {PythonTypeFromGenericType(usingAlias.AliasedType ?? new TypeReference("object"))}");
+		code.WriteLine($"{EscapeIdentifier(usingAlias.Name ?? string.Empty)} = {PythonTypeFromGenericType(usingAlias.AliasedType ?? new TypeReference("object"))}");
 	}
 
 	/// <inheritdoc/>
@@ -418,7 +453,7 @@ public class PythonGenerator : StandardLanguageGenerator
 
 			if (elements[index] is MemberInitialiser member)
 			{
-				code.Write($"{member.Name}=");
+				code.Write($"{EscapeIdentifier(member.Name ?? string.Empty)}=");
 				GenerateInternal(member.Value!, code);
 				continue;
 			}
@@ -429,10 +464,15 @@ public class PythonGenerator : StandardLanguageGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
-	/// Python has no enumeration syntax; <c>enum.Enum</c> is a class. A member with no value of its
+	/// Python has no enumeration syntax; <c>enum.IntEnum</c> is a class. A member with no value of its
 	/// own is one more than the member before it, matching what a language with real enumerations
-	/// would give it; see <see cref="LanguageGeneratorBase.EnumMemberValues"/>. The <c>from enum import Enum</c> this needs belongs to the file rather than to the
-	/// declaration.
+	/// would give it; see <see cref="LanguageGeneratorBase.EnumMemberValues"/>. The
+	/// <c>from enum import IntEnum</c> this needs belongs to the file rather than to the declaration.
+	/// <para>
+	/// <c>IntEnum</c> rather than <c>Enum</c>, because every other target orders an enumeration's
+	/// values by their numbers, and a plain <c>Enum</c> member defines no ordering at all:
+	/// <c>a &lt; b</c> raises <c>TypeError</c> at run time.
+	/// </para>
 	/// </remarks>
 	protected override void GenerateEnumDeclaration(EnumDeclaration enumDecl, CodeBlocker code)
 	{
@@ -440,7 +480,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		Ensure.NotNull(code);
 
 		WritePreamble(enumDecl, code, PreambleSite.Enum);
-		code.WriteLine($"class {enumDecl.Name ?? "UnnamedEnum"}(Enum):");
+		code.WriteLine($"class {EscapeIdentifier(enumDecl.Name ?? "UnnamedEnum")}(IntEnum):");
 
 		using IndentScope body = new(code);
 		if (enumDecl.Members.Count == 0)
@@ -451,15 +491,18 @@ public class PythonGenerator : StandardLanguageGenerator
 
 		foreach ((EnumMember member, string value) in enumDecl.Members.Zip(EnumMemberValues(enumDecl)))
 		{
-			code.WriteLine($"{member.Name ?? "UNNAMED"} = {value}");
+			string spelled = RenameSiblingMembers(enumDecl, value, sibling => ReservedWords.Contains(sibling) ? EscapeIdentifier(sibling) : null);
+			code.WriteLine($"{EscapeIdentifier(member.Name ?? "UNNAMED")} = {spelled}");
 		}
 	}
 
 	/// <inheritdoc/>
 	/// <remarks>
-	/// A field is written as an annotated class attribute. One with no initialiser is left as a bare
-	/// annotation, which is what a dataclass and a type checker both read as "this field exists and
-	/// has this type" without also claiming a value for it.
+	/// A field is written as an annotated class attribute. One with no initialiser is given its type's
+	/// zero, or <c>None</c> where the type has none, because a bare annotation creates no attribute:
+	/// <c>self.count += 1</c> would raise <c>AttributeError</c> on a fresh instance, where every other
+	/// target starts the field at zero (#345). Each value it can be given is immutable, so a class-level
+	/// default is safe to share between instances.
 	/// </remarks>
 	protected override void GenerateFieldDeclaration(FieldDeclaration field, CodeBlocker code)
 	{
@@ -467,7 +510,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		Ensure.NotNull(code);
 
 		WritePreamble(field, code, PreambleSite.Field);
-		code.Write(field.Name ?? "unnamed");
+		code.Write(EscapeIdentifier(field.Name ?? "unnamed"));
 
 		if (field.Type is TypeReference type)
 		{
@@ -479,12 +522,75 @@ public class PythonGenerator : StandardLanguageGenerator
 			code.Write(" = ");
 			GenerateInternal(field.InitialValue, code);
 		}
-		else if (field.Type is null && field.InitialValue is null)
+		else if (field.InitialValue is null)
 		{
-			code.Write(" = None");
+			code.Write(" = ");
+			WriteUnassignedValue(field.Type, code);
 		}
 
 		code.WriteLine();
+	}
+
+	/// <summary>
+	/// Writes the value a field or automatic property holds before anything is assigned to it.
+	/// </summary>
+	/// <param name="type">The declared type, or null where none is declared.</param>
+	/// <param name="code">The writer to emit into.</param>
+	private void WriteUnassignedValue(TypeReference? type, CodeBlocker code)
+	{
+		if (ZeroValue(type) is Expression zero)
+		{
+			GenerateInternal(zero, code);
+			return;
+		}
+
+		code.Write("None");
+	}
+
+	/// <summary>
+	/// Declares <c>global</c> the module-level fields a body assigns to.
+	/// </summary>
+	/// <param name="body">The statements of the body about to be written.</param>
+	/// <param name="parameters">The parameters the body can see, which shadow a module field of the same name.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// Python decides a name's scope from the whole function before running any of it: one assignment
+	/// anywhere makes the name local everywhere in that body, so the read in <c>count += 1</c> finds an
+	/// unbound local and raises <c>UnboundLocalError</c>. A <c>global</c> line is what says the
+	/// assignment means the module's. Only fields the body itself assigns are listed, because a read
+	/// alone already reaches the module and a declaration nothing needs is noise.
+	/// </remarks>
+	private void WriteGlobalDeclarations(IEnumerable<AstNode> body, IEnumerable<Parameter> parameters, CodeBlocker code)
+	{
+		if (!ReferenceEquals(writtenModuleFieldsRoot, GenerationRoot))
+		{
+			writtenModuleFieldsRoot = GenerationRoot;
+			writtenModuleFields = WrittenFileScopeFields();
+		}
+
+		if (writtenModuleFields.Count == 0)
+		{
+			return;
+		}
+
+		AstNode[] nodes = [.. body.SelectMany(SelfAndDescendants)];
+		HashSet<string> shadowed = new(
+			parameters.Select(parameter => parameter.Name).OfType<string>()
+				.Concat(nodes.OfType<VariableDeclaration>().Select(declaration => declaration.Name)),
+			StringComparer.Ordinal);
+
+		List<string> globals = [.. nodes
+			.OfType<AssignmentStatement>()
+			.Select(assignment => assignment.Target)
+			.OfType<VariableReference>()
+			.Select(reference => reference.Name.Split('.')[0])
+			.Where(name => writtenModuleFields.Contains(name) && !shadowed.Contains(name))
+			.Distinct(StringComparer.Ordinal)];
+
+		if (globals.Count > 0)
+		{
+			code.WriteLine($"global {string.Join(", ", globals.Select(EscapeIdentifier))}");
+		}
 	}
 
 	/// <inheritdoc/>
@@ -496,8 +602,11 @@ public class PythonGenerator : StandardLanguageGenerator
 		using IDisposable types = OpenStaticTypeScope(funcDecl);
 		WritePreamble(funcDecl, code, PreambleSite.Function);
 
+		// The same reason a class's parameters are written down: TypeVar needs an import.
+		WriteTypeParametersDown(funcDecl.TypeParameters, code);
+
 		// Function signature
-		code.Write($"def {funcDecl.Name ?? "unnamed_function"}(");
+		code.Write($"def {EscapeIdentifier(funcDecl.Name ?? "unnamed_function")}(");
 		GenerateParameterList(funcDecl.Parameters, code);
 		code.Write(")");
 
@@ -511,6 +620,7 @@ public class PythonGenerator : StandardLanguageGenerator
 
 		// Python's body is delimited by indentation alone, so there is no brace scope to open.
 		using IndentScope body = new(code);
+		WriteGlobalDeclarations(funcDecl.Body, funcDecl.Parameters, code);
 
 		// Function body
 		if (funcDecl.Body.Count == 0)
@@ -559,7 +669,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		// class generated on its own -- the same reason @dataclass is not written above.
 		WriteTypeParametersDown(classDecl.TypeParameters, code);
 
-		code.Write($"class {classDecl.Name ?? "UnnamedClass"}");
+		code.Write($"class {EscapeIdentifier(classDecl.Name ?? "UnnamedClass")}");
 
 		// Python inherits from as many things as it is given and has no separate notion of an
 		// interface, so the base and the interfaces are one list of bases -- which is what the
@@ -658,6 +768,7 @@ public class PythonGenerator : StandardLanguageGenerator
 	{
 		using IDisposable types = OpenStaticTypeScope(method);
 		WritePreamble(method, code, PreambleSite.Method);
+		WriteTypeParametersDown(method.TypeParameters, code);
 
 		if (method.Definition != FunctionDefinition.Provided)
 		{
@@ -675,6 +786,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		WriteMethodSignature(method, code);
 
 		using IndentScope body = new(code);
+		WriteGlobalDeclarations(method.Body, method.Parameters, code);
 
 		// A method a derived class has to supply is a method whose body is a refusal. Python has no
 		// declaration without a definition, so the definition says what calling it means.
@@ -714,7 +826,7 @@ public class PythonGenerator : StandardLanguageGenerator
 
 	private void WriteInstanceInitialiser(FieldDeclaration field, CodeBlocker code)
 	{
-		code.Write($"self.{field.Name ?? "unnamed"} = ");
+		code.Write($"self.{EscapeIdentifier(field.Name ?? "unnamed")} = ");
 		GenerateInternal(field.InitialValue!, code);
 		code.WriteLine();
 	}
@@ -781,7 +893,7 @@ public class PythonGenerator : StandardLanguageGenerator
 	{
 		foreach (MemberInitialiser initialiser in method.Initialisers)
 		{
-			code.Write($"self.{initialiser.Name} = ");
+			code.Write($"self.{EscapeIdentifier(initialiser.Name ?? string.Empty)} = ");
 
 			if (initialiser.Value is not null)
 			{
@@ -805,11 +917,11 @@ public class PythonGenerator : StandardLanguageGenerator
 	/// A constructor and a destructor have fixed names in Python rather than the type's, so whatever
 	/// the declaration is called is ignored for those two.
 	/// </remarks>
-	private static string SpellMethodName(FunctionDeclaration method) => method.Kind switch
+	private string SpellMethodName(FunctionDeclaration method) => method.Kind switch
 	{
 		FunctionKind.Constructor => "__init__",
 		FunctionKind.Destructor => "__del__",
-		_ => method.Name ?? "unnamed_method",
+		_ => EscapeIdentifier(method.Name ?? "unnamed_method"),
 	};
 
 	/// <inheritdoc/>
@@ -846,6 +958,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		using (IDisposable types = OpenStaticTypeScope(entryPoint))
 		using (IndentScope body = new(code))
 		{
+			WriteGlobalDeclarations(entryPoint.Body, [], code);
 			if (entryPoint.Body.Count == 0)
 			{
 				code.WriteLine("pass");
@@ -877,7 +990,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		Ensure.NotNull(parameter);
 		Ensure.NotNull(code);
 
-		code.Write(parameter.Name ?? $"param{position}");
+		code.Write(EscapeIdentifier(parameter.Name ?? $"param{position}"));
 
 		// Type hints are optional in Python, so they are emitted only when the AST carries one.
 		if (parameter.Type is not null)
@@ -918,17 +1031,11 @@ public class PythonGenerator : StandardLanguageGenerator
 	/// <returns>The name Python knows it by.</returns>
 	private static string PythonTypeName(TypeReference type) => type.Name.ToLowerInvariant() switch
 	{
-		"int" => "int",
-		"short" => "int",
-		"ushort" => "int",
-		"uint" => "int",
-		"ulong" => "int",
-		"byte" => "int",
-		"sbyte" => "int",
-		"string" => "str",
+		"int" or "long" or "short" or "ushort" or "uint" or "ulong" or "byte" or "sbyte" => "int",
+		"string" or "char" => "str",
 		"bool" => "bool",
-		"float" => "float",
-		"double" => "float",
+		"float" or "double" or "decimal" => "float",
+		"object" => "object",
 		"void" => "None",
 		_ => type.Name
 	};
@@ -1011,7 +1118,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		Ensure.NotNull(code);
 		RegisterStaticType(varDecl);
 
-		code.Write(varDecl.Name);
+		code.Write(EscapeIdentifier(varDecl.Name));
 
 		if (varDecl.InitialValue != null)
 		{
@@ -1051,6 +1158,12 @@ public class PythonGenerator : StandardLanguageGenerator
 		Ensure.NotNull(binary);
 		Ensure.NotNull(code);
 
+		if (binary.Operator == BinaryOperator.LeftShift && IntegerWidthOf(StaticType(binary.Left)) is IntegerWidth width)
+		{
+			WriteWrapped(width, code, () => base.GenerateBinary(binary, code));
+			return;
+		}
+
 		if (binary.Operator is not (BinaryOperator.Divide or BinaryOperator.Modulo) || !IsIntegerArithmetic(binary))
 		{
 			base.GenerateBinary(binary, code);
@@ -1080,8 +1193,9 @@ public class PythonGenerator : StandardLanguageGenerator
 	/// the binary operators, so on integers they give <c>2.5</c> for <c>5 /= 2</c> and <c>1</c> for
 	/// <c>-7 %= 2</c> where the C family gives <c>2</c> and <c>-1</c>. When both sides are known to be
 	/// integers the assignment is written out as <c>x = x / y</c>, whose quotient or remainder
-	/// <see cref="GenerateBinary"/> truncates. Every other compound assignment, and one on operands
-	/// the AST does not know to be integers, is left as it is.
+	/// <see cref="GenerateBinary"/> truncates. <c>x &lt;&lt;= n</c> on a fixed-width integer is written
+	/// out the same way, so the result is wrapped to the width (#351). Every other compound assignment,
+	/// and one on operands the AST does not know to be integers, is left as it is.
 	/// </remarks>
 	protected override void GenerateAssignmentStatement(AssignmentStatement assignment, CodeBlocker code)
 	{
@@ -1092,11 +1206,15 @@ public class PythonGenerator : StandardLanguageGenerator
 		{
 			AssignmentOperator.DivideAssign => BinaryOperator.Divide,
 			AssignmentOperator.ModuloAssign => BinaryOperator.Modulo,
+			AssignmentOperator.LeftShiftAssign => BinaryOperator.LeftShift,
 			_ => null,
 		};
 
 		BinaryExpression? binary = op is null ? null : new(assignment.Target, op.Value, assignment.Value);
-		if (binary is null || !IsIntegerArithmetic(binary))
+		bool writtenOut = binary is not null && (binary.Operator == BinaryOperator.LeftShift
+			? IntegerWidthOf(StaticType(binary.Left)) is not null
+			: IsIntegerArithmetic(binary));
+		if (binary is null || !writtenOut)
 		{
 			base.GenerateAssignmentStatement(assignment, code);
 			return;
@@ -1144,6 +1262,85 @@ public class PythonGenerator : StandardLanguageGenerator
 		{
 			code.Write(")");
 		}
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// Python's integers are unbounded, so <c>~</c> on a <c>uint</c> or <c>ulong</c> gives a negative
+	/// number where the C family gives a large positive one (#351). The result is masked back to the
+	/// operand's width. <c>~</c> on a signed integer already matches two's complement and is left as it is.
+	/// </remarks>
+	protected override void GenerateUnary(UnaryExpression unary, CodeBlocker code)
+	{
+		Ensure.NotNull(unary);
+		Ensure.NotNull(code);
+
+		if (unary.Operator == UnaryOperator.BitwiseNot
+			&& IntegerWidthOf(StaticType(unary.Operand)) is IntegerWidth width
+			&& width is IntegerWidth.Unsigned32 or IntegerWidth.Unsigned64)
+		{
+			WriteWrapped(width, code, () => base.GenerateUnary(unary, code));
+			return;
+		}
+
+		base.GenerateUnary(unary, code);
+	}
+
+	/// <summary>
+	/// The fixed-width integer types whose overflow Python's unbounded integers do not reproduce.
+	/// </summary>
+	private enum IntegerWidth
+	{
+		/// <summary><c>int</c>.</summary>
+		Signed32,
+
+		/// <summary><c>uint</c>.</summary>
+		Unsigned32,
+
+		/// <summary><c>long</c>.</summary>
+		Signed64,
+
+		/// <summary><c>ulong</c>.</summary>
+		Unsigned64,
+	}
+
+	private static IntegerWidth? IntegerWidthOf(TypeReference? type) =>
+		type is { IsArray: false, Indirection: TypeIndirection.None, TypeArguments.Count: 0 }
+			? type.Name switch
+			{
+				"int" => IntegerWidth.Signed32,
+				"uint" => IntegerWidth.Unsigned32,
+				"long" => IntegerWidth.Signed64,
+				"ulong" => IntegerWidth.Unsigned64,
+				_ => null,
+			}
+			: null;
+
+	/// <summary>
+	/// Writes a value wrapped to a fixed width, the way the C family's arithmetic wraps it.
+	/// </summary>
+	/// <param name="width">The width to wrap to.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <param name="value">Writes the unbounded value, which is read once.</param>
+	/// <remarks>
+	/// An unsigned value is masked to its width. A signed one is offset by half the range, masked, and
+	/// offset back, which keeps the low bits and reads the top one as the sign.
+	/// </remarks>
+	private static void WriteWrapped(IntegerWidth width, CodeBlocker code, Action value)
+	{
+		string mask = width is IntegerWidth.Signed32 or IntegerWidth.Unsigned32 ? "0xFFFFFFFF" : "0xFFFFFFFFFFFFFFFF";
+		if (width is IntegerWidth.Unsigned32 or IntegerWidth.Unsigned64)
+		{
+			code.Write("(");
+			value();
+			code.Write($" & {mask})");
+			return;
+		}
+
+		string half = width == IntegerWidth.Signed32 ? "0x80000000" : "0x8000000000000000";
+		code.Write("(((");
+		value();
+		code.Write($" + {half}) & {mask}) - {half})");
 	}
 
 	private static bool IsReadTwiceSafely(Expression operand) =>
