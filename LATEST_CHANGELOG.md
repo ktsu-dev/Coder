@@ -2,6 +2,9 @@
 
 Changes since v3.19.0:
 
+- Write a Rust enum member that repeats an earlier value as an associated constant [patch] (#406) (matt-edmondson)
+- Hold a Rust struct's unused type parameters in a PhantomData field [patch] (#431) (matt-edmondson)
+- Keep C#'s scope holder class clear of a same-named nested namespace [patch] (#430) (matt-edmondson)
 - Write a typeless C# list as a collection expression [patch] (#442) (matt-edmondson)
 - Add a SessionStart hook for Claude Code cloud sessions (#336) (matt-edmondson)
 - Call keyword-named functions and methods by their escaped names [patch] (#366) (matt-edmondson)
