@@ -489,7 +489,8 @@ public class PythonGenerator : StandardLanguageGenerator
 
 		foreach ((EnumMember member, string value) in enumDecl.Members.Zip(EnumMemberValues(enumDecl)))
 		{
-			code.WriteLine($"{EscapeIdentifier(member.Name ?? "UNNAMED")} = {value}");
+			string spelled = RenameSiblingMembers(enumDecl, value, sibling => ReservedWords.Contains(sibling) ? EscapeIdentifier(sibling) : null);
+			code.WriteLine($"{EscapeIdentifier(member.Name ?? "UNNAMED")} = {spelled}");
 		}
 	}
 
