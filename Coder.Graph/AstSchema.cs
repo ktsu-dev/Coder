@@ -662,17 +662,18 @@ public static class AstSchema
 	/// <summary>
 	/// Builds the node the AST uses to mean "nothing here yet".
 	/// </summary>
-	/// <returns>An empty string literal, matching what the AST's parameterless constructors install.</returns>
-	public static Expression Unfilled() => new LiteralExpression<string>(string.Empty);
+	/// <returns>An <see cref="UnfilledExpression"/>, matching what the AST's parameterless constructors install.</returns>
+	public static Expression Unfilled() => new UnfilledExpression();
 
 	/// <summary>
 	/// Reports whether a node is the placeholder <see cref="Unfilled"/> produces, so the editor can
 	/// show an operand as outstanding rather than as a deliberate empty string.
 	/// </summary>
 	/// <param name="node">The node to test.</param>
-	/// <returns>True if the node is an empty string literal.</returns>
+	/// <returns>True if the node is the placeholder or an empty leaf; false for any literal, including
+	/// an empty string, which is a value the user chose.</returns>
 	public static bool IsUnfilled(AstNode node) =>
-		node is LiteralExpression<string> { Value: "" } or AstLeafNode<string> { Value: "" };
+		node is UnfilledExpression or AstLeafNode<string> { Value: "" };
 
 	/// <summary>
 	/// Reports whether a slot will take a node, which is what makes a link legal.
