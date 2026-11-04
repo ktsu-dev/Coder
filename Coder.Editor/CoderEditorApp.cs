@@ -579,7 +579,7 @@ public sealed class CoderEditorApp(
 			? documentPath[..^DocumentStore.Extension.Length]
 			: documentPath;
 
-		DocumentResult result = documents.Export(GeneratedCode, $"{stem}.{generator.FileExtension}");
+		DocumentResult result = documents.Export(GeneratedCode, $"{stem}.{generator.FileExtensionFor(Editor.Graph.Root)}");
 		if (!result.Success)
 		{
 			Status = result.Error ?? "Could not write the generated code.";

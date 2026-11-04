@@ -1,4 +1,4 @@
-// Copyright (c) 2023-2026 ktsu-dev contributors
+﻿// Copyright (c) 2023-2026 ktsu-dev contributors
 
 namespace ktsu.Coder.Test.Languages;
 
@@ -28,6 +28,7 @@ public class LongLiteralTests
 		MaxSafeInteger,
 		-MaxSafeInteger,
 		MaxSafeInteger + 1,
+		-(MaxSafeInteger + 1),
 		MaxSafeInteger + 2,
 		-(MaxSafeInteger + 2),
 		long.MaxValue,
@@ -43,7 +44,9 @@ public class LongLiteralTests
 	[DataRow(0L, "0")]
 	[DataRow(MaxSafeInteger, "9007199254740991")]
 	[DataRow(-MaxSafeInteger, "-9007199254740991")]
-	[DataRow(MaxSafeInteger + 1, "9007199254740992n")]
+	[DataRow(MaxSafeInteger + 1, "9007199254740992")]
+	[DataRow(-(MaxSafeInteger + 1), "-9007199254740992")]
+	[DataRow(MaxSafeInteger + 2, "9007199254740993n")]
 	[DataRow(-(MaxSafeInteger + 2), "-9007199254740993n")]
 	[DataRow(long.MaxValue, "9223372036854775807n")]
 	[DataRow(long.MinValue, "-9223372036854775808n")]

@@ -111,7 +111,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 		switch (node)
 		{
 			case VariableReference varRef:
-				code.Write(varRef.Name);
+				code.Write(SpellReference(varRef.Name));
 				break;
 			case LiteralExpression<string> stringLit:
 				code.Write($"\"{EscapeString(stringLit.Value ?? string.Empty)}\"");
@@ -192,6 +192,12 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// </remarks>
 	private void GenerateBinary(BinaryExpression binary, CodeBlocker code)
 	{
+		if (IsOrdering(binary.Operator) && IsString(binary.Left) && IsString(binary.Right))
+		{
+			GenerateStringOrdering(binary, code);
+			return;
+		}
+
 		if (!IsShift(binary.Operator) || !ShouldCastShiftCount(binary.Right))
 		{
 			GenerateBinaryExpression(binary, code, GetBinaryOperator(binary.Operator));
@@ -204,6 +210,68 @@ public class CSharpGenerator : LanguageGeneratorBase
 		WriteShiftCount(binary.Right, code);
 		code.Write(")");
 	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// The reserved keywords. The contextual ones — <c>var</c>, <c>value</c>, <c>where</c>,
+	/// <c>record</c>, <c>nameof</c> and the rest — are keywords only where the grammar expects one
+	/// and are legal names everywhere else, so they are left alone.
+	/// </remarks>
+	protected override IReadOnlySet<string> ReservedWords { get; } = new HashSet<string>(StringComparer.Ordinal)
+	{
+		"abstract", "as", "base", "bool", "break", "byte", "case", "catch", "char", "checked", "class", "const",
+		"continue", "decimal", "default", "delegate", "do", "double", "else", "enum", "event", "explicit",
+		"extern", "false", "finally", "fixed", "float", "for", "foreach", "goto", "if", "implicit", "in", "int",
+		"interface", "internal", "is", "lock", "long", "namespace", "new", "null", "object", "operator", "out",
+		"override", "params", "private", "protected", "public", "readonly", "ref", "return", "sbyte", "sealed",
+		"short", "sizeof", "stackalloc", "static", "string", "struct", "switch", "this", "throw", "true", "try",
+		"typeof", "uint", "ulong", "unchecked", "unsafe", "ushort", "using", "virtual", "void", "volatile", "while",
+	};
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// C# has a real escape, the verbatim identifier, so nothing is renamed: <c>default</c> is
+	/// declared and used as <c>@default</c>, and a caller written in C# names it that way too.
+	/// </remarks>
+	protected override string EscapeIdentifier(string name)
+	{
+		Ensure.NotNull(name);
+		return ReservedWords.Contains(name) ? $"@{name}" : name;
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// <c>this</c> and <c>base</c> name the receiver, and <c>true</c>, <c>false</c> and <c>null</c>
+	/// are the literals a reference written as text means by them.
+	/// </remarks>
+	protected override bool IsReceiverWord(string word) => word is "this" or "base" or "true" or "false" or "null";
+
+	/// <summary>
+	/// Spells a reference, escaping its keyword-named segments as their declarations were.
+	/// </summary>
+	/// <param name="reference">The reference's text.</param>
+	/// <returns>The reference as C# writes it.</returns>
+	/// <remarks>
+	/// A built-in type's keyword leading a member access — <c>int.MaxValue</c>,
+	/// <c>string.Empty</c> — names the type, so it is kept as written. On its own it can only be a
+	/// declared name, and is escaped like one.
+	/// </remarks>
+	private string SpellReference(string reference)
+	{
+		int dot = reference.IndexOf('.', StringComparison.Ordinal);
+		return dot > 0 && BuiltInTypeKeywords.Contains(reference[..dot])
+			? $"{reference[..dot]}.{EscapeReference(reference[(dot + 1)..])}"
+			: EscapeReference(reference);
+	}
+
+	/// <summary>
+	/// The keywords that are also the names of built-in types.
+	/// </summary>
+	private static readonly HashSet<string> BuiltInTypeKeywords = new(StringComparer.Ordinal)
+	{
+		"bool", "byte", "char", "decimal", "double", "float", "int", "long", "object", "sbyte", "short", "string",
+		"uint", "ulong", "ushort",
+	};
 
 	/// <inheritdoc/>
 	/// <remarks>
@@ -340,6 +408,47 @@ public class CSharpGenerator : LanguageGeneratorBase
 	}
 
 	private static bool IsShift(BinaryOperator op) => op is BinaryOperator.LeftShift or BinaryOperator.RightShift;
+
+	private static bool IsOrdering(BinaryOperator op) =>
+		op is BinaryOperator.LessThan or BinaryOperator.LessThanOrEqual
+			or BinaryOperator.GreaterThan or BinaryOperator.GreaterThanOrEqual;
+
+	/// <summary>
+	/// Emits an ordering comparison between two strings as an ordinal comparison against zero.
+	/// </summary>
+	/// <param name="binary">The comparison to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// C# defines <c>==</c> and <c>!=</c> on <c>string</c> but no <c>&lt;</c>, <c>&lt;=</c>, <c>&gt;</c> or
+	/// <c>&gt;=</c>, so the bare operator is CS0019 (#372). <c>string.CompareOrdinal</c> orders by
+	/// UTF-16 code unit, which is what C++, Go, Rust, Python and JavaScript compare by too.
+	/// </remarks>
+	private void GenerateStringOrdering(BinaryExpression binary, CodeBlocker code)
+	{
+		code.Write("(string.CompareOrdinal(");
+		GenerateInternal(binary.Left, code);
+		code.Write(", ");
+		GenerateInternal(binary.Right, code);
+		code.Write($") {GetBinaryOperator(binary.Operator)} 0)");
+	}
+
+	/// <summary>
+	/// Reports whether an expression is known to be a string.
+	/// </summary>
+	/// <param name="expression">The expression to inspect.</param>
+	/// <returns>True for a string literal, or a parameter or local declared as one.</returns>
+	/// <remarks>An expression whose type is not known is not assumed to be a string.</remarks>
+	private bool IsString(Expression expression) => expression switch
+	{
+		{ ExpectedType: string expected } => IsStringType(new TypeReference(expected)),
+		LiteralExpression<string> => true,
+		VariableReference reference when shiftCountTypes.TryGetValue(reference.Name, out TypeReference? type) => IsStringType(type),
+		_ => false,
+	};
+
+	private static bool IsStringType(TypeReference type) =>
+		type is { IsArray: false, Indirection: TypeIndirection.None, TypeArguments.Count: 0 }
+		&& string.Equals(MapToCSType(type), "string", StringComparison.Ordinal);
 
 	/// <summary>
 	/// Decides whether a shift's count is cast to <c>int</c>.
@@ -516,7 +625,15 @@ public class CSharpGenerator : LanguageGeneratorBase
 				}
 				else if (member is not UsingAlias)
 				{
-					GenerateInternal(member, code);
+					typeMember = member;
+					try
+					{
+						GenerateInternal(member, code);
+					}
+					finally
+					{
+						typeMember = null;
+					}
 				}
 			}
 
@@ -1135,7 +1252,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 	{
 		if (argument is MemberInitialiser designated)
 		{
-			code.Write($"{designated.Name} = ");
+			code.Write($"{EscapeIdentifier(designated.Name ?? string.Empty)} = ");
 			GenerateInternal(designated.Value!, code);
 			return;
 		}
@@ -1169,7 +1286,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 		using Scope members = new(code);
 		foreach (EnumMember member in enumDecl.Members)
 		{
-			code.Write(member.Name ?? "Unnamed");
+			code.Write(EscapeIdentifier(member.Name ?? "Unnamed"));
 
 			if (member.Value is not null)
 			{
@@ -1197,7 +1314,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 		string type = property.Type is TypeReference declared ? MapToCSType(declared) : "object";
 		string modifiers = property.IsStatic ? " static" : string.Empty;
 
-		code.Write($"{SpellVisibility(property.Visibility) ?? DefaultVisibility}{modifiers} {type} {property.Name ?? "Value"}");
+		code.Write($"{SpellVisibility(property.Visibility) ?? DefaultVisibility}{modifiers} {type} {EscapeIdentifier(property.Name ?? "Value")}");
 
 		// init rather than set where the declaration asked for it: the two differ only in when the
 		// call is legal, and nothing else here has a word for the difference. A readonly struct asks
@@ -1287,7 +1404,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 			code.Write("readonly ");
 		}
 
-		code.Write($"{MapToCSType(field.Type ?? new TypeReference(UnknownTypeName))} {field.Name}");
+		code.Write($"{MapToCSType(field.Type ?? new TypeReference(UnknownTypeName))} {EscapeIdentifier(field.Name ?? string.Empty)}");
 
 		if (field.InitialValue is not null)
 		{
@@ -1491,7 +1608,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 		// value value-initialises the member, as C++'s `x()` does, and `default` is C#'s spelling.
 		foreach (MemberInitialiser initialiser in function.Initialisers)
 		{
-			code.Write($"this.{initialiser.Name} = ");
+			code.Write($"this.{EscapeIdentifier(initialiser.Name ?? string.Empty)} = ");
 
 			if (initialiser.Value is not null)
 			{
@@ -1554,8 +1671,94 @@ public class CSharpGenerator : LanguageGeneratorBase
 				WriteInexpressible(code, $"{modifier}: {name} is static, which a C# operator outside an interface cannot override");
 			}
 		}
+		else if (OverrideObstacle(function, enclosingType) is OverrideObstacleKind obstacle)
+		{
+			return WriteOverrideNote(function, name, obstacle, code);
+		}
 
 		return true;
+	}
+
+	/// <summary>
+	/// Writes down a <c>virtual</c> or <c>abstract</c> that C# cannot write where the member is.
+	/// </summary>
+	/// <param name="function">The declaration being emitted.</param>
+	/// <param name="name">The name it is written under.</param>
+	/// <param name="obstacle">What stops C# from writing the modifier.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <returns>False when the note stands in for the whole declaration, so nothing else is written.</returns>
+	private bool WriteOverrideNote(FunctionDeclaration function, string name, OverrideObstacleKind obstacle, CodeBlocker code)
+	{
+		string modifier = function.IsAbstract ? "abstract" : "virtual";
+		switch (obstacle)
+		{
+			// A static or struct member that is abstract has no body to fall back on once the
+			// modifier goes, so the note stands in for the whole declaration.
+			case OverrideObstacleKind.Static when function.IsAbstract:
+				WriteInexpressible(code, $"{name} is abstract and static, which C# allows only in an interface, so it has no body to declare.");
+				return false;
+			case OverrideObstacleKind.Struct when function.IsAbstract:
+				WriteInexpressible(code, $"{name} is abstract, which a C# struct cannot declare: nothing can derive from it to supply a body.");
+				return false;
+			case OverrideObstacleKind.Static:
+				WriteInexpressible(code, $"{modifier}: {name} is static, which C# cannot override outside an interface");
+				return true;
+			case OverrideObstacleKind.Struct:
+				WriteInexpressible(code, $"{modifier}: {name} belongs to a struct, which C# cannot derive from");
+				return true;
+			default:
+				WriteInexpressible(code, $"private: {name} is protected, because C# cannot override a private member");
+				return true;
+		}
+	}
+
+	/// <summary>
+	/// Why C# cannot write a member's <c>virtual</c> or <c>abstract</c> where the member is.
+	/// </summary>
+	private enum OverrideObstacleKind
+	{
+		/// <summary>The member is static, which only an interface lets be overridden (CS0112).</summary>
+		Static,
+
+		/// <summary>The member belongs to a struct, which nothing derives from (CS0106).</summary>
+		Struct,
+
+		/// <summary>The member is private, which nothing outside the type can override (CS0621).</summary>
+		Private,
+	}
+
+	/// <summary>
+	/// Determines what stops C# from writing a member's <c>virtual</c> or <c>abstract</c>.
+	/// </summary>
+	/// <param name="function">The declaration being emitted.</param>
+	/// <param name="enclosingType">The type it belongs to, when it belongs to one.</param>
+	/// <returns>The obstacle, or null when the modifier is written as declared.</returns>
+	/// <remarks>
+	/// C++ lets any member function be virtual, and a private virtual is its non-virtual-interface
+	/// idiom. C# lets a member be overridden only where a derived type can reach it. An interface
+	/// member is left as it was, since an interface may declare static abstract and virtual members,
+	/// and an operator has its own note in <see cref="WriteMemberNotes"/>.
+	/// </remarks>
+	private OverrideObstacleKind? OverrideObstacle(FunctionDeclaration function, ClassDeclaration? enclosingType)
+	{
+		if (!(function.IsVirtual || function.IsAbstract)
+			|| IsOperator(function)
+			|| enclosingType?.Kind == TypeDeclarationKind.Interface)
+		{
+			return null;
+		}
+
+		if (function.IsStatic || ReferenceEquals(function, heldMember))
+		{
+			return OverrideObstacleKind.Static;
+		}
+
+		if (enclosingType?.Kind == TypeDeclarationKind.Struct)
+		{
+			return OverrideObstacleKind.Struct;
+		}
+
+		return function.Visibility == Visibility.Private ? OverrideObstacleKind.Private : null;
 	}
 
 	/// <summary>
@@ -1630,17 +1833,9 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// <param name="enclosingType">The type it belongs to, when it belongs to one.</param>
 	private void WriteFunctionModifiers(FunctionDeclaration function, CodeBlocker code, ClassDeclaration? enclosingType)
 	{
-		// A function nobody has given a visibility to is public: an inaccessible method is not what
-		// someone who wrote no modifier meant. A finalizer is the exception, because it takes no
-		// access modifier at all (CS0106): only the runtime calls it.
-		// A user-defined operator must be public as well as static (CS0558), whatever it declared.
-		if (IsOperator(function))
+		if (SpellAccessModifier(function, enclosingType) is string access)
 		{
-			code.Write("public ");
-		}
-		else if (function.Kind != FunctionKind.Destructor)
-		{
-			code.Write($"{SpellVisibility(function.Visibility) ?? DefaultVisibility} ");
+			code.Write($"{access} ");
 		}
 
 		if (function.IsStatic
@@ -1651,9 +1846,11 @@ public class CSharpGenerator : LanguageGeneratorBase
 			code.Write("static ");
 		}
 
-		// An operator outside an interface can be neither virtual nor abstract (CS0106); the note
-		// written above the declaration says what was dropped.
-		bool canOverride = !IsOperator(function) || enclosingType?.Kind == TypeDeclarationKind.Interface;
+		// An operator outside an interface can be neither virtual nor abstract (CS0106), and neither
+		// can a static or struct member (CS0112, CS0106); the note written above the declaration says
+		// what was dropped. A private one is written protected instead, so it keeps its modifier.
+		bool canOverride = (!IsOperator(function) || enclosingType?.Kind == TypeDeclarationKind.Interface)
+			&& OverrideObstacle(function, enclosingType) is null or OverrideObstacleKind.Private;
 
 		// An interface member with no body is abstract already, and says so by having none.
 		if (function.IsAbstract)
@@ -1678,6 +1875,37 @@ public class CSharpGenerator : LanguageGeneratorBase
 		{
 			code.Write($"{MapToCSType(function.ReturnType ?? new TypeReference("void"))} ");
 		}
+	}
+
+	/// <summary>
+	/// Spells the access modifier a declaration is written with.
+	/// </summary>
+	/// <param name="function">The declaration being emitted.</param>
+	/// <param name="enclosingType">The type it belongs to, when it belongs to one.</param>
+	/// <returns>The modifier, or null when the declaration takes none.</returns>
+	/// <remarks>
+	/// A function nobody has given a visibility to is public: an inaccessible method is not what
+	/// someone who wrote no modifier meant. A finalizer is the exception, because it takes no access
+	/// modifier at all (CS0106): only the runtime calls it. A user-defined operator must be public as
+	/// well as static (CS0558), whatever it declared. A private member cannot be virtual or abstract
+	/// (CS0621), so it is protected, the nearest visibility a derived type can override, and the note
+	/// above the declaration says so.
+	/// </remarks>
+	private string? SpellAccessModifier(FunctionDeclaration function, ClassDeclaration? enclosingType)
+	{
+		if (IsOperator(function))
+		{
+			return "public";
+		}
+
+		if (OverrideObstacle(function, enclosingType) == OverrideObstacleKind.Private)
+		{
+			return "protected";
+		}
+
+		return function.Kind == FunctionKind.Destructor
+			? null
+			: SpellVisibility(function.Visibility) ?? DefaultVisibility;
 	}
 
 	/// <summary>
@@ -1737,10 +1965,17 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// <remarks>
 	/// The AST says abstract of a member, as C++ does, and a C++ class with a pure virtual member is
 	/// abstract without saying so. C# requires the class to say it (CS0513).
+	/// <para>
+	/// A static member does not count: C# cannot declare it abstract outside an interface, so it is
+	/// written down rather than declared, and a class marked abstract for it could not be constructed
+	/// for no reason the text shows.
+	/// </para>
 	/// </remarks>
-	private static bool IsAbstractClass(ClassDeclaration classDecl) =>
+	private bool IsAbstractClass(ClassDeclaration classDecl) =>
 		classDecl.Kind == TypeDeclarationKind.Class
-		&& classDecl.Members.OfType<FunctionDeclaration>().Any(member => member.IsAbstract);
+		&& classDecl.Members.OfType<FunctionDeclaration>().Any(member =>
+			member.IsAbstract
+			&& OverrideObstacle(member, classDecl) is null or OverrideObstacleKind.Private);
 
 	/// <summary>
 	/// Spells the name a declaration is written under.
@@ -1748,7 +1983,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// <param name="function">The declaration being emitted.</param>
 	/// <param name="enclosingType">The name of the type it belongs to, when it belongs to one.</param>
 	/// <returns>The name as C# writes it.</returns>
-	private static string SpellFunctionName(FunctionDeclaration function, string? enclosingType)
+	private string SpellFunctionName(FunctionDeclaration function, string? enclosingType)
 	{
 		string typeName = enclosingType ?? function.Name ?? "UnnamedType";
 
@@ -1759,13 +1994,13 @@ public class CSharpGenerator : LanguageGeneratorBase
 			FunctionKind.Operator => $"operator {function.Name}",
 			FunctionKind.ConversionOperator =>
 				$"{(function.IsExplicit ? "explicit" : "implicit")} operator {MapToCSType(function.ReturnType ?? new TypeReference(UnknownTypeName))}",
-			_ => function.Name ?? "UnnamedFunction",
+			_ => EscapeIdentifier(function.Name ?? "UnnamedFunction"),
 		};
 	}
 
 	private void GenerateParameter(Parameter parameter, CodeBlocker code)
 	{
-		code.Write($"{MapToCSType(parameter.Type ?? new TypeReference(UnknownTypeName))} {parameter.Name}");
+		code.Write($"{MapToCSType(parameter.Type ?? new TypeReference(UnknownTypeName))} {EscapeIdentifier(parameter.Name ?? string.Empty)}");
 
 		if (parameter.IsOptional && parameter.DefaultValue is Expression value)
 		{
@@ -1837,6 +2072,16 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// would make them static too.
 	/// </remarks>
 	private AstNode? heldMember;
+
+	/// <summary>
+	/// The member of a class or struct being written, which takes the same visibility a member that
+	/// said none takes everywhere else.
+	/// </summary>
+	/// <remarks>
+	/// The member itself rather than a flag for the reason <see cref="heldMember"/> is: a local
+	/// declared in a member's body has no access modifier at all.
+	/// </remarks>
+	private AstNode? typeMember;
 
 	/// <summary>
 	/// What a declaration that never said what type it is gets.
@@ -1936,10 +2181,12 @@ public class CSharpGenerator : LanguageGeneratorBase
 
 		string type = saidType is null ? "var" : MapToCSType(saidType);
 
-		// A local has no access modifier and a field usually does, and the AST distinguishes the two
-		// by whether one was set: emitting it only when present keeps both correct. A variable of a
-		// namespace or file is a field of the class holding it, and as visible as the scope it was in.
+		// A local has no access modifier and a field does. A variable of a namespace or file is a field
+		// of the class holding it, and as visible as the scope it was in; a variable of a type is a
+		// field of that type, and one that said nothing is as visible as any other member that said
+		// nothing, rather than private, which is C#'s default and no one's intent (#391).
 		bool isHeld = ReferenceEquals(varDecl, heldMember);
+		bool isField = isHeld || ReferenceEquals(varDecl, typeMember);
 
 		// `var` is only for a local (CS0825), so a held variable says the type its initialiser
 		// establishes, and one whose initialiser establishes none is an object with a note saying so.
@@ -1961,7 +2208,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 			WriteInexpressible(code, $"{varDecl.Name}: C# infers a type only from an initialiser, and nothing here says one");
 			type = UnknownTypeName;
 		}
-		if ((isHeld ? SpellVisibility(varDecl.Visibility) ?? DefaultVisibility : SpellVisibility(varDecl.Visibility)) is string modifier)
+		if ((isField ? SpellVisibility(varDecl.Visibility) ?? DefaultVisibility : SpellVisibility(varDecl.Visibility)) is string modifier)
 		{
 			code.Write($"{modifier} ");
 		}
@@ -1985,7 +2232,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 			code.Write("static ");
 		}
 
-		code.Write($"{type} {varDecl.Name}");
+		code.Write($"{type} {EscapeIdentifier(varDecl.Name)}");
 
 		if (varDecl.InitialValue != null)
 		{
