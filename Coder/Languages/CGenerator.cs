@@ -1150,24 +1150,14 @@ public class CGenerator : CFamilyGenerator
 
 		TypeReference type = field.Type ?? new TypeReference(UnknownTypeName);
 
-		if (field.IsConstant)
-		{
-			code.Write("static const ");
-
-			// The keyword has just been written, so a type that also says const would say it twice
-			// — and `const const T` is not a type.
-			if (type.IsReadOnly)
-			{
-				type = type.Clone();
-				type.IsReadOnly = false;
-			}
-		}
-		else if (field.IsStatic || field.Visibility == Visibility.Private)
+		if (field.IsConstant || field.IsStatic || field.Visibility == Visibility.Private)
 		{
 			code.Write("static ");
 		}
 
-		code.Write(SpellDeclarator(type, name));
+		// A constant's const is said once, and of the pointer when the type is one; see
+		// SpellConstantDeclarator.
+		code.Write(field.IsConstant ? SpellConstantDeclarator(type, name) : SpellDeclarator(type, name));
 
 		if (field.InitialValue is not null)
 		{
@@ -1238,11 +1228,36 @@ public class CGenerator : CFamilyGenerator
 		if (binary.Operator == BinaryOperator.Add
 			&& (IsCString(StaticType(binary.Left)) || IsCString(StaticType(binary.Right))))
 		{
-			code.Write("/* C has no string concatenation: join these into a buffer with snprintf or strcat */ ");
+			code.Write(NoStringConcatenationNote);
 		}
 
 		base.GenerateBinary(binary, code);
 	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// A string <c>+=</c> carries the note a string <c>+</c> does, for the same reason: <c>+=</c> on
+	/// a pointer and a pointer does not compile either.
+	/// </remarks>
+	protected override void GenerateAssignmentStatement(AssignmentStatement assignment, CodeBlocker code)
+	{
+		Ensure.NotNull(assignment);
+		Ensure.NotNull(code);
+
+		if (assignment.Operator == AssignmentOperator.AddAssign
+			&& (IsCString(StaticType(assignment.Target)) || IsCString(StaticType(assignment.Value))))
+		{
+			code.Write(NoStringConcatenationNote);
+		}
+
+		base.GenerateAssignmentStatement(assignment, code);
+	}
+
+	/// <summary>
+	/// The note written in front of a string join, saying why the compiler rejects it.
+	/// </summary>
+	private const string NoStringConcatenationNote =
+		"/* C has no string concatenation: join these into a buffer with snprintf or strcat */ ";
 
 	/// <summary>
 	/// Reports whether a type is spelled as C's string, a pointer to constant characters.
@@ -1287,15 +1302,10 @@ public class CGenerator : CFamilyGenerator
 		Ensure.NotNull(code);
 		RegisterStaticType(varDecl);
 
-		if (varDecl.IsConstant)
-		{
-			code.Write("const ");
-		}
-
 		TypeReference type = varDecl.Type
 			?? (varDecl.InitialValue is Expression initialValue ? StaticType(initialValue) : null)
 			?? new TypeReference(UnknownTypeName);
-		code.Write(SpellDeclarator(type, varDecl.Name));
+		code.Write(varDecl.IsConstant ? SpellConstantDeclarator(type, varDecl.Name) : SpellDeclarator(type, varDecl.Name));
 
 		if (varDecl.InitialValue is not null)
 		{

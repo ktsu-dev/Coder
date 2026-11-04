@@ -897,8 +897,8 @@ public class TypeDeclarationShapeTests
 	/// <param name="computed">What the property with a body should start with.</param>
 	[TestMethod]
 	[DataRow("csharp", "public int Value { get; set; }", "public int Doubled")]
-	[DataRow("python", "Value: int = None", "def Doubled(self) -> int:")]
-	[DataRow("javascript", "Value;", "get Doubled() ")]
+	[DataRow("python", "Value: int = 0", "def Doubled(self) -> int:")]
+	[DataRow("javascript", "Value = 0;", "get Doubled() ")]
 	public void TargetsWithProperties_WriteThemAsProperties(string language, string automatic, string computed)
 	{
 		ILanguageGenerator generator = language switch

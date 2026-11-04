@@ -152,7 +152,9 @@ public class PythonGenerator : StandardLanguageGenerator
 
 		if (declaration.IsAutomatic)
 		{
-			code.WriteLine($"{name}{annotation} = None");
+			code.Write($"{name}{annotation} = ");
+			WriteUnassignedValue(declaration.Type, code);
+			code.WriteLine();
 			return;
 		}
 
@@ -630,15 +632,18 @@ public class PythonGenerator : StandardLanguageGenerator
 
 		foreach ((EnumMember member, string value) in enumDecl.Members.Zip(EnumMemberValues(enumDecl)))
 		{
-			code.WriteLine($"{EscapeIdentifier(member.Name ?? "UNNAMED")} = {value}");
+			string spelled = RenameSiblingMembers(enumDecl, value, sibling => ReservedWords.Contains(sibling) ? EscapeIdentifier(sibling) : null);
+			code.WriteLine($"{EscapeIdentifier(member.Name ?? "UNNAMED")} = {spelled}");
 		}
 	}
 
 	/// <inheritdoc/>
 	/// <remarks>
-	/// A field is written as an annotated class attribute. One with no initialiser is left as a bare
-	/// annotation, which is what a dataclass and a type checker both read as "this field exists and
-	/// has this type" without also claiming a value for it.
+	/// A field is written as an annotated class attribute. One with no initialiser is given its type's
+	/// zero, or <c>None</c> where the type has none, because a bare annotation creates no attribute:
+	/// <c>self.count += 1</c> would raise <c>AttributeError</c> on a fresh instance, where every other
+	/// target starts the field at zero (#345). Each value it can be given is immutable, so a class-level
+	/// default is safe to share between instances.
 	/// </remarks>
 	protected override void GenerateFieldDeclaration(FieldDeclaration field, CodeBlocker code)
 	{
@@ -658,12 +663,29 @@ public class PythonGenerator : StandardLanguageGenerator
 			code.Write(" = ");
 			GenerateInternal(field.InitialValue, code);
 		}
-		else if (field.Type is null && field.InitialValue is null)
+		else if (field.InitialValue is null)
 		{
-			code.Write(" = None");
+			code.Write(" = ");
+			WriteUnassignedValue(field.Type, code);
 		}
 
 		code.WriteLine();
+	}
+
+	/// <summary>
+	/// Writes the value a field or automatic property holds before anything is assigned to it.
+	/// </summary>
+	/// <param name="type">The declared type, or null where none is declared.</param>
+	/// <param name="code">The writer to emit into.</param>
+	private void WriteUnassignedValue(TypeReference? type, CodeBlocker code)
+	{
+		if (ZeroValue(type) is Expression zero)
+		{
+			GenerateInternal(zero, code);
+			return;
+		}
+
+		code.Write("None");
 	}
 
 	/// <summary>
@@ -1150,17 +1172,11 @@ public class PythonGenerator : StandardLanguageGenerator
 	/// <returns>The name Python knows it by.</returns>
 	private static string PythonTypeName(TypeReference type) => type.Name.ToLowerInvariant() switch
 	{
-		"int" => "int",
-		"short" => "int",
-		"ushort" => "int",
-		"uint" => "int",
-		"ulong" => "int",
-		"byte" => "int",
-		"sbyte" => "int",
-		"string" => "str",
+		"int" or "long" or "short" or "ushort" or "uint" or "ulong" or "byte" or "sbyte" => "int",
+		"string" or "char" => "str",
 		"bool" => "bool",
-		"float" => "float",
-		"double" => "float",
+		"float" or "double" or "decimal" => "float",
+		"object" => "object",
 		"void" => "None",
 		_ => type.Name
 	};
@@ -1289,6 +1305,12 @@ public class PythonGenerator : StandardLanguageGenerator
 			return;
 		}
 
+		if (binary.Operator == BinaryOperator.LeftShift && IntegerWidthOf(StaticType(binary.Left)) is IntegerWidth width)
+		{
+			WriteWrapped(width, code, () => base.GenerateBinary(binary, code));
+			return;
+		}
+
 		if (binary.Operator is not (BinaryOperator.Divide or BinaryOperator.Modulo) || !IsIntegerArithmetic(binary))
 		{
 			base.GenerateBinary(binary, code);
@@ -1305,8 +1327,9 @@ public class PythonGenerator : StandardLanguageGenerator
 	/// the binary operators, so on integers they give <c>2.5</c> for <c>5 /= 2</c> and <c>1</c> for
 	/// <c>-7 %= 2</c> where the C family gives <c>2</c> and <c>-1</c>. When both sides are known to be
 	/// integers the assignment is written out as <c>x = x / y</c>, whose quotient or remainder
-	/// <see cref="GenerateBinary"/> truncates. Every other compound assignment, and one on operands
-	/// the AST does not know to be integers, is left as it is.
+	/// <see cref="GenerateBinary"/> truncates. <c>x &lt;&lt;= n</c> on a fixed-width integer is written
+	/// out the same way, so the result is wrapped to the width (#351). Every other compound assignment,
+	/// and one on operands the AST does not know to be integers, is left as it is.
 	/// </remarks>
 	protected override void GenerateAssignmentStatement(AssignmentStatement assignment, CodeBlocker code)
 	{
@@ -1317,6 +1340,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		{
 			AssignmentOperator.DivideAssign => BinaryOperator.Divide,
 			AssignmentOperator.ModuloAssign => BinaryOperator.Modulo,
+			AssignmentOperator.LeftShiftAssign => BinaryOperator.LeftShift,
 			_ => null,
 		};
 
@@ -1330,7 +1354,10 @@ public class PythonGenerator : StandardLanguageGenerator
 			return;
 		}
 
-		if (binary is null || !IsIntegerArithmetic(binary))
+		bool writtenOut = binary is not null && (binary.Operator == BinaryOperator.LeftShift
+			? IntegerWidthOf(StaticType(binary.Left)) is not null
+			: IsIntegerArithmetic(binary));
+		if (binary is null || !writtenOut)
 		{
 			base.GenerateAssignmentStatement(assignment, code);
 			return;
@@ -1378,6 +1405,85 @@ public class PythonGenerator : StandardLanguageGenerator
 		{
 			code.Write(")");
 		}
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// Python's integers are unbounded, so <c>~</c> on a <c>uint</c> or <c>ulong</c> gives a negative
+	/// number where the C family gives a large positive one (#351). The result is masked back to the
+	/// operand's width. <c>~</c> on a signed integer already matches two's complement and is left as it is.
+	/// </remarks>
+	protected override void GenerateUnary(UnaryExpression unary, CodeBlocker code)
+	{
+		Ensure.NotNull(unary);
+		Ensure.NotNull(code);
+
+		if (unary.Operator == UnaryOperator.BitwiseNot
+			&& IntegerWidthOf(StaticType(unary.Operand)) is IntegerWidth width
+			&& width is IntegerWidth.Unsigned32 or IntegerWidth.Unsigned64)
+		{
+			WriteWrapped(width, code, () => base.GenerateUnary(unary, code));
+			return;
+		}
+
+		base.GenerateUnary(unary, code);
+	}
+
+	/// <summary>
+	/// The fixed-width integer types whose overflow Python's unbounded integers do not reproduce.
+	/// </summary>
+	private enum IntegerWidth
+	{
+		/// <summary><c>int</c>.</summary>
+		Signed32,
+
+		/// <summary><c>uint</c>.</summary>
+		Unsigned32,
+
+		/// <summary><c>long</c>.</summary>
+		Signed64,
+
+		/// <summary><c>ulong</c>.</summary>
+		Unsigned64,
+	}
+
+	private static IntegerWidth? IntegerWidthOf(TypeReference? type) =>
+		type is { IsArray: false, Indirection: TypeIndirection.None, TypeArguments.Count: 0 }
+			? type.Name switch
+			{
+				"int" => IntegerWidth.Signed32,
+				"uint" => IntegerWidth.Unsigned32,
+				"long" => IntegerWidth.Signed64,
+				"ulong" => IntegerWidth.Unsigned64,
+				_ => null,
+			}
+			: null;
+
+	/// <summary>
+	/// Writes a value wrapped to a fixed width, the way the C family's arithmetic wraps it.
+	/// </summary>
+	/// <param name="width">The width to wrap to.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <param name="value">Writes the unbounded value, which is read once.</param>
+	/// <remarks>
+	/// An unsigned value is masked to its width. A signed one is offset by half the range, masked, and
+	/// offset back, which keeps the low bits and reads the top one as the sign.
+	/// </remarks>
+	private static void WriteWrapped(IntegerWidth width, CodeBlocker code, Action value)
+	{
+		string mask = width is IntegerWidth.Signed32 or IntegerWidth.Unsigned32 ? "0xFFFFFFFF" : "0xFFFFFFFFFFFFFFFF";
+		if (width is IntegerWidth.Unsigned32 or IntegerWidth.Unsigned64)
+		{
+			code.Write("(");
+			value();
+			code.Write($" & {mask})");
+			return;
+		}
+
+		string half = width == IntegerWidth.Signed32 ? "0x80000000" : "0x8000000000000000";
+		code.Write("(((");
+		value();
+		code.Write($" + {half}) & {mask}) - {half})");
 	}
 
 	private static bool IsReadTwiceSafely(Expression operand) =>

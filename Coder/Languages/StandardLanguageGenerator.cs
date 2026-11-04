@@ -135,7 +135,7 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 			}
 		}
 
-		staticTypeScopes.Push(new StaticTypeScope(types, function.ReturnType));
+		staticTypeScopes.Push(new StaticTypeScope(types, function.ReturnType, EnclosingClass(function)));
 	}
 
 	/// <summary>
@@ -160,7 +160,7 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 			types[valueName] = type;
 		}
 
-		staticTypeScopes.Push(new StaticTypeScope(types, isSetter ? null : property.Type));
+		staticTypeScopes.Push(new StaticTypeScope(types, isSetter ? null : property.Type, EnclosingClass(property)));
 		return new StaticTypeScopeGuard(this);
 	}
 
@@ -177,7 +177,7 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	{
 		Ensure.NotNull(entryPoint);
 		TypeReference? returnType = entryPoint.ReturnsExitCode ? new TypeReference("int") : null;
-		staticTypeScopes.Push(new StaticTypeScope(new Dictionary<string, TypeReference>(StringComparer.Ordinal), returnType));
+		staticTypeScopes.Push(new StaticTypeScope(new Dictionary<string, TypeReference>(StringComparer.Ordinal), returnType, null));
 		return new StaticTypeScopeGuard(this);
 	}
 
@@ -389,6 +389,38 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 		_ => false,
 	};
 
+	/// <summary>
+	/// Reads the value a field or automatic property of a type holds before anything is assigned to it.
+	/// </summary>
+	/// <param name="type">The declared type, or null where none is declared.</param>
+	/// <returns>The type's zero as a literal, or null where the type has no obvious one.</returns>
+	/// <remarks>
+	/// A field with no initialiser is value-initialised, so a default-constructed instance is the one
+	/// the declaration described: C++ writes <c>{}</c>, C# and Go start at zero and Rust uses
+	/// <c>Default</c>. A target that leaves an undeclared value unset writes this instead (#345). The
+	/// answer is a literal rather than its text, so each target spells it with its own literal writer.
+	/// </remarks>
+	protected static Expression? ZeroValue(TypeReference? type)
+	{
+		if (type is not { IsArray: false, Indirection: TypeIndirection.None, TypeArguments.Count: 0, Name: string name })
+		{
+			return null;
+		}
+
+		if (IntegerTypeNames.Contains(name))
+		{
+			return Literal.Number(0);
+		}
+
+		return name switch
+		{
+			"float" or "double" => Literal.DecimalValue(0.0),
+			"bool" => Literal.Bool(false),
+			"string" or "str" => Literal.Text(string.Empty),
+			_ => null,
+		};
+	}
+
 	private static readonly HashSet<string> IntegerTypeNames = new(StringComparer.Ordinal)
 	{
 		"int", "long", "short", "byte", "sbyte", "uint", "ulong", "ushort",
@@ -509,7 +541,7 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 					}
 				}
 
-				return DeclaredMemberType(reference.Name);
+				return DottedMemberType(reference.Name) ?? DeclaredMemberType(reference.Name);
 			default:
 				return null;
 		}
@@ -525,6 +557,109 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 		Ensure.NotNull(statement);
 		return staticTypeScopes.TryPeek(out StaticTypeScope? scope) ? scope.ReturnType : null;
 	}
+
+	/// <summary>
+	/// Reads the type of a dotted reference that reaches a field through a receiver.
+	/// </summary>
+	/// <param name="name">The name the reference is written with, such as <c>self.total</c>.</param>
+	/// <returns>The field's declared type, or null when the name has no dot or any step is unknown.</returns>
+	/// <remarks>
+	/// <see cref="DeclaredMemberType"/> matches a name whole, so <c>self.total</c>, <c>this.total</c>
+	/// and <c>p.total</c> were of unknown type and integer <c>/</c> and <c>%</c> on them fell back to
+	/// Python's and JavaScript's own operators (#433). The first segment is a variable a scope declares,
+	/// or <c>self</c>/<c>this</c> naming the class the body belongs to; each later segment is looked up
+	/// among the fields of exactly one class of the type before it, the rule
+	/// <see cref="DeclaredMethod"/> keeps for a call on a receiver (#280).
+	/// </remarks>
+	private TypeReference? DottedMemberType(string name)
+	{
+		string[] segments = name.Split('.');
+		if (segments.Length < 2 || segments.Any(string.IsNullOrEmpty))
+		{
+			return null;
+		}
+
+		TypeReference? type = ScopedVariableType(segments[0]);
+		if (type is null && segments[0] is "self" or "this")
+		{
+			type = staticTypeScopes.TryPeek(out StaticTypeScope? scope) && scope.EnclosingClass?.Name is string enclosing
+				? new TypeReference(enclosing)
+				: null;
+		}
+
+		for (int i = 1; i < segments.Length && type is not null; i++)
+		{
+			type = DeclaredFieldType(type, segments[i]);
+		}
+
+		return type;
+	}
+
+	/// <summary>
+	/// Reads the type a function or accessor scope declares a name with.
+	/// </summary>
+	/// <param name="name">The name to look up.</param>
+	/// <returns>The innermost declared type, or null when no scope declares the name.</returns>
+	private TypeReference? ScopedVariableType(string name)
+	{
+		foreach (StaticTypeScope scope in staticTypeScopes)
+		{
+			if (scope.Types.TryGetValue(name, out TypeReference? type))
+			{
+				return type;
+			}
+		}
+
+		return null;
+	}
+
+	/// <summary>
+	/// Reads the declared type of the one field a value of a known class type can name.
+	/// </summary>
+	/// <param name="ownerType">The type the field is read from.</param>
+	/// <param name="field">The field's name.</param>
+	/// <returns>
+	/// The field's type, or null when the owner is not exactly one class in what is being generated,
+	/// or that class declares no field or more than one with the name.
+	/// </returns>
+	private TypeReference? DeclaredFieldType(TypeReference ownerType, string field)
+	{
+		if (GenerationRoot is null || ownerType.IsArray || ownerType.TypeArguments.Count != 0)
+		{
+			return null;
+		}
+
+		ClassDeclaration[] classes = [.. SelfAndDescendants(GenerationRoot)
+			.OfType<ClassDeclaration>()
+			.Where(declaration => declaration.Name == ownerType.Name)
+			.Take(2)];
+		if (classes.Length != 1)
+		{
+			return null;
+		}
+
+		TypeReference?[] matches = [.. classes[0].Members
+			.OfType<FieldDeclaration>()
+			.Where(declaration => declaration.Name == field)
+			.Select(declaration => declaration.Type)
+			.Concat(classes[0].Members
+				.OfType<VariableDeclaration>()
+				.Where(declaration => declaration.Name == field)
+				.Select(declaration => declaration.Type))
+			.Take(2)];
+		return matches.Length == 1 ? matches[0] : null;
+	}
+
+	/// <summary>
+	/// Finds the class a member is declared in.
+	/// </summary>
+	/// <param name="member">The function or property.</param>
+	/// <returns>The class whose members hold it, or null when it is not a class member.</returns>
+	private ClassDeclaration? EnclosingClass(AstNode member) => GenerationRoot is null
+		? null
+		: SelfAndDescendants(GenerationRoot)
+			.OfType<ClassDeclaration>()
+			.FirstOrDefault(declaration => declaration.Members.Contains(member));
 
 	/// <summary>
 	/// Emits a reference to a variable, field or parameter by name.
@@ -854,7 +989,7 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	/// <returns>True for <c>float</c> and <c>double</c>.</returns>
 	protected static bool IsFloatingType(TypeReference? type) => FloatingTypeName(type) is not null;
 
-	private sealed record StaticTypeScope(Dictionary<string, TypeReference> Types, TypeReference? ReturnType);
+	private sealed record StaticTypeScope(Dictionary<string, TypeReference> Types, TypeReference? ReturnType, ClassDeclaration? EnclosingClass);
 
 	private sealed class StaticTypeScopeGuard(StandardLanguageGenerator generator) : IDisposable
 	{
@@ -1608,7 +1743,9 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	/// <param name="code">The writer to emit into.</param>
 	/// <remarks>
 	/// A <c>*/</c> in the value would end the comment early and leave the rest of it as source, so
-	/// it is broken apart.
+	/// it is broken apart. So is a <c>/*</c>, because Rust's block comments nest: one inside the
+	/// comment opens another that nothing closes, and breaking <c>*/</c> apart can make one, as
+	/// <c>"src/**/*.rs"</c> does.
 	/// </remarks>
 	protected void AppendDefaultValueComment(Parameter parameter, CodeBlocker code)
 	{
@@ -1619,7 +1756,9 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 		{
 			using CodeBlocker inline = CodeBlocker.Create(IndentString);
 			GenerateInternal(value, inline);
-			string spelled = inline.ToString().TrimEnd('\r', '\n').Replace("*/", "* /", StringComparison.Ordinal);
+			string spelled = inline.ToString().TrimEnd('\r', '\n')
+				.Replace("*/", "* /", StringComparison.Ordinal)
+				.Replace("/*", "/ *", StringComparison.Ordinal);
 			code.Write($" /* = {spelled} */");
 		}
 	}
