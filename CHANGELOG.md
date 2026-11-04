@@ -2,6 +2,7 @@
 
 Changes since v3.19.0:
 
+- Write a typeless C# list as a collection expression [patch] (#442) (matt-edmondson)
 - Add a SessionStart hook for Claude Code cloud sessions (#336) (matt-edmondson)
 - Call keyword-named functions and methods by their escaped names [patch] (#366) (matt-edmondson)
 - Scope a Rust function's parameter bindings to its own declaration [patch] (#420) (matt-edmondson)
