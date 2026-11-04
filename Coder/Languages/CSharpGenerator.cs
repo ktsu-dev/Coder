@@ -405,7 +405,15 @@ public class CSharpGenerator : LanguageGeneratorBase
 				}
 				else if (member is not UsingAlias)
 				{
-					GenerateInternal(member, code);
+					typeMember = member;
+					try
+					{
+						GenerateInternal(member, code);
+					}
+					finally
+					{
+						typeMember = null;
+					}
 				}
 			}
 
@@ -1718,6 +1726,16 @@ public class CSharpGenerator : LanguageGeneratorBase
 	private AstNode? heldMember;
 
 	/// <summary>
+	/// The member of a class or struct being written, which takes the same visibility a member that
+	/// said none takes everywhere else.
+	/// </summary>
+	/// <remarks>
+	/// The member itself rather than a flag for the reason <see cref="heldMember"/> is: a local
+	/// declared in a member's body has no access modifier at all.
+	/// </remarks>
+	private AstNode? typeMember;
+
+	/// <summary>
 	/// What a declaration that never said what type it is gets.
 	/// </summary>
 	/// <remarks>
@@ -1815,10 +1833,12 @@ public class CSharpGenerator : LanguageGeneratorBase
 
 		string type = saidType is null ? "var" : MapToCSType(saidType);
 
-		// A local has no access modifier and a field usually does, and the AST distinguishes the two
-		// by whether one was set: emitting it only when present keeps both correct. A variable of a
-		// namespace or file is a field of the class holding it, and as visible as the scope it was in.
+		// A local has no access modifier and a field does. A variable of a namespace or file is a field
+		// of the class holding it, and as visible as the scope it was in; a variable of a type is a
+		// field of that type, and one that said nothing is as visible as any other member that said
+		// nothing, rather than private, which is C#'s default and no one's intent (#391).
 		bool isHeld = ReferenceEquals(varDecl, heldMember);
+		bool isField = isHeld || ReferenceEquals(varDecl, typeMember);
 
 		// `var` is only for a local (CS0825), so a held variable says the type its initialiser
 		// establishes, and one whose initialiser establishes none is an object with a note saying so.
@@ -1840,7 +1860,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 			WriteInexpressible(code, $"{varDecl.Name}: C# infers a type only from an initialiser, and nothing here says one");
 			type = UnknownTypeName;
 		}
-		if ((isHeld ? SpellVisibility(varDecl.Visibility) ?? DefaultVisibility : SpellVisibility(varDecl.Visibility)) is string modifier)
+		if ((isField ? SpellVisibility(varDecl.Visibility) ?? DefaultVisibility : SpellVisibility(varDecl.Visibility)) is string modifier)
 		{
 			code.Write($"{modifier} ");
 		}

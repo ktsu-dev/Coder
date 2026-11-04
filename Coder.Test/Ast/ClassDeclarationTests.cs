@@ -131,7 +131,7 @@ public class ClassDeclarationTests
 		string code = new CSharpGenerator().Generate(SampleClass());
 
 		StringAssert.Contains(code, "public class Point : Shape", StringComparison.Ordinal);
-		StringAssert.Contains(code, "    int x = 0;", StringComparison.Ordinal);
+		StringAssert.Contains(code, "    public int x = 0;", StringComparison.Ordinal);
 		StringAssert.Contains(code, "    public int area(int scale)", StringComparison.Ordinal);
 		StringAssert.Contains(code, "        return (x * scale);", StringComparison.Ordinal);
 	}
