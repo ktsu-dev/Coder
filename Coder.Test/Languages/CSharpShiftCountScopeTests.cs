@@ -75,6 +75,58 @@ public class CSharpShiftCountScopeTests
 	}
 
 	/// <summary>
+	/// Tests that a variable member of one class does not reach a same-named field of a class after
+	/// it in the same file (#385).
+	/// </summary>
+	[TestMethod]
+	public void TypeMember_DoesNotReachALaterClass()
+	{
+		ClassDeclaration declaring = new("A");
+		declaring.Members.Add(new VariableDeclaration("s", "int", Literal.Number(1)));
+		SourceFile file = new("Generated");
+		file.Members.Add(declaring);
+		file.Members.Add(Bits());
+
+		string source = new CSharpGenerator().Generate(file);
+
+		Assert.Contains("(x << (int)(s))", source, StringComparison.Ordinal, source);
+	}
+
+	/// <summary>
+	/// Tests that a field of a class shadows a same-named file-scope variable, so the variable's type
+	/// does not decide a shift by the field (#385).
+	/// </summary>
+	[TestMethod]
+	public void FileVariable_IsShadowedByAFieldOfTheSameName()
+	{
+		SourceFile file = new("Generated");
+		file.Members.Add(new VariableDeclaration("s", "int", Literal.Number(1)));
+		file.Members.Add(Bits());
+
+		string source = new CSharpGenerator().Generate(file);
+
+		Assert.Contains("(x << (int)(s))", source, StringComparison.Ordinal, source);
+	}
+
+	/// <summary>
+	/// Tests that a variable member still decides a shift inside its own type.
+	/// </summary>
+	[TestMethod]
+	public void TypeMember_StillDecidesItsOwnShift()
+	{
+		ClassDeclaration bits = new("Bits");
+		bits.Members.Add(new VariableDeclaration("s", "int", Literal.Number(1)));
+		FunctionDeclaration shift = new("Shift") { ReturnType = "long" };
+		shift.Parameters.Add(new Parameter("x", "long"));
+		shift.Body.Add(new ReturnStatement(new BinaryExpression(new VariableReference("x"), BinaryOperator.LeftShift, new VariableReference("s"))));
+		bits.Members.Add(shift);
+
+		string source = new CSharpGenerator().Generate(bits);
+
+		Assert.Contains("(x << s)", source, StringComparison.Ordinal, source);
+	}
+
+	/// <summary>
 	/// Tests that a local declared in a property accessor does not reach a method after it.
 	/// </summary>
 	[TestMethod]

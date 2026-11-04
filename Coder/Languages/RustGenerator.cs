@@ -617,9 +617,18 @@ public class RustGenerator : StandardLanguageGenerator
 
 		using Scope body = new(code);
 
+		// Restored in finally, so a member that throws cannot leave later output on this instance
+		// generated as though it were still inside the impl.
+		bool enclosingIsTraitImplementation = insideTraitImplementation;
 		insideTraitImplementation = true;
-		WriteMembers(classDecl.Members, code);
-		insideTraitImplementation = false;
+		try
+		{
+			WriteMembers(classDecl.Members, code);
+		}
+		finally
+		{
+			insideTraitImplementation = enclosingIsTraitImplementation;
+		}
 	}
 
 	/// <summary>
@@ -1096,28 +1105,35 @@ public class RustGenerator : StandardLanguageGenerator
 
 		using Scope body = new(code);
 
+		// Restored in finally, so a member that throws cannot leave later output on this instance
+		// generated as trait items.
+		bool enclosingIsTrait = insideTrait;
 		insideTrait = true;
-
-		bool first = true;
-		foreach (AstNode member in classDecl.Members.Where(member => member is FunctionDeclaration or FieldDeclaration))
+		try
 		{
-			if (!first)
+			bool first = true;
+			foreach (AstNode member in classDecl.Members.Where(member => member is FunctionDeclaration or FieldDeclaration))
 			{
-				code.NewLine();
+				if (!first)
+				{
+					code.NewLine();
+				}
+
+				first = false;
+
+				if (member is FunctionDeclaration function)
+				{
+					GenerateFunction(function, code, name);
+					continue;
+				}
+
+				GenerateInternal(member, code);
 			}
-
-			first = false;
-
-			if (member is FunctionDeclaration function)
-			{
-				GenerateFunction(function, code, name);
-				continue;
-			}
-
-			GenerateInternal(member, code);
 		}
-
-		insideTrait = false;
+		finally
+		{
+			insideTrait = enclosingIsTrait;
+		}
 	}
 
 	/// <summary>
@@ -1271,6 +1287,40 @@ public class RustGenerator : StandardLanguageGenerator
 		WriteBody(funcDecl.Body, code);
 	}
 
+	/// <summary>
+	/// Writes a note in place of a function declaration Rust has no way to state.
+	/// </summary>
+	/// <param name="funcDecl">The declaration.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <returns>Whether the declaration was written down, so nothing else is to be written for it.</returns>
+	private bool WritesDeclarationDown(FunctionDeclaration funcDecl, CodeBlocker code)
+	{
+		string? reason = funcDecl switch
+		{
+			// A deleted declaration exists to make a call illegal, and Rust has no way to say that of
+			// one member. Writing the signature would do the opposite of what it asks for.
+			{ Definition: FunctionDefinition.Deleted } => "is deleted: Rust cannot refuse a call",
+
+			// A defaulted declaration is one the language supplies. Rust supplies it too, through a
+			// derive rather than through the declaration, which is the caller's line to write.
+			{ Definition: FunctionDefinition.Defaulted } => "is defaulted: derive it, or implement Default",
+
+			// An abstract member of a struct has nowhere to be implemented: a bodiless fn in an
+			// inherent impl is an error, so it is written down the way Go writes it down.
+			{ IsAbstract: true } when !insideTrait => "has no body: only a trait may require one",
+
+			_ => null,
+		};
+
+		if (reason is null)
+		{
+			return false;
+		}
+
+		WriteInexpressible(code, $"{SpellFunctionName(funcDecl)} {reason}");
+		return true;
+	}
+
 	/// <inheritdoc/>
 	protected override void GenerateFunctionDeclaration(FunctionDeclaration funcDecl, CodeBlocker code) =>
 		GenerateFunction(funcDecl, code, null);
@@ -1299,23 +1349,37 @@ public class RustGenerator : StandardLanguageGenerator
 		Ensure.NotNull(funcDecl);
 		Ensure.NotNull(code);
 
+		// A parameter is bound for its own declaration and no longer. A declaration with no body
+		// never reaches the WriteBody that clears them, and a name left behind would hide a
+		// same-named mutable static from every body written after it (#397).
+		string[] outerBound = [.. boundLocals];
+		try
+		{
+			WriteFunction(funcDecl, code, enclosingType);
+		}
+		finally
+		{
+			boundLocals.Clear();
+			boundLocals.UnionWith(outerBound);
+		}
+	}
+
+	/// <summary>
+	/// Emits a function, once <see cref="GenerateFunction"/> has scoped its parameter bindings.
+	/// </summary>
+	/// <param name="funcDecl">The declaration to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <param name="enclosingType">The name of the type it belongs to, when it belongs to one.</param>
+	private void WriteFunction(FunctionDeclaration funcDecl, CodeBlocker code, string? enclosingType)
+	{
+
 		WritePreamble(funcDecl, code, enclosingType is null ? PreambleSite.Function : PreambleSite.Method);
 
-		// A deleted declaration exists to make a call illegal, and Rust has no way to say that of one
-		// member. Writing the signature would do the opposite of what it asks for.
-		if (funcDecl.Definition == FunctionDefinition.Deleted)
+		if (WritesDeclarationDown(funcDecl, code))
 		{
-			WriteInexpressible(code, $"{SpellFunctionName(funcDecl)} is deleted: Rust cannot refuse a call");
 			return;
 		}
 
-		// A defaulted declaration is one the language supplies. Rust supplies it too, through a
-		// derive rather than through the declaration, which is the caller's line to write.
-		if (funcDecl.Definition == FunctionDefinition.Defaulted)
-		{
-			WriteInexpressible(code, $"{SpellFunctionName(funcDecl)} is defaulted: derive it, or implement Default");
-			return;
-		}
 		// #[must_use] says what a pure function's purity means to a caller, and is worth nothing on
 		// one that answers nothing.
 		if ((funcDecl.IsPure || funcDecl.MustUseResult) && ReturnsAValue(funcDecl))
@@ -1357,9 +1421,8 @@ public class RustGenerator : StandardLanguageGenerator
 			code.Write($" -> {SpellType(funcDecl.ReturnType!)}");
 		}
 
-		// A declaration with no definition is a requirement, which is a thing only a trait can hold:
-		// an abstract member of a struct has nowhere to be implemented.
-		if (funcDecl.IsAbstract || (insideTrait && funcDecl.Body.Count == 0))
+		// A declaration with no definition is a requirement, which is a thing only a trait can hold.
+		if (insideTrait && (funcDecl.IsAbstract || funcDecl.Body.Count == 0))
 		{
 			code.WriteLine(";");
 			return;
@@ -1407,7 +1470,7 @@ public class RustGenerator : StandardLanguageGenerator
 
 		code.Write("unsafe { (*");
 		GenerateInternal(receiver, code);
-		code.Write($").{callExpr.Callee}(");
+		code.Write($").{SpellCallee(callExpr.Callee)}(");
 		GenerateArgumentList(callExpr.Arguments, code);
 		code.Write(") }");
 	}
@@ -1526,6 +1589,10 @@ public class RustGenerator : StandardLanguageGenerator
 	/// <remarks>
 	/// A value assigned to a field of <c>self</c> is written for the type the field was declared
 	/// with, so a string literal assigned to a String field is made into one.
+	/// <para>
+	/// A <c>String</c> appended to a <c>String</c> is passed by reference, because Rust implements
+	/// <c>+=</c> on a <c>String</c> only for a <c>&amp;str</c>. A literal already is one.
+	/// </para>
 	/// </remarks>
 	protected override void GenerateAssignmentStatement(AssignmentStatement assignment, CodeBlocker code)
 	{
@@ -1554,7 +1621,7 @@ public class RustGenerator : StandardLanguageGenerator
 			insideUnsafe = true;
 			try
 			{
-				base.GenerateAssignmentStatement(assignment, code);
+				GenerateAssignmentOrAppend(assignment, code);
 			}
 			finally
 			{
@@ -1563,6 +1630,28 @@ public class RustGenerator : StandardLanguageGenerator
 
 			code.Outdent();
 			code.WriteLine("}");
+			return;
+		}
+
+		GenerateAssignmentOrAppend(assignment, code);
+	}
+
+	/// <summary>
+	/// Emits an assignment, writing a <c>String</c> appended to a <c>String</c> by reference.
+	/// </summary>
+	/// <param name="assignment">The statement to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	private void GenerateAssignmentOrAppend(AssignmentStatement assignment, CodeBlocker code)
+	{
+		if (assignment.Operator == AssignmentOperator.AddAssign
+			&& assignment.Value is not LiteralExpression<string>
+			&& IsOwnedString(StaticType(assignment.Target))
+			&& IsOwnedString(StaticType(assignment.Value)))
+		{
+			GenerateInternal(assignment.Target, code);
+			code.Write($" {GetAssignmentOperator(AssignmentOperator.AddAssign)} &");
+			GenerateInternal(assignment.Value, code);
+			EndStatement(code);
 			return;
 		}
 
@@ -2215,11 +2304,11 @@ public class RustGenerator : StandardLanguageGenerator
 		using Scope body = new(code);
 		foreach (EnumMember member in enumDecl.Members)
 		{
-			code.Write(member.Name ?? "Unnamed");
+			code.Write(EscapeIdentifier(member.Name ?? "Unnamed"));
 
 			if (member.Value is not null)
 			{
-				code.Write($" = {RenameSiblingMembers(enumDecl, member.Value, sibling => $"{name}::{sibling} as {discriminant}")}");
+				code.Write($" = {RenameSiblingMembers(enumDecl, member.Value, sibling => $"{name}::{EscapeIdentifier(sibling)} as {discriminant}")}");
 			}
 
 			// A trailing comma on the last variant too, so adding one after it is a one-line diff.
@@ -2247,6 +2336,8 @@ public class RustGenerator : StandardLanguageGenerator
 	/// <para>
 	/// The message is <c>assert!</c>'s format string rather than a plain literal, so its braces are
 	/// doubled: a single <c>{N}</c> would be read as a placeholder naming a value that does not exist.
+	/// They are doubled before the message is escaped, because a numeric escape is spelled
+	/// <c>\u{XXXX}</c> and doubling its braces too makes an escape rustc rejects.
 	/// </para>
 	/// </remarks>
 	protected override void GenerateCompileTimeAssertion(CompileTimeAssertion assertion, CodeBlocker code)
@@ -2262,9 +2353,9 @@ public class RustGenerator : StandardLanguageGenerator
 		{
 			code.WriteLine(",");
 			code.Indent();
-			string message = EscapeString(assertion.Message)
+			string message = EscapeString(assertion.Message
 				.Replace("{", "{{", StringComparison.Ordinal)
-				.Replace("}", "}}", StringComparison.Ordinal);
+				.Replace("}", "}}", StringComparison.Ordinal));
 			code.Write($"\"{message}\"");
 			code.Outdent();
 		}
@@ -2305,11 +2396,26 @@ public class RustGenerator : StandardLanguageGenerator
 	/// as <c>String + &amp;str</c>, so a literal on the left, or a <c>String</c> on the right, does
 	/// not compile; <c>format!</c> takes any mix of the two by reference and moves neither. A chain
 	/// of joins is one call with one placeholder per operand.
+	/// <para>
+	/// An ordering comparison between a <c>String</c> and a string literal borrows the
+	/// <c>String</c> as a <c>&amp;str</c>, because <c>String</c> implements <c>PartialOrd</c> with
+	/// itself only, so <c>a &lt; "m"</c> is E0308 where <c>a == "m"</c> compiles (#372).
+	/// </para>
 	/// </remarks>
 	protected override void GenerateBinary(BinaryExpression binary, CodeBlocker code)
 	{
 		Ensure.NotNull(binary);
 		Ensure.NotNull(code);
+
+		if (IsOwnedStringAgainstLiteral(binary))
+		{
+			code.Write("(");
+			WriteBorrowedString(binary.Left, code);
+			code.Write($" {GetOperatorSpelling(binary.Operator)} ");
+			WriteBorrowedString(binary.Right, code);
+			code.Write(")");
+			return;
+		}
 
 		if (!IsStringJoin(binary))
 		{
@@ -2338,6 +2444,32 @@ public class RustGenerator : StandardLanguageGenerator
 	private bool IsStringJoin(BinaryExpression binary) =>
 		binary.Operator == BinaryOperator.Add
 		&& (IsOwnedString(StaticType(binary.Left)) || IsOwnedString(StaticType(binary.Right)));
+
+	/// <summary>
+	/// Reports whether an ordering comparison sets an owned <c>String</c> against a string literal.
+	/// </summary>
+	/// <param name="binary">The expression to inspect.</param>
+	/// <returns>True for <c>&lt;</c>, <c>&lt;=</c>, <c>&gt;</c> or <c>&gt;=</c> with a literal on one side
+	/// and a value known to be a <c>String</c> on the other.</returns>
+	private bool IsOwnedStringAgainstLiteral(BinaryExpression binary) =>
+		binary.Operator is BinaryOperator.LessThan or BinaryOperator.LessThanOrEqual
+			or BinaryOperator.GreaterThan or BinaryOperator.GreaterThanOrEqual
+		&& ((binary.Left is LiteralExpression<string> && binary.Right is not LiteralExpression<string> && IsOwnedString(StaticType(binary.Right)))
+			|| (binary.Right is LiteralExpression<string> && binary.Left is not LiteralExpression<string> && IsOwnedString(StaticType(binary.Left))));
+
+	/// <summary>
+	/// Writes one side of a string comparison as a <c>&amp;str</c>.
+	/// </summary>
+	/// <param name="operand">The operand: a literal, which already is one, or a <c>String</c>.</param>
+	/// <param name="code">The writer to emit into.</param>
+	private void WriteBorrowedString(Expression operand, CodeBlocker code)
+	{
+		GenerateInternal(operand, code);
+		if (operand is not LiteralExpression<string>)
+		{
+			code.Write(".as_str()");
+		}
+	}
 
 	/// <summary>
 	/// Flattens a chain of string joins into its operands, in order.

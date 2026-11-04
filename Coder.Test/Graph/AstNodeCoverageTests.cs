@@ -66,6 +66,7 @@ public sealed class AstNodeCoverageTests
 		typeof(VariableReference),
 		typeof(AstLeafNode<>),
 		typeof(LiteralExpression<>),
+		typeof(UnfilledExpression),
 	];
 	private static readonly Type[] LegacyLeafStorageTypes = [typeof(string), typeof(int), typeof(double), typeof(bool)];
 
@@ -254,9 +255,36 @@ public sealed class AstNodeCoverageTests
 	/// </remarks>
 	private static IEnumerable<PropertyInfo> Editable(Type type) =>
 		type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+			.GroupBy(property => property.Name, StringComparer.Ordinal)
+			.Select(Nearest)
 			.Where(property => property.SetMethod is { IsPublic: true })
 			.Where(property => property.DeclaringType != typeof(Expression))
 			.Where(property => IsValue(property.PropertyType));
+
+	/// <summary>
+	/// The declaration a property's name resolves to on the type itself.
+	/// </summary>
+	/// <param name="declarations">Every public declaration of one name, base and derived.</param>
+	/// <returns>The one declared furthest down the hierarchy.</returns>
+	/// <remarks>
+	/// Reflection lists a property a derived type hides with <c>new</c> alongside the one it hides.
+	/// <see cref="UnfilledExpression"/> hides its base literal's <c>Value</c> with a read-only one,
+	/// because a placeholder is replaced rather than typed into, so it is the hiding declaration
+	/// that says whether there is anything to edit.
+	/// </remarks>
+	private static PropertyInfo Nearest(IEnumerable<PropertyInfo> declarations) =>
+		declarations.OrderByDescending(property => Depth(property.DeclaringType)).First();
+
+	private static int Depth(Type? type)
+	{
+		int depth = 0;
+		for (Type? current = type; current is not null; current = current.BaseType)
+		{
+			depth++;
+		}
+
+		return depth;
+	}
 
 	private static bool IsValue(Type type)
 	{

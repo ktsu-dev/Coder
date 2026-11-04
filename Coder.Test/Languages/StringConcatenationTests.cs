@@ -112,6 +112,91 @@ public class StringConcatenationTests
 		Assert.IsFalse(code.Contains("/*", StringComparison.Ordinal), code);
 	}
 
+	/// <summary>
+	/// Tests that Rust appends a <c>String</c> to a <c>String</c> by reference, and leaves a literal
+	/// appended as it is (issue #363).
+	/// </summary>
+	[TestMethod]
+	public void Rust_WritesAStringAddAssignByReference()
+	{
+		string code = new RustGenerator().Generate(AddAssigns());
+
+		StringAssert.Contains(code, "s += &name;");
+		StringAssert.Contains(code, "s += \"!\";");
+	}
+
+	/// <summary>
+	/// Tests that <c>s += name</c> and <c>s += "!"</c> on strings compile in Rust (issue #363).
+	/// </summary>
+	[TestMethod]
+	public void Rust_StringAddAssignCompiles()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "rustc") is null)
+		{
+			Assert.Inconclusive("No Rust compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new RustGenerator().Generate(AddAssigns());
+			string allowed = "#![allow(unused_parens, dead_code, unused_variables, unused_mut)]";
+
+			File.WriteAllText(
+				Path.Combine(directory, "appends.rs"),
+				$"{allowed}{Environment.NewLine}{source}");
+
+			(int exitCode, string output) = ToolchainHarness.Run(
+				"rustc",
+				"--crate-type lib --edition 2021 -o appends.rlib appends.rs",
+				directory);
+
+			Assert.AreEqual(0, exitCode, $"rustc rejected the generated source:{Environment.NewLine}{source}{Environment.NewLine}{output}");
+		});
+	}
+
+	/// <summary>
+	/// Tests that C writes the same note in front of a string <c>+=</c> that it writes in front of a
+	/// string <c>+</c> (issue #363).
+	/// </summary>
+	[TestMethod]
+	public void C_NotesThatAStringAddAssignHasNoExpression()
+	{
+		string code = new CGenerator().Generate(AddAssigns());
+
+		StringAssert.Contains(
+			code,
+			"/* C has no string concatenation: join these into a buffer with snprintf or strcat */ s += name;");
+	}
+
+	/// <summary>
+	/// Tests that C writes no note in front of a numeric <c>+=</c>.
+	/// </summary>
+	[TestMethod]
+	public void C_LeavesNumericAddAssignAlone()
+	{
+		FunctionDeclaration bump = new("bump") { ReturnType = "int" };
+		bump.Parameters.Add(new Parameter("a", "int"));
+		bump.Body.Add(new AssignmentStatement(new VariableReference("a"), Literal.Number(1), AssignmentOperator.AddAssign));
+		bump.Body.Add(new ReturnStatement(new VariableReference("a")));
+
+		string code = new CGenerator().Generate(bump);
+
+		StringAssert.Contains(code, "a += 1;");
+		Assert.IsFalse(code.Contains("/*", StringComparison.Ordinal), code);
+	}
+
+	private static FunctionDeclaration AddAssigns()
+	{
+		FunctionDeclaration greet = new("greet") { ReturnType = "string" };
+		greet.Parameters.Add(new Parameter("name", "string"));
+		greet.Body.Add(new VariableDeclaration("s", "string", Literal.Text("Hello, ")));
+		greet.Body.Add(new AssignmentStatement(new VariableReference("s"), new VariableReference("name"), AssignmentOperator.AddAssign));
+		greet.Body.Add(new AssignmentStatement(new VariableReference("s"), Literal.Text("!"), AssignmentOperator.AddAssign));
+		greet.Body.Add(new ReturnStatement(new VariableReference("s")));
+		return greet;
+	}
+
 	private static FunctionDeclaration Greet()
 	{
 		FunctionDeclaration greet = new("greet") { ReturnType = "string", IsStatic = true };

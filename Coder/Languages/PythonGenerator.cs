@@ -152,7 +152,9 @@ public class PythonGenerator : StandardLanguageGenerator
 
 		if (declaration.IsAutomatic)
 		{
-			code.WriteLine($"{name}{annotation} = None");
+			code.Write($"{name}{annotation} = ");
+			WriteUnassignedValue(declaration.Type, code);
+			code.WriteLine();
 			return;
 		}
 
@@ -302,14 +304,52 @@ public class PythonGenerator : StandardLanguageGenerator
 			yield return "from enum import IntEnum";
 		}
 
-		if (ContainsFloatingRemainder(file))
+		if (ContainsFloatingRemainder(file) || ContainsInScope(file, IsGuardedFloatingDivision))
 		{
 			yield return MathModule;
 		}
 	}
 
 	/// <summary>
-	/// The module that defines <c>math.fmod</c>.
+	/// Reads whether a node is a floating quotient that <see cref="WriteFloatingDivision"/> guards,
+	/// and so needs <c>math</c>.
+	/// </summary>
+	private bool IsGuardedFloatingDivision(AstNode node) => node switch
+	{
+		BinaryExpression { Operator: BinaryOperator.Divide } binary => NeedsDivisionGuard(binary.Left, binary.Right),
+		AssignmentStatement { Operator: AssignmentOperator.DivideAssign } assignment => NeedsDivisionGuard(assignment.Target, assignment.Value),
+		_ => false,
+	};
+
+	/// <summary>
+	/// Reads whether a quotient is floating and its divisor can be zero.
+	/// </summary>
+	/// <remarks>
+	/// A divisor that is a literal other than zero cannot raise, so <c>x / 2.0</c> is left as it is.
+	/// </remarks>
+	private bool NeedsDivisionGuard(Expression dividend, Expression divisor) =>
+		FloatingRemainderType(dividend, divisor) is not null && !IsNonZeroLiteral(divisor);
+
+	private static bool IsNonZeroLiteral(Expression operand) => operand switch
+	{
+		LiteralExpression<int> literal => literal.Value != 0,
+		LiteralExpression<long> literal => literal.Value != 0,
+		LiteralExpression<float> literal => literal.Value.CompareTo(0f) != 0,
+		LiteralExpression<double> literal => literal.Value.CompareTo(0d) != 0,
+		_ => false,
+	};
+
+	private static bool IsFiniteLiteral(Expression operand) => operand switch
+	{
+		LiteralExpression<int> or LiteralExpression<long> => true,
+		LiteralExpression<float> literal => float.IsFinite(literal.Value),
+		LiteralExpression<double> literal => double.IsFinite(literal.Value),
+		_ => false,
+	};
+
+	/// <summary>
+	/// The module that defines <c>math.fmod</c>, and the IEEE 754 results a floating quotient or
+	/// remainder by zero gives everywhere else.
 	/// </summary>
 	private const string MathModule = "math";
 
@@ -325,14 +365,117 @@ public class PythonGenerator : StandardLanguageGenerator
 	/// <remarks>
 	/// <c>math.fmod</c> truncates, matching C's <c>fmod</c>. Python has one floating type, so a
 	/// remainder taken in <c>float</c> is written the same as one taken in <c>double</c>.
+	/// <para>
+	/// <c>math.fmod</c> raises where IEEE 754 gives NaN, for a zero divisor or an infinite dividend,
+	/// and every other target returns NaN there (#425). Those two cases are answered before it is
+	/// called, each only where the operand could be one. <c>math.fmod(a, inf)</c> is already <c>a</c>,
+	/// and a NaN operand already gives NaN.
+	/// </para>
 	/// </remarks>
 	protected override void WriteFloatingRemainder(Expression dividend, Expression divisor, string floatingType, CodeBlocker code)
 	{
+		Ensure.NotNull(dividend);
+		Ensure.NotNull(divisor);
 		Ensure.NotNull(code);
-		code.Write("math.fmod(");
-		GenerateInternal(dividend, code);
+		bool divisorCanBeZero = !IsNonZeroLiteral(divisor);
+		bool dividendCanBeInfinite = !IsFiniteLiteral(dividend);
+		if (!divisorCanBeZero && !dividendCanBeInfinite)
+		{
+			code.Write("math.fmod(");
+			GenerateInternal(dividend, code);
+			code.Write(", ");
+			GenerateInternal(divisor, code);
+			code.Write(")");
+			return;
+		}
+
+		WriteReadingTwice(dividend, divisor, code, (left, right) =>
+		{
+			code.Write("(math.nan if ");
+			if (divisorCanBeZero)
+			{
+				right();
+				code.Write(" == 0");
+			}
+
+			if (divisorCanBeZero && dividendCanBeInfinite)
+			{
+				code.Write(" or ");
+			}
+
+			if (dividendCanBeInfinite)
+			{
+				code.Write("math.isinf(");
+				left();
+				code.Write(")");
+			}
+
+			code.Write(" else math.fmod(");
+			left();
+			code.Write(", ");
+			right();
+			code.Write("))");
+		});
+	}
+
+	/// <summary>
+	/// Writes the IEEE 754 quotient of two operands, at least one of them floating.
+	/// </summary>
+	/// <param name="dividend">The left operand.</param>
+	/// <param name="divisor">The right operand.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// Python's <c>/</c> raises <c>ZeroDivisionError</c> for a zero divisor, where every other target
+	/// gives an infinity signed by both operands, or NaN when the dividend is zero or NaN (#425). The
+	/// zero divisor is answered before <c>/</c> is reached. <c>-0.0</c> is a zero, so it reaches the
+	/// same branch, and <c>math.copysign</c> reads its sign.
+	/// </remarks>
+	private void WriteFloatingDivision(Expression dividend, Expression divisor, CodeBlocker code) =>
+		WriteReadingTwice(dividend, divisor, code, (left, right) =>
+		{
+			code.Write("(");
+			left();
+			code.Write(" / ");
+			right();
+			code.Write(" if ");
+			right();
+			code.Write(" != 0 else math.copysign(math.inf, ");
+			left();
+			code.Write(") * math.copysign(1.0, ");
+			right();
+			code.Write(") if ");
+			left();
+			code.Write(" != 0 and not math.isnan(");
+			left();
+			code.Write(") else math.nan)");
+		});
+
+	/// <summary>
+	/// Writes an expression that reads each of two operands more than once.
+	/// </summary>
+	/// <param name="left">The left operand.</param>
+	/// <param name="right">The right operand.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <param name="write">Writes the expression, given a writer for each operand.</param>
+	/// <remarks>
+	/// An operand that is a literal or a variable reads the same every time; when either is anything
+	/// else both are bound once, as the parameters of a lambda called where it stands, so a call is not
+	/// made twice.
+	/// </remarks>
+	private void WriteReadingTwice(Expression left, Expression right, CodeBlocker code, Action<Action, Action> write)
+	{
+		if (IsReadTwiceSafely(left) && IsReadTwiceSafely(right))
+		{
+			write(() => GenerateInternal(left, code), () => GenerateInternal(right, code));
+			return;
+		}
+
+		code.Write("(lambda a, b: ");
+		write(() => code.Write("a"), () => code.Write("b"));
+		code.Write(")(");
+		GenerateInternal(left, code);
 		code.Write(", ");
-		GenerateInternal(divisor, code);
+		GenerateInternal(right, code);
 		code.Write(")");
 	}
 
@@ -489,15 +632,18 @@ public class PythonGenerator : StandardLanguageGenerator
 
 		foreach ((EnumMember member, string value) in enumDecl.Members.Zip(EnumMemberValues(enumDecl)))
 		{
-			code.WriteLine($"{EscapeIdentifier(member.Name ?? "UNNAMED")} = {value}");
+			string spelled = RenameSiblingMembers(enumDecl, value, sibling => ReservedWords.Contains(sibling) ? EscapeIdentifier(sibling) : null);
+			code.WriteLine($"{EscapeIdentifier(member.Name ?? "UNNAMED")} = {spelled}");
 		}
 	}
 
 	/// <inheritdoc/>
 	/// <remarks>
-	/// A field is written as an annotated class attribute. One with no initialiser is left as a bare
-	/// annotation, which is what a dataclass and a type checker both read as "this field exists and
-	/// has this type" without also claiming a value for it.
+	/// A field is written as an annotated class attribute. One with no initialiser is given its type's
+	/// zero, or <c>None</c> where the type has none, because a bare annotation creates no attribute:
+	/// <c>self.count += 1</c> would raise <c>AttributeError</c> on a fresh instance, where every other
+	/// target starts the field at zero (#345). Each value it can be given is immutable, so a class-level
+	/// default is safe to share between instances.
 	/// </remarks>
 	protected override void GenerateFieldDeclaration(FieldDeclaration field, CodeBlocker code)
 	{
@@ -517,12 +663,29 @@ public class PythonGenerator : StandardLanguageGenerator
 			code.Write(" = ");
 			GenerateInternal(field.InitialValue, code);
 		}
-		else if (field.Type is null && field.InitialValue is null)
+		else if (field.InitialValue is null)
 		{
-			code.Write(" = None");
+			code.Write(" = ");
+			WriteUnassignedValue(field.Type, code);
 		}
 
 		code.WriteLine();
+	}
+
+	/// <summary>
+	/// Writes the value a field or automatic property holds before anything is assigned to it.
+	/// </summary>
+	/// <param name="type">The declared type, or null where none is declared.</param>
+	/// <param name="code">The writer to emit into.</param>
+	private void WriteUnassignedValue(TypeReference? type, CodeBlocker code)
+	{
+		if (ZeroValue(type) is Expression zero)
+		{
+			GenerateInternal(zero, code);
+			return;
+		}
+
+		code.Write("None");
 	}
 
 	/// <summary>
@@ -1009,17 +1172,11 @@ public class PythonGenerator : StandardLanguageGenerator
 	/// <returns>The name Python knows it by.</returns>
 	private static string PythonTypeName(TypeReference type) => type.Name.ToLowerInvariant() switch
 	{
-		"int" => "int",
-		"short" => "int",
-		"ushort" => "int",
-		"uint" => "int",
-		"ulong" => "int",
-		"byte" => "int",
-		"sbyte" => "int",
-		"string" => "str",
+		"int" or "long" or "short" or "ushort" or "uint" or "ulong" or "byte" or "sbyte" => "int",
+		"string" or "char" => "str",
 		"bool" => "bool",
-		"float" => "float",
-		"double" => "float",
+		"float" or "double" or "decimal" => "float",
+		"object" => "object",
 		"void" => "None",
 		_ => type.Name
 	};
@@ -1142,6 +1299,18 @@ public class PythonGenerator : StandardLanguageGenerator
 		Ensure.NotNull(binary);
 		Ensure.NotNull(code);
 
+		if (binary.Operator == BinaryOperator.Divide && NeedsDivisionGuard(binary.Left, binary.Right))
+		{
+			WriteFloatingDivision(binary.Left, binary.Right, code);
+			return;
+		}
+
+		if (binary.Operator == BinaryOperator.LeftShift && IntegerWidthOf(StaticType(binary.Left)) is IntegerWidth width)
+		{
+			WriteWrapped(width, code, () => base.GenerateBinary(binary, code));
+			return;
+		}
+
 		if (binary.Operator is not (BinaryOperator.Divide or BinaryOperator.Modulo) || !IsIntegerArithmetic(binary))
 		{
 			base.GenerateBinary(binary, code);
@@ -1149,20 +1318,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		}
 
 		bool divide = binary.Operator == BinaryOperator.Divide;
-
-		if (IsReadTwiceSafely(binary.Left) && IsReadTwiceSafely(binary.Right))
-		{
-			WriteTruncated(code, divide, () => GenerateInternal(binary.Left, code), () => GenerateInternal(binary.Right, code));
-			return;
-		}
-
-		code.Write("(lambda a, b: ");
-		WriteTruncated(code, divide, () => code.Write("a"), () => code.Write("b"));
-		code.Write(")(");
-		GenerateInternal(binary.Left, code);
-		code.Write(", ");
-		GenerateInternal(binary.Right, code);
-		code.Write(")");
+		WriteReadingTwice(binary.Left, binary.Right, code, (left, right) => WriteTruncated(code, divide, left, right));
 	}
 
 	/// <inheritdoc/>
@@ -1171,8 +1327,9 @@ public class PythonGenerator : StandardLanguageGenerator
 	/// the binary operators, so on integers they give <c>2.5</c> for <c>5 /= 2</c> and <c>1</c> for
 	/// <c>-7 %= 2</c> where the C family gives <c>2</c> and <c>-1</c>. When both sides are known to be
 	/// integers the assignment is written out as <c>x = x / y</c>, whose quotient or remainder
-	/// <see cref="GenerateBinary"/> truncates. Every other compound assignment, and one on operands
-	/// the AST does not know to be integers, is left as it is.
+	/// <see cref="GenerateBinary"/> truncates. <c>x &lt;&lt;= n</c> on a fixed-width integer is written
+	/// out the same way, so the result is wrapped to the width (#351). Every other compound assignment,
+	/// and one on operands the AST does not know to be integers, is left as it is.
 	/// </remarks>
 	protected override void GenerateAssignmentStatement(AssignmentStatement assignment, CodeBlocker code)
 	{
@@ -1183,11 +1340,24 @@ public class PythonGenerator : StandardLanguageGenerator
 		{
 			AssignmentOperator.DivideAssign => BinaryOperator.Divide,
 			AssignmentOperator.ModuloAssign => BinaryOperator.Modulo,
+			AssignmentOperator.LeftShiftAssign => BinaryOperator.LeftShift,
 			_ => null,
 		};
 
 		BinaryExpression? binary = op is null ? null : new(assignment.Target, op.Value, assignment.Value);
-		if (binary is null || !IsIntegerArithmetic(binary))
+		if (binary is { Operator: BinaryOperator.Divide } && NeedsDivisionGuard(binary.Left, binary.Right))
+		{
+			GenerateInternal(assignment.Target, code);
+			code.Write(" = ");
+			WriteFloatingDivision(binary.Left, binary.Right, code);
+			EndStatement(code);
+			return;
+		}
+
+		bool writtenOut = binary is not null && (binary.Operator == BinaryOperator.LeftShift
+			? IntegerWidthOf(StaticType(binary.Left)) is not null
+			: IsIntegerArithmetic(binary));
+		if (binary is null || !writtenOut)
 		{
 			base.GenerateAssignmentStatement(assignment, code);
 			return;
@@ -1237,10 +1407,91 @@ public class PythonGenerator : StandardLanguageGenerator
 		}
 	}
 
+	/// <inheritdoc/>
+	/// <remarks>
+	/// Python's integers are unbounded, so <c>~</c> on a <c>uint</c> or <c>ulong</c> gives a negative
+	/// number where the C family gives a large positive one (#351). The result is masked back to the
+	/// operand's width. <c>~</c> on a signed integer already matches two's complement and is left as it is.
+	/// </remarks>
+	protected override void GenerateUnary(UnaryExpression unary, CodeBlocker code)
+	{
+		Ensure.NotNull(unary);
+		Ensure.NotNull(code);
+
+		if (unary.Operator == UnaryOperator.BitwiseNot
+			&& IntegerWidthOf(StaticType(unary.Operand)) is IntegerWidth width
+			&& width is IntegerWidth.Unsigned32 or IntegerWidth.Unsigned64)
+		{
+			WriteWrapped(width, code, () => base.GenerateUnary(unary, code));
+			return;
+		}
+
+		base.GenerateUnary(unary, code);
+	}
+
+	/// <summary>
+	/// The fixed-width integer types whose overflow Python's unbounded integers do not reproduce.
+	/// </summary>
+	private enum IntegerWidth
+	{
+		/// <summary><c>int</c>.</summary>
+		Signed32,
+
+		/// <summary><c>uint</c>.</summary>
+		Unsigned32,
+
+		/// <summary><c>long</c>.</summary>
+		Signed64,
+
+		/// <summary><c>ulong</c>.</summary>
+		Unsigned64,
+	}
+
+	private static IntegerWidth? IntegerWidthOf(TypeReference? type) =>
+		type is { IsArray: false, Indirection: TypeIndirection.None, TypeArguments.Count: 0 }
+			? type.Name switch
+			{
+				"int" => IntegerWidth.Signed32,
+				"uint" => IntegerWidth.Unsigned32,
+				"long" => IntegerWidth.Signed64,
+				"ulong" => IntegerWidth.Unsigned64,
+				_ => null,
+			}
+			: null;
+
+	/// <summary>
+	/// Writes a value wrapped to a fixed width, the way the C family's arithmetic wraps it.
+	/// </summary>
+	/// <param name="width">The width to wrap to.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <param name="value">Writes the unbounded value, which is read once.</param>
+	/// <remarks>
+	/// An unsigned value is masked to its width. A signed one is offset by half the range, masked, and
+	/// offset back, which keeps the low bits and reads the top one as the sign.
+	/// </remarks>
+	private static void WriteWrapped(IntegerWidth width, CodeBlocker code, Action value)
+	{
+		string mask = width is IntegerWidth.Signed32 or IntegerWidth.Unsigned32 ? "0xFFFFFFFF" : "0xFFFFFFFFFFFFFFFF";
+		if (width is IntegerWidth.Unsigned32 or IntegerWidth.Unsigned64)
+		{
+			code.Write("(");
+			value();
+			code.Write($" & {mask})");
+			return;
+		}
+
+		string half = width == IntegerWidth.Signed32 ? "0x80000000" : "0x8000000000000000";
+		code.Write("(((");
+		value();
+		code.Write($" + {half}) & {mask}) - {half})");
+	}
+
 	private static bool IsReadTwiceSafely(Expression operand) =>
 		operand is VariableReference
 			or LiteralExpression<int>
-			or LiteralExpression<long>;
+			or LiteralExpression<long>
+			or LiteralExpression<float>
+			or LiteralExpression<double>;
 
 	/// <summary>
 	/// Maps a binary operator to its Python spelling.

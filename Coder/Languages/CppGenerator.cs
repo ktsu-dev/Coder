@@ -89,6 +89,12 @@ public class CppGenerator : CFamilyGenerator
 	/// </summary>
 	public override string FileExtension => "cpp";
 
+	/// <inheritdoc/>
+	/// <remarks>
+	/// <c>.hpp</c> rather than <c>.h</c>, so a C++ header is not mistaken for one a C compiler can read.
+	/// </remarks>
+	public override string HeaderFileExtension => "hpp";
+
 	/// <summary>
 	/// Writes the template head a declaration written over types needs.
 	/// </summary>
@@ -267,8 +273,9 @@ public class CppGenerator : CFamilyGenerator
 		WriteTemplateHead(funcDecl.TypeParameters, code);
 
 		// Purity earns [[nodiscard]] on its own: a call that does nothing else and whose result is
-		// thrown away did nothing at all.
-		if (funcDecl.IsPure || funcDecl.MustUseResult)
+		// thrown away did nothing at all. A call that answers nothing has no result to keep, and
+		// compilers warn about the attribute there rather than honour it.
+		if ((funcDecl.IsPure || funcDecl.MustUseResult) && ReturnsAValue(funcDecl))
 		{
 			code.Write("[[nodiscard]] ");
 		}
@@ -688,11 +695,11 @@ public class CppGenerator : CFamilyGenerator
 		using ScopeWithTrailingSemicolon body = new(code);
 		foreach (EnumMember member in enumDecl.Members)
 		{
-			code.Write(member.Name ?? "Unnamed");
+			code.Write(EscapeIdentifier(member.Name ?? "Unnamed"));
 
 			if (member.Value is not null)
 			{
-				code.Write($" = {member.Value}");
+				code.Write($" = {RenameSiblingMembers(enumDecl, member.Value, EscapeIdentifier)}");
 			}
 
 			// A trailing comma on the last member too, so adding one after it is a one-line diff.
@@ -714,8 +721,22 @@ public class CppGenerator : CFamilyGenerator
 
 		WritePreamble(field, code, PreambleSite.Field);
 
-		code.Write(SpellStorage(field));
-		code.Write(SpellDeclarator(field.Type ?? new TypeReference(UnknownTypeName), field.Name ?? string.Empty));
+		string storage = SpellStorage(field);
+		TypeReference fieldType = field.Type ?? new TypeReference(UnknownTypeName);
+		string fieldName = field.Name ?? string.Empty;
+
+		// A storage that ends in const leaves the type's own const, or a pointer's, to the
+		// declarator, so it is said once and of the right thing; see SpellConstantDeclarator.
+		if (storage.EndsWith("const ", StringComparison.Ordinal))
+		{
+			code.Write(storage[..^"const ".Length]);
+			code.Write(SpellConstantDeclarator(fieldType, fieldName));
+		}
+		else
+		{
+			code.Write(storage);
+			code.Write(SpellDeclarator(fieldType, fieldName));
+		}
 
 		if (field.InitialValue is not null)
 		{
@@ -756,17 +777,25 @@ public class CppGenerator : CFamilyGenerator
 	/// </remarks>
 	private void GenerateField(VariableDeclaration field, CodeBlocker code)
 	{
-		if (field.IsConstant && field.InitialValue is not null)
+		bool literal = field.IsTypeInferred || field.Type is null || IsLiteralType(field.Type);
+		if (field.IsConstant && field.InitialValue is not null && literal)
 		{
-			bool literal = field.IsTypeInferred || field.Type is null || IsLiteralType(field.Type);
-			code.Write(literal ? "static constexpr " : "inline static const ");
+			code.Write("static constexpr ");
+			code.Write(SpellVariableDeclarator(field));
 		}
 		else if (field.IsConstant)
 		{
-			code.Write("const ");
-		}
+			if (field.InitialValue is not null)
+			{
+				code.Write("inline static ");
+			}
 
-		code.Write(SpellVariableDeclarator(field));
+			code.Write(SpellConstantVariableDeclarator(field));
+		}
+		else
+		{
+			code.Write(SpellVariableDeclarator(field));
+		}
 
 		if (field.InitialValue is not null)
 		{
@@ -853,12 +882,7 @@ public class CppGenerator : CFamilyGenerator
 		Ensure.NotNull(code);
 		RegisterStaticType(varDecl);
 
-		if (varDecl.IsConstant)
-		{
-			code.Write("const ");
-		}
-
-		code.Write(SpellVariableDeclarator(varDecl));
+		code.Write(varDecl.IsConstant ? SpellConstantVariableDeclarator(varDecl) : SpellVariableDeclarator(varDecl));
 
 		if (varDecl.InitialValue is not null)
 		{
@@ -868,6 +892,21 @@ public class CppGenerator : CFamilyGenerator
 
 		EndStatement(code);
 	}
+
+	/// <summary>
+	/// Spells a constant declaration up to its name.
+	/// </summary>
+	/// <param name="varDecl">The declaration being emitted.</param>
+	/// <returns>The type and the name, with <c>const</c> said once and of the right thing.</returns>
+	/// <remarks>
+	/// A declared type goes through <see cref="CFamilyGenerator.SpellConstantDeclarator"/>, which
+	/// knows whether the type already says <c>const</c> and where a pointer's goes. An inferred one
+	/// has no type text to inspect, so its <c>const</c> stands in front of <c>auto</c>.
+	/// </remarks>
+	private string SpellConstantVariableDeclarator(VariableDeclaration varDecl) =>
+		!varDecl.IsTypeInferred && varDecl.Type is TypeReference declared
+			? SpellConstantDeclarator(declared, varDecl.Name)
+			: $"const {SpellVariableDeclarator(varDecl)}";
 
 	/// <summary>
 	/// Spells a local declaration up to its name.
@@ -904,6 +943,23 @@ public class CppGenerator : CFamilyGenerator
 	{
 		{ "list", "<std::any>" },
 		{ "dict", "<std::string, std::any>" }
+	};
+
+	/// <summary>
+	/// Determines whether a call to a declaration answers something a caller could discard.
+	/// </summary>
+	/// <param name="funcDecl">The declaration being emitted.</param>
+	/// <returns>True for a constructor, a conversion, and a method or operator that returns other than <c>void</c>.</returns>
+	/// <remarks>
+	/// A constructor answers the object it builds, which is why C++20 lets it be <c>[[nodiscard]]</c>;
+	/// a destructor answers nothing, and a method or operator with no return type is <c>void</c>.
+	/// </remarks>
+	private static bool ReturnsAValue(FunctionDeclaration funcDecl) => funcDecl.Kind switch
+	{
+		FunctionKind.Destructor => false,
+		FunctionKind.Method or FunctionKind.Operator =>
+			funcDecl.ReturnType is TypeReference declared && MapToCppType(declared) != "void",
+		_ => true,
 	};
 
 	/// <summary>

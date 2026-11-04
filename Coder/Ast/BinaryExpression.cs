@@ -44,9 +44,9 @@ public class BinaryExpression : Expression
 	/// </summary>
 	public BinaryExpression()
 	{
-		Left = new LiteralExpression<string>("");
+		Left = new UnfilledExpression();
 		Operator = BinaryOperator.Add;
-		Right = new LiteralExpression<string>("");
+		Right = new UnfilledExpression();
 	}
 
 	/// <summary>

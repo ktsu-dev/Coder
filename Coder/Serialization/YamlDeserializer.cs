@@ -100,6 +100,8 @@ public partial class YamlDeserializer
 			"VariableDeclaration" => DeserializeVariableDeclaration(nodeData),
 			"assignmentStatement" => DeserializeAssignmentStatement(nodeData),
 			"AssignmentStatement" => DeserializeAssignmentStatement(nodeData),
+			"unfilled" => new UnfilledExpression(),
+			"Unfilled" => new UnfilledExpression(),
 			_ when nodeType.StartsWith("literal<", StringComparison.OrdinalIgnoreCase) || nodeType.StartsWith("Literal<", StringComparison.OrdinalIgnoreCase) => DeserializeLiteralExpression(nodeType, nodeData),
 			_ when nodeType.StartsWith("leaf<", StringComparison.OrdinalIgnoreCase) || nodeType.StartsWith("Leaf<", StringComparison.OrdinalIgnoreCase) => DeserializeLeafNode(nodeType, nodeData),
 			_ => null,

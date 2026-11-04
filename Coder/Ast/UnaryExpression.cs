@@ -43,7 +43,7 @@ public class UnaryExpression : Expression
 	public UnaryExpression()
 	{
 		Operator = UnaryOperator.Negate;
-		Operand = new LiteralExpression<string>("");
+		Operand = new UnfilledExpression();
 	}
 
 	/// <summary>

@@ -135,6 +135,57 @@ public class CppGeneratedSourceCompilesTests
 	}
 
 	/// <summary>
+	/// Tests that a void function marked pure or must-use compiles under <c>-Werror</c>, and that a
+	/// function returning a value keeps <c>[[nodiscard]]</c>.
+	/// </summary>
+	/// <remarks>
+	/// <c>[[nodiscard]]</c> on a <c>void</c> function is a warning in g++ and clang rather than a
+	/// promise, so a project building the output with <c>-Werror</c> failed (issue #404).
+	/// </remarks>
+	[TestMethod]
+	public void AVoidPureOrMustUseFunctionCompilesWithoutNodiscard()
+	{
+		string? compiler = ToolchainHarness.FindOnPath("--version", Compilers);
+		if (compiler is null)
+		{
+			Assert.Inconclusive("No C++ compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		ClassDeclaration counter = new("Counter");
+		counter.Members.Add(new FunctionDeclaration("Reset") { MustUseResult = true });
+		counter.Members.Add(new FunctionDeclaration("Touch") { IsPure = true, IsStatic = true });
+		counter.Members.Add(new FunctionDeclaration("Limit")
+		{
+			ReturnType = "int",
+			IsPure = true,
+			IsStatic = true,
+			Body = { new ReturnStatement(new LiteralExpression<int>(10)) },
+		});
+		SourceFile file = new("counter");
+		file.Members.Add(counter);
+
+		string header = new CppGenerator().Generate(file);
+		Assert.DoesNotContain("[[nodiscard]] void", header, StringComparison.Ordinal, header);
+		Assert.Contains("[[nodiscard]] static int Limit()", header, StringComparison.Ordinal, header);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			File.WriteAllText(Path.Combine(directory, "counter.h"), header);
+			File.WriteAllText(
+				Path.Combine(directory, "driver.cpp"),
+				$"#include \"counter.h\"{Environment.NewLine}{Environment.NewLine}int main() {{ Counter c; c.Reset(); Counter::Touch(); return Counter::Limit() == 10 ? 0 : 1; }}{Environment.NewLine}");
+
+			(int exitCode, string output) = ToolchainHarness.Run(
+				compiler,
+				"-std=c++20 -Wall -Wextra -pedantic -Werror -c driver.cpp -o driver.o",
+				directory);
+
+			Assert.AreEqual(0, exitCode, $"{compiler} rejected the generated header:{Environment.NewLine}{output}{Environment.NewLine}{header}");
+		});
+	}
+
+	/// <summary>
 	/// Tests that a property with bodies over a same-named backing field compiles, and a driver can
 	/// call both accessors.
 	/// </summary>
@@ -395,5 +446,61 @@ public class CppGeneratedSourceCompilesTests
 				new VariableReference("count"))));
 
 		return walk;
+	}
+
+	/// <summary>
+	/// Tests that a constant whose type is already const says const once and compiles, wherever a
+	/// constant may stand (#415).
+	/// </summary>
+	/// <remarks>
+	/// <c>const const T</c> is a hard error in C++ (duplicate 'const'), under any flags.
+	/// </remarks>
+	[TestMethod]
+	public void ConstantsWhoseTypeIsAlreadyConst_SayConstOnce()
+	{
+		SourceFile file = new("constants") { IsHeader = true, Imports = { "<string>" } };
+		file.Members.Add(new FieldDeclaration("GREETING", "const string") { IsConstant = true, InitialValue = Literal.Text("hi") });
+
+		ClassDeclaration holder = new("Names") { Kind = TypeDeclarationKind.Struct };
+		holder.Members.Add(new FieldDeclaration("Name", "const string") { IsStatic = true, IsConstant = true, InitialValue = Literal.Text("hi") });
+		file.Members.Add(holder);
+
+		ClassDeclaration labels = new("Labels");
+		labels.Members.Add(new VariableDeclaration("Title", "const string") { Visibility = Visibility.Public, IsConstant = true, InitialValue = Literal.Text("hi") });
+		file.Members.Add(labels);
+
+		FunctionDeclaration measure = new("measure") { ReturnType = "int" };
+		measure.Body.Add(new VariableDeclaration("n", "const int", Literal.Number(1)) { IsConstant = true });
+		measure.Body.Add(new VariableDeclaration("p", "const char*", Literal.Text("x")) { IsConstant = true });
+		measure.Body.Add(new ReturnStatement(new VariableReference("n")));
+		file.Members.Add(measure);
+
+		string header = new CppGenerator().Generate(file);
+
+		Assert.DoesNotContain("const const", header, StringComparison.Ordinal, header);
+		Assert.Contains("const int n = 1;", header, StringComparison.Ordinal, header);
+		Assert.Contains("const char* const p = \"x\";", header, StringComparison.Ordinal, header);
+
+		string? compiler = ToolchainHarness.FindOnPath("--version", Compilers);
+		if (compiler is null)
+		{
+			Assert.Inconclusive("No C++ compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			File.WriteAllText(Path.Combine(directory, "constants.h"), header);
+			File.WriteAllText(
+				Path.Combine(directory, "driver.cpp"),
+				"#include \"constants.h\"\n\nint main()\n{\n\treturn static_cast<int>(GREETING.size() + Names::Name.size() + Labels::Title.size() + measure()) * 0;\n}\n");
+
+			(int exitCode, string output) = ToolchainHarness.Run(
+				compiler,
+				"-std=c++20 -Wall -Wextra -Wno-unused-variable -pedantic -c driver.cpp -o driver.o",
+				directory);
+
+			Assert.AreEqual(0, exitCode, $"{compiler} rejected the generated constants:{Environment.NewLine}{output}{Environment.NewLine}{header}");
+		});
 	}
 }

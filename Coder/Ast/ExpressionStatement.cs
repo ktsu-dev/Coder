@@ -22,7 +22,7 @@ public class ExpressionStatement : AstNode
 	/// Initializes a new instance of the <see cref="ExpressionStatement"/> class.
 	/// Used for deserialization.
 	/// </summary>
-	public ExpressionStatement() => Expression = new LiteralExpression<string>(string.Empty);
+	public ExpressionStatement() => Expression = new UnfilledExpression();
 
 	/// <summary>
 	/// Initializes a new instance of the <see cref="ExpressionStatement"/> class.
