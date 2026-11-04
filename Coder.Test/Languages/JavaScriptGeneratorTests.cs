@@ -306,7 +306,7 @@ public class JavaScriptGeneratorTests
 
 		StringAssert.Contains(code, "const Limit = 10;", StringComparison.Ordinal);
 		StringAssert.Contains(code, "let total = 0;", StringComparison.Ordinal);
-		StringAssert.Contains(code, "let Pending;", StringComparison.Ordinal);
+		StringAssert.Contains(code, "let Pending = 0;", StringComparison.Ordinal);
 	}
 
 	/// <summary>
