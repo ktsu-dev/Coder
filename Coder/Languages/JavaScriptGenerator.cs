@@ -204,14 +204,58 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	private void GenerateNestedAlias(UsingAlias usingAlias, CodeBlocker code)
 	{
 		WritePreamble(usingAlias, code, PreambleSite.Type);
-		code.Write($"static {usingAlias.Name} = {usingAlias.AliasedType?.Name ?? "Object"}");
+		code.Write($"static {usingAlias.Name} = {AliasedValue(usingAlias.AliasedType)}");
 		EndStatement(code);
 	}
+
+	/// <summary>
+	/// The constructor JavaScript has in place of each of the AST's built-in type names.
+	/// </summary>
+	/// <remarks>
+	/// Nothing in JavaScript is called <c>int</c> or <c>double</c>, and an alias is evaluated as the
+	/// module loads, so binding one of these names verbatim is a <c>ReferenceError</c> that takes the
+	/// whole module with it. Every integer is a <c>Number</c> here, as it is everywhere else in the
+	/// output: the generator only reaches for BigInt inside an operation, never as a value's type.
+	/// </remarks>
+	private static readonly Dictionary<string, string> BuiltInAliasValues = new(StringComparer.Ordinal)
+	{
+		{ "int", "Number" },
+		{ "long", "Number" },
+		{ "short", "Number" },
+		{ "ushort", "Number" },
+		{ "byte", "Number" },
+		{ "sbyte", "Number" },
+		{ "uint", "Number" },
+		{ "ulong", "Number" },
+		{ "float", "Number" },
+		{ "double", "Number" },
+		{ "decimal", "Number" },
+		{ "bool", "Boolean" },
+		{ "string", "String" },
+		{ "str", "String" },
+		{ "char", "String" },
+		{ "list", "Array" },
+		{ "dict", "Map" },
+		{ "object", "Object" },
+	};
+
+	/// <summary>
+	/// Spells what an alias binds its name to.
+	/// </summary>
+	/// <param name="aliased">The type the alias names, if any.</param>
+	/// <returns>A built-in type's JavaScript constructor, an array's <c>Array</c>, or the name itself.</returns>
+	private static string AliasedValue(TypeReference? aliased) => aliased switch
+	{
+		null => "Object",
+		{ IsArray: true } => "Array",
+		_ => BuiltInAliasValues.TryGetValue(aliased.Name, out string? value) ? value : aliased.Name,
+	};
 
 	/// <inheritdoc/>
 	/// <remarks>
 	/// JavaScript has no types to alias. The name is bound to whatever the alias named, which is a
-	/// constructor often enough to be worth writing rather than dropping.
+	/// constructor often enough to be worth writing rather than dropping. A built-in type's name is
+	/// not one, so it is bound to the constructor JavaScript has in its place.
 	/// </remarks>
 	protected override void GenerateUsingAlias(UsingAlias usingAlias, CodeBlocker code)
 	{
@@ -219,7 +263,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		Ensure.NotNull(code);
 
 		WritePreamble(usingAlias, code, PreambleSite.Type);
-		code.Write($"const {usingAlias.Name} = {usingAlias.AliasedType?.Name ?? "Object"}");
+		code.Write($"const {usingAlias.Name} = {AliasedValue(usingAlias.AliasedType)}");
 		EndStatement(code);
 	}
 
