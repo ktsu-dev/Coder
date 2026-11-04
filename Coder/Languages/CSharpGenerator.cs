@@ -1171,9 +1171,10 @@ public class CSharpGenerator : LanguageGeneratorBase
 
 		string suffixed = $"{name}{GlobalsClassName}";
 		string candidate = suffixed;
-		for (int counter = 2; claimed.Contains(candidate); counter++)
+		int counter = 2;
+		while (claimed.Contains(candidate))
 		{
-			candidate = $"{suffixed}{counter}";
+			candidate = $"{suffixed}{counter++}";
 		}
 
 		return candidate;
