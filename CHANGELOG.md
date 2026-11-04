@@ -2,6 +2,11 @@
 
 Changes since v3.19.0:
 
+- Add a SessionStart hook for Claude Code cloud sessions (#336) (matt-edmondson)
+- Call keyword-named functions and methods by their escaped names [patch] (#366) (matt-edmondson)
+- Scope a Rust function's parameter bindings to its own declaration [patch] (#420) (matt-edmondson)
+- Give Python's floating quotient and remainder by zero their IEEE results [patch] (#426) (matt-edmondson)
+- Cast narrow integer arithmetic back to its declared type in C# [patch] (#436) (matt-edmondson)
 - Give each C# type body its own shift-count scope [patch] (#443) (matt-edmondson)
 - Escape keyword-named identifiers in the C# generator [patch] (#441) (matt-edmondson)
 - Put a converted node's children back where they were on undo [patch] (#440) (matt-edmondson)
