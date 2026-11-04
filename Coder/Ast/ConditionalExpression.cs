@@ -26,9 +26,9 @@ public class ConditionalExpression : Expression
 	/// </summary>
 	public ConditionalExpression()
 	{
-		Condition = new LiteralExpression<string>(string.Empty);
-		WhenTrue = new LiteralExpression<string>(string.Empty);
-		WhenFalse = new LiteralExpression<string>(string.Empty);
+		Condition = new UnfilledExpression();
+		WhenTrue = new UnfilledExpression();
+		WhenFalse = new UnfilledExpression();
 	}
 
 	/// <summary>

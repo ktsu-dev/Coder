@@ -6,6 +6,7 @@ using ktsu.Coder.Ast;
 using ktsu.Coder.Graph;
 using ktsu.Coder.Languages;
 using ktsu.Coder.Serialization;
+using ktsu.Coder.Test.Languages;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 /// <summary>
@@ -93,6 +94,82 @@ public class VisibilityTests
 
 		StringAssert.Contains(new CSharpGenerator().Generate(function), "int total = 0;", StringComparison.Ordinal);
 		Assert.IsFalse(new CSharpGenerator().Generate(function).Contains("public int total", StringComparison.Ordinal));
+	}
+
+	/// <summary>
+	/// Tests that a variable a type declares with no visibility is public, as every other member that
+	/// said none is, rather than carrying no modifier and so being private — while one that says it is
+	/// private still is, and a local in one of the type's methods still has no modifier at all.
+	/// </summary>
+	[TestMethod]
+	public void CSharp_WritesAnUnspecifiedTypeVariablePublic()
+	{
+		ClassDeclaration point = new("Point") { Kind = TypeDeclarationKind.Struct };
+		point.Members.Add(new VariableDeclaration("x", "int"));
+		point.Members.Add(new VariableDeclaration("hidden", "int") { Visibility = Visibility.Private });
+		FunctionDeclaration method = new("twice") { ReturnType = "int" };
+		method.Body.Add(new VariableDeclaration("doubled", "int", Literal.Number(0)));
+		method.Body.Add(new ReturnStatement(new VariableReference("doubled")));
+		point.Members.Add(method);
+
+		string code = new CSharpGenerator().Generate(point);
+
+		StringAssert.Contains(code, "public int x;", StringComparison.Ordinal);
+		StringAssert.Contains(code, "private int hidden;", StringComparison.Ordinal);
+		StringAssert.Contains(code, "int doubled = 0;", StringComparison.Ordinal);
+		Assert.IsFalse(code.Contains("public int doubled", StringComparison.Ordinal), code);
+	}
+
+	/// <summary>
+	/// Tests that C# compiles a struct whose variables said no visibility, built with an object
+	/// initialiser and read from outside it, which fails with CS0122 when the variables are private.
+	/// </summary>
+	[TestMethod]
+	public void CSharp_UnspecifiedTypeVariables_AreReachableFromOutsideTheType()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "dotnet") is null)
+		{
+			Assert.Inconclusive("No .NET SDK on the path, so nothing was compiled.");
+			return;
+		}
+
+		ClassDeclaration point = new("Point") { Kind = TypeDeclarationKind.Struct };
+		point.Members.Add(new VariableDeclaration("x", "int"));
+		point.Members.Add(new VariableDeclaration("y", "int"));
+
+		ConstructionExpression built = new(new TypeReference("Point"));
+		built.Arguments.Add(new MemberInitialiser("x", Literal.Number(0)));
+		built.Arguments.Add(new MemberInitialiser("y", Literal.Number(0)));
+		FunctionDeclaration origin = new("origin") { ReturnType = "Point" };
+		origin.Body.Add(new ReturnStatement(built));
+
+		FunctionDeclaration readX = new("readX") { ReturnType = "int" };
+		readX.Parameters.Add(new Parameter("p", "Point"));
+		readX.Body.Add(new ReturnStatement(new VariableReference("p.x")));
+
+		SourceFile file = new("geometry");
+		file.Members.Add(point);
+		file.Members.Add(origin);
+		file.Members.Add(readX);
+		string generated = new CSharpGenerator().Generate(file);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			File.WriteAllText(Path.Combine(directory, "Generated.csproj"), """
+				<Project Sdk="Microsoft.NET.Sdk">
+				  <PropertyGroup>
+				    <TargetFramework>net10.0</TargetFramework>
+				    <OutputType>Library</OutputType>
+				    <Nullable>disable</Nullable>
+				    <ImplicitUsings>disable</ImplicitUsings>
+				  </PropertyGroup>
+				</Project>
+				""");
+			File.WriteAllText(Path.Combine(directory, "Generated.cs"), generated);
+
+			(int exitCode, string output) = ToolchainHarness.Run("dotnet", "build -nologo", directory);
+			Assert.AreEqual(0, exitCode, $"C# rejected the generated source:{Environment.NewLine}{generated}{Environment.NewLine}{output}");
+		});
 	}
 
 	/// <summary>

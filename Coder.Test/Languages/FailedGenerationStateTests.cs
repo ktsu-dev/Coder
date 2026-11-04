@@ -25,14 +25,91 @@ public sealed class FailedGenerationStateTests
 	public void RustGenerator_AfterAFailureInsideAType_WritesWhatAFreshInstanceWrites() =>
 		AssertUnaffectedByFailure(() => new RustGenerator(), ClassWithAnUnknownOperatorDefault());
 
-	private static void AssertUnaffectedByFailure(Func<LanguageGeneratorBase> create, AstNode failing)
+	[TestMethod]
+	public void RustGenerator_AfterAFailureInsideATrait_WritesWhatAFreshInstanceWrites() =>
+		AssertUnaffectedByFailure(() => new RustGenerator(), TraitWithAnUnknownOperatorBody(), FreeFunctions);
+
+	[TestMethod]
+	public void RustGenerator_AfterAFailureInsideASpecialisation_WritesWhatAFreshInstanceWrites() =>
+		AssertUnaffectedByFailure(() => new RustGenerator(), SpecialisationWithAnUnknownOperatorBody(), FreeFunctions);
+
+	[TestMethod]
+	public void GoGenerator_AfterAFailureInsideAnInterface_WritesWhatAFreshInstanceWrites() =>
+		AssertUnaffectedByFailure(() => new GoGenerator(), InterfaceWithAnUnknownOperatorDefault(), FreeFunctions);
+
+	private static void AssertUnaffectedByFailure(Func<LanguageGeneratorBase> create, AstNode failing) =>
+		AssertUnaffectedByFailure(create, failing, FileScopeConstant);
+
+	private static void AssertUnaffectedByFailure(Func<LanguageGeneratorBase> create, AstNode failing, Func<SourceFile> next)
 	{
-		string expected = create().Generate(FileScopeConstant());
+		string expected = create().Generate(next());
 
 		LanguageGeneratorBase generator = create();
 		Assert.ThrowsExactly<NotSupportedException>(() => generator.Generate(failing), "Precondition: the document fails inside the type.");
 
-		Assert.AreEqual(expected, generator.Generate(FileScopeConstant()), generator.DisplayName);
+		Assert.AreEqual(expected, generator.Generate(next()), generator.DisplayName);
+	}
+
+	/// <summary>
+	/// A file holding a free function that returns a value and one with no statements, which a
+	/// generator that thinks it is inside a trait or an interface writes as bare signatures.
+	/// </summary>
+	private static SourceFile FreeFunctions()
+	{
+		FunctionDeclaration answer = new("Answer") { ReturnType = TypeReference.Parse("int") };
+		answer.Body.Add(new ReturnStatement(1));
+		SourceFile file = new("m");
+		file.Members.Add(answer);
+		file.Members.Add(new FunctionDeclaration("Noop"));
+		return file;
+	}
+
+	/// <summary>
+	/// An expression no generator can spell, as YAML can produce from a number.
+	/// </summary>
+	private static BinaryExpression UnknownOperator() =>
+		new(Literal.Number(1), (BinaryOperator)999, Literal.Number(2));
+
+	/// <summary>
+	/// An interface whose method returns an expression Rust refuses while writing the trait.
+	/// </summary>
+	private static SourceFile TraitWithAnUnknownOperatorBody()
+	{
+		FunctionDeclaration area = new("Area") { ReturnType = TypeReference.Parse("int") };
+		area.Body.Add(new ReturnStatement(UnknownOperator()));
+		ClassDeclaration shape = new("Shape") { Kind = TypeDeclarationKind.Interface };
+		shape.Members.Add(area);
+		SourceFile file = new("m");
+		file.Members.Add(shape);
+		return file;
+	}
+
+	/// <summary>
+	/// A specialisation whose method returns an expression Rust refuses while writing the impl.
+	/// </summary>
+	private static SourceFile SpecialisationWithAnUnknownOperatorBody()
+	{
+		FunctionDeclaration area = new("Area") { ReturnType = TypeReference.Parse("int") };
+		area.Body.Add(new ReturnStatement(UnknownOperator()));
+		ClassDeclaration describe = new("Describe") { SpecialisationArguments = { new TypeReference("Box") } };
+		describe.Members.Add(area);
+		SourceFile file = new("m");
+		file.Members.Add(describe);
+		return file;
+	}
+
+	/// <summary>
+	/// An interface whose method has a default Go refuses while writing it into a comment.
+	/// </summary>
+	private static SourceFile InterfaceWithAnUnknownOperatorDefault()
+	{
+		FunctionDeclaration area = new("Area") { ReturnType = TypeReference.Parse("int") };
+		area.Parameters.Add(new Parameter("scale", "int") { IsOptional = true, DefaultValue = UnknownOperator() });
+		ClassDeclaration shape = new("Shape") { Kind = TypeDeclarationKind.Interface };
+		shape.Members.Add(area);
+		SourceFile file = new("m");
+		file.Members.Add(shape);
+		return file;
 	}
 
 	/// <summary>
