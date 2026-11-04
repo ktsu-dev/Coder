@@ -1287,6 +1287,30 @@ public class RustGenerator : StandardLanguageGenerator
 		Ensure.NotNull(funcDecl);
 		Ensure.NotNull(code);
 
+		// A parameter is bound for its own declaration and no longer. A declaration with no body
+		// never reaches the WriteBody that clears them, and a name left behind would hide a
+		// same-named mutable static from every body written after it (#397).
+		string[] outerBound = [.. boundLocals];
+		try
+		{
+			WriteFunction(funcDecl, code, enclosingType);
+		}
+		finally
+		{
+			boundLocals.Clear();
+			boundLocals.UnionWith(outerBound);
+		}
+	}
+
+	/// <summary>
+	/// Emits a function, once <see cref="GenerateFunction"/> has scoped its parameter bindings.
+	/// </summary>
+	/// <param name="funcDecl">The declaration to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <param name="enclosingType">The name of the type it belongs to, when it belongs to one.</param>
+	private void WriteFunction(FunctionDeclaration funcDecl, CodeBlocker code, string? enclosingType)
+	{
+
 		WritePreamble(funcDecl, code, enclosingType is null ? PreambleSite.Function : PreambleSite.Method);
 
 		if (WritesDeclarationDown(funcDecl, code))
