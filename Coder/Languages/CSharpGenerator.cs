@@ -283,6 +283,15 @@ public class CSharpGenerator : LanguageGeneratorBase
 		Ensure.NotNull(assignment);
 		Ensure.NotNull(code);
 
+		if (assignment.Operator is AssignmentOperator.Assign)
+		{
+			GenerateInternal(assignment.Target, code);
+			code.Write($" {GetAssignmentOperator(assignment.Operator)} ");
+			WriteNarrowed(AssignedType(assignment.Target), assignment.Value, code);
+			EndStatement(code);
+			return;
+		}
+
 		if (assignment.Operator is not (AssignmentOperator.LeftShiftAssign or AssignmentOperator.RightShiftAssign)
 			|| !ShouldCastShiftCount(assignment.Value))
 		{
@@ -294,6 +303,108 @@ public class CSharpGenerator : LanguageGeneratorBase
 		code.Write($" {GetAssignmentOperator(assignment.Operator)} ");
 		WriteShiftCount(assignment.Value, code);
 		EndStatement(code);
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// A narrow result is cast back to the body's return type; see <see cref="WriteNarrowed"/>.
+	/// </remarks>
+	protected override void GenerateReturnStatement(ReturnStatement returnStmt, CodeBlocker code)
+	{
+		Ensure.NotNull(returnStmt);
+		Ensure.NotNull(code);
+
+		code.Write("return");
+
+		if (returnStmt.Expression is not null)
+		{
+			code.Write(" ");
+			WriteNarrowed(bodyReturnType, returnStmt.Expression, code);
+		}
+
+		EndStatement(code);
+	}
+
+	/// <summary>
+	/// Writes a value into a place of a declared type, casting it when C# has widened it to <c>int</c>.
+	/// </summary>
+	/// <param name="target">The declared type of the local, field, assignment target or return.</param>
+	/// <param name="value">The value being written there.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// C# promotes <c>short</c>, <c>ushort</c>, <c>byte</c> and <c>sbyte</c> operands to <c>int</c> for
+	/// every arithmetic, bitwise and unary operator, so <c>short c = a + b;</c> is CS0266 where every
+	/// other target compiles it (#411). Writing the cast is what a C# author does, and it keeps the
+	/// wrap-around the narrow type has in the other targets. Only an operator's result is cast: a
+	/// literal, a name or a call already has the type it is written into, or is the document's own
+	/// mismatch, and an expression into <c>int</c> or wider needs nothing.
+	/// </remarks>
+	private void WriteNarrowed(TypeReference? target, AstNode value, CodeBlocker code)
+	{
+		if (target is { IsArray: false, Indirection: TypeIndirection.None, TypeArguments.Count: 0 }
+			&& target.Name is "short" or "ushort" or "byte" or "sbyte"
+			&& PromotesToInt(value))
+		{
+			code.Write($"({MapToCSType(target)})");
+		}
+
+		GenerateInternal(value, code);
+	}
+
+	/// <summary>
+	/// Determines whether C# gives an expression's result at least the width of <c>int</c>.
+	/// </summary>
+	/// <param name="value">The expression.</param>
+	/// <returns>True for an arithmetic, bitwise or shift operator, a numeric unary one, or a conditional either of whose branches is one.</returns>
+	private static bool PromotesToInt(AstNode value) => value switch
+	{
+		BinaryExpression binary => binary.Operator is BinaryOperator.Add
+			or BinaryOperator.Subtract
+			or BinaryOperator.Multiply
+			or BinaryOperator.Divide
+			or BinaryOperator.Modulo
+			or BinaryOperator.BitwiseAnd
+			or BinaryOperator.BitwiseOr
+			or BinaryOperator.BitwiseXor
+			or BinaryOperator.LeftShift
+			or BinaryOperator.RightShift,
+		UnaryExpression unary => unary.Operator is UnaryOperator.Negate or UnaryOperator.Plus or UnaryOperator.BitwiseNot,
+		ConditionalExpression conditional => PromotesToInt(conditional.WhenTrue) || PromotesToInt(conditional.WhenFalse),
+		_ => false,
+	};
+
+	/// <summary>
+	/// Reads the declared type of the target of a plain assignment.
+	/// </summary>
+	/// <param name="target">The assignment's target.</param>
+	/// <returns>
+	/// The type of the parameter or local of the name, else of the one field the document declares
+	/// with it, or null when neither is known.
+	/// </returns>
+	private TypeReference? AssignedType(AstNode target)
+	{
+		if (target is not VariableReference { Name: string name })
+		{
+			return null;
+		}
+
+		if (shiftCountTypes.TryGetValue(name, out TypeReference? local))
+		{
+			return local;
+		}
+
+		string member = name.StartsWith("this.", StringComparison.Ordinal) ? name["this.".Length..] : name;
+		if (GenerationRoot is null || member.Contains('.', StringComparison.Ordinal))
+		{
+			return null;
+		}
+
+		TypeReference?[] fields = [.. SelfAndDescendants(GenerationRoot)
+			.OfType<FieldDeclaration>()
+			.Where(field => field.Name == member)
+			.Select(field => field.Type)
+			.Take(2)];
+		return fields.Length == 1 ? fields[0] : null;
 	}
 
 	private static bool IsShift(BinaryOperator op) => op is BinaryOperator.LeftShift or BinaryOperator.RightShift;
@@ -1265,7 +1376,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 		if (property.CanRead)
 		{
 			code.Write("get");
-			WriteAccessorBody(property.GetterBody, code);
+			WriteAccessorBody(property.GetterBody, code, property.Type);
 		}
 
 		if (property.CanWrite)
@@ -1276,7 +1387,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 			}
 
 			code.Write(setter);
-			WriteAccessorBody(property.SetterBody, code);
+			WriteAccessorBody(property.SetterBody, code, null);
 		}
 	}
 
@@ -1285,7 +1396,8 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// </summary>
 	/// <param name="body">The statements to write.</param>
 	/// <param name="code">The writer to emit into.</param>
-	private void WriteAccessorBody(Collection<AstNode> body, CodeBlocker code)
+	/// <param name="returnType">The type the accessor returns, or null for a setter.</param>
+	private void WriteAccessorBody(Collection<AstNode> body, CodeBlocker code, TypeReference? returnType)
 	{
 		code.WriteLine();
 
@@ -1297,7 +1409,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 			{
 				GenerateInternal(statement, code);
 			}
-		});
+		}, returnType);
 	}
 
 	/// <summary>
@@ -1337,7 +1449,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 		if (field.InitialValue is not null)
 		{
 			code.Write(" = ");
-			GenerateInternal(field.InitialValue, code);
+			WriteNarrowed(field.Type, field.InitialValue, code);
 		}
 
 		EndStatement(code);
@@ -1492,7 +1604,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 			{
 				GenerateInternal(statement, code);
 			}
-		});
+		}, function.ReturnType);
 	}
 
 	/// <summary>
@@ -1501,14 +1613,17 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// </summary>
 	/// <param name="scope">The declared types in scope for the body.</param>
 	/// <param name="body">What to emit in that scope.</param>
+	/// <param name="returnType">The type the body returns, or null when it returns none.</param>
 	/// <remarks>
 	/// Every body that can declare a local opens one, so a local never outlives the body that
 	/// declared it and cannot lend its type to a field of the same name (#320).
 	/// </remarks>
-	private void InShiftCountScope(Dictionary<string, TypeReference> scope, Action body)
+	private void InShiftCountScope(Dictionary<string, TypeReference> scope, Action body, TypeReference? returnType = null)
 	{
 		Dictionary<string, TypeReference> enclosingTypes = shiftCountTypes;
+		TypeReference? enclosingReturnType = bodyReturnType;
 		shiftCountTypes = scope;
+		bodyReturnType = returnType;
 
 		try
 		{
@@ -1517,6 +1632,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 		finally
 		{
 			shiftCountTypes = enclosingTypes;
+			bodyReturnType = enclosingReturnType;
 		}
 	}
 
@@ -1970,6 +2086,11 @@ public class CSharpGenerator : LanguageGeneratorBase
 	private Dictionary<string, TypeReference> shiftCountTypes = new(StringComparer.Ordinal);
 
 	/// <summary>
+	/// The return type of the body being written, for casting a narrow result back to it (#411).
+	/// </summary>
+	private TypeReference? bodyReturnType;
+
+	/// <summary>
 	/// The <see cref="LanguageGeneratorBase.GenerationNumber"/> <see cref="declaresShiftOperator"/>
 	/// was computed in. Not the root: the same root, edited in place, can gain or lose an operator
 	/// between two generations (#333).
@@ -2156,7 +2277,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 		if (varDecl.InitialValue != null)
 		{
 			code.Write(" = ");
-			GenerateInternal(varDecl.InitialValue, code);
+			WriteNarrowed(saidType, varDecl.InitialValue, code);
 		}
 
 		code.WriteLine(";");
