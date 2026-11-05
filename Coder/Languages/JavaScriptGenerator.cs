@@ -528,7 +528,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 			code.Write(" = ");
 			GenerateInternal(zero, code);
 		}
-		else if (EnumZeroMember(type) is EnumMember { Name: string member } && type?.Name is string enumName)
+		else if (type is { Name: string enumName } && EnumZeroMember(type) is EnumMember { Name: string member })
 		{
 			code.Write($" = {enumName}.{member}");
 		}
