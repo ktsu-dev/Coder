@@ -174,6 +174,15 @@ public class CGenerator : CFamilyGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
+	/// C has no static data member, so a static field is written beside the struct under the same
+	/// <c>Type_</c> prefix every lowered function takes, and a getter <c>limit()</c> beside a static
+	/// field <c>limit</c> would be a second <c>Gauge_limit</c> at file scope (#444).
+	/// </remarks>
+	protected override bool SharesNameWithGetter(AstNode member, PropertyDeclaration declaration) =>
+		member is FieldDeclaration { IsStatic: true } or FunctionDeclaration;
+
+	/// <inheritdoc/>
+	/// <remarks>
 	/// The <c>&lt;math.h&gt;</c> macros, which is why a file holding one includes it.
 	/// </remarks>
 	protected override string SpellNonFiniteDouble(double value) =>

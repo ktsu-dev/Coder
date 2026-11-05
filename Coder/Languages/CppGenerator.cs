@@ -153,7 +153,7 @@ public class CppGenerator : CFamilyGenerator
 	/// A data member and a member function of one class may not share a name, so a getter that would
 	/// take its backing field's name is <c>get_count()</c> instead.
 	/// </remarks>
-	protected override bool MemberNamesMustDiffer => true;
+	protected override bool SharesNameWithGetter(AstNode member, PropertyDeclaration declaration) => true;
 
 	/// <inheritdoc/>
 	/// <remarks>
