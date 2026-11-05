@@ -1285,16 +1285,34 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	protected virtual NamingStyle MemberNaming => NamingStyle.Camel;
 
 	/// <summary>
-	/// Gets a value indicating whether a data member and a member function of one type need
-	/// different names in this target.
+	/// Reports whether a member of a type holds its name in the scope a getter separated from one
+	/// of the type's properties is declared in.
 	/// </summary>
+	/// <param name="member">A member of the type: one written as given, or a function already
+	/// separated from an earlier property.</param>
+	/// <param name="declaration">The property whose getter is being named.</param>
+	/// <returns>True when the two would clash if they were spelled alike.</returns>
 	/// <remarks>
 	/// The question a separated property's getter has to ask, because its name is invented: a
-	/// property <c>Count</c> over a field <c>count</c> becomes <c>count()</c> in snake case, and C++
-	/// refuses a function beside a field of the same name where Rust allows it and C prefixes it out
-	/// of the way. A target that answers yes has a colliding getter spelled with a <c>get</c> prefix.
+	/// property <c>Count</c> over a field <c>count</c> becomes <c>count()</c> in snake case, and
+	/// whether that clashes depends on where each of them lands. C++ refuses a member function
+	/// beside a data member of the same name; C writes a static field and every function at file
+	/// scope under one prefix; Go writes a type's statics as package-level names; Rust puts an
+	/// associated constant in the same <c>impl</c> as the functions (#140, #444). A getter that
+	/// clashes is spelled with a <c>get</c> prefix. The default is that nothing clashes.
 	/// </remarks>
-	protected virtual bool MemberNamesMustDiffer => false;
+	protected virtual bool SharesNameWithGetter(AstNode member, PropertyDeclaration declaration) => false;
+
+	/// <summary>
+	/// Gets the form of a member's name two names are compared in when deciding whether they clash.
+	/// </summary>
+	/// <param name="name">The name as the AST holds it.</param>
+	/// <returns>The name as this target compares it; by default the name itself.</returns>
+	/// <remarks>
+	/// For a target that respells a name on the way out, such as Go capitalising the name a
+	/// package-level member is joined to its type with, so <c>limit</c> and <c>Limit</c> become one.
+	/// </remarks>
+	protected virtual string MemberNameKey(string name) => name;
 
 	/// <summary>
 	/// A type's members, with every property separated into the declarations it is made of.
@@ -1332,12 +1350,18 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 
 		separated.Members.Clear();
 
-		HashSet<string> taken = MemberNamesMustDiffer ? NamesOf(classDecl.Members) : [];
-
-		foreach (AstNode member in classDecl.Members)
+		for (int index = 0; index < classDecl.Members.Count; index++)
 		{
+			AstNode member = classDecl.Members[index];
 			if (member is PropertyDeclaration property)
 			{
+				// What is already separated, so a getter invented for an earlier property counts, and
+				// what is still to come as the user wrote it.
+				IEnumerable<AstNode> neighbours = separated.Members.Concat(classDecl.Members.Skip(index + 1));
+				HashSet<string> taken = new(
+					NamesOf(neighbours.Where(neighbour => SharesNameWithGetter(neighbour, property))).Select(MemberNameKey),
+					StringComparer.Ordinal);
+
 				foreach (AstNode part in Separate(property, taken))
 				{
 					separated.Members.Add(part);
@@ -1387,7 +1411,7 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	/// </summary>
 	/// <param name="members">The type's members.</param>
 	/// <returns>The names, including the field an automatic property becomes.</returns>
-	private static HashSet<string> NamesOf(IEnumerable<AstNode> members) =>
+	protected static HashSet<string> NamesOf(IEnumerable<AstNode> members) =>
 		new(
 			members
 				.Select(member => member switch
@@ -1407,8 +1431,8 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	/// Separates a property into the declarations it is made of.
 	/// </summary>
 	/// <param name="property">The property to separate.</param>
-	/// <param name="taken">The member names already in use where they must differ, which an invented
-	/// getter name is added to; empty where the target lets a field and a function share a name.</param>
+	/// <param name="taken">The names, compared as <see cref="MemberNameKey"/> spells them, that the
+	/// getter's scope already holds; empty where nothing can clash with it.</param>
 	/// <returns>A field, or the accessors, in the order they should be written.</returns>
 	private IEnumerable<AstNode> Separate(PropertyDeclaration property, HashSet<string> taken)
 	{
@@ -1436,12 +1460,10 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 		if (property.CanRead)
 		{
 			string getterName = property.GetterName(MemberNaming);
-			if (MemberNamesMustDiffer && taken.Contains(getterName))
+			if (taken.Contains(MemberNameKey(getterName)))
 			{
 				getterName = NameStyles.Spell($"get {property.Name ?? "value"}", MemberNaming);
 			}
-
-			taken.Add(getterName);
 
 			FunctionDeclaration getter = new(getterName)
 			{

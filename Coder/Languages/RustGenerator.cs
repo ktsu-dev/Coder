@@ -382,6 +382,15 @@ public class RustGenerator : StandardLanguageGenerator
 	protected override NamingStyle MemberNaming => NamingStyle.Snake;
 
 	/// <inheritdoc/>
+	/// <remarks>
+	/// A constant is an associated <c>const</c> in the same <c>impl</c> as every function, and two
+	/// associated items of one name are E0592, so a getter <c>limit()</c> beside a constant
+	/// <c>limit</c> is <c>get_limit()</c> (#444). A struct's fields are another namespace.
+	/// </remarks>
+	protected override bool SharesNameWithGetter(AstNode member, PropertyDeclaration declaration) =>
+		member is FieldDeclaration { IsConstant: true } or FunctionDeclaration;
+
+	/// <inheritdoc/>
 	protected override string? SpellAnnotation(Annotation annotation, PreambleSite site) => $"#[{annotation}]";
 
 	/// <summary>
