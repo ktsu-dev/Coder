@@ -254,9 +254,20 @@ public class CGenerator : CFamilyGenerator
 		// C has no generics, so what a function is written over is written down, as for a type.
 		WriteTypeParametersDown(funcDecl.TypeParameters, code);
 
-		// Internal linkage is the only privacy C has, and it is what a private function wants: the
-		// declaration is visible to this translation unit and to nothing else.
-		if (funcDecl.Visibility == Visibility.Private)
+		// A declaration with no definition is a prototype, which is all C has to offer for either of
+		// them: an abstract declaration is one an implementation must supply, and a defaulted one is
+		// one the language would have supplied had it been C++.
+		bool isPrototype = funcDecl.IsAbstract || funcDecl.Definition == FunctionDefinition.Defaulted;
+
+		// A definition in a header is made in every translation unit that includes it, and only
+		// `static inline` lets each of them have one without the program defining it twice (#423).
+		// Otherwise internal linkage is the only privacy C has, and it is what a private function
+		// wants: the declaration is visible to this translation unit and to nothing else.
+		if (WritingHeader && !isPrototype)
+		{
+			code.Write("static inline ");
+		}
+		else if (funcDecl.Visibility == Visibility.Private)
 		{
 			code.Write("static ");
 		}
@@ -267,10 +278,7 @@ public class CGenerator : CFamilyGenerator
 		code.Write(SpellFunctionName(funcDecl, enclosingType));
 		WriteParameterList(ParametersOf(funcDecl, enclosingType), code);
 
-		// A declaration with no definition is a prototype, which is all C has to offer for either of
-		// them: an abstract declaration is one an implementation must supply, and a defaulted one is
-		// one the language would have supplied had it been C++.
-		if (funcDecl.IsAbstract || funcDecl.Definition == FunctionDefinition.Defaulted)
+		if (isPrototype)
 		{
 			code.WriteLine(";");
 			return;
@@ -1150,7 +1158,10 @@ public class CGenerator : CFamilyGenerator
 
 		TypeReference type = field.Type ?? new TypeReference(UnknownTypeName);
 
-		if (field.IsConstant || field.IsStatic || field.Visibility == Visibility.Private)
+		// C has no inline variable, so a mutable one in a header is static too: every translation
+		// unit that includes the header has its own copy, which is the one way the header can define
+		// it without the program defining it twice (#423).
+		if (field.IsConstant || field.IsStatic || field.Visibility == Visibility.Private || WritingHeader)
 		{
 			code.Write("static ");
 		}

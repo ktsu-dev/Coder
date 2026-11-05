@@ -63,7 +63,12 @@ source in seven target languages. The solution uses:
   `VariableDeclaration`: a field with no initialiser is value-initialised, so a default-constructed
   instance is the one the declaration described, and a local with none is ordinary. `SourceFile`'s
   `Imports` are the one part of the AST that does not translate — a C++ include path, a C# namespace
-  and a Python module are different kinds of thing — so a file is built for a language.
+  and a Python module are different kinds of thing — so a file is built for a language. A file
+  marked `IsHeader` is included by every translation unit that uses it, so what it defines is
+  written to be defined in each of them: C++ writes free functions and namespace-scope variables
+  `inline`, and C writes functions (lowered methods included) `static inline` and mutable variables
+  `static`, one copy per translation unit, since C has no inline variable
+  (`CFamilyGenerator.WritingHeader`).
 - `Coder/Ast/FunctionKind.cs`, `FunctionDefinition.cs` — what a function declares (method,
   constructor, destructor, operator, conversion) and where its behaviour comes from (provided,
   defaulted, deleted). A declaration with no statements is otherwise ambiguous between a function
