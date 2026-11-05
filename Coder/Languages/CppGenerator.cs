@@ -792,6 +792,10 @@ public class CppGenerator : CFamilyGenerator
 
 			code.Write(SpellConstantVariableDeclarator(field));
 		}
+		else if (field.IsTypeInferred && field.InitialValue is Expression initialValue)
+		{
+			code.Write(SpellDeclarator(InferredMemberType(field, initialValue, code), field.Name));
+		}
 		else
 		{
 			code.Write(SpellVariableDeclarator(field));
@@ -804,6 +808,30 @@ public class CppGenerator : CFamilyGenerator
 		}
 
 		EndStatement(code);
+	}
+
+	/// <summary>
+	/// Reads the type a non-static data member that asked for inference is declared with.
+	/// </summary>
+	/// <param name="field">The member being emitted.</param>
+	/// <param name="initialValue">The member's initialiser.</param>
+	/// <param name="code">The writer to emit into, for a note where no type can be said.</param>
+	/// <returns>The declared type if there is one, else the type the initialiser establishes, else
+	/// <c>object</c>, which is <c>std::any</c>.</returns>
+	/// <remarks>
+	/// A non-static data member cannot be declared with the placeholder <c>auto</c>, whatever its
+	/// initialiser, so the type is said for it, as C# does for a field (#432). A <c>static constexpr</c>
+	/// member is unaffected, because <c>auto</c> is allowed there.
+	/// </remarks>
+	private TypeReference InferredMemberType(VariableDeclaration field, Expression initialValue, CodeBlocker code)
+	{
+		if ((field.Type ?? StaticType(initialValue)) is TypeReference type)
+		{
+			return type;
+		}
+
+		WriteInexpressible(code, $"{field.Name}: C++ infers no type for a non-static data member, and nothing here says one");
+		return new TypeReference("object");
 	}
 
 	/// <inheritdoc/>

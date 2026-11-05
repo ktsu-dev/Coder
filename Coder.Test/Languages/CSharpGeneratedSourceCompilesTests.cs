@@ -767,4 +767,64 @@ public class CSharpGeneratedSourceCompilesTests
 			Assert.AreEqual(0, exitCode, $"C# rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
 		});
 	}
+
+	/// <summary>
+	/// Tests that an inferred variable declared as a member of a type compiles, with the type it was
+	/// declared with or else the one its initialiser establishes (#432).
+	/// </summary>
+	/// <remarks>
+	/// <c>var</c> is only for a local, so a member written <c>var count = 0;</c> fails with CS0825.
+	/// The driver reads each member into its type, which is what holds the type that was said.
+	/// </remarks>
+	[TestMethod]
+	public void InferredTypeMembers_Compile()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "dotnet") is null)
+		{
+			Assert.Inconclusive("No dotnet on the path, so nothing was compiled.");
+			return;
+		}
+
+		SourceFile file = new("Generated");
+		file.Members.Add(InferredMembers());
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new CSharpGenerator().Generate(file);
+			File.WriteAllText(Path.Combine(directory, "Generated.csproj"), Project);
+			File.WriteAllText(
+				Path.Combine(directory, "CounterDriver.cs"),
+				"""
+				public static class CounterDriver
+				{
+					public static double Use()
+					{
+						Counter counter = new Counter();
+						int count = counter.count;
+						double ratio = counter.ratio;
+						string label = counter.label;
+						return count + ratio + label.Length;
+					}
+				}
+				""");
+			File.WriteAllText(Path.Combine(directory, "Generated.cs"), source);
+
+			(int exitCode, string output) = ToolchainHarness.Run("dotnet", "build -nologo", directory);
+			Assert.AreEqual(0, exitCode, $"C# rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+		});
+	}
+
+	/// <summary>
+	/// Builds a class whose members are inferred variables: one with no declared type, one whose
+	/// declared type is wider than its initialiser's, and one holding a string.
+	/// </summary>
+	/// <returns>The class.</returns>
+	internal static ClassDeclaration InferredMembers()
+	{
+		ClassDeclaration counter = new("Counter");
+		counter.Members.Add(new VariableDeclaration("count") { IsTypeInferred = true, InitialValue = new LiteralExpression<int>(0) });
+		counter.Members.Add(new VariableDeclaration("ratio", "double") { IsTypeInferred = true, InitialValue = new LiteralExpression<int>(1) });
+		counter.Members.Add(new VariableDeclaration("label") { IsTypeInferred = true, InitialValue = Literal.Text("c") });
+		return counter;
+	}
 }
