@@ -517,8 +517,9 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	/// <param name="type">The declared type, or null where none is declared.</param>
 	/// <param name="code">The writer to emit into.</param>
 	/// <remarks>
-	/// A type with no obvious zero is left uninitialised, so it reads as <c>undefined</c>, which is
-	/// JavaScript's own value for a property nothing has set.
+	/// An enumeration declared in the document starts at its member whose value is 0, as it does in
+	/// every typed target (#449). A type with no obvious zero is left uninitialised, so it reads as
+	/// <c>undefined</c>, which is JavaScript's own value for a property nothing has set.
 	/// </remarks>
 	private void WriteZeroInitialiser(TypeReference? type, CodeBlocker code)
 	{
@@ -526,6 +527,10 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		{
 			code.Write(" = ");
 			GenerateInternal(zero, code);
+		}
+		else if (type is { Name: string enumName } && EnumZeroMember(type) is EnumMember { Name: string member })
+		{
+			code.Write($" = {enumName}.{member}");
 		}
 	}
 
