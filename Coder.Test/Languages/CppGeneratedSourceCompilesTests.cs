@@ -1,4 +1,4 @@
-// Copyright (c) 2023-2026 ktsu-dev contributors
+﻿// Copyright (c) 2023-2026 ktsu-dev contributors
 
 namespace ktsu.Coder.Test.Languages;
 
@@ -207,6 +207,7 @@ public class CppGeneratedSourceCompilesTests
 		file.Members.Add(CounterOverBackingField());
 		string header = new CppGenerator().Generate(file);
 
+		// The driver includes <string> ahead of the header: that a string member brings no include is #334.
 		ToolchainHarness.InTemporaryDirectory(directory =>
 		{
 			File.WriteAllText(Path.Combine(directory, "counter.h"), header);
@@ -501,6 +502,45 @@ public class CppGeneratedSourceCompilesTests
 				directory);
 
 			Assert.AreEqual(0, exitCode, $"{compiler} rejected the generated constants:{Environment.NewLine}{output}{Environment.NewLine}{header}");
+		});
+	}
+
+	/// <summary>
+	/// Tests that an inferred variable declared as a member of a type compiles, with the type it was
+	/// declared with or else the one its initialiser establishes (#432).
+	/// </summary>
+	/// <remarks>
+	/// A non-static data member cannot be declared <c>auto</c>, whatever its initialiser. The driver
+	/// binds each member to a reference of its type, which only compiles where that type was said.
+	/// </remarks>
+	[TestMethod]
+	public void AnInferredDataMemberCompiles()
+	{
+		string? compiler = ToolchainHarness.FindOnPath("--version", Compilers);
+		if (compiler is null)
+		{
+			Assert.Inconclusive("No C++ compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		SourceFile file = new("counter") { IsHeader = true };
+		file.Members.Add(CSharpGeneratedSourceCompilesTests.InferredMembers());
+		string header = new CppGenerator().Generate(file);
+
+		// The driver includes <string> ahead of the header: that a string member brings no include is #334.
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			File.WriteAllText(Path.Combine(directory, "counter.h"), header);
+			File.WriteAllText(
+				Path.Combine(directory, "driver.cpp"),
+				"#include <string>\n#include \"counter.h\"\n\nint main()\n{\n\tCounter counter;\n\tint& count = counter.count;\n\tdouble& ratio = counter.ratio;\n\tstd::string& label = counter.label;\n\treturn count + static_cast<int>(ratio) + static_cast<int>(label.size()) - 2;\n}\n");
+
+			(int exitCode, string output) = ToolchainHarness.Run(
+				compiler,
+				"-std=c++20 -Wall -Wextra -pedantic -c driver.cpp -o driver.o",
+				directory);
+
+			Assert.AreEqual(0, exitCode, $"{compiler} rejected the generated header:{Environment.NewLine}{output}{Environment.NewLine}{header}");
 		});
 	}
 }
