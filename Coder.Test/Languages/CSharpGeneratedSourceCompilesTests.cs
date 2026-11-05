@@ -637,7 +637,7 @@ public class CSharpGeneratedSourceCompilesTests
 			{
 				Packet packet = new();
 				packet.Bump();
-				return (short)(Globals.F(a, b, u) + packet.Count + packet.Doubled + packet.Half);
+				return (short)(Globals.F(a, b, u) + packet.Count + packet.Doubled + packet.Half + Globals.G(a, b, true) + new Pair(a, b).lo);
 			}
 		}
 		""";
@@ -646,7 +646,9 @@ public class CSharpGeneratedSourceCompilesTests
 	/// Tests that arithmetic, bitwise and unary results on <c>short</c> and <c>byte</c> written back
 	/// into a local, a field, an assignment and a return compile, which C#'s promotion to <c>int</c>
 	/// rejects with CS0266 unless the result is cast (#411), and that a result into <c>int</c> is not
-	/// cast.
+	/// cast. So do the same results passed as a call's argument, given to a member in an object
+	/// initialiser or a constructor's initialisers, and a non-constant conditional of two
+	/// <c>int</c> literals into a <c>short</c> (#448).
 	/// </summary>
 	[TestMethod]
 	public void NarrowArithmetic_Compiles()
@@ -686,9 +688,40 @@ public class CSharpGeneratedSourceCompilesTests
 			GetterBody = { new ReturnStatement(new BinaryExpression(new VariableReference("Base"), BinaryOperator.RightShift, Literal.Number(1))) },
 		});
 
+		// struct Pair { public short lo; public Pair(short a, short b) : lo(a + b) {} }
+		ClassDeclaration pair = new("Pair") { Kind = TypeDeclarationKind.Struct };
+		pair.Members.Add(new FieldDeclaration("lo", new TypeReference("short")) { Visibility = Visibility.Public });
+		FunctionDeclaration pairConstructor = new("Pair") { Kind = FunctionKind.Constructor, Visibility = Visibility.Public };
+		pairConstructor.Parameters.Add(new Parameter("a", "short"));
+		pairConstructor.Parameters.Add(new Parameter("b", "short"));
+		pairConstructor.Initialisers.Add(new MemberInitialiser("lo", new BinaryExpression(new VariableReference("a"), BinaryOperator.Add, new VariableReference("b"))));
+		pair.Members.Add(pairConstructor);
+
+		// short take(short v) { return v; }
+		FunctionDeclaration take = new("take") { ReturnType = "short" };
+		take.Parameters.Add(new Parameter("v", "short"));
+		take.Body.Add(new ReturnStatement(new VariableReference("v")));
+
+		// short G(short a, short b, bool flag) { short t = take(a + b); Pair pr = new Pair { lo = a + b }; short s = flag ? 1 : 2; return s; }
+		FunctionDeclaration g = new("G") { ReturnType = "short" };
+		g.Parameters.Add(new Parameter("a", "short"));
+		g.Parameters.Add(new Parameter("b", "short"));
+		g.Parameters.Add(new Parameter("flag", "bool"));
+		CallExpression takeCall = new("take");
+		takeCall.Arguments.Add(new BinaryExpression(new VariableReference("a"), BinaryOperator.Add, new VariableReference("b")));
+		g.Body.Add(new VariableDeclaration("t", "short", takeCall));
+		ConstructionExpression pairInit = new(new TypeReference("Pair"));
+		pairInit.Arguments.Add(new MemberInitialiser("lo", new BinaryExpression(new VariableReference("a"), BinaryOperator.Add, new VariableReference("b"))));
+		g.Body.Add(new VariableDeclaration("pr", "Pair", pairInit));
+		g.Body.Add(new VariableDeclaration("s", "short", new ConditionalExpression(new VariableReference("flag"), Literal.Number(1), Literal.Number(2))));
+		g.Body.Add(new ReturnStatement(new BinaryExpression(new VariableReference("s"), BinaryOperator.Add, new VariableReference("t"))));
+
 		SourceFile file = new("Generated");
 		file.Members.Add(f);
+		file.Members.Add(take);
+		file.Members.Add(g);
 		file.Members.Add(packet);
+		file.Members.Add(pair);
 
 		ToolchainHarness.InTemporaryDirectory(directory =>
 		{
