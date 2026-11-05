@@ -610,9 +610,10 @@ public class CSharpGenerator : LanguageGeneratorBase
 		// the type makes about itself, then the permission to declare the rest of it elsewhere, then
 		// what kind of type it is. A record is written before the keyword rather than instead of it,
 		// which is what makes `record struct` reachable.
+		WriteForbiddenAccessNote(classDecl, classDecl.Visibility, TypeMemberOwner(classDecl), classDecl.Name ?? "UnnamedClass", code);
 		string[] modifiers =
 		[
-			SpellVisibility(classDecl.Visibility) ?? DefaultVisibility,
+			SpellAccess(classDecl, classDecl.Visibility, TypeMemberOwner(classDecl)),
 			.. IsAbstractClass(classDecl) ? (string[])["abstract"] : [],
 			.. isReadOnlyStruct ? (string[])["readonly"] : [],
 			.. classDecl.IsPartial ? (string[])["partial"] : [],
@@ -658,7 +659,9 @@ public class CSharpGenerator : LanguageGeneratorBase
 				}
 				else if (member is not UsingAlias)
 				{
+					ClassDeclaration? enclosingOwner = typeMemberOwner;
 					typeMember = member;
+					typeMemberOwner = classDecl;
 					try
 					{
 						GenerateInternal(member, code);
@@ -666,6 +669,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 					finally
 					{
 						typeMember = null;
+						typeMemberOwner = enclosingOwner;
 					}
 				}
 			}
@@ -1334,8 +1338,9 @@ public class CSharpGenerator : LanguageGeneratorBase
 	private void GenerateEnum(EnumDeclaration enumDecl, CodeBlocker code)
 	{
 		WritePreamble(enumDecl, code, PreambleSite.Enum);
+		WriteForbiddenAccessNote(enumDecl, enumDecl.Visibility, TypeMemberOwner(enumDecl), enumDecl.Name ?? "UnnamedEnum", code);
 
-		code.Write($"{SpellVisibility(enumDecl.Visibility) ?? DefaultVisibility} enum {enumDecl.Name ?? "UnnamedEnum"}");
+		code.Write($"{SpellAccess(enumDecl, enumDecl.Visibility, TypeMemberOwner(enumDecl))} enum {enumDecl.Name ?? "UnnamedEnum"}");
 
 		if (enumDecl.UnderlyingType is TypeReference underlying)
 		{
@@ -1375,7 +1380,8 @@ public class CSharpGenerator : LanguageGeneratorBase
 		string type = property.Type is TypeReference declared ? MapToCSType(declared) : "object";
 		string modifiers = property.IsStatic ? " static" : string.Empty;
 
-		code.Write($"{SpellVisibility(property.Visibility) ?? DefaultVisibility}{modifiers} {type} {EscapeIdentifier(property.Name ?? "Value")}");
+		WriteForbiddenAccessNote(property, property.Visibility, TypeMemberOwner(property), property.Name ?? "Value", code);
+		code.Write($"{SpellAccess(property, property.Visibility, TypeMemberOwner(property))}{modifiers} {type} {EscapeIdentifier(property.Name ?? "Value")}");
 
 		// init rather than set where the declaration asked for it: the two differ only in when the
 		// call is legal, and nothing else here has a word for the difference. A readonly struct asks
@@ -1446,8 +1452,9 @@ public class CSharpGenerator : LanguageGeneratorBase
 	private void GenerateField(FieldDeclaration field, CodeBlocker code)
 	{
 		WritePreamble(field, code, PreambleSite.Field);
+		WriteForbiddenAccessNote(field, field.Visibility, TypeMemberOwner(field), field.Name ?? "unnamed", code);
 
-		code.Write($"{SpellVisibility(field.Visibility) ?? DefaultVisibility} ");
+		code.Write($"{SpellAccess(field, field.Visibility, TypeMemberOwner(field))} ");
 
 		// static readonly rather than const: const is legal only for the primitives and strings,
 		// and a generated table is neither. The two mean the same thing to a reader and only one of
@@ -1717,6 +1724,14 @@ public class CSharpGenerator : LanguageGeneratorBase
 			return false;
 		}
 
+		// The access modifier is said where C# allows it, as SpellAccessModifier spells it (#428).
+		if (!IsOperator(function)
+			&& function.Kind != FunctionKind.Destructor
+			&& OverrideObstacle(function, enclosingType) != OverrideObstacleKind.Private)
+		{
+			WriteForbiddenAccessNote(function, function.Visibility, enclosingType, name, code);
+		}
+
 		// C++ lets a member operator be private, protected or virtual; a C# operator is public and
 		// static and nothing else, so what it asked for is written down rather than lost.
 		if (IsOperator(function))
@@ -1966,7 +1981,97 @@ public class CSharpGenerator : LanguageGeneratorBase
 
 		return function.Kind == FunctionKind.Destructor
 			? null
-			: SpellVisibility(function.Visibility) ?? DefaultVisibility;
+			: SpellAccess(function, function.Visibility, enclosingType);
+	}
+
+	/// <summary>
+	/// The type whose members are being written, while one of its members other than a function is.
+	/// </summary>
+	/// <remarks>
+	/// Set beside <see cref="typeMember"/>, and restored rather than cleared, so a member of a nested
+	/// type is read against the nested type and the members after it against the outer one.
+	/// </remarks>
+	private ClassDeclaration? typeMemberOwner;
+
+	/// <summary>
+	/// Reads the type a declaration is a member of, for a declaration that is not a function.
+	/// </summary>
+	/// <param name="declaration">The declaration being emitted.</param>
+	/// <returns>The enclosing type, or null when the declaration is not a member of one.</returns>
+	private ClassDeclaration? TypeMemberOwner(AstNode declaration) =>
+		ReferenceEquals(declaration, typeMember) ? typeMemberOwner : null;
+
+	/// <summary>
+	/// Spells the access modifier a declaration is written with, where it stands.
+	/// </summary>
+	/// <param name="declaration">The declaration being emitted.</param>
+	/// <param name="visibility">The visibility it was given.</param>
+	/// <param name="enclosingType">The type it is a member of, when it is a member of one.</param>
+	/// <returns>The modifier.</returns>
+	/// <remarks>
+	/// What it was given, or public where it was given nothing, unless C# forbids that modifier where
+	/// the declaration stands; see <see cref="ForbiddenAccess"/>.
+	/// </remarks>
+	private string SpellAccess(AstNode declaration, Visibility visibility, ClassDeclaration? enclosingType) =>
+		ForbiddenAccess(declaration, visibility, enclosingType) is (_, string allowed)
+			? allowed
+			: SpellVisibility(visibility) ?? DefaultVisibility;
+
+	/// <summary>
+	/// Writes down an access modifier C# forbids where the declaration stands, and what it is instead.
+	/// </summary>
+	/// <param name="declaration">The declaration being emitted.</param>
+	/// <param name="visibility">The visibility it was given.</param>
+	/// <param name="enclosingType">The type it is a member of, when it is a member of one.</param>
+	/// <param name="name">The name it is written under.</param>
+	/// <param name="code">The writer to emit into.</param>
+	private void WriteForbiddenAccessNote(AstNode declaration, Visibility visibility, ClassDeclaration? enclosingType, string name, CodeBlocker code)
+	{
+		if (ForbiddenAccess(declaration, visibility, enclosingType) is (string reason, string allowed))
+		{
+			WriteInexpressible(code, $"{SpellVisibility(visibility)}: {name} is {allowed}, because {reason}");
+		}
+	}
+
+	/// <summary>
+	/// Determines whether C# forbids a declaration's access modifier where the declaration stands.
+	/// </summary>
+	/// <param name="declaration">The declaration being emitted.</param>
+	/// <param name="visibility">The visibility it was given.</param>
+	/// <param name="enclosingType">The type it is a member of, when it is a member of one.</param>
+	/// <returns>Why the modifier is forbidden and the one written instead, or null when it is allowed.</returns>
+	/// <remarks>
+	/// An AST that is valid for C++ can carry a modifier in a position C# refuses (#428):
+	/// <list type="bullet">
+	/// <item>A type in a namespace or file may be only public or internal (CS1527). A private or
+	/// protected one is internal, C#'s closest assembly-local access.</item>
+	/// <item>A member of a namespace or file is held in a static class, which cannot have protected
+	/// members (CS1057). It is internal, so the types beside it in the namespace still reach it.</item>
+	/// <item>A struct cannot be derived from, so a protected member of one (CS0666) is private, which is
+	/// all protected means where there can be no derived type.</item>
+	/// </list>
+	/// Members of classes and interfaces are written as they were given. An operator is public whatever
+	/// it was given, and says so where it is written.
+	/// </remarks>
+	private (string Reason, string Allowed)? ForbiddenAccess(AstNode declaration, Visibility visibility, ClassDeclaration? enclosingType)
+	{
+		bool isType = declaration is ClassDeclaration or EnumDeclaration;
+		if (isType && enclosingType is null && visibility is Visibility.Private or Visibility.Protected)
+		{
+			return ("C# declares a type outside a type only public or internal", "internal");
+		}
+
+		if (ReferenceEquals(declaration, heldMember) && visibility == Visibility.Protected)
+		{
+			return ("the static class C# holds it in cannot have protected members", "internal");
+		}
+
+		if (enclosingType?.Kind == TypeDeclarationKind.Struct && visibility == Visibility.Protected)
+		{
+			return ("a C# struct cannot be derived from", "private");
+		}
+
+		return null;
 	}
 
 	/// <summary>
@@ -2269,7 +2374,12 @@ public class CSharpGenerator : LanguageGeneratorBase
 			WriteInexpressible(code, $"{varDecl.Name}: C# infers a type only from an initialiser, and nothing here says one");
 			type = UnknownTypeName;
 		}
-		if ((isField ? SpellVisibility(varDecl.Visibility) ?? DefaultVisibility : SpellVisibility(varDecl.Visibility)) is string modifier)
+		if (isField)
+		{
+			WriteForbiddenAccessNote(varDecl, varDecl.Visibility, TypeMemberOwner(varDecl), varDecl.Name, code);
+		}
+
+		if ((isField ? SpellAccess(varDecl, varDecl.Visibility, TypeMemberOwner(varDecl)) : SpellVisibility(varDecl.Visibility)) is string modifier)
 		{
 			code.Write($"{modifier} ");
 		}
