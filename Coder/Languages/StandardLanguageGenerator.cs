@@ -530,6 +530,10 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 				or BinaryOperator.LogicalAnd
 				or BinaryOperator.LogicalOr:
 				return new TypeReference("bool");
+			case BinaryExpression { Operator: BinaryOperator.LeftShift or BinaryOperator.RightShift } shift:
+				// A shift has its left operand's type in every target: the count does not widen the
+				// value it shifts (#362).
+				return StaticType(shift.Left);
 			case BinaryExpression binary:
 				return Promoted(StaticType(binary.Left), StaticType(binary.Right));
 			case VariableReference reference:
