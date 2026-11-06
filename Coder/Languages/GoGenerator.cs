@@ -310,10 +310,13 @@ public class GoGenerator : StandardLanguageGenerator
 		Ensure.NotNull(code);
 		if (floatingType == "double")
 		{
+			// math.Mod takes float64 alone, and Go converts nothing implicitly, so an int or a
+			// float32 operand is widened here as the float32 path below widens both (#376).
+			TypeReference float64 = new("double");
 			code.Write("math.Mod(");
-			GenerateInternal(dividend, code);
+			GenerateWidenedTo(dividend, float64, code);
 			code.Write(", ");
-			GenerateInternal(divisor, code);
+			GenerateWidenedTo(divisor, float64, code);
 			code.Write(")");
 			return;
 		}

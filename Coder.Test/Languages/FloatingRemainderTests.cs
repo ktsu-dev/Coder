@@ -60,6 +60,20 @@ public class FloatingRemainderTests
 	}
 
 	/// <summary>
+	/// Tests that Go widens an <c>int</c> or <c>float32</c> operand of a <c>float64</c> remainder,
+	/// and of a <c>float64</c> <c>%=</c>, because <c>math.Mod</c> takes <c>float64</c> alone (#376).
+	/// </summary>
+	[TestMethod]
+	public void Go_MixedOperandsOfADoubleRemainderAreWidened()
+	{
+		string code = new GoGenerator().Generate(FileOfMixedRemainders());
+
+		StringAssert.Contains(code, "math.Mod(float64(x), d)", StringComparison.Ordinal, code);
+		StringAssert.Contains(code, "r = math.Mod(r, float64(i))", StringComparison.Ordinal, code);
+		StringAssert.Contains(code, "math.Mod(float64(i), d)", StringComparison.Ordinal, code);
+	}
+
+	/// <summary>
 	/// Tests that a file taking a floating remainder includes or imports the call's declaration once,
 	/// and that one taking only integer remainders does not.
 	/// </summary>
@@ -119,7 +133,7 @@ public class FloatingRemainderTests
 			return;
 		}
 
-		SourceFile[] files = [FileOfRemainders(), FileOfIntegerRemainders(), FileOfAccessorRemainder(), FileOfEntryPointRemainder()];
+		SourceFile[] files = [FileOfRemainders(), FileOfIntegerRemainders(), FileOfMixedRemainders(), FileOfAccessorRemainder(), FileOfEntryPointRemainder()];
 		foreach (SourceFile file in files)
 		{
 			ToolchainHarness.InTemporaryDirectory(directory =>
@@ -236,6 +250,29 @@ public class FloatingRemainderTests
 		SourceFile file = new("remainders");
 		file.Members.Add(Remainder("wrap", "int"));
 		file.Members.Add(CompoundRemainder("accumulate", "int"));
+		return file;
+	}
+
+	/// <summary>
+	/// Builds <c>double rem(float x, double d, int i) { double r = x % d; r %= i; return r + (i % d); }</c>,
+	/// whose remainders each mix a <c>double</c> with a narrower operand (#376).
+	/// </summary>
+	private static SourceFile FileOfMixedRemainders()
+	{
+		FunctionDeclaration function = new("rem") { ReturnType = new TypeReference("double") };
+		function.Parameters.Add(new Parameter("x", "float"));
+		function.Parameters.Add(new Parameter("d", "double"));
+		function.Parameters.Add(new Parameter("i", "int"));
+		function.Body.Add(new VariableDeclaration("r", "double", new BinaryExpression(
+			new VariableReference("x"), BinaryOperator.Modulo, new VariableReference("d"))));
+		function.Body.Add(new AssignmentStatement(new VariableReference("r"), new VariableReference("i"), AssignmentOperator.ModuloAssign));
+		function.Body.Add(new ReturnStatement(new BinaryExpression(
+			new VariableReference("r"),
+			BinaryOperator.Add,
+			new BinaryExpression(new VariableReference("i"), BinaryOperator.Modulo, new VariableReference("d")))));
+
+		SourceFile file = new("remainders");
+		file.Members.Add(function);
 		return file;
 	}
 
