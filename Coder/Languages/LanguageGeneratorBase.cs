@@ -911,7 +911,7 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 			code.Write(SpellMemberAccess(callExpr.Receiver));
 		}
 
-		code.Write(SpellCallee(callExpr.Callee));
+		code.Write(callExpr.Receiver is not null && !EscapesMemberNames ? callExpr.Callee : SpellCallee(callExpr.Callee));
 		code.Write("(");
 		for (int index = 0; index < callExpr.Arguments.Count; index++)
 		{
@@ -1214,6 +1214,18 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	protected virtual bool IsReceiverWord(string word) => false;
 
 	/// <summary>
+	/// Gets whether a member's name, where it follows a <c>.</c>, is escaped like any other name.
+	/// </summary>
+	/// <remarks>
+	/// True by default, because most targets reserve a keyword everywhere: C++ cannot read
+	/// <c>holder.default</c>, so the member is declared <c>default_</c> and every access says so.
+	/// A target that accepts a keyword as a member name after a <c>.</c> — JavaScript reads
+	/// <c>holder.default</c> and <c>this.delete()</c> as written — returns false, and then only the
+	/// names a keyword would bind are escaped: what leads a reference, and a call with no receiver.
+	/// </remarks>
+	protected virtual bool EscapesMemberNames => true;
+
+	/// <summary>
 	/// Spells a reference so any segment naming a declared member escapes as its declaration did.
 	/// </summary>
 	/// <param name="reference">The reference's text, possibly a dotted member access such as <c>self.type</c>.</param>
@@ -1237,6 +1249,11 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 		string[] segments = reference.Split('.');
 		for (int i = 0; i < segments.Length; i++)
 		{
+			if (i > 0 && !EscapesMemberNames)
+			{
+				continue;
+			}
+
 			string[] path = segments[i].Split("::");
 			if (path.Length > 1)
 			{
@@ -1270,17 +1287,30 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// keyword. A callee is otherwise text and stays verbatim: C++'s <c>sizeof</c> and <c>delete</c>
 	/// are reserved but not declared, and escaping them would break the call. Any function or method
 	/// of the name counts, whatever its receiver, because every one of them was escaped the same way
-	/// and no target accepts the bare keyword as a callee.
+	/// and no target accepts the bare keyword as a callee. A target that does not escape member names
+	/// (<see cref="EscapesMemberNames"/>) counts only free functions, since only they were escaped.
 	/// </remarks>
 	protected string SpellCallee(string callee)
 	{
 		Ensure.NotNull(callee);
 
-		return ReservedWords.Contains(callee)
-			&& GenerationRoot is AstNode root
-			&& SelfAndDescendants(root).OfType<FunctionDeclaration>().Any(function => function.Name == callee)
-			? EscapeIdentifier(callee)
-			: callee;
+		if (!ReservedWords.Contains(callee) || GenerationRoot is not AstNode root)
+		{
+			return callee;
+		}
+
+		IEnumerable<FunctionDeclaration> functions = SelfAndDescendants(root).OfType<FunctionDeclaration>();
+		if (!EscapesMemberNames)
+		{
+			// A method keeps its keyword name, so only a free function was escaped where it was declared.
+			HashSet<FunctionDeclaration> methods = SelfAndDescendants(root)
+				.OfType<ClassDeclaration>()
+				.SelectMany(type => type.Members.OfType<FunctionDeclaration>())
+				.ToHashSet<FunctionDeclaration>(ReferenceEqualityComparer.Instance);
+			functions = functions.Where(function => !methods.Contains(function));
+		}
+
+		return functions.Any(function => function.Name == callee) ? EscapeIdentifier(callee) : callee;
 	}
 
 	/// <summary>
