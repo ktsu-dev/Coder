@@ -213,9 +213,13 @@ public class CSharpGenerator : LanguageGeneratorBase
 
 	/// <inheritdoc/>
 	/// <remarks>
-	/// The reserved keywords. The contextual ones — <c>var</c>, <c>value</c>, <c>where</c>,
-	/// <c>record</c>, <c>nameof</c> and the rest — are keywords only where the grammar expects one
-	/// and are legal names everywhere else, so they are left alone.
+	/// The reserved keywords, and <c>field</c>. The other contextual ones — <c>var</c>, <c>value</c>,
+	/// <c>where</c>, <c>record</c>, <c>nameof</c> and the rest — are keywords only where the grammar
+	/// expects one and are legal names everywhere else, so they are left alone. <c>field</c> is not:
+	/// since C# 14, inside a property accessor it names the property's synthesized backing field, so
+	/// a member named <c>field</c> read there silently reads that instead (CS9258) and a local of
+	/// that name fails to compile (CS9273). <c>@field</c> is the same identifier everywhere, so it is
+	/// escaped everywhere rather than only inside accessors, and a declaration and its uses agree.
 	/// </remarks>
 	protected override IReadOnlySet<string> ReservedWords { get; } = new HashSet<string>(StringComparer.Ordinal)
 	{
@@ -226,6 +230,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 		"override", "params", "private", "protected", "public", "readonly", "ref", "return", "sbyte", "sealed",
 		"short", "sizeof", "stackalloc", "static", "string", "struct", "switch", "this", "throw", "true", "try",
 		"typeof", "uint", "ulong", "unchecked", "unsafe", "ushort", "using", "virtual", "void", "volatile", "while",
+		"field",
 	};
 
 	/// <inheritdoc/>
