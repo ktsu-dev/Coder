@@ -272,15 +272,20 @@ public class CppGenerator : CFamilyGenerator
 			return false;
 		}
 
-		string? obstacle = enclosingType is null
-			? "is not a member of a class"
-			: funcDecl.Kind == FunctionKind.Constructor
-				? "is a constructor"
-				: funcDecl.IsStatic
-					? "is static"
-					: null;
-
-		if (obstacle is null)
+		string obstacle;
+		if (enclosingType is null)
+		{
+			obstacle = "is not a member of a class";
+		}
+		else if (funcDecl.Kind == FunctionKind.Constructor)
+		{
+			obstacle = "is a constructor";
+		}
+		else if (funcDecl.IsStatic)
+		{
+			obstacle = "is static";
+		}
+		else
 		{
 			return true;
 		}
