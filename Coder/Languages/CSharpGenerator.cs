@@ -1761,8 +1761,20 @@ public class CSharpGenerator : LanguageGeneratorBase
 			case OverrideObstacleKind.Struct when function.IsAbstract:
 				WriteInexpressible(code, $"{name} is abstract, which a C# struct cannot declare: nothing can derive from it to supply a body.");
 				return false;
+			case OverrideObstacleKind.Constructor when function.IsAbstract:
+				WriteInexpressible(code, $"{name} is an abstract constructor, which C# cannot declare: a constructor is never overridden, so it has no body to declare.");
+				return false;
+			case OverrideObstacleKind.Destructor when function.IsAbstract:
+				WriteInexpressible(code, $"{name} is an abstract destructor, which C# cannot declare: a finalizer is never overridden, so it has no body to declare.");
+				return false;
 			case OverrideObstacleKind.Static:
 				WriteInexpressible(code, $"{modifier}: {name} is static, which C# cannot override outside an interface");
+				return true;
+			case OverrideObstacleKind.Constructor:
+				WriteInexpressible(code, $"{modifier}: {name} is a constructor, which C# never overrides");
+				return true;
+			case OverrideObstacleKind.Destructor:
+				WriteInexpressible(code, $"{modifier}: {name} is a finalizer, which C# chains to its base without being overridden");
 				return true;
 			case OverrideObstacleKind.Struct:
 				WriteInexpressible(code, $"{modifier}: {name} belongs to a struct, which C# cannot derive from");
@@ -1786,6 +1798,12 @@ public class CSharpGenerator : LanguageGeneratorBase
 
 		/// <summary>The member is private, which nothing outside the type can override (CS0621).</summary>
 		Private,
+
+		/// <summary>The member is a constructor, which C# never overrides (CS0106).</summary>
+		Constructor,
+
+		/// <summary>The member is a destructor, a finalizer C# chains to its base itself (CS0106).</summary>
+		Destructor,
 	}
 
 	/// <summary>
@@ -1807,6 +1825,18 @@ public class CSharpGenerator : LanguageGeneratorBase
 			|| enclosingType?.Kind == TypeDeclarationKind.Interface)
 		{
 			return null;
+		}
+
+		// A C++ base class's destructor is virtual by convention, and a constructor may be marked so by
+		// mistake; C# accepts the modifier on neither (CS0106).
+		if (function.Kind == FunctionKind.Constructor)
+		{
+			return OverrideObstacleKind.Constructor;
+		}
+
+		if (function.Kind == FunctionKind.Destructor)
+		{
+			return OverrideObstacleKind.Destructor;
 		}
 
 		if (function.IsStatic || ReferenceEquals(function, heldMember))
@@ -1908,7 +1938,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 		}
 
 		// An operator outside an interface can be neither virtual nor abstract (CS0106), and neither
-		// can a static or struct member (CS0112, CS0106); the note written above the declaration says
+		// can a static or struct member, a constructor or a destructor (CS0112, CS0106); the note written above the declaration says
 		// what was dropped. A private one is written protected instead, so it keeps its modifier.
 		bool canOverride = (!IsOperator(function) || enclosingType?.Kind == TypeDeclarationKind.Interface)
 			&& OverrideObstacle(function, enclosingType) is null or OverrideObstacleKind.Private;
