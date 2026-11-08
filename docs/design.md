@@ -37,9 +37,15 @@ functionDeclaration:
       defaultValue: false
   body:
     - returnStatement:
-        leaf:
-          value: "a + b"
-          type: "String"
+        expression:
+          binaryExpression:
+            left:
+              variableReference:
+                name: "a"
+            operator: "Add"
+            right:
+              variableReference:
+                name: "b"
 ```
 
 ### Core Components
@@ -208,7 +214,8 @@ var function = new FunctionDeclaration("calculate_sum")
 
 function.Parameters.Add(new Parameter("a", "int"));
 function.Parameters.Add(new Parameter("b", "int"));
-function.Body.Add(new ReturnStatement(new AstLeafNode<string>("a + b")));
+function.Body.Add(new ReturnStatement(
+    new BinaryExpression(new VariableReference("a"), BinaryOperator.Add, new VariableReference("b"))));
 
 // Serialize to YAML
 var serializer = new YamlSerializer();

@@ -261,7 +261,8 @@ function.Parameters.Add(new Parameter("debug", "bool")
 });
 
 // Add function body
-function.Body.Add(new ReturnStatement(new AstLeafNode<string>("a + b")));
+function.Body.Add(new ReturnStatement(
+    new BinaryExpression(new VariableReference("a"), BinaryOperator.Add, new VariableReference("b"))));
 ```
 
 ### Serializing to YAML
@@ -276,21 +277,28 @@ Output:
 
 ```yaml
 functionDeclaration:
-    name: calculate_sum
-    returnType: int
-    parameters:
-        - name: a
-          type: int
-        - name: b
-          type: int
-        - name: debug
-          type: bool
-          isOptional: true
-          defaultValue: false
-    body:
-        - returnStatement:
-              expression:
-                  Leaf<String>: a + b
+  name: calculate_sum
+  returnType: int
+  parameters:
+  - name: a
+    type: int
+  - name: b
+    type: int
+  - name: debug
+    type: bool
+    isOptional: true
+    defaultValue: "false"
+  body:
+  - returnStatement:
+      expression:
+        binaryExpression:
+          left:
+            variableReference:
+              name: a
+          operator: Add
+          right:
+            variableReference:
+              name: b
 ```
 
 ### Generating Code
@@ -305,7 +313,7 @@ Output:
 
 ```python
 def calculate_sum(a: int, b: int, debug: bool = False) -> int:
-    return "a + b"
+    return (a + b)
 ```
 
 ### Round-trip Serialization

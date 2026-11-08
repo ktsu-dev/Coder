@@ -1,4 +1,4 @@
-// Copyright (c) 2023-2026 ktsu-dev contributors
+﻿// Copyright (c) 2023-2026 ktsu-dev contributors
 
 namespace ktsu.Coder.Cli;
 
@@ -99,7 +99,12 @@ public static class CoderCLI
 #pragma warning restore CA1031 // Do not catch general exception types
 	}
 
-	private static FunctionDeclaration CreateSampleFunction()
+	/// <summary>
+	/// Builds the sample function the CLI demonstrates: <c>calculate_sum(a, b, include_debug)</c>,
+	/// which returns the sum of its two integer arguments.
+	/// </summary>
+	/// <returns>The function declaration.</returns>
+	public static FunctionDeclaration CreateSampleFunction()
 	{
 		FunctionDeclaration function = new("calculate_sum")
 		{
@@ -112,7 +117,10 @@ public static class CoderCLI
 		function.Parameters.Add(new Parameter("include_debug", "bool") { IsOptional = true, DefaultValue = Literal.Bool(false) });
 
 		// Add function body
-		function.Body.Add(new ReturnStatement(new AstLeafNode<string>("a + b")));
+		// An expression, not text: a string leaf is written as a string literal, so the function
+		// would return the text "a + b" rather than the sum.
+		function.Body.Add(new ReturnStatement(
+			new BinaryExpression(new VariableReference("a"), BinaryOperator.Add, new VariableReference("b"))));
 
 		return function;
 	}
