@@ -105,6 +105,7 @@ public class CGenerator : CFamilyGenerator
 		{ "sbyte", "signed char" },
 		{ "float", "float" },
 		{ "double", "double" },
+		{ "decimal", "double" },
 		{ "bool", "bool" },
 		{ "void", "void" },
 		{ "object", "void*" },

@@ -146,6 +146,8 @@ public class GoGenerator : StandardLanguageGenerator
 		{ "sbyte", "int8" },
 		{ "float", "float32" },
 		{ "double", "float64" },
+		{ "decimal", "float64" },
+		{ "char", "rune" },
 		{ "bool", "bool" },
 		{ "void", "" },
 		{ "object", "any" },
