@@ -767,4 +767,75 @@ public class CSharpGeneratedSourceCompilesTests
 			Assert.AreEqual(0, exitCode, $"C# rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
 		});
 	}
+
+	/// <summary>
+	/// Builds a struct <c>Point { x, y }</c>, a struct <c>Frame</c> whose <c>origin</c> field starts
+	/// at a typeless list naming Point's members, and a function <c>sum</c> whose local is
+	/// initialised the same way (#473).
+	/// </summary>
+	/// <returns>The source file.</returns>
+	private static SourceFile DesignatedLists()
+	{
+		static ConstructionExpression Designated(int x, int y)
+		{
+			ConstructionExpression list = new();
+			list.Arguments.Add(new MemberInitialiser("x", Literal.Number(x)));
+			list.Arguments.Add(new MemberInitialiser("y", Literal.Number(y)));
+			return list;
+		}
+
+		ClassDeclaration point = new("Point") { Kind = TypeDeclarationKind.Struct, Visibility = Visibility.Public };
+		point.Members.Add(new FieldDeclaration("x", "int") { Visibility = Visibility.Public });
+		point.Members.Add(new FieldDeclaration("y", "int") { Visibility = Visibility.Public });
+
+		ClassDeclaration frame = new("Frame") { Kind = TypeDeclarationKind.Struct, Visibility = Visibility.Public };
+		frame.Members.Add(new FieldDeclaration("origin", "Point") { Visibility = Visibility.Public, InitialValue = Designated(3, 4) });
+		frame.Members.Add(new FunctionDeclaration("Frame") { Kind = FunctionKind.Constructor, Visibility = Visibility.Public });
+
+		FunctionDeclaration sum = new("sum") { ReturnType = "int", Visibility = Visibility.Public, IsStatic = true };
+		sum.Body.Add(new VariableDeclaration("p", "Point", Designated(1, 2)));
+		sum.Body.Add(new ReturnStatement(new BinaryExpression(new VariableReference("p.x"), BinaryOperator.Add, new VariableReference("p.y"))));
+		frame.Members.Add(sum);
+
+		SourceFile file = new("designated");
+		file.Members.Add(point);
+		file.Members.Add(frame);
+		return file;
+	}
+
+	/// <summary>
+	/// Tests that a typeless list naming its members, initialising a local and a field, compiles as
+	/// a target-typed <c>new() { … }</c> rather than bare braces, which C# takes only for an array
+	/// (CS0622), and that the values arrive (#473).
+	/// </summary>
+	[TestMethod]
+	public void TypelessDesignatedLists_Compile()
+	{
+		string source = new CSharpGenerator().Generate(DesignatedLists());
+		Assert.Contains("Point p = new() { x = 1, y = 2 };", source, StringComparison.Ordinal, source);
+		Assert.Contains("Point origin = new() { x = 3, y = 4 };", source, StringComparison.Ordinal, source);
+
+		if (ToolchainHarness.FindOnPath("--version", "dotnet") is null)
+		{
+			Assert.Inconclusive("No dotnet on the path, so nothing was compiled.");
+			return;
+		}
+
+		const string Driver = """
+			public static class DesignatedDriver
+			{
+				public static int Use() => Frame.sum() + new Frame().origin.x + new Frame().origin.y;
+			}
+			""";
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			File.WriteAllText(Path.Combine(directory, "Generated.csproj"), Project);
+			File.WriteAllText(Path.Combine(directory, "DesignatedDriver.cs"), Driver);
+			File.WriteAllText(Path.Combine(directory, "Generated.cs"), source);
+
+			(int exitCode, string output) = ToolchainHarness.Run("dotnet", "build -nologo", directory);
+			Assert.AreEqual(0, exitCode, $"C# rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+		});
+	}
 }

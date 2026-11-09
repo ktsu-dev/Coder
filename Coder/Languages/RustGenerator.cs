@@ -1511,9 +1511,29 @@ public class RustGenerator : StandardLanguageGenerator
 	/// <para>
 	/// A conditional answers what its branches do, so each branch is written for the same type.
 	/// </para>
+	/// <para>
+	/// A list with no type that names its members takes the receiving type as its own, so it is
+	/// written as that type's struct literal.
+	/// </para>
 	/// </remarks>
 	private void WriteValue(AstNode value, TypeReference? target, CodeBlocker code)
 	{
+		// A list with no type that names its members is a struct literal of the type receiving it,
+		// which is the only place the type can come from: `[x: 1]` is not Rust at all (#473).
+		if (value is ConstructionExpression { Type: null } list
+			&& target is { IsArray: false }
+			&& list.Arguments.Any(argument => argument is MemberInitialiser))
+		{
+			ConstructionExpression typed = new(target);
+			foreach (AstNode argument in list.Arguments)
+			{
+				typed.Arguments.Add(argument);
+			}
+
+			GenerateConstructionExpression(typed, code);
+			return;
+		}
+
 		if (value is ConditionalExpression conditional && IsOwnedString(target))
 		{
 			code.Write("(if ");

@@ -1210,6 +1210,8 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// because that is the one spelling C# takes for an array and a <c>List&lt;T&gt;</c> alike, and
 	/// in a return, an assignment or an argument as well as an initialiser. The bare braces
 	/// <c>{ 1, 2 }</c> are only an array's initialiser and not an expression at all (#418).
+	/// A list with no type that names its members is a target-typed <c>new() { Name = value }</c>,
+	/// for the same reason (#473).
 	/// Everything else is a constructor call.
 	/// </remarks>
 	private void GenerateConstruction(ConstructionExpression construction, CodeBlocker code)
@@ -1218,6 +1220,13 @@ public class CSharpGenerator : LanguageGeneratorBase
 
 		if (construction.Type is null)
 		{
+			// A list naming its members is an object initialiser, and C# takes one only after a
+			// `new`. Bare braces are an array's initialiser (CS0622), so it is target-typed (#473).
+			if (designated)
+			{
+				code.Write("new() ");
+			}
+
 			WriteBracedList(construction, code, asCollection: !designated);
 			return;
 		}
