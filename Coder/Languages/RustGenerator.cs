@@ -400,6 +400,30 @@ public class RustGenerator : StandardLanguageGenerator
 		UnaryOperator.Plus => string.Empty,
 		_ => GetUnaryOperator(op)
 	};
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// Rust has no unary <c>-</c> on an unsigned integer (E0600), where the C family wraps, so
+	/// negating a <c>uint</c> or <c>ulong</c> is written <c>wrapping_neg()</c>, which gives the same
+	/// answer (#373).
+	/// </remarks>
+	protected override void GenerateUnary(UnaryExpression unary, CodeBlocker code)
+	{
+		Ensure.NotNull(unary);
+		Ensure.NotNull(code);
+
+		if (unary.Operator == UnaryOperator.Negate
+			&& StaticType(unary.Operand) is { IsArray: false, Indirection: TypeIndirection.None, TypeArguments.Count: 0, Name: "uint" or "ulong" })
+		{
+			bool bare = unary.Operand is VariableReference;
+			code.Write(bare ? "(" : "((");
+			GenerateInternal(unary.Operand, code);
+			code.Write(bare ? ".wrapping_neg())" : ").wrapping_neg())");
+			return;
+		}
+
+		base.GenerateUnary(unary, code);
+	}
 	/// <inheritdoc/>
 	/// <remarks>
 	/// <c>use</c>, which is what Rust writes where the others write an include or an import. A path

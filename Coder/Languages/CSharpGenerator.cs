@@ -80,7 +80,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 				GenerateBinary(binaryExpr, code);
 				break;
 			case UnaryExpression unaryExpr:
-				GenerateUnaryExpression(unaryExpr, code, GetUnaryOperator(unaryExpr.Operator));
+				GenerateUnary(unaryExpr, code);
 				break;
 			case CallExpression call:
 				GenerateCallExpression(call, code);
@@ -372,6 +372,53 @@ public class CSharpGenerator : LanguageGeneratorBase
 		ConditionalExpression conditional => PromotesToInt(conditional.WhenTrue) || PromotesToInt(conditional.WhenFalse),
 		_ => false,
 	};
+
+	/// <summary>
+	/// Emits a unary expression.
+	/// </summary>
+	/// <param name="unary">The expression to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// C# promotes <c>-</c> on a <c>uint</c> to <c>long</c>, so returning it as a <c>uint</c> is CS0266,
+	/// and has no <c>-</c> on a <c>ulong</c> at all (CS0023), where the C family wraps (#373). Subtracting
+	/// from zero unchecked is the same wrap at the operand's own type.
+	/// </remarks>
+	private void GenerateUnary(UnaryExpression unary, CodeBlocker code)
+	{
+		if (unary.Operator == UnaryOperator.Negate && UnsignedSuffix(unary.Operand) is string suffix)
+		{
+			code.Write($"unchecked(0{suffix} - ");
+			GenerateInternal(unary.Operand, code);
+			code.Write(")");
+			return;
+		}
+
+		GenerateUnaryExpression(unary, code, GetUnaryOperator(unary.Operator));
+	}
+
+	/// <summary>
+	/// Reads the literal suffix of the unsigned type an expression is known to have.
+	/// </summary>
+	/// <param name="expression">The expression to inspect.</param>
+	/// <returns><c>u</c> for a <c>uint</c>, <c>UL</c> for a <c>ulong</c>, or null for any other or unknown type.</returns>
+	private string? UnsignedSuffix(Expression expression)
+	{
+		TypeReference? type = expression switch
+		{
+			{ ExpectedType: string expected } => new TypeReference(expected),
+			VariableReference reference when shiftCountTypes.TryGetValue(reference.Name, out TypeReference? local) => local,
+			_ => null,
+		};
+
+		return type is { IsArray: false, Indirection: TypeIndirection.None, TypeArguments.Count: 0 }
+			? type.Name switch
+			{
+				"uint" => "u",
+				"ulong" => "UL",
+				_ => null,
+			}
+			: null;
+	}
 
 	/// <summary>
 	/// Reads the declared type of the target of a plain assignment.

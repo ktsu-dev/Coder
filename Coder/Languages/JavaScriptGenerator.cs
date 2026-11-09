@@ -1008,13 +1008,40 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
+	/// <para>
 	/// <c>~</c> converts its operand to a signed 32-bit integer, the same as the binary bitwise
 	/// operators, so on a <c>long</c>, <c>ulong</c> or <c>uint</c> it is written out the way they are.
+	/// </para>
+	/// <para>
+	/// <c>-</c> on a <c>uint</c> or <c>ulong</c> wraps in the C family, so <c>-5</c> is 4294967291, where
+	/// JavaScript's numbers go negative (#373). It is read back unsigned at the operand's width. On a
+	/// signed integer it is left as it is.
+	/// </para>
 	/// </remarks>
 	protected override void GenerateUnary(UnaryExpression unary, CodeBlocker code)
 	{
 		Ensure.NotNull(unary);
 		Ensure.NotNull(code);
+
+		if (unary.Operator == UnaryOperator.Negate)
+		{
+			switch (IntegerWidthOf(StaticType(unary.Operand)))
+			{
+				case IntegerWidth.Unsigned32:
+					code.Write("(");
+					base.GenerateUnary(unary, code);
+					code.Write(" >>> 0)");
+					return;
+				case IntegerWidth.Unsigned64:
+					code.Write("Number(BigInt.asUintN(64, -BigInt(");
+					GenerateInternal(unary.Operand, code);
+					code.Write(")))");
+					return;
+				default:
+					base.GenerateUnary(unary, code);
+					return;
+			}
+		}
 
 		IntegerWidth? width = unary.Operator == UnaryOperator.BitwiseNot ? IntegerWidthOf(StaticType(unary.Operand)) : null;
 		switch (width)
