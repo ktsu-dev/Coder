@@ -821,7 +821,7 @@ public class CSharpGeneratedSourceCompilesTests
 			return;
 		}
 
-		const string Driver = """
+		const string DesignatedDriver = """
 			public static class DesignatedDriver
 			{
 				public static int Use() => Frame.sum() + new Frame().origin.x + new Frame().origin.y;
@@ -831,7 +831,7 @@ public class CSharpGeneratedSourceCompilesTests
 		ToolchainHarness.InTemporaryDirectory(directory =>
 		{
 			File.WriteAllText(Path.Combine(directory, "Generated.csproj"), Project);
-			File.WriteAllText(Path.Combine(directory, "DesignatedDriver.cs"), Driver);
+			File.WriteAllText(Path.Combine(directory, "DesignatedDriver.cs"), DesignatedDriver);
 			File.WriteAllText(Path.Combine(directory, "Generated.cs"), source);
 
 			(int exitCode, string output) = ToolchainHarness.Run("dotnet", "build -nologo", directory);
