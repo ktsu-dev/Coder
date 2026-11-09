@@ -183,7 +183,7 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 				return true;
 
 			case LiteralExpression<string> stringLit:
-				code.Write($"\"{EscapeString(stringLit.Value ?? string.Empty)}\"");
+				code.Write(FormatString(stringLit.Value ?? string.Empty));
 				return true;
 
 			case LiteralExpression<int> intLit:
@@ -208,7 +208,7 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 
 			// Legacy support for AstLeafNode types
 			case AstLeafNode<string> strLeaf:
-				code.Write($"\"{EscapeString(strLeaf.Value ?? string.Empty)}\"");
+				code.Write(FormatString(strLeaf.Value ?? string.Empty));
 				return true;
 
 			case AstLeafNode<int> intLeaf:
@@ -1282,6 +1282,17 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 			? EscapeIdentifier(callee)
 			: callee;
 	}
+
+	/// <summary>
+	/// Writes a string literal: its escaped contents between double quotes.
+	/// </summary>
+	/// <param name="value">The raw string value.</param>
+	/// <returns>The literal as the target language spells it.</returns>
+	/// <remarks>
+	/// A generator overrides this where a quoted literal does not hold every string: C++ converts one to
+	/// <c>std::string</c> through a constructor that stops at the first NUL.
+	/// </remarks>
+	protected virtual string FormatString(string value) => $"\"{EscapeString(value)}\"";
 
 	/// <summary>
 	/// Escapes a string literal's contents for a target language using C-style backslash escapes.

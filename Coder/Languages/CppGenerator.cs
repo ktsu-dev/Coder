@@ -5,6 +5,7 @@ namespace ktsu.Coder.Languages;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using ktsu.Coder.Ast;
 using ktsu.CodeBlocker;
 
@@ -205,11 +206,34 @@ public class CppGenerator : CFamilyGenerator
 			yield return CMathHeader;
 		}
 
-		if (SelfAndDescendants(file).OfType<EntryPoint>().Any(entryPoint => entryPoint.AcceptsArguments))
+		bool acceptsArguments = SelfAndDescendants(file).OfType<EntryPoint>().Any(entryPoint => entryPoint.AcceptsArguments);
+		if (acceptsArguments)
 		{
 			yield return VectorHeader;
+		}
+
+		if (acceptsArguments || SelfAndDescendants(file).Any(node => node is LiteralExpression<string> { Value: { } value } && value.Contains('\0', StringComparison.Ordinal)))
+		{
 			yield return StringHeader;
 		}
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// A literal holding a NUL is written as <c>std::string("…", N)</c>, with <c>N</c> its UTF-8 byte
+	/// count. <c>string</c> is <c>std::string</c> here, and a bare <c>"a\000b"</c> reaches one through
+	/// <c>std::string(const char*)</c>, which stops at the first NUL, so the value would silently become
+	/// <c>a</c> (issue #482). The <c>""s</c> literal would also keep the length, but it needs a
+	/// <c>using namespace std::string_literals</c> that the AST's imports do not carry. Every other
+	/// literal stays a plain one, which converts to <c>std::string</c> and <c>const char*</c> alike.
+	/// </remarks>
+	protected override string FormatString(string value)
+	{
+		Ensure.NotNull(value);
+		string literal = base.FormatString(value);
+		return value.Contains('\0', StringComparison.Ordinal)
+			? $"std::string({literal}, {Encoding.UTF8.GetByteCount(value)})"
+			: literal;
 	}
 
 	/// <summary>
