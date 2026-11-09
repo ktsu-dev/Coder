@@ -482,6 +482,8 @@ public partial class YamlDeserializer
 			}
 		}
 
+		construction.ExpectedType = ReadString(dict, "expectedType");
+
 		DeserializeMetadata(construction, dict);
 		return construction;
 	}
