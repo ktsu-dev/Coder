@@ -2230,7 +2230,9 @@ public class CSharpGenerator : LanguageGeneratorBase
 	{
 		// C# infers a type only from an initialiser (CS0818), so a declaration without one says the
 		// type it was given, whether or not it asked for inference.
-		TypeReference? saidType = varDecl.IsTypeInferred && varDecl.InitialValue is not null ? null : varDecl.Type;
+		// A typeless list has no type of its own to infer, so a declaration it initialises keeps the
+		// one it was given (#447).
+		TypeReference? saidType = InfersType(varDecl) && varDecl.InitialValue is not null ? null : varDecl.Type;
 		if (saidType is not null)
 		{
 			shiftCountTypes[varDecl.Name] = saidType;
@@ -2267,6 +2269,12 @@ public class CSharpGenerator : LanguageGeneratorBase
 		{
 			// A local with neither a type nor an initialiser has nothing to infer from.
 			WriteInexpressible(code, $"{varDecl.Name}: C# infers a type only from an initialiser, and nothing here says one");
+			type = UnknownTypeName;
+		}
+		else if (IsTypelessList(varDecl.InitialValue) && string.Equals(type, "var", StringComparison.Ordinal))
+		{
+			// Nor has one whose initialiser is a list waiting to be told its type (CS9176).
+			WriteInexpressible(code, $"{varDecl.Name}: C# infers no type for a list without one, and nothing here says one");
 			type = UnknownTypeName;
 		}
 		if ((isField ? SpellVisibility(varDecl.Visibility) ?? DefaultVisibility : SpellVisibility(varDecl.Visibility)) is string modifier)

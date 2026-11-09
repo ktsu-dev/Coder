@@ -258,6 +258,34 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	}
 
 	/// <summary>
+	/// Determines whether a variable's type is left for the target to infer from its initialiser.
+	/// </summary>
+	/// <param name="varDecl">The declaration being emitted.</param>
+	/// <returns>
+	/// True when the declaration asked for inference and its initialiser can supply a type; false when
+	/// it says its type.
+	/// </returns>
+	/// <remarks>
+	/// A typeless list takes its type from the declaration it initialises, so it has none to give
+	/// back: C# has no natural type for <c>[1, 2]</c> (CS9176), Go none for <c>{1, 2}</c>, and C++
+	/// and Rust infer an <c>std::initializer_list</c> and an array where a list was declared. Such a
+	/// declaration keeps the type it was given even when it was marked inferred (#447).
+	/// </remarks>
+	protected static bool InfersType(VariableDeclaration varDecl)
+	{
+		Ensure.NotNull(varDecl);
+		return varDecl.IsTypeInferred && !(varDecl.Type is not null && IsTypelessList(varDecl.InitialValue));
+	}
+
+	/// <summary>
+	/// Determines whether an initialiser is a list that relies on its declaration for its type.
+	/// </summary>
+	/// <param name="initialValue">The initialiser, if there is one.</param>
+	/// <returns>True for a <see cref="ConstructionExpression"/> that names no type.</returns>
+	protected static bool IsTypelessList(Expression? initialValue) =>
+		initialValue is ConstructionExpression { Type: null };
+
+	/// <summary>
 	/// Gets what an ordinary comment starts with in this language.
 	/// </summary>
 	protected virtual string CommentPrefix => "//";

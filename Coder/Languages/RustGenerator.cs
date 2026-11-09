@@ -2147,7 +2147,7 @@ public class RustGenerator : StandardLanguageGenerator
 		// a `const` or a `static`, each of which has to say its type.
 		if (IsModuleVariable(varDecl))
 		{
-			TypeReference? declared = varDecl.IsTypeInferred ? null : varDecl.Type;
+			TypeReference? declared = InfersType(varDecl) ? null : varDecl.Type;
 			GenerateFieldDeclaration(new FieldDeclaration(varDecl.Name)
 			{
 				Type = declared ?? (varDecl.InitialValue is Expression initialValue ? StaticType(initialValue) : null),
@@ -2162,7 +2162,9 @@ public class RustGenerator : StandardLanguageGenerator
 		code.Write(EscapeIdentifier(varDecl.Name));
 		boundLocals.Add(varDecl.Name);
 
-		bool inferred = varDecl.IsTypeInferred || varDecl.Type is null;
+		// A typeless list would be inferred as an array, so a declaration it initialises keeps the
+		// type it was given, which is what makes a list a `Vec` (#447).
+		bool inferred = InfersType(varDecl) || varDecl.Type is null;
 		TypeReference? annotation = !inferred ? varDecl.Type
 			: varDecl.InitialValue is null ? new TypeReference(UnknownTypeName)
 			: InferredLiteralWidth(varDecl.InitialValue);
