@@ -136,81 +136,126 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		expression is LiteralExpression<long> literal && IsBigIntLong(literal.Value);
 
 	/// <summary>
-	/// Writes <c>==</c> or <c>!=</c> between a BigInt literal and an operand that is not one.
+	/// How far <see cref="MayBeBigInt(Expression, int)"/> follows names to their initialisers, so a
+	/// name initialised from itself, or a cycle of them, ends.
+	/// </summary>
+	private const int BigIntSearchDepth = 8;
+
+	/// <summary>
+	/// Reads whether an expression may evaluate to a BigInt in the generated JavaScript.
+	/// </summary>
+	/// <param name="expression">The expression to inspect.</param>
+	/// <returns>True for a BigInt literal, its negation, a name initialised with one, or a call that returns a <c>long</c>.</returns>
+	/// <remarks>
+	/// A BigInt reaches a comparison as a literal, which #424 handled, or through a name or a call,
+	/// which it did not (#481): <c>const LIMIT = 1152921504606846976n;</c> compared as <c>x === LIMIT</c>
+	/// is always false. A name is followed to every declaration of it, because the generator does
+	/// not resolve scopes; a declaration that is not the one meant only costs a <c>BigInt(...)</c>
+	/// that changes nothing, since <c>BigInt</c> of an integral number is exact. A call returning a
+	/// <c>long</c> may return either kind, depending on the value.
+	/// </remarks>
+	private bool MayBeBigInt(Expression expression) => MayBeBigInt(expression, 0);
+
+	private bool MayBeBigInt(Expression expression, int depth) => depth < BigIntSearchDepth && expression switch
+	{
+		LiteralExpression<long> literal => IsBigIntLong(literal.Value),
+		UnaryExpression { Operator: UnaryOperator.Negate } unary => MayBeBigInt(unary.Operand, depth + 1),
+		VariableReference reference => InitialValuesOf(reference.Name).Any(value => MayBeBigInt(value, depth + 1)),
+		CallExpression call => StaticType(call) is { IsArray: false, Indirection: TypeIndirection.None, TypeArguments.Count: 0, Name: "long" or "ulong" },
+		_ => false,
+	};
+
+	/// <summary>
+	/// Reads the initialisers of every variable or field in the tree being generated with a name.
+	/// </summary>
+	private IEnumerable<Expression> InitialValuesOf(string name)
+	{
+		if (GenerationRoot is not AstNode root)
+		{
+			yield break;
+		}
+
+		foreach (AstNode node in SelfAndDescendants(root))
+		{
+			Expression? value = node switch
+			{
+				VariableDeclaration variable when variable.Name == name => variable.InitialValue,
+				FieldDeclaration field when field.Name == name => field.InitialValue,
+				_ => null,
+			};
+
+			if (value is not null)
+			{
+				yield return value;
+			}
+		}
+	}
+
+	/// <summary>
+	/// Writes <c>==</c> or <c>!=</c> where either operand may hold a BigInt.
 	/// </summary>
 	/// <param name="binary">The comparison.</param>
 	/// <param name="code">The writer to emit into.</param>
-	/// <returns>False when neither or both operands are BigInt literals, and nothing was written.</returns>
+	/// <returns>False when neither operand may hold a BigInt, or both are BigInt literals, and nothing was written.</returns>
 	/// <remarks>
 	/// <c>===</c> between a BigInt and a number is always <c>false</c>, whatever their values, so
-	/// <c>x == 9007199254740993</c> would never hold and <c>!=</c> always would (#424). The other operand
-	/// is converted with <c>BigInt(...)</c>, which is exact for any integral number, so the comparison is
-	/// of values. A floating operand is compared the way every other target compares it, against the
-	/// literal converted to a double, which is what the digits written as a number read as.
-	/// <c>&lt;</c>, <c>&gt;</c>, <c>&lt;=</c> and <c>&gt;=</c> already compare a BigInt and a number by
-	/// value.
+	/// <c>x == 9007199254740993</c> would never hold and <c>!=</c> always would (#424), and the same went
+	/// for a constant, a local or a call holding such a value (#481). Each operand that is not a
+	/// BigInt literal is converted with <c>BigInt(...)</c>, which is exact for any integral number and
+	/// leaves a BigInt as it is, so the comparison is of values. Against a floating operand the
+	/// comparison is the one every other target makes, of doubles: a literal is written as the digits
+	/// a number reads them as, and any other operand that may hold a BigInt is converted with
+	/// <c>Number(...)</c>. <c>&lt;</c>, <c>&gt;</c>, <c>&lt;=</c> and <c>&gt;=</c> already compare a
+	/// BigInt and a number by value.
 	/// </remarks>
 	private bool TryWriteBigIntEquality(BinaryExpression binary, CodeBlocker code)
 	{
 		if (binary.Operator is not (BinaryOperator.Equal or BinaryOperator.NotEqual)
-			|| IsBigIntLiteral(binary.Left) == IsBigIntLiteral(binary.Right))
+			|| !(MayBeBigInt(binary.Left) || MayBeBigInt(binary.Right))
+			|| (IsBigIntLiteral(binary.Left) && IsBigIntLiteral(binary.Right)))
 		{
 			return false;
 		}
 
-		bool literalOnLeft = IsBigIntLiteral(binary.Left);
-		Expression literal = literalOnLeft ? binary.Left : binary.Right;
-		Expression other = literalOnLeft ? binary.Right : binary.Left;
-		bool otherIsFloating = StaticType(other) is { IsArray: false, Indirection: TypeIndirection.None, TypeArguments.Count: 0, Name: "float" or "double" };
+		bool floating = IsFloating(binary.Left) || IsFloating(binary.Right);
 
-		void WriteLiteral()
+		void WriteOperand(Expression operand)
 		{
-			if (otherIsFloating)
+			if (IsBigIntLiteral(operand))
 			{
-				code.Write(base.FormatLong(((LiteralExpression<long>)literal).Value));
-			}
-			else
-			{
-				GenerateInternal(literal, code);
-			}
-		}
+				if (floating)
+				{
+					code.Write(base.FormatLong(((LiteralExpression<long>)operand).Value));
+				}
+				else
+				{
+					GenerateInternal(operand, code);
+				}
 
-		void WriteOther()
-		{
-			if (otherIsFloating)
-			{
-				GenerateInternal(other, code);
 				return;
 			}
 
-			code.Write("BigInt(");
-			GenerateInternal(other, code);
+			if (floating && !MayBeBigInt(operand))
+			{
+				GenerateInternal(operand, code);
+				return;
+			}
+
+			code.Write(floating ? "Number(" : "BigInt(");
+			GenerateInternal(operand, code);
 			code.Write(")");
 		}
 
 		code.Write("(");
-		if (literalOnLeft)
-		{
-			WriteLiteral();
-		}
-		else
-		{
-			WriteOther();
-		}
-
+		WriteOperand(binary.Left);
 		code.Write($" {GetOperatorSpelling(binary.Operator)} ");
-		if (literalOnLeft)
-		{
-			WriteOther();
-		}
-		else
-		{
-			WriteLiteral();
-		}
-
+		WriteOperand(binary.Right);
 		code.Write(")");
 		return true;
 	}
+
+	private bool IsFloating(Expression expression) =>
+		StaticType(expression) is { IsArray: false, Indirection: TypeIndirection.None, TypeArguments.Count: 0, Name: "float" or "double" };
 
 	/// <inheritdoc/>
 	protected override string? SpellImport(string import)
