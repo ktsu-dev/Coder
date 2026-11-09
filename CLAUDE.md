@@ -57,7 +57,8 @@ source in seven target languages. The solution uses:
   literal writer; C, Go and Rust, which have no default arguments, write it into a comment with any
   `*/` or `/*` broken apart (Rust's block comments nest). `ParseDefaultValue`/`FormatDefaultValue` are the text form the YAML and the
   editor's field hold, so a document from when it was text still reads: `true`/`false` in any case,
-  numbers and double-quoted strings become literals, and anything else is a name, written verbatim.
+  numbers and double-quoted strings become literals (a fraction is a `float` when suffixed `f` or
+  read for a `float` parameter, so `1.5f` survives a reload), and anything else is a name, written verbatim.
 - `Coder/Ast/SourceFile.cs`, `NamespaceDeclaration.cs`, `EnumDeclaration.cs`, `FieldDeclaration.cs` —
   what a generated *header* is made of rather than a snippet. `FieldDeclaration` is deliberately not
   `VariableDeclaration`: a field with no initialiser is value-initialised, so a default-constructed
