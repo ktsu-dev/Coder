@@ -22,15 +22,10 @@ public class ConstructorFieldDefaultTests
 
 	/// <summary>
 	/// The Rust driver. <c>Mixed</c> has a field with no declared value, which its constructor
-	/// leaves to <c>Default</c>; the driver supplies that, as a user of the type would.
+	/// value-initialises by name, as the C constructor does, so the struct needs no <c>Default</c>
+	/// of its own (#344).
 	/// </summary>
 	private const string RustDriver = """
-
-		impl Default for Mixed {
-		    fn default() -> Self {
-		        Mixed { count: 0, step: 7 }
-		    }
-		}
 
 		fn main() {
 		    let counter = Counter::new(3);
@@ -38,7 +33,7 @@ public class ConstructorFieldDefaultTests
 		    let settings = Settings::new();
 		    if settings.count != 5 || settings.step != 1 { std::process::exit(2); }
 		    let mixed = Mixed::new();
-		    if mixed.count != 5 || mixed.step != 7 { std::process::exit(3); }
+		    if mixed.count != 5 || mixed.step != 0 { std::process::exit(3); }
 		}
 
 		""";
@@ -64,7 +59,7 @@ public class ConstructorFieldDefaultTests
 
 	/// <summary>
 	/// Tests that a Rust constructor builds a field it does not set from its declared value, with or
-	/// without initialisers of its own, and leaves only the undeclared rest to <c>Default</c>.
+	/// without initialisers of its own, and value-initialises only the undeclared rest.
 	/// </summary>
 	[TestMethod]
 	public void Rust_ConstructorAppliesDeclaredFieldValues()

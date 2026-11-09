@@ -1,4 +1,4 @@
-// Copyright (c) 2023-2026 ktsu-dev contributors
+﻿// Copyright (c) 2023-2026 ktsu-dev contributors
 
 namespace ktsu.Coder.Test.Languages;
 
@@ -334,16 +334,35 @@ public class RustGeneratorTests
 	}
 
 	/// <summary>
-	/// Tests that a constructor with nothing to build from asks the type for its default, since Rust
-	/// has no zero value to fall back on.
+	/// Tests that a constructor with nothing to build from value-initialises each field by name,
+	/// since the struct derives no <c>Default</c> to ask (#344).
 	/// </summary>
 	[TestMethod]
-	public void Constructor_WithNoInitialisers_AsksForTheDefault()
+	public void Constructor_WithNoInitialisers_DefaultsEachFieldByName()
 	{
 		ClassDeclaration point = new("Point") { Kind = TypeDeclarationKind.Struct };
+		point.Members.Add(new FieldDeclaration("x", new TypeReference("int")));
 		point.Members.Add(new FunctionDeclaration("Point") { Kind = FunctionKind.Constructor });
 
-		StringAssert.Contains(Generator.Generate(point), "Self::default()", StringComparison.Ordinal);
+		string code = Generator.Generate(point);
+
+		StringAssert.Contains(code, "Self { x: Default::default() }", StringComparison.Ordinal, code);
+		Assert.IsFalse(code.Contains("Self::default", StringComparison.Ordinal), code);
+	}
+
+	/// <summary>
+	/// Tests that a constructor of a struct with no fields builds its empty literal.
+	/// </summary>
+	[TestMethod]
+	public void Constructor_OfAStructWithNoFields_BuildsTheEmptyLiteral()
+	{
+		ClassDeclaration empty = new("Empty") { Kind = TypeDeclarationKind.Struct };
+		empty.Members.Add(new FunctionDeclaration("Empty") { Kind = FunctionKind.Constructor });
+
+		string code = Generator.Generate(empty);
+
+		StringAssert.Contains(code, "Self {}", StringComparison.Ordinal, code);
+		Assert.IsFalse(code.Contains("Self::default", StringComparison.Ordinal), code);
 	}
 
 	/// <summary>
