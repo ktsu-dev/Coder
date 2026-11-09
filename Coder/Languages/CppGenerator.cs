@@ -210,6 +210,12 @@ public class CppGenerator : CFamilyGenerator
 			yield return VectorHeader;
 			yield return StringHeader;
 		}
+
+		if (SelfAndDescendants(file).OfType<ClassDeclaration>().Any(type => type.Members.OfType<FieldDeclaration>()
+			.Any(field => field is { IsStatic: false, IsConstant: false, Type.IsArray: true })))
+		{
+			yield return VectorHeader;
+		}
 	}
 
 	/// <summary>
@@ -722,7 +728,7 @@ public class CppGenerator : CFamilyGenerator
 		WritePreamble(field, code, PreambleSite.Field);
 
 		string storage = SpellStorage(field);
-		TypeReference fieldType = field.Type ?? new TypeReference(UnknownTypeName);
+		TypeReference fieldType = HeldArrayType(field) ?? field.Type ?? new TypeReference(UnknownTypeName);
 		string fieldName = field.Name ?? string.Empty;
 
 		// A storage that ends in const leaves the type's own const, or a pointer's, to the
@@ -749,6 +755,31 @@ public class CppGenerator : CFamilyGenerator
 		}
 
 		EndStatement(code);
+	}
+
+	/// <summary>
+	/// Spells an array-typed instance field as a container that holds its elements.
+	/// </summary>
+	/// <param name="field">The field.</param>
+	/// <returns>A <c>std::vector</c> of the element type, or null when the field is not one (#410).</returns>
+	/// <remarks>
+	/// A data member's brackets need a bound C++ can see, and <see cref="TypeReference.IsArray"/>
+	/// carries none, so <c>T name[]</c> inside a type is a flexible array member, which ISO C++ does
+	/// not have and no compiler lets an initialiser stand on. A static or constant one is left alone:
+	/// it is defined rather than laid out, so its initialiser gives it a bound the way a
+	/// namespace-scope table's does.
+	/// </remarks>
+	private TypeReference? HeldArrayType(FieldDeclaration field)
+	{
+		if (insideType == 0 || field.IsStatic || field.IsConstant || field.Type is not { IsArray: true } type)
+		{
+			return null;
+		}
+
+		TypeReference element = type.Clone();
+		element.IsArray = false;
+
+		return new TypeReference("list") { TypeArguments = { element } };
 	}
 
 	/// <summary>

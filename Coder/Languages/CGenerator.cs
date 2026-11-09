@@ -4,6 +4,7 @@ namespace ktsu.Coder.Languages;
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using ktsu.Coder.Ast;
 using ktsu.CodeBlocker;
@@ -741,13 +742,13 @@ public class CGenerator : CFamilyGenerator
 	/// </remarks>
 	private void GenerateStructMember(string? name, TypeReference? type, Expression? initialValue, bool isConstant, CodeBlocker code)
 	{
-		code.Write(SpellDeclarator(type ?? new TypeReference(UnknownTypeName), name ?? string.Empty));
+		code.Write(SpellMemberDeclarator(type ?? new TypeReference(UnknownTypeName), name ?? string.Empty, initialValue, out bool lengthUnknown));
 		code.Write(";");
 
-		if (initialValue is not null || isConstant)
+		if (initialValue is not null || isConstant || lengthUnknown)
 		{
 			code.Write("  ");
-			WriteComment(code, CommentPrefix, DescribeMemberIntent(initialValue, isConstant));
+			WriteComment(code, CommentPrefix, DescribeMemberIntent(initialValue, isConstant, lengthUnknown));
 		}
 		else
 		{
@@ -756,21 +757,66 @@ public class CGenerator : CFamilyGenerator
 	}
 
 	/// <summary>
+	/// Spells a struct member's declaration, giving an array member storage C can lay out.
+	/// </summary>
+	/// <param name="type">The member's type.</param>
+	/// <param name="name">The member's name.</param>
+	/// <param name="initialValue">What the declaration said it starts at, if anything.</param>
+	/// <param name="lengthUnknown">Set when an array became a pointer because nothing gave its length.</param>
+	/// <returns>The declarator, without a terminator.</returns>
+	/// <remarks>
+	/// <c>T name[]</c> is a flexible array member, which is an error anywhere but last in a struct
+	/// with another named member, and reserves no storage where it is allowed (#410). A braced list
+	/// says how many elements there are, so that is the bound. With nothing to count, the member is a
+	/// pointer to its element, which is what a <c>list</c> is here too, and the note says the length
+	/// travels separately.
+	/// </remarks>
+	private string SpellMemberDeclarator(TypeReference type, string name, Expression? initialValue, out bool lengthUnknown)
+	{
+		lengthUnknown = false;
+		if (!type.IsArray)
+		{
+			return SpellDeclarator(type, name);
+		}
+
+		TypeReference element = type.Clone();
+		element.IsArray = false;
+
+		if (initialValue is ConstructionExpression { Type: null, Arguments.Count: > 0 } list)
+		{
+			return $"{SpellDeclarator(element, name)}[{list.Arguments.Count.ToString(CultureInfo.InvariantCulture)}]";
+		}
+
+		lengthUnknown = true;
+		return SpellDeclarator(new TypeReference("list") { TypeArguments = { element } }, name);
+	}
+
+	/// <summary>
 	/// Says what a struct member asked for that C cannot write.
 	/// </summary>
 	/// <param name="initialValue">What the declaration said it starts at, if anything.</param>
 	/// <param name="isConstant">Whether the declaration said its value never changes.</param>
+	/// <param name="lengthUnknown">Whether an array member became a pointer with no length.</param>
 	/// <returns>The note to write after the member.</returns>
-	private string DescribeMemberIntent(Expression? initialValue, bool isConstant)
+	private string DescribeMemberIntent(Expression? initialValue, bool isConstant, bool lengthUnknown = false)
 	{
 		string? value = initialValue is null ? null : GenerateExpression(initialValue);
 
-		return (value, isConstant) switch
+		string intent = (value, isConstant) switch
 		{
 			(not null, true) => $"constant, {value}",
 			(not null, false) => $"defaults to {value}",
-			_ => "constant",
+			(null, true) => "constant",
+			_ => string.Empty,
 		};
+
+		if (!lengthUnknown)
+		{
+			return intent;
+		}
+
+		const string array = "an array of unknown length; its count travels separately";
+		return intent.Length == 0 ? array : $"{array}; {intent}";
 	}
 
 	/// <summary>

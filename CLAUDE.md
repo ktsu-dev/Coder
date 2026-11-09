@@ -84,6 +84,9 @@ source in seven target languages. The solution uses:
   `IsConstant` — what a generated constant table needs beyond a type and a name. `IsArray` says only
   that it is an array, with no bound, because where the brackets go is the generator's business and
   C++ is the one language here that puts them on the declarator rather than the type.
+  An instance field is the exception, because a data member's brackets need a bound and
+  `T name[]` there is a flexible array member (#410): C++ holds it in a `std::vector`, and C bounds
+  it by its braced initialiser's count or, with nothing to count, makes it a pointer with a note.
   `IsConstant` is the intent rather than the keyword: C++ writes `inline constexpr` at namespace
   scope and `static constexpr` inside a type, C# writes `static readonly`, C writes `static const`
   at file scope and a note inside a struct, having no static data member at all, Rust picks between
