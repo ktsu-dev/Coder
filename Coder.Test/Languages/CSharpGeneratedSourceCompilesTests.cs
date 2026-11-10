@@ -767,4 +767,77 @@ public class CSharpGeneratedSourceCompilesTests
 			Assert.AreEqual(0, exitCode, $"C# rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
 		});
 	}
+
+	/// <summary>
+	/// Tests that a member and a local named <c>field</c> keep their meaning inside a property
+	/// accessor, where C# 14 reads a bare <c>field</c> as the synthesized backing field (#461): the
+	/// build gives no CS9258 or CS9273, and the getter and setter reach the declared member.
+	/// </summary>
+	[TestMethod]
+	public void AMemberOrLocalNamedField_KeepsItsMeaningInsideAnAccessor()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "dotnet") is null)
+		{
+			Assert.Inconclusive("No dotnet on the path, so nothing was compiled.");
+			return;
+		}
+
+		// class Box { private int field = 42; int Field { get => field; set => field = value; } int Twice { get { int field = 2; return field; } } }
+		ClassDeclaration box = new("Box");
+		box.Members.Add(new FieldDeclaration("field", "int") { Visibility = Visibility.Private, InitialValue = Literal.Number(42) });
+		box.Members.Add(new PropertyDeclaration("Field", "int")
+		{
+			HasSetter = true,
+			GetterBody = { new ReturnStatement(new VariableReference("field")) },
+			SetterBody = { new AssignmentStatement(new VariableReference("field"), new VariableReference("value")) },
+		});
+		box.Members.Add(new PropertyDeclaration("Twice", "int")
+		{
+			GetterBody =
+			{
+				new VariableDeclaration("field", "int", Literal.Number(2)),
+				new ReturnStatement(new VariableReference("field")),
+			},
+		});
+
+		SourceFile file = new("Generated");
+		file.Members.Add(box);
+
+		const string ProgramProject = """
+			<Project Sdk="Microsoft.NET.Sdk">
+			  <PropertyGroup>
+			    <OutputType>Exe</OutputType>
+			    <TargetFramework>net10.0</TargetFramework>
+			    <Nullable>disable</Nullable>
+			    <ImplicitUsings>disable</ImplicitUsings>
+			    <WarningsAsErrors>CS9258;CS9273</WarningsAsErrors>
+			  </PropertyGroup>
+			</Project>
+			""";
+
+		const string FieldDriver = """
+			public static class Driver
+			{
+				public static void Main()
+				{
+					Box box = new Box();
+					int before = box.Field;
+					box.Field = 7;
+					System.Console.Write($"{before} {box.Field} {box.Twice}");
+				}
+			}
+			""";
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new CSharpGenerator().Generate(file);
+			File.WriteAllText(Path.Combine(directory, "Generated.csproj"), ProgramProject);
+			File.WriteAllText(Path.Combine(directory, "Driver.cs"), FieldDriver);
+			File.WriteAllText(Path.Combine(directory, "Generated.cs"), source);
+
+			(int exitCode, string output) = ToolchainHarness.Run("dotnet", "run -nologo", directory);
+			Assert.AreEqual(0, exitCode, $"C# rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+			StringAssert.EndsWith(output.TrimEnd(), "42 7 2", source);
+		});
+	}
 }
