@@ -569,7 +569,9 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	/// Python's and JavaScript's own operators (#433). The first segment is a variable a scope declares,
 	/// or <c>self</c>/<c>this</c> naming the class the body belongs to; each later segment is looked up
 	/// among the fields of exactly one class of the type before it, the rule
-	/// <see cref="DeclaredMethod"/> keeps for a call on a receiver (#280).
+	/// <see cref="DeclaredMethod"/> keeps for a call on a receiver (#280). A property counts as a field
+	/// here: an automatic one is lowered to a field in every target, and one with accessor bodies is
+	/// read through a getter of the same type, so its reads were otherwise untyped (#466).
 	/// </remarks>
 	private TypeReference? DottedMemberType(string name)
 	{
@@ -644,6 +646,10 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 			.Select(declaration => declaration.Type)
 			.Concat(classes[0].Members
 				.OfType<VariableDeclaration>()
+				.Where(declaration => declaration.Name == field)
+				.Select(declaration => declaration.Type))
+			.Concat(classes[0].Members
+				.OfType<PropertyDeclaration>()
 				.Where(declaration => declaration.Name == field)
 				.Select(declaration => declaration.Type))
 			.Take(2)];
@@ -800,7 +806,8 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	/// <remarks>
 	/// A file-scope <c>int</c> constant read by a function was otherwise of unknown type, so
 	/// <c>LIMIT / 2</c> was true division in Python and JavaScript, and C typed a local copied from it
-	/// <c>void*</c> (#304). Only a <see cref="FieldDeclaration"/>, or a <see cref="VariableDeclaration"/>
+	/// <c>void*</c> (#304). Only a <see cref="FieldDeclaration"/>, a <see cref="PropertyDeclaration"/>
+	/// (#466), or a <see cref="VariableDeclaration"/>
 	/// declared as a member of a file, namespace or type rather than in a body, is a candidate, and only
 	/// a name exactly one of them has is resolved, the same rule <see cref="DeclaredReturnType"/> keeps.
 	/// A parameter or local of the name is found in the scopes first and so still wins.
@@ -826,6 +833,10 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 			.Where(field => field.Name == name)
 			.Select(field => field.Type)
 			.Concat(memberVariables.Where(variable => variable.Name == name).Select(variable => variable.Type))
+			.Concat(SelfAndDescendants(GenerationRoot)
+				.OfType<PropertyDeclaration>()
+				.Where(property => property.Name == name)
+				.Select(property => property.Type))
 			.Take(2)];
 		return matches.Length == 1 ? matches[0] : null;
 	}
