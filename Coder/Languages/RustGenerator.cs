@@ -79,6 +79,7 @@ public class RustGenerator : StandardLanguageGenerator
 		{ "sbyte", "i8" },
 		{ "float", "f32" },
 		{ "double", "f64" },
+		{ "decimal", "f64" },
 		{ "bool", "bool" },
 		{ "void", "()" },
 		{ "object", "Box<dyn std::any::Any>" }

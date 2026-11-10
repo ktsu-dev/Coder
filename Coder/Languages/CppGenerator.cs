@@ -57,6 +57,7 @@ public class CppGenerator : CFamilyGenerator
 		{ "sbyte", "signed char" },
 		{ "float", "float" },
 		{ "double", "double" },
+		{ "decimal", "double" },
 		{ "bool", "bool" },
 		{ "list", "std::vector" },
 		{ "dict", "std::map" },
