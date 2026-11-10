@@ -959,7 +959,7 @@ public class CppGenerator : CFamilyGenerator
 	/// has no type text to inspect, so its <c>const</c> stands in front of <c>auto</c>.
 	/// </remarks>
 	private string SpellConstantVariableDeclarator(VariableDeclaration varDecl) =>
-		!varDecl.IsTypeInferred && varDecl.Type is TypeReference declared
+		!InfersType(varDecl) && varDecl.Type is TypeReference declared
 			? SpellConstantDeclarator(declared, varDecl.Name)
 			: $"const {SpellVariableDeclarator(varDecl)}";
 
@@ -978,7 +978,7 @@ public class CppGenerator : CFamilyGenerator
 	/// </remarks>
 	private string SpellVariableDeclarator(VariableDeclaration varDecl)
 	{
-		if (!varDecl.IsTypeInferred && varDecl.Type is TypeReference declared)
+		if (!InfersType(varDecl) && varDecl.Type is TypeReference declared)
 		{
 			return SpellDeclarator(declared, varDecl.Name);
 		}

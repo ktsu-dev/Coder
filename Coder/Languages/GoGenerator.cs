@@ -1396,7 +1396,16 @@ public class GoGenerator : StandardLanguageGenerator
 	{
 		RegisterStaticType(varDecl);
 
-		bool inferred = varDecl.IsTypeInferred || varDecl.Type is null;
+		// A typeless list has no type of its own for `:=` to infer, so a declaration it initialises
+		// keeps the one it was given (#447).
+		bool inferred = InfersType(varDecl) || varDecl.Type is null;
+
+		// With no type at all there is nothing to say for it, and `:=` cannot infer one from a list.
+		if (inferred && varDecl.Type is null && IsTypelessList(varDecl.InitialValue))
+		{
+			WriteInexpressible(code, $"{varDecl.Name}: Go infers no type for a list without one, and nothing here says one");
+			inferred = false;
+		}
 
 		// `:=` gives an untyped constant Go's default type, so a long or a float would come out an
 		// `int` or a `float64` — and Go never converts between those implicitly. Such a declaration
