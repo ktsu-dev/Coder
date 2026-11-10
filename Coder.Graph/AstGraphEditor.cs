@@ -1,4 +1,4 @@
-// Copyright (c) 2023-2026 ktsu-dev contributors
+﻿// Copyright (c) 2023-2026 ktsu-dev contributors
 
 namespace ktsu.Coder.Graph;
 
@@ -1020,6 +1020,7 @@ public sealed class AstGraphEditor(AstNode root)
 		Ensure.NotNull(node);
 
 		string? previous = AstFields.Read(node, fieldName);
+		Action? restore = RestoreOf(node, fieldName);
 		if (previous is null || !AstFields.TryWrite(node, fieldName, value))
 		{
 			return false;
@@ -1032,10 +1033,39 @@ public sealed class AstGraphEditor(AstNode root)
 			ChangeType.Modify,
 			node,
 			() => Write(node, fieldName, value),
-			() => Write(node, fieldName, previous));
+			restore is null
+				? () => Write(node, fieldName, previous)
+				: () =>
+				{
+					restore();
+					Graph.Rebuild();
+				});
 
 		statusMessage = $"Set {fieldName} to {value}.";
 		return true;
+	}
+
+	/// <summary>
+	/// Captures a property whose display text does not hold all of it, so undo can put back the value
+	/// itself rather than what re-reading its text would give.
+	/// </summary>
+	/// <param name="node">The node about to be edited.</param>
+	/// <param name="fieldName">The property about to be written.</param>
+	/// <returns>What puts the property back as it is now, or <see langword="null"/> when its text is enough.</returns>
+	/// <remarks>
+	/// A parameter's default is an expression, and its text form only spells a literal or a name: a
+	/// <c>-1.5</c>, a <c>new Point(1, 2)</c> or an infinite double reads as empty text, and parsing that
+	/// back gives no default at all. Holding the expression itself is the only undo that cannot lose it.
+	/// </remarks>
+	private static Action? RestoreOf(AstNode node, string fieldName)
+	{
+		if (node is Parameter parameter && fieldName == "Default")
+		{
+			Expression? previous = parameter.DefaultValue;
+			return () => parameter.DefaultValue = previous;
+		}
+
+		return null;
 	}
 
 	/// <summary>
