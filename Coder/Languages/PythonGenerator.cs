@@ -1409,16 +1409,17 @@ public class PythonGenerator : StandardLanguageGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
-	/// Python's integers are unbounded, so <c>~</c> on a <c>uint</c> or <c>ulong</c> gives a negative
-	/// number where the C family gives a large positive one (#351). The result is masked back to the
-	/// operand's width. <c>~</c> on a signed integer already matches two's complement and is left as it is.
+	/// Python's integers are unbounded, so <c>~</c> or <c>-</c> on a <c>uint</c> or <c>ulong</c> gives a
+	/// negative number where the C family gives a large positive one (#351, #373). The result is masked
+	/// back to the operand's width. On a signed integer both already match two's complement and are
+	/// left as they are.
 	/// </remarks>
 	protected override void GenerateUnary(UnaryExpression unary, CodeBlocker code)
 	{
 		Ensure.NotNull(unary);
 		Ensure.NotNull(code);
 
-		if (unary.Operator == UnaryOperator.BitwiseNot
+		if (unary.Operator is UnaryOperator.BitwiseNot or UnaryOperator.Negate
 			&& IntegerWidthOf(StaticType(unary.Operand)) is IntegerWidth width
 			&& width is IntegerWidth.Unsigned32 or IntegerWidth.Unsigned64)
 		{
