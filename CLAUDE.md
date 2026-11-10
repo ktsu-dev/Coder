@@ -57,7 +57,8 @@ source in seven target languages. The solution uses:
   literal writer; C, Go and Rust, which have no default arguments, write it into a comment with any
   `*/` or `/*` broken apart (Rust's block comments nest). `ParseDefaultValue`/`FormatDefaultValue` are the text form the YAML and the
   editor's field hold, so a document from when it was text still reads: `true`/`false` in any case,
-  numbers and double-quoted strings become literals, and anything else is a name, written verbatim.
+  numbers and double-quoted strings become literals (a fraction is a `float` when suffixed `f` or
+  read for a `float` parameter, so `1.5f` survives a reload), and anything else is a name, written verbatim.
 - `Coder/Ast/SourceFile.cs`, `NamespaceDeclaration.cs`, `EnumDeclaration.cs`, `FieldDeclaration.cs` —
   what a generated *header* is made of rather than a snippet. `FieldDeclaration` is deliberately not
   `VariableDeclaration`: a field with no initialiser is value-initialised, so a default-constructed
@@ -84,6 +85,9 @@ source in seven target languages. The solution uses:
   `IsConstant` — what a generated constant table needs beyond a type and a name. `IsArray` says only
   that it is an array, with no bound, because where the brackets go is the generator's business and
   C++ is the one language here that puts them on the declarator rather than the type.
+  An instance field is the exception, because a data member's brackets need a bound and
+  `T name[]` there is a flexible array member (#410): C++ holds it in a `std::vector`, and C bounds
+  it by its braced initialiser's count or, with nothing to count, makes it a pointer with a note.
   `IsConstant` is the intent rather than the keyword: C++ writes `inline constexpr` at namespace
   scope and `static constexpr` inside a type, C# writes `static readonly`, C writes `static const`
   at file scope and a note inside a struct, having no static data member at all, Rust picks between

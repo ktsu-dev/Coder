@@ -417,6 +417,11 @@ public class YamlSerializer
 		{
 			nodeData["arguments"] = SerializeBodyStatements(construction.Arguments);
 		}
+
+		if (construction.ExpectedType != null)
+		{
+			nodeData[ExpectedTypeKey] = construction.ExpectedType;
+		}
 	}
 
 	private static void SerializeCallExpression(CallExpression callExpr, Dictionary<string, object> nodeData)

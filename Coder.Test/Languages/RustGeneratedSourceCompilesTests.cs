@@ -1244,6 +1244,63 @@ public class RustGeneratedSourceCompilesTests
 	}
 
 	/// <summary>
+	/// Tests that a string literal reassigned to a <c>String</c> local, or passed to a <c>String</c>
+	/// parameter of a function or method, is made into an owned <c>String</c> (#233).
+	/// </summary>
+	[TestMethod]
+	public void StringLiteralsReassignedOrPassedAsString_Compile()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "rustc") is null)
+		{
+			Assert.Inconclusive("No Rust compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		FunctionDeclaration greet = new("greet");
+		greet.Parameters.Add(new Parameter("name", "str"));
+
+		ClassDeclaration greeter = new("Greeter");
+		FunctionDeclaration hello = new("hello");
+		hello.Parameters.Add(new Parameter("name", "string"));
+		hello.Parameters.Add(new Parameter("times", "int"));
+		greeter.Members.Add(hello);
+
+		FunctionDeclaration run = new("run");
+		run.Parameters.Add(new Parameter("g", "Greeter"));
+		run.Parameters.Add(new Parameter("loud", "bool"));
+		run.Body.Add(new VariableDeclaration("label", "str", Literal.Text("a")));
+		run.Body.Add(new AssignmentStatement(new VariableReference("label"), Literal.Text("b")));
+		run.Body.Add(new AssignmentStatement(new VariableReference("label"), new ConditionalExpression(new VariableReference("loud"), Literal.Text("C"), Literal.Text("c"))));
+		run.Body.Add(new ExpressionStatement(new CallExpression("greet") { Arguments = { Literal.Text("bob") } }));
+		run.Body.Add(new ExpressionStatement(new CallExpression("greet") { Arguments = { new VariableReference("label") } }));
+		run.Body.Add(new ExpressionStatement(new CallExpression(new VariableReference("g"), "hello") { Arguments = { Literal.Text("ann"), Literal.Number(2) } }));
+
+		SourceFile file = new("strings");
+		file.Members.Add(greet);
+		file.Members.Add(greeter);
+		file.Members.Add(run);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new RustGenerator().Generate(file);
+			Assert.Contains("label = String::from(\"b\");", source, StringComparison.Ordinal, source);
+			Assert.Contains("greet(String::from(\"bob\"))", source, StringComparison.Ordinal, source);
+			Assert.Contains("greet(label)", source, StringComparison.Ordinal, source);
+
+			File.WriteAllText(
+				Path.Combine(directory, "strings.rs"),
+				$"#![allow(unused_parens, dead_code, unused_variables, unused_assignments, unused_mut)]{Environment.NewLine}{source}");
+
+			(int exitCode, string output) = ToolchainHarness.Run(
+				"rustc",
+				"--crate-type lib --edition 2021 -o strings.rlib strings.rs",
+				directory);
+
+			Assert.AreEqual(0, exitCode, $"rustc rejected the generated source:{Environment.NewLine}{source}{Environment.NewLine}{output}");
+		});
+	}
+
+	/// <summary>
 	/// Builds a struct <c>Point { x, y }</c>, a struct <c>Frame</c> whose <c>origin</c> field starts
 	/// at a typeless list naming Point's members, and a function <c>sum</c> whose local is
 	/// initialised the same way (#473).

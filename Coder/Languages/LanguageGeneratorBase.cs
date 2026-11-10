@@ -183,7 +183,7 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 				return true;
 
 			case LiteralExpression<string> stringLit:
-				code.Write($"\"{EscapeString(stringLit.Value ?? string.Empty)}\"");
+				code.Write(FormatString(stringLit.Value ?? string.Empty));
 				return true;
 
 			case LiteralExpression<int> intLit:
@@ -208,7 +208,7 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 
 			// Legacy support for AstLeafNode types
 			case AstLeafNode<string> strLeaf:
-				code.Write($"\"{EscapeString(strLeaf.Value ?? string.Empty)}\"");
+				code.Write(FormatString(strLeaf.Value ?? string.Empty));
 				return true;
 
 			case AstLeafNode<int> intLeaf:
@@ -256,6 +256,34 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 		Ensure.NotNull(code);
 		WriteComment(code, CommentPrefix, what);
 	}
+
+	/// <summary>
+	/// Determines whether a variable's type is left for the target to infer from its initialiser.
+	/// </summary>
+	/// <param name="varDecl">The declaration being emitted.</param>
+	/// <returns>
+	/// True when the declaration asked for inference and its initialiser can supply a type; false when
+	/// it says its type.
+	/// </returns>
+	/// <remarks>
+	/// A typeless list takes its type from the declaration it initialises, so it has none to give
+	/// back: C# has no natural type for <c>[1, 2]</c> (CS9176), Go none for <c>{1, 2}</c>, and C++
+	/// and Rust infer an <c>std::initializer_list</c> and an array where a list was declared. Such a
+	/// declaration keeps the type it was given even when it was marked inferred (#447).
+	/// </remarks>
+	protected static bool InfersType(VariableDeclaration varDecl)
+	{
+		Ensure.NotNull(varDecl);
+		return varDecl.IsTypeInferred && !(varDecl.Type is not null && IsTypelessList(varDecl.InitialValue));
+	}
+
+	/// <summary>
+	/// Determines whether an initialiser is a list that relies on its declaration for its type.
+	/// </summary>
+	/// <param name="initialValue">The initialiser, if there is one.</param>
+	/// <returns>True for a <see cref="ConstructionExpression"/> that names no type.</returns>
+	protected static bool IsTypelessList(Expression? initialValue) =>
+		initialValue is ConstructionExpression { Type: null };
 
 	/// <summary>
 	/// Gets what an ordinary comment starts with in this language.
@@ -1282,6 +1310,17 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 			? EscapeIdentifier(callee)
 			: callee;
 	}
+
+	/// <summary>
+	/// Writes a string literal: its escaped contents between double quotes.
+	/// </summary>
+	/// <param name="value">The raw string value.</param>
+	/// <returns>The literal as the target language spells it.</returns>
+	/// <remarks>
+	/// A generator overrides this where a quoted literal does not hold every string: C++ converts one to
+	/// <c>std::string</c> through a constructor that stops at the first NUL.
+	/// </remarks>
+	protected virtual string FormatString(string value) => $"\"{EscapeString(value)}\"";
 
 	/// <summary>
 	/// Escapes a string literal's contents for a target language using C-style backslash escapes.

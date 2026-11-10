@@ -79,6 +79,7 @@ public class RustGenerator : StandardLanguageGenerator
 		{ "sbyte", "i8" },
 		{ "float", "f32" },
 		{ "double", "f64" },
+		{ "decimal", "f64" },
 		{ "bool", "bool" },
 		{ "void", "()" },
 		{ "object", "Box<dyn std::any::Any>" }
@@ -400,6 +401,30 @@ public class RustGenerator : StandardLanguageGenerator
 		UnaryOperator.Plus => string.Empty,
 		_ => GetUnaryOperator(op)
 	};
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// Rust has no unary <c>-</c> on an unsigned integer (E0600), where the C family wraps, so
+	/// negating a <c>uint</c> or <c>ulong</c> is written <c>wrapping_neg()</c>, which gives the same
+	/// answer (#373).
+	/// </remarks>
+	protected override void GenerateUnary(UnaryExpression unary, CodeBlocker code)
+	{
+		Ensure.NotNull(unary);
+		Ensure.NotNull(code);
+
+		if (unary.Operator == UnaryOperator.Negate
+			&& StaticType(unary.Operand) is { IsArray: false, Indirection: TypeIndirection.None, TypeArguments.Count: 0, Name: "uint" or "ulong" })
+		{
+			bool bare = unary.Operand is VariableReference;
+			code.Write(bare ? "(" : "((");
+			GenerateInternal(unary.Operand, code);
+			code.Write(bare ? ".wrapping_neg())" : ").wrapping_neg())");
+			return;
+		}
+
+		base.GenerateUnary(unary, code);
+	}
 	/// <inheritdoc/>
 	/// <remarks>
 	/// <c>use</c>, which is what Rust writes where the others write an include or an import. A path
@@ -1478,6 +1503,19 @@ public class RustGenerator : StandardLanguageGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
+	/// An argument is written for the type of the parameter it is passed as, when the call names
+	/// exactly one function or method declared in what is being generated, so a string literal passed
+	/// as a <c>String</c> is made into one (#233), and a number is widened as the base widens it.
+	/// </remarks>
+	protected override void GenerateArgument(CallExpression callExpr, int index, CodeBlocker code)
+	{
+		Ensure.NotNull(callExpr);
+		Ensure.NotNull(code);
+		WriteValue(callExpr.Arguments[index], DeclaredParameterType(callExpr, index), code);
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
 	/// The value is written for the type the function answers, so a string literal returned as an
 	/// owned <c>String</c> is made into one.
 	/// </remarks>
@@ -1662,8 +1700,24 @@ public class RustGenerator : StandardLanguageGenerator
 	/// </summary>
 	/// <param name="assignment">The statement to emit.</param>
 	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// A plain assignment to a local, parameter or field of a known type is written for that type, so
+	/// a string literal assigned to a <c>String</c> is made into one (#233).
+	/// </remarks>
 	private void GenerateAssignmentOrAppend(AssignmentStatement assignment, CodeBlocker code)
 	{
+		if (assignment.Operator == AssignmentOperator.Assign
+			&& assignment.Value is LiteralExpression<string> or ConditionalExpression
+			&& StaticType(assignment.Target) is TypeReference targetType
+			&& IsOwnedString(targetType))
+		{
+			GenerateInternal(assignment.Target, code);
+			code.Write($" {GetAssignmentOperator(AssignmentOperator.Assign)} ");
+			WriteValue(assignment.Value, targetType, code);
+			EndStatement(code);
+			return;
+		}
+
 		if (assignment.Operator == AssignmentOperator.AddAssign
 			&& assignment.Value is not LiteralExpression<string>
 			&& IsOwnedString(StaticType(assignment.Target))
@@ -2167,7 +2221,7 @@ public class RustGenerator : StandardLanguageGenerator
 		// a `const` or a `static`, each of which has to say its type.
 		if (IsModuleVariable(varDecl))
 		{
-			TypeReference? declared = varDecl.IsTypeInferred ? null : varDecl.Type;
+			TypeReference? declared = InfersType(varDecl) ? null : varDecl.Type;
 			GenerateFieldDeclaration(new FieldDeclaration(varDecl.Name)
 			{
 				Type = declared ?? (varDecl.InitialValue is Expression initialValue ? StaticType(initialValue) : null),
@@ -2182,7 +2236,9 @@ public class RustGenerator : StandardLanguageGenerator
 		code.Write(EscapeIdentifier(varDecl.Name));
 		boundLocals.Add(varDecl.Name);
 
-		bool inferred = varDecl.IsTypeInferred || varDecl.Type is null;
+		// A typeless list would be inferred as an array, so a declaration it initialises keeps the
+		// type it was given, which is what makes a list a `Vec` (#447).
+		bool inferred = InfersType(varDecl) || varDecl.Type is null;
 		TypeReference? annotation = !inferred ? varDecl.Type
 			: varDecl.InitialValue is null ? new TypeReference(UnknownTypeName)
 			: InferredLiteralWidth(varDecl.InitialValue);

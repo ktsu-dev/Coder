@@ -5,6 +5,7 @@ namespace ktsu.Coder.Languages;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using ktsu.Coder.Ast;
 using ktsu.CodeBlocker;
 
@@ -56,6 +57,7 @@ public class CppGenerator : CFamilyGenerator
 		{ "sbyte", "signed char" },
 		{ "float", "float" },
 		{ "double", "double" },
+		{ "decimal", "double" },
 		{ "bool", "bool" },
 		{ "list", "std::vector" },
 		{ "dict", "std::map" },
@@ -205,11 +207,40 @@ public class CppGenerator : CFamilyGenerator
 			yield return CMathHeader;
 		}
 
-		if (SelfAndDescendants(file).OfType<EntryPoint>().Any(entryPoint => entryPoint.AcceptsArguments))
+		bool acceptsArguments = SelfAndDescendants(file).OfType<EntryPoint>().Any(entryPoint => entryPoint.AcceptsArguments);
+		if (acceptsArguments)
 		{
 			yield return VectorHeader;
+		}
+
+		if (acceptsArguments || SelfAndDescendants(file).Any(node => node is LiteralExpression<string> { Value: { } value } && value.Contains('\0', StringComparison.Ordinal)))
+		{
 			yield return StringHeader;
 		}
+
+		if (SelfAndDescendants(file).OfType<ClassDeclaration>().Any(type => type.Members.OfType<FieldDeclaration>()
+			.Any(field => field is { IsStatic: false, IsConstant: false, Type.IsArray: true })))
+		{
+			yield return VectorHeader;
+		}
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// A literal holding a NUL is written as <c>std::string("…", N)</c>, with <c>N</c> its UTF-8 byte
+	/// count. <c>string</c> is <c>std::string</c> here, and a bare <c>"a\000b"</c> reaches one through
+	/// <c>std::string(const char*)</c>, which stops at the first NUL, so the value would silently become
+	/// <c>a</c> (issue #482). The <c>""s</c> literal would also keep the length, but it needs a
+	/// <c>using namespace std::string_literals</c> that the AST's imports do not carry. Every other
+	/// literal stays a plain one, which converts to <c>std::string</c> and <c>const char*</c> alike.
+	/// </remarks>
+	protected override string FormatString(string value)
+	{
+		Ensure.NotNull(value);
+		string literal = base.FormatString(value);
+		return value.Contains('\0', StringComparison.Ordinal)
+			? $"std::string({literal}, {Encoding.UTF8.GetByteCount(value)})"
+			: literal;
 	}
 
 	/// <summary>
@@ -722,7 +753,7 @@ public class CppGenerator : CFamilyGenerator
 		WritePreamble(field, code, PreambleSite.Field);
 
 		string storage = SpellStorage(field);
-		TypeReference fieldType = field.Type ?? new TypeReference(UnknownTypeName);
+		TypeReference fieldType = HeldArrayType(field) ?? field.Type ?? new TypeReference(UnknownTypeName);
 		string fieldName = field.Name ?? string.Empty;
 
 		// A storage that ends in const leaves the type's own const, or a pointer's, to the
@@ -749,6 +780,31 @@ public class CppGenerator : CFamilyGenerator
 		}
 
 		EndStatement(code);
+	}
+
+	/// <summary>
+	/// Spells an array-typed instance field as a container that holds its elements.
+	/// </summary>
+	/// <param name="field">The field.</param>
+	/// <returns>A <c>std::vector</c> of the element type, or null when the field is not one (#410).</returns>
+	/// <remarks>
+	/// A data member's brackets need a bound C++ can see, and <see cref="TypeReference.IsArray"/>
+	/// carries none, so <c>T name[]</c> inside a type is a flexible array member, which ISO C++ does
+	/// not have and no compiler lets an initialiser stand on. A static or constant one is left alone:
+	/// it is defined rather than laid out, so its initialiser gives it a bound the way a
+	/// namespace-scope table's does.
+	/// </remarks>
+	private TypeReference? HeldArrayType(FieldDeclaration field)
+	{
+		if (insideType == 0 || field.IsStatic || field.IsConstant || field.Type is not { IsArray: true } type)
+		{
+			return null;
+		}
+
+		TypeReference element = type.Clone();
+		element.IsArray = false;
+
+		return new TypeReference("list") { TypeArguments = { element } };
 	}
 
 	/// <summary>
@@ -904,7 +960,7 @@ public class CppGenerator : CFamilyGenerator
 	/// has no type text to inspect, so its <c>const</c> stands in front of <c>auto</c>.
 	/// </remarks>
 	private string SpellConstantVariableDeclarator(VariableDeclaration varDecl) =>
-		!varDecl.IsTypeInferred && varDecl.Type is TypeReference declared
+		!InfersType(varDecl) && varDecl.Type is TypeReference declared
 			? SpellConstantDeclarator(declared, varDecl.Name)
 			: $"const {SpellVariableDeclarator(varDecl)}";
 
@@ -923,7 +979,7 @@ public class CppGenerator : CFamilyGenerator
 	/// </remarks>
 	private string SpellVariableDeclarator(VariableDeclaration varDecl)
 	{
-		if (!varDecl.IsTypeInferred && varDecl.Type is TypeReference declared)
+		if (!InfersType(varDecl) && varDecl.Type is TypeReference declared)
 		{
 			return SpellDeclarator(declared, varDecl.Name);
 		}
