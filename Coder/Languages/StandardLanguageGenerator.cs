@@ -780,8 +780,9 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 	/// The parameter's type, or null when the call does not name exactly one declared function or
 	/// method, or that function has no parameter at the position.
 	/// </returns>
-	private TypeReference? DeclaredParameterType(CallExpression call, int index)
+	protected TypeReference? DeclaredParameterType(CallExpression call, int index)
 	{
+		Ensure.NotNull(call);
 		FunctionDeclaration? function = call.Receiver is Expression receiver
 			? DeclaredMethod(StaticType(receiver), call.Callee)
 			: DeclaredFunction(call.Callee);

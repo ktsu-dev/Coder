@@ -1478,6 +1478,19 @@ public class RustGenerator : StandardLanguageGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
+	/// An argument is written for the type of the parameter it is passed as, when the call names
+	/// exactly one function or method declared in what is being generated, so a string literal passed
+	/// as a <c>String</c> is made into one (#233), and a number is widened as the base widens it.
+	/// </remarks>
+	protected override void GenerateArgument(CallExpression callExpr, int index, CodeBlocker code)
+	{
+		Ensure.NotNull(callExpr);
+		Ensure.NotNull(code);
+		WriteValue(callExpr.Arguments[index], DeclaredParameterType(callExpr, index), code);
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
 	/// The value is written for the type the function answers, so a string literal returned as an
 	/// owned <c>String</c> is made into one.
 	/// </remarks>
@@ -1642,8 +1655,24 @@ public class RustGenerator : StandardLanguageGenerator
 	/// </summary>
 	/// <param name="assignment">The statement to emit.</param>
 	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// A plain assignment to a local, parameter or field of a known type is written for that type, so
+	/// a string literal assigned to a <c>String</c> is made into one (#233).
+	/// </remarks>
 	private void GenerateAssignmentOrAppend(AssignmentStatement assignment, CodeBlocker code)
 	{
+		if (assignment.Operator == AssignmentOperator.Assign
+			&& assignment.Value is LiteralExpression<string> or ConditionalExpression
+			&& StaticType(assignment.Target) is TypeReference targetType
+			&& IsOwnedString(targetType))
+		{
+			GenerateInternal(assignment.Target, code);
+			code.Write($" {GetAssignmentOperator(AssignmentOperator.Assign)} ");
+			WriteValue(assignment.Value, targetType, code);
+			EndStatement(code);
+			return;
+		}
+
 		if (assignment.Operator == AssignmentOperator.AddAssign
 			&& assignment.Value is not LiteralExpression<string>
 			&& IsOwnedString(StaticType(assignment.Target))
