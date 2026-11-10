@@ -281,6 +281,51 @@ public class CppGenerator : CFamilyGenerator
 		code.Write(")");
 	}
 
+	/// <summary>
+	/// Decides whether a declaration's <c>virtual</c> or <c>abstract</c> can be written as
+	/// <c>virtual</c>, and writes a note saying what was dropped where it cannot.
+	/// </summary>
+	/// <param name="funcDecl">The declaration being emitted.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <param name="enclosingType">The name of the type it belongs to, when it belongs to one.</param>
+	/// <returns>True when the declaration is written <c>virtual</c>.</returns>
+	/// <remarks>
+	/// C++ allows <c>virtual</c> only on a non-static member function that is not a constructor:
+	/// a static member cannot be both (it has no object to dispatch on), a constructor runs before
+	/// there is a dynamic type to dispatch to, and a function outside a class has nothing to be
+	/// overridden by. A destructor keeps it, since a virtual destructor is how a base class is
+	/// deleted through a pointer to it.
+	/// </remarks>
+	private bool WriteVirtualNote(FunctionDeclaration funcDecl, CodeBlocker code, string? enclosingType)
+	{
+		if (!(funcDecl.IsVirtual || funcDecl.IsAbstract))
+		{
+			return false;
+		}
+
+		string obstacle;
+		if (enclosingType is null)
+		{
+			obstacle = "is not a member of a class";
+		}
+		else if (funcDecl.Kind == FunctionKind.Constructor)
+		{
+			obstacle = "is a constructor";
+		}
+		else if (funcDecl.IsStatic)
+		{
+			obstacle = "is static";
+		}
+		else
+		{
+			return true;
+		}
+
+		string modifier = funcDecl.IsAbstract ? "abstract" : "virtual";
+		WriteInexpressible(code, $"{modifier}: {funcDecl.Name} {obstacle}, which C++ cannot declare virtual");
+		return false;
+	}
+
 	/// <inheritdoc/>
 	/// <remarks>
 	/// A constructor and a destructor are named after the type rather than after themselves, so the
@@ -300,6 +345,7 @@ public class CppGenerator : CFamilyGenerator
 		Ensure.NotNull(code);
 
 		WritePreamble(funcDecl, code, enclosingType is null ? PreambleSite.Function : PreambleSite.Method);
+		bool isVirtual = WriteVirtualNote(funcDecl, code, enclosingType);
 		WriteUnaskedConstraints(funcDecl.TypeParameters, code);
 		WriteTemplateHead(funcDecl.TypeParameters, code);
 
@@ -331,7 +377,7 @@ public class CppGenerator : CFamilyGenerator
 
 		// An abstract declaration is virtual whether or not it was asked to be: there is nothing else
 		// `= 0` could mean.
-		if (funcDecl.IsVirtual || funcDecl.IsAbstract)
+		if (isVirtual)
 		{
 			code.Write("virtual ");
 		}
@@ -365,9 +411,11 @@ public class CppGenerator : CFamilyGenerator
 			code.Write(" noexcept");
 		}
 
+		// Where virtual cannot be written, `= 0` has nothing to mean either, so an abstract declaration
+		// is declared and left for something else to define.
 		if (funcDecl.IsAbstract)
 		{
-			code.WriteLine(" = 0;");
+			code.WriteLine(isVirtual ? " = 0;" : ";");
 			return;
 		}
 
