@@ -1263,7 +1263,7 @@ public partial class YamlDeserializer
 					&& defaultObj is Dictionary<object, object> defaultDict
 					&& defaultDict.Count > 0
 					? DeserializeNode(defaultDict.First().Key.ToString() ?? string.Empty, defaultDict.First().Value) as Expression
-					: Parameter.ParseDefaultValue(ReadString(dict, "defaultValue"));
+					: Parameter.ParseDefaultValue(ReadString(dict, "defaultValue"), param.Type);
 			}
 
 			// Parse metadata if present
