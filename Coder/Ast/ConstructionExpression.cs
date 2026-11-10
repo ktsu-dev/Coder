@@ -47,10 +47,10 @@ public class ConstructionExpression : Expression
 	/// <summary>
 	/// Creates a deep clone of this expression.
 	/// </summary>
-	/// <returns>A new instance with the same type and cloned arguments.</returns>
+	/// <returns>A new instance with the same type, expected type and cloned arguments.</returns>
 	public override AstNode Clone()
 	{
-		ConstructionExpression clone = new() { Type = Type?.Clone() };
+		ConstructionExpression clone = new() { Type = Type?.Clone(), ExpectedType = ExpectedType };
 
 		foreach ((string key, object? value) in Metadata)
 		{
