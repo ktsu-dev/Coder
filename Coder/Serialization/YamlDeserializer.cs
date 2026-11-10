@@ -1393,7 +1393,10 @@ public partial class YamlDeserializer
 			return null;
 		}
 
-		if (!dict.TryGetValue(ValueKey, out object? value))
+		// The serializer leaves out a null value, and every generator writes a null string literal as
+		// "", so a string literal with no value reads back as the empty string rather than vanishing
+		// from its parent (ktsu-dev/Coder#251).
+		if (!dict.TryGetValue(ValueKey, out object? value) && valueType != "String")
 		{
 			return null;
 		}
@@ -1412,6 +1415,7 @@ public partial class YamlDeserializer
 		if (result is Expression expression)
 		{
 			expression.ExpectedType = ReadString(dict, "expectedType");
+			DeserializeMetadata(expression, dict);
 		}
 
 		return result;

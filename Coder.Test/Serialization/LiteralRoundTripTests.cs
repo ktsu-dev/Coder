@@ -179,4 +179,45 @@ public class LiteralRoundTripTests
 
 		Assert.DoesNotContain("--", new CGenerator().Generate(negation), StringComparison.Ordinal);
 	}
+
+	public static IEnumerable<object[]> LiteralsOfEveryStorageType =>
+	[
+		[Literal.Text("hello")],
+		[new LiteralExpression<int>(1)],
+		[new LiteralExpression<bool>(true)],
+		[new LiteralExpression<double>(2.5)],
+		[Literal.SingleValue(1.5f)],
+		[Literal.BigNumberValue(5000000000L)],
+	];
+
+	[TestMethod]
+	[DynamicData(nameof(LiteralsOfEveryStorageType))]
+	public void RoundTrip_Literal_KeepsMetadata(Expression literal)
+	{
+		Assert.IsNotNull(literal);
+		literal.Metadata["origin"] = "import";
+		string yaml = new YamlSerializer().Serialize(literal);
+
+		AstNode? deserialized = new YamlDeserializer().Deserialize(yaml);
+
+		Assert.IsNotNull(deserialized, yaml);
+		Assert.AreEqual(literal.GetType(), deserialized.GetType());
+		Assert.IsTrue(deserialized.Metadata.TryGetValue("origin", out object? value), "the metadata was dropped");
+		Assert.AreEqual("import", value?.ToString());
+	}
+
+	[TestMethod]
+	public void RoundTrip_NullStringLiteral_ComesBackAsALiteral()
+	{
+		FunctionDeclaration function = new("greet") { ReturnType = "string" };
+		function.Body.Add(new ReturnStatement(new LiteralExpression<string>()));
+		string expected = new CSharpGenerator().Generate(function);
+
+		FunctionDeclaration restored = Assert.IsInstanceOfType<FunctionDeclaration>(
+			new YamlDeserializer().Deserialize(new YamlSerializer().Serialize(function)));
+
+		ReturnStatement statement = Assert.IsInstanceOfType<ReturnStatement>(Assert.ContainsSingle(restored.Body));
+		Assert.IsInstanceOfType<LiteralExpression<string>>(statement.Expression);
+		Assert.AreEqual(expected, new CSharpGenerator().Generate(restored));
+	}
 }
