@@ -189,7 +189,17 @@ public class CGenerator : CFamilyGenerator
 		{
 			yield return MathHeader;
 		}
+
+		if (ContainsInScope(file, node => node is BinaryExpression binary && IsStringComparison(binary)))
+		{
+			yield return StringHeader;
+		}
 	}
+
+	/// <summary>
+	/// The header that declares <c>strcmp</c>.
+	/// </summary>
+	private const string StringHeader = "<string.h>";
 
 	/// <summary>
 	/// The header that declares <c>NAN</c>, <c>INFINITY</c>, <c>fmod</c> and <c>fmodf</c>.
@@ -1266,11 +1276,26 @@ public class CGenerator : CFamilyGenerator
 	/// owns, which is a decision about the program rather than a spelling of the expression. So the
 	/// <c>+</c> stays, and a note in front of it says why the compiler rejects it and what to write
 	/// instead, rather than leaving the reader with <c>invalid operands to binary +</c> alone.
+	/// <para>
+	/// Comparing two strings is translated, because there is only one way to write it: <c>a == b</c>
+	/// becomes <c>(strcmp(a, b) == 0)</c>, and the ordering operators compare the result with zero
+	/// the same way. A file that does so includes <c>&lt;string.h&gt;</c>.
+	/// </para>
 	/// </remarks>
 	protected override void GenerateBinary(BinaryExpression binary, CodeBlocker code)
 	{
 		Ensure.NotNull(binary);
 		Ensure.NotNull(code);
+
+		if (IsStringComparison(binary))
+		{
+			code.Write("(strcmp(");
+			GenerateInternal(binary.Left, code);
+			code.Write(", ");
+			GenerateInternal(binary.Right, code);
+			code.Write($") {GetOperatorSpelling(binary.Operator)} 0)");
+			return;
+		}
 
 		if (binary.Operator == BinaryOperator.Add
 			&& (IsCString(StaticType(binary.Left)) || IsCString(StaticType(binary.Right))))
@@ -1280,6 +1305,25 @@ public class CGenerator : CFamilyGenerator
 
 		base.GenerateBinary(binary, code);
 	}
+
+	/// <summary>
+	/// Reports whether a binary expression compares two strings, which C writes with <c>strcmp</c>.
+	/// </summary>
+	/// <param name="binary">The expression.</param>
+	/// <returns>True for an equality or ordering operator whose operands are both known to be strings.</returns>
+	/// <remarks>
+	/// The AST's <c>==</c> on strings means the same text, which is what every other target compares.
+	/// On two <c>const char*</c> C compares the addresses instead, which compiles, usually without a
+	/// warning, and gives a different answer (#239). Both operands have to be known strings: a string
+	/// compared with <c>NULL</c>, or with an operand whose type nobody knows, is still a pointer
+	/// comparison, and <c>strcmp</c> on a null pointer is undefined.
+	/// </remarks>
+	private bool IsStringComparison(BinaryExpression binary) =>
+		binary.Operator is BinaryOperator.Equal or BinaryOperator.NotEqual
+			or BinaryOperator.LessThan or BinaryOperator.LessThanOrEqual
+			or BinaryOperator.GreaterThan or BinaryOperator.GreaterThanOrEqual
+		&& IsCString(StaticType(binary.Left))
+		&& IsCString(StaticType(binary.Right));
 
 	/// <inheritdoc/>
 	/// <remarks>
