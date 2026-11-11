@@ -2,6 +2,10 @@
 
 Changes since v3.19.0:
 
+- Spell C# access modifiers C# allows where each declaration stands [patch] (#455) (matt-edmondson)
+- Make the calculate_sum sample add its arguments instead of returning "a + b" [patch] (#471) (matt-edmondson)
+- Write a typeless member list as new() in C# and a struct literal in Rust [patch] (#478) (matt-edmondson)
+- Name each field a Rust constructor leaves unset as Default::default() [patch] (#480) (matt-edmondson)
 - Escape keyword-named identifiers in the Go generator [patch] (#445) (matt-edmondson)
 - Keep C#'s scope holder class clear of the names of the members it holds [patch] (#451) (matt-edmondson)
 - Escape keyword-named identifiers in the C generator [patch] (#446) (matt-edmondson)
