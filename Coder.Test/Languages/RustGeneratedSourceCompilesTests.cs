@@ -1299,4 +1299,65 @@ public class RustGeneratedSourceCompilesTests
 			Assert.AreEqual(0, exitCode, $"rustc rejected the generated source:{Environment.NewLine}{source}{Environment.NewLine}{output}");
 		});
 	}
+
+	/// <summary>
+	/// Tests that a constructor leaving fields unset compiles, for a struct whose fields declare no
+	/// value and for a class with one that does, and that the unset fields start at their zero value
+	/// and the declared one at its value (#344).
+	/// </summary>
+	[TestMethod]
+	public void ConstructorsLeavingFieldsUnset_CompileAndRun()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "rustc") is null)
+		{
+			Assert.Inconclusive("No Rust compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		ClassDeclaration point = new("Point") { Kind = TypeDeclarationKind.Struct };
+		point.Members.Add(new FieldDeclaration("x", new TypeReference("int")));
+		point.Members.Add(new FunctionDeclaration("Point") { Kind = FunctionKind.Constructor });
+
+		ClassDeclaration counter = new("Counter") { Kind = TypeDeclarationKind.Class };
+		counter.Members.Add(new FieldDeclaration("count", new TypeReference("int")));
+		counter.Members.Add(new FieldDeclaration("step", new TypeReference("int")) { InitialValue = new LiteralExpression<int>(1) });
+		counter.Members.Add(new FunctionDeclaration("Counter") { Kind = FunctionKind.Constructor });
+
+		ClassDeclaration empty = new("Empty") { Kind = TypeDeclarationKind.Struct };
+		empty.Members.Add(new FunctionDeclaration("Empty") { Kind = FunctionKind.Constructor });
+
+		SourceFile file = new("unset");
+		file.Members.Add(point);
+		file.Members.Add(counter);
+		file.Members.Add(empty);
+
+		string source = new RustGenerator().Generate(file);
+
+		const string Driver = """
+			fn main() {
+			    let point = Point::new();
+			    let counter = Counter::new();
+			    let _empty = Empty::new();
+			    println!("{} {} {}", point.x, counter.count, counter.step);
+			}
+
+			""";
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			File.WriteAllText(
+				Path.Combine(directory, "unset.rs"),
+				$"#![allow(dead_code)]{Environment.NewLine}{source}{Environment.NewLine}{Driver}");
+
+			(int exitCode, string output) = ToolchainHarness.Run(
+				"rustc",
+				"--edition 2021 -o unset unset.rs",
+				directory);
+			Assert.AreEqual(0, exitCode, $"rustc rejected the generated source:{Environment.NewLine}{source}{Environment.NewLine}{output}");
+
+			(int ran, string printed) = ToolchainHarness.Run(Path.Combine(directory, "unset"), string.Empty, directory);
+			Assert.AreEqual(0, ran, printed);
+			Assert.AreEqual("0 0 1", printed.Trim());
+		});
+	}
 }

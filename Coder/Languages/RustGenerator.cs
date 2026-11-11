@@ -1858,10 +1858,10 @@ public class RustGenerator : StandardLanguageGenerator
 			: [.. InstanceDefaults(constructedType)
 				.Where(field => !funcDecl.Initialisers.Any(initialiser => initialiser.Name == field.Name))];
 
-		if (funcDecl.Initialisers.Count == 0 && defaulted.Count == 0)
+		if (constructedType is null)
 		{
-			// There is nothing to build from, and Rust has no zero value to fall back on. Default is
-			// the one thing a type can ask for without naming its fields.
+			// A constructor outside any type has no fields to name, so Default is the one thing it
+			// can ask for.
 			code.WriteLine("Self::default()");
 			return;
 		}
@@ -1879,11 +1879,26 @@ public class RustGenerator : StandardLanguageGenerator
 			value.Arguments.Add(new MemberInitialiser(field.Name ?? string.Empty, (Expression)field.Value!.DeepClone()));
 		}
 
-		// With no initialisers, the fields nobody gave a value still come from Default, as they
-		// did before any had a declared one: struct update syntax fills in the rest.
-		if (funcDecl.Initialisers.Count == 0 && !NamesEveryField(constructedType!, value))
+		// A field nobody gave a value is value-initialised by name. Self::default(), or struct
+		// update syntax's ..Self::default(), would ask the struct for a Default it never derives
+		// (#344), where naming the field asks only its type, as an empty initialiser already does.
+		HashSet<string?> named = [.. value.Arguments.OfType<MemberInitialiser>().Select(initialiser => initialiser.Name)];
+		foreach (string field in InstanceFieldNames(constructedType).Where(field => !named.Contains(field)))
 		{
-			value.Arguments.Add(new CallExpression("..Self::default"));
+			value.Arguments.Add(new MemberInitialiser(field, new CallExpression("Default::default")));
+		}
+
+		if (value.Arguments.Count == 0)
+		{
+			// A struct with no fields is built by its empty literal, unless it holds a marker for an
+			// unused type parameter, which the literal names like any other field.
+			if (PhantomType(constructedType) is null)
+			{
+				code.WriteLine("Self {}");
+				return;
+			}
+
+			value.Arguments.Add(new MemberInitialiser(PhantomFieldName, new VariableReference(PhantomValue)));
 		}
 
 		GenerateConstructionExpression(value, code);
@@ -1891,17 +1906,34 @@ public class RustGenerator : StandardLanguageGenerator
 	}
 
 	/// <summary>
-	/// Reports whether a struct literal names every field of the struct it builds.
+	/// The names of the fields every instance of a struct holds, as its literal has to name them.
 	/// </summary>
 	/// <param name="classDecl">The struct being built.</param>
-	/// <param name="value">The literal building it.</param>
-	/// <returns>True when no field is left for struct update syntax to fill in.</returns>
-	private static bool NamesEveryField(ClassDeclaration classDecl, ConstructionExpression value)
+	/// <returns>The field holding the base, when there is one, then each instance field.</returns>
+	/// <remarks>
+	/// The marker for an unused type parameter is left out: the literal adds it itself.
+	/// </remarks>
+	private static IEnumerable<string> InstanceFieldNames(ClassDeclaration classDecl)
 	{
-		HashSet<string?> named = [.. value.Arguments.OfType<MemberInitialiser>().Select(initialiser => initialiser.Name)];
-		return classDecl.BaseType is null
-			&& classDecl.Members.OfType<FieldDeclaration>().Where(field => !IsAssociatedField(field)).All(field => named.Contains(field.Name))
-			&& classDecl.Members.OfType<VariableDeclaration>().All(field => named.Contains(field.Name));
+		if (classDecl.BaseType is not null)
+		{
+			yield return BaseMemberName;
+		}
+
+		foreach (AstNode member in classDecl.Members)
+		{
+			string? name = member switch
+			{
+				VariableDeclaration field => field.Name,
+				FieldDeclaration field when !IsAssociatedField(field) => field.Name,
+				_ => null,
+			};
+
+			if (name is not null)
+			{
+				yield return name;
+			}
+		}
 	}
 
 	/// <summary>
