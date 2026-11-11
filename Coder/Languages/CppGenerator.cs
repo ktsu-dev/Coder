@@ -375,6 +375,11 @@ public class CppGenerator : CFamilyGenerator
 			code.Write("static ");
 		}
 
+		if (NeedsInline(funcDecl, enclosingType))
+		{
+			code.Write("inline ");
+		}
+
 		// An abstract declaration is virtual whether or not it was asked to be: there is nothing else
 		// `= 0` could mean.
 		if (isVirtual)
@@ -444,6 +449,24 @@ public class CppGenerator : CFamilyGenerator
 			GenerateInternal(statement, code);
 		}
 	}
+
+	/// <summary>
+	/// Reports whether a function has to say <c>inline</c> to be defined in a header.
+	/// </summary>
+	/// <param name="funcDecl">The declaration being emitted.</param>
+	/// <param name="enclosingType">The type it is a member of, or null for a free function.</param>
+	/// <returns>True for a free function defined in a header that is not inline already.</returns>
+	/// <remarks>
+	/// A function defined in a class is inline already, and so are a friend defined there and a
+	/// <c>constexpr</c> one; anything else defined in a header is defined again in every translation
+	/// unit that includes it, and the program does not link (#423).
+	/// </remarks>
+	private bool NeedsInline(FunctionDeclaration funcDecl, string? enclosingType) =>
+		WritingHeader
+		&& enclosingType is null
+		&& !funcDecl.IsFriend
+		&& !funcDecl.IsCompileTimeEvaluable
+		&& !funcDecl.IsAbstract;
 
 	/// <summary>
 	/// Writes what the type's members start at, between a constructor's signature and its body.
@@ -1142,7 +1165,10 @@ public class CppGenerator : CFamilyGenerator
 			return insideType > 0 ? "inline static " : "static ";
 		}
 
-		return string.Empty;
+		// A mutable variable at namespace scope has external linkage, so a header defining one
+		// defines it again in every translation unit that includes it. C++17's inline variable is
+		// one object however many units define it (#423).
+		return insideType == 0 && WritingHeader ? "inline " : string.Empty;
 	}
 
 	/// <summary>
