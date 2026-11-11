@@ -935,6 +935,61 @@ public class CSharpGeneratedSourceCompilesTests
 	}
 
 	/// <summary>
+	/// Tests that the class holding a scope's functions and fields does not take the name of one of
+	/// them, at namespace and at file scope (#450).
+	/// </summary>
+	[TestMethod]
+	public void ScopeHolderNamedLikeAMemberItHolds_Compiles()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "dotnet") is null)
+		{
+			Assert.Inconclusive("No dotnet on the path, so nothing was compiled.");
+			return;
+		}
+
+		static FunctionDeclaration Returning(string name)
+		{
+			FunctionDeclaration function = new(name) { ReturnType = "int" };
+			function.Body.Add(new ReturnStatement(Literal.Number(2)));
+			return function;
+		}
+
+		// namespace Physics { int Physics(); } namespace Units { int Units; }
+		NamespaceDeclaration physics = new("Physics");
+		physics.Members.Add(Returning("Physics"));
+
+		NamespaceDeclaration units = new("Units");
+		units.Members.Add(new FieldDeclaration("Units", "int"));
+
+		// int Globals(); at file scope.
+		SourceFile file = new("Generated");
+		file.Members.Add(physics);
+		file.Members.Add(units);
+		file.Members.Add(Returning("Globals"));
+
+		const string HolderDriver = """
+			public static class Driver
+			{
+				public static int Use() =>
+					global::Physics.PhysicsGlobals.Physics()
+					+ global::Units.UnitsGlobals.Units
+					+ global::GlobalsGlobals.Globals();
+			}
+			""";
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new CSharpGenerator().Generate(file);
+			File.WriteAllText(Path.Combine(directory, "Generated.csproj"), Project);
+			File.WriteAllText(Path.Combine(directory, "Driver.cs"), HolderDriver);
+			File.WriteAllText(Path.Combine(directory, "Generated.cs"), source);
+
+			(int exitCode, string output) = ToolchainHarness.Run("dotnet", "build -nologo", directory);
+			Assert.AreEqual(0, exitCode, $"C# rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+		});
+	}
+
+	/// <summary>
 	/// Tests that a private or protected declaration in a position C# forbids the modifier compiles,
 	/// with a note saying what it was given (#428).
 	/// </summary>

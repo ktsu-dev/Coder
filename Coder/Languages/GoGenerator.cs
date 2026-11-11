@@ -235,6 +235,22 @@ public class GoGenerator : StandardLanguageGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
+	/// The 25 keywords the Go specification reserves. The predeclared identifiers — <c>nil</c>,
+	/// <c>true</c>, <c>len</c>, <c>int</c> and the rest — are names in the universe block that any
+	/// declaration may shadow, so they are left alone, and a reference that means them keeps meaning
+	/// them. An escaped name has an underscore appended, which is a rename: Go has no way to use a
+	/// keyword as a name. Every keyword is lower case, so an exported name is never one, and neither
+	/// is a name joined to its type's (<c>HolderMake</c>).
+	/// </remarks>
+	protected override IReadOnlySet<string> ReservedWords { get; } = new HashSet<string>(StringComparer.Ordinal)
+	{
+		"break", "case", "chan", "const", "continue", "default", "defer", "else", "fallthrough", "for", "func",
+		"go", "goto", "if", "import", "interface", "map", "package", "range", "return", "select", "struct",
+		"switch", "type", "var",
+	};
+
+	/// <inheritdoc/>
+	/// <remarks>
 	/// A static getter is a package-level function, joined to its type's name the way a static or
 	/// constant field is, so a getter <c>Limit</c> beside a field <c>limit</c> would be a second
 	/// <c>GaugeLimit</c> in the package (#444). A method sits on its receiver, beside the other
@@ -897,7 +913,7 @@ public class GoGenerator : StandardLanguageGenerator
 			notes.Add((CommentPrefix, $"defaults to {GenerateExpression(initialValue)}: Go has no field initialisers, so only a constructor sets it"));
 		}
 
-		return new AlignedLine(notes, name ?? UnnamedMember, SpellType(type ?? new TypeReference(UnknownTypeName)), declaration);
+		return new AlignedLine(notes, EscapeIdentifier(name ?? UnnamedMember), SpellType(type ?? new TypeReference(UnknownTypeName)), declaration);
 	}
 
 	/// <summary>
@@ -1246,7 +1262,7 @@ public class GoGenerator : StandardLanguageGenerator
 			&& enclosingType is not null
 			&& !TakesReceiver(funcDecl, enclosingType)
 			? Join(enclosingType, bare)
-			: bare;
+			: EscapeIdentifier(bare);
 	}
 
 	/// <summary>
@@ -1378,7 +1394,7 @@ public class GoGenerator : StandardLanguageGenerator
 		Ensure.NotNull(parameter);
 		Ensure.NotNull(code);
 
-		code.Write($"{parameter.Name ?? $"param{position}"} ");
+		code.Write($"{EscapeIdentifier(parameter.Name ?? $"param{position}")} ");
 		code.Write(SpellType(parameter.Type ?? new TypeReference(UnknownTypeName)));
 
 		AppendDefaultValueComment(parameter, code);
@@ -1413,7 +1429,7 @@ public class GoGenerator : StandardLanguageGenerator
 
 		if (bodyDepth > 0)
 		{
-			code.WriteLine($"_ = {varDecl.Name}");
+			code.WriteLine($"_ = {EscapeIdentifier(varDecl.Name)}");
 		}
 	}
 
@@ -1453,12 +1469,12 @@ public class GoGenerator : StandardLanguageGenerator
 		// assigning to it. Without this the expression form would have to name a type nobody gave it.
 		if (!inferred && varDecl.InitialValue is ConditionalExpression chosen)
 		{
-			code.Write($"var {varDecl.Name} {SpellType(type)}");
+			code.Write($"var {EscapeIdentifier(varDecl.Name)} {SpellType(type)}");
 			EndStatement(code);
 
 			WriteConditionalBranch(chosen, code, bothArms: true, branch =>
 			{
-				code.Write($"{varDecl.Name} = ");
+				code.Write($"{EscapeIdentifier(varDecl.Name)} = ");
 				GenerateInternal(branch, code);
 				EndStatement(code);
 			});
@@ -1471,14 +1487,14 @@ public class GoGenerator : StandardLanguageGenerator
 		// a statement, too, so a package-level variable takes `var x = v` instead.
 		if (!IsModuleVariable(varDecl) && inferred && varDecl.InitialValue is not null && !IsConstant(varDecl.IsConstant, varDecl.InitialValue))
 		{
-			code.Write($"{varDecl.Name} := ");
+			code.Write($"{EscapeIdentifier(varDecl.Name)} := ");
 			GenerateInternal(varDecl.InitialValue, code);
 			EndStatement(code);
 			return;
 		}
 
 		WriteStorageKeyword(varDecl.Name, varDecl.IsConstant, varDecl.InitialValue, code);
-		code.Write(varDecl.Name);
+		code.Write(EscapeIdentifier(varDecl.Name));
 
 		if (!inferred || varDecl.InitialValue is null)
 		{
@@ -1511,7 +1527,7 @@ public class GoGenerator : StandardLanguageGenerator
 			return;
 		}
 
-		WriteStorage(field.Name ?? UnnamedMember, field, code);
+		WriteStorage(EscapeIdentifier(field.Name ?? UnnamedMember), field, code);
 	}
 
 	/// <summary>
@@ -2071,7 +2087,7 @@ public class GoGenerator : StandardLanguageGenerator
 
 			case CallExpression { Receiver: not null } call when StartsWithCompositeLiteral(call.Receiver):
 				WriteConditionOperand(call.Receiver, code);
-				code.Write($".{call.Callee}(");
+				code.Write($".{SpellCallee(call.Callee)}(");
 				GenerateArgumentList(call.Arguments, code);
 				code.Write(")");
 				return;
