@@ -23,6 +23,12 @@ public class PythonGenerator : StandardLanguageGenerator
 	private HashSet<FieldDeclaration>? instanceInitialisedFields;
 
 	/// <summary>
+	/// The names the class being written holds at class scope, which a static getter's invented name
+	/// must stay clear of.
+	/// </summary>
+	private HashSet<string> classScopeNames = new(StringComparer.Ordinal);
+
+	/// <summary>
 	/// The root <see cref="writtenModuleFields"/> was worked out for.
 	/// </summary>
 	private AstNode? writtenModuleFieldsRoot;
@@ -203,13 +209,25 @@ public class PythonGenerator : StandardLanguageGenerator
 	/// object itself rather than calling the getter. Python has no static property, so this one
 	/// becomes the two <c>@staticmethod</c> functions C, Rust and Go already lower it to, named the
 	/// way they name them (<c>limit()</c> and <c>set_limit(value)</c>), and reachable from the class.
+	/// <para>
+	/// A class attribute and a function of one name are one name in Python, and the function written
+	/// second replaces the attribute, so a getter that would take the name of something else in the
+	/// class is <c>get_limit()</c> instead, as it is in the other targets (#444).
+	/// </para>
 	/// </remarks>
 	private void GenerateStaticAccessors(PropertyDeclaration declaration, string annotation, string result, CodeBlocker code)
 	{
 		if (declaration.CanRead)
 		{
 			code.WriteLine("@staticmethod");
-			code.Write($"def {EscapeIdentifier(declaration.GetterName(NamingStyle.Snake))}(){result}:");
+			string getter = declaration.GetterName(NamingStyle.Snake);
+			if (classScopeNames.Contains(getter))
+			{
+				getter = NameStyles.Spell($"get {declaration.Name ?? "value"}", NamingStyle.Snake);
+			}
+
+			classScopeNames.Add(getter);
+			code.Write($"def {EscapeIdentifier(getter)}(){result}:");
 			WriteAccessorBody(declaration, isSetter: false, code);
 		}
 
@@ -685,6 +703,12 @@ public class PythonGenerator : StandardLanguageGenerator
 			return;
 		}
 
+		if (type is not null && EnumZeroMember(type) is EnumMember { Name: string member })
+		{
+			code.Write($"{PythonTypeFromGenericType(type)}.{EscapeIdentifier(member)}");
+			return;
+		}
+
 		code.Write("None");
 	}
 
@@ -833,6 +857,8 @@ public class PythonGenerator : StandardLanguageGenerator
 		instanceInitialisedFields = new HashSet<FieldDeclaration>(
 			InstanceInitialised(classDecl, NeedsConstruction),
 			ReferenceEqualityComparer.Instance);
+		HashSet<string> previousNames = classScopeNames;
+		classScopeNames = NamesOf(classDecl.Members);
 		try
 		{
 			// Python's body is delimited by indentation alone, so there is no brace scope to open.
@@ -885,6 +911,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		finally
 		{
 			instanceInitialisedFields = previousFields;
+			classScopeNames = previousNames;
 		}
 	}
 
@@ -1409,16 +1436,17 @@ public class PythonGenerator : StandardLanguageGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
-	/// Python's integers are unbounded, so <c>~</c> on a <c>uint</c> or <c>ulong</c> gives a negative
-	/// number where the C family gives a large positive one (#351). The result is masked back to the
-	/// operand's width. <c>~</c> on a signed integer already matches two's complement and is left as it is.
+	/// Python's integers are unbounded, so <c>~</c> or <c>-</c> on a <c>uint</c> or <c>ulong</c> gives a
+	/// negative number where the C family gives a large positive one (#351, #373). The result is masked
+	/// back to the operand's width. On a signed integer both already match two's complement and are
+	/// left as they are.
 	/// </remarks>
 	protected override void GenerateUnary(UnaryExpression unary, CodeBlocker code)
 	{
 		Ensure.NotNull(unary);
 		Ensure.NotNull(code);
 
-		if (unary.Operator == UnaryOperator.BitwiseNot
+		if (unary.Operator is UnaryOperator.BitwiseNot or UnaryOperator.Negate
 			&& IntegerWidthOf(StaticType(unary.Operand)) is IntegerWidth width
 			&& width is IntegerWidth.Unsigned32 or IntegerWidth.Unsigned64)
 		{

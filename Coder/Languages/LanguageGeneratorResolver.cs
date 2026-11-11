@@ -13,7 +13,10 @@ using System.Linq;
 /// </summary>
 /// <remarks>
 /// When two generators claim the same id or extension, the first one given wins, so the answer
-/// does not depend on anything but registration order.
+/// does not depend on anything but registration order. A generator's primary
+/// <see cref="ILanguageGenerator.FileExtension"/> is matched before any C-family
+/// <see cref="CFamilyGenerator.HeaderFileExtension"/>, so a header extension never takes an
+/// extension away from the generator that writes it as its main one.
 /// </remarks>
 public sealed class LanguageGeneratorResolver : ILanguageGeneratorResolver
 {
@@ -48,10 +51,19 @@ public sealed class LanguageGeneratorResolver : ILanguageGeneratorResolver
 		string extension = ExtensionOf(extensionOrPath);
 		generator = extension.Length == 0
 			? null
-			: Generators.FirstOrDefault(
-				g => string.Equals(g.FileExtension.TrimStart('.'), extension, StringComparison.OrdinalIgnoreCase));
+			: Generators.FirstOrDefault(g => IsExtension(g.FileExtension, extension))
+				?? Generators.FirstOrDefault(g => g is CFamilyGenerator c && IsExtension(c.HeaderFileExtension, extension));
 		return generator is not null;
 	}
+
+	/// <summary>
+	/// Compares a generator's extension, which may carry its dot, with one read from the caller's input.
+	/// </summary>
+	/// <param name="declared">The extension the generator declares.</param>
+	/// <param name="extension">The extension asked for, without its dot.</param>
+	/// <returns>True when they name the same extension, ignoring case.</returns>
+	private static bool IsExtension(string declared, string extension) =>
+		string.Equals(declared.TrimStart('.'), extension, StringComparison.OrdinalIgnoreCase);
 
 	/// <summary>
 	/// Reads the extension, without its dot, out of a bare extension or a path.

@@ -96,10 +96,10 @@ public class FunctionShapeTests
 		Assert.Contains("Handle() = default;", code, StringComparison.Ordinal);
 		Assert.Contains("Handle(Handle other) = delete;", code, StringComparison.Ordinal);
 
-		Assert.Contains(
-			"virtual void step() = 0;",
-			new CppGenerator().Generate(new FunctionDeclaration("step") { ReturnType = "void", IsAbstract = true }),
-			StringComparison.Ordinal);
+		// Only a member function can be pure virtual; outside a class C++ has no virtual to write (#467).
+		ClassDeclaration stepper = new("Stepper");
+		stepper.Members.Add(new FunctionDeclaration("step") { ReturnType = "void", IsAbstract = true });
+		Assert.Contains("virtual void step() = 0;", new CppGenerator().Generate(stepper), StringComparison.Ordinal);
 	}
 
 	/// <summary>

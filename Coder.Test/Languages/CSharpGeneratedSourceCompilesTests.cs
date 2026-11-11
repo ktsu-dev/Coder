@@ -637,7 +637,7 @@ public class CSharpGeneratedSourceCompilesTests
 			{
 				Packet packet = new();
 				packet.Bump();
-				return (short)(Globals.F(a, b, u) + packet.Count + packet.Doubled + packet.Half);
+				return (short)(Globals.F(a, b, u) + packet.Count + packet.Doubled + packet.Half + Globals.G(a, b, true) + new Pair(a, b).lo);
 			}
 		}
 		""";
@@ -646,7 +646,9 @@ public class CSharpGeneratedSourceCompilesTests
 	/// Tests that arithmetic, bitwise and unary results on <c>short</c> and <c>byte</c> written back
 	/// into a local, a field, an assignment and a return compile, which C#'s promotion to <c>int</c>
 	/// rejects with CS0266 unless the result is cast (#411), and that a result into <c>int</c> is not
-	/// cast.
+	/// cast. So do the same results passed as a call's argument, given to a member in an object
+	/// initialiser or a constructor's initialisers, and a non-constant conditional of two
+	/// <c>int</c> literals into a <c>short</c> (#448).
 	/// </summary>
 	[TestMethod]
 	public void NarrowArithmetic_Compiles()
@@ -686,9 +688,40 @@ public class CSharpGeneratedSourceCompilesTests
 			GetterBody = { new ReturnStatement(new BinaryExpression(new VariableReference("Base"), BinaryOperator.RightShift, Literal.Number(1))) },
 		});
 
+		// struct Pair { public short lo; public Pair(short a, short b) : lo(a + b) {} }
+		ClassDeclaration pair = new("Pair") { Kind = TypeDeclarationKind.Struct };
+		pair.Members.Add(new FieldDeclaration("lo", new TypeReference("short")) { Visibility = Visibility.Public });
+		FunctionDeclaration pairConstructor = new("Pair") { Kind = FunctionKind.Constructor, Visibility = Visibility.Public };
+		pairConstructor.Parameters.Add(new Parameter("a", "short"));
+		pairConstructor.Parameters.Add(new Parameter("b", "short"));
+		pairConstructor.Initialisers.Add(new MemberInitialiser("lo", new BinaryExpression(new VariableReference("a"), BinaryOperator.Add, new VariableReference("b"))));
+		pair.Members.Add(pairConstructor);
+
+		// short take(short v) { return v; }
+		FunctionDeclaration take = new("take") { ReturnType = "short" };
+		take.Parameters.Add(new Parameter("v", "short"));
+		take.Body.Add(new ReturnStatement(new VariableReference("v")));
+
+		// short G(short a, short b, bool flag) { short t = take(a + b); Pair pr = new Pair { lo = a + b }; short s = flag ? 1 : 2; return s; }
+		FunctionDeclaration g = new("G") { ReturnType = "short" };
+		g.Parameters.Add(new Parameter("a", "short"));
+		g.Parameters.Add(new Parameter("b", "short"));
+		g.Parameters.Add(new Parameter("flag", "bool"));
+		CallExpression takeCall = new("take");
+		takeCall.Arguments.Add(new BinaryExpression(new VariableReference("a"), BinaryOperator.Add, new VariableReference("b")));
+		g.Body.Add(new VariableDeclaration("t", "short", takeCall));
+		ConstructionExpression pairInit = new(new TypeReference("Pair"));
+		pairInit.Arguments.Add(new MemberInitialiser("lo", new BinaryExpression(new VariableReference("a"), BinaryOperator.Add, new VariableReference("b"))));
+		g.Body.Add(new VariableDeclaration("pr", "Pair", pairInit));
+		g.Body.Add(new VariableDeclaration("s", "short", new ConditionalExpression(new VariableReference("flag"), Literal.Number(1), Literal.Number(2))));
+		g.Body.Add(new ReturnStatement(new BinaryExpression(new VariableReference("s"), BinaryOperator.Add, new VariableReference("t"))));
+
 		SourceFile file = new("Generated");
 		file.Members.Add(f);
+		file.Members.Add(take);
+		file.Members.Add(g);
 		file.Members.Add(packet);
+		file.Members.Add(pair);
 
 		ToolchainHarness.InTemporaryDirectory(directory =>
 		{
@@ -766,5 +799,138 @@ public class CSharpGeneratedSourceCompilesTests
 			(int exitCode, string output) = ToolchainHarness.Run("dotnet", "build -nologo", directory);
 			Assert.AreEqual(0, exitCode, $"C# rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
 		});
+	}
+
+	/// <summary>
+	/// Tests that a member and a local named <c>field</c> keep their meaning inside a property
+	/// accessor, where C# 14 reads a bare <c>field</c> as the synthesized backing field (#461): the
+	/// build gives no CS9258 or CS9273, and the getter and setter reach the declared member.
+	/// </summary>
+	[TestMethod]
+	public void AMemberOrLocalNamedField_KeepsItsMeaningInsideAnAccessor()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "dotnet") is null)
+		{
+			Assert.Inconclusive("No dotnet on the path, so nothing was compiled.");
+			return;
+		}
+
+		// class Box { private int field = 42; int Field { get => field; set => field = value; } int Twice { get { int field = 2; return field; } } }
+		ClassDeclaration box = new("Box");
+		box.Members.Add(new FieldDeclaration("field", "int") { Visibility = Visibility.Private, InitialValue = Literal.Number(42) });
+		box.Members.Add(new PropertyDeclaration("Field", "int")
+		{
+			HasSetter = true,
+			GetterBody = { new ReturnStatement(new VariableReference("field")) },
+			SetterBody = { new AssignmentStatement(new VariableReference("field"), new VariableReference("value")) },
+		});
+		box.Members.Add(new PropertyDeclaration("Twice", "int")
+		{
+			GetterBody =
+			{
+				new VariableDeclaration("field", "int", Literal.Number(2)),
+				new ReturnStatement(new VariableReference("field")),
+			},
+		});
+
+		SourceFile file = new("Generated");
+		file.Members.Add(box);
+
+		const string ProgramProject = """
+			<Project Sdk="Microsoft.NET.Sdk">
+			  <PropertyGroup>
+			    <OutputType>Exe</OutputType>
+			    <TargetFramework>net10.0</TargetFramework>
+			    <Nullable>disable</Nullable>
+			    <ImplicitUsings>disable</ImplicitUsings>
+			    <WarningsAsErrors>CS9258;CS9273</WarningsAsErrors>
+			  </PropertyGroup>
+			</Project>
+			""";
+
+		const string FieldDriver = """
+			public static class Driver
+			{
+				public static void Main()
+				{
+					Box box = new Box();
+					int before = box.Field;
+					box.Field = 7;
+					System.Console.Write($"{before} {box.Field} {box.Twice}");
+				}
+			}
+			""";
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new CSharpGenerator().Generate(file);
+			File.WriteAllText(Path.Combine(directory, "Generated.csproj"), ProgramProject);
+			File.WriteAllText(Path.Combine(directory, "Driver.cs"), FieldDriver);
+			File.WriteAllText(Path.Combine(directory, "Generated.cs"), source);
+
+			(int exitCode, string output) = ToolchainHarness.Run("dotnet", "run -nologo", directory);
+			Assert.AreEqual(0, exitCode, $"C# rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+			StringAssert.EndsWith(output.TrimEnd(), "42 7 2", source);
+		});
+	}
+
+	/// <summary>
+	/// Tests that an inferred variable declared as a member of a type compiles, with the type it was
+	/// declared with or else the one its initialiser establishes (#432).
+	/// </summary>
+	/// <remarks>
+	/// <c>var</c> is only for a local, so a member written <c>var count = 0;</c> fails with CS0825.
+	/// The driver reads each member into its type, which is what holds the type that was said.
+	/// </remarks>
+	[TestMethod]
+	public void InferredTypeMembers_Compile()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "dotnet") is null)
+		{
+			Assert.Inconclusive("No dotnet on the path, so nothing was compiled.");
+			return;
+		}
+
+		SourceFile file = new("Generated");
+		file.Members.Add(InferredMembers());
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string source = new CSharpGenerator().Generate(file);
+			File.WriteAllText(Path.Combine(directory, "Generated.csproj"), Project);
+			File.WriteAllText(
+				Path.Combine(directory, "CounterDriver.cs"),
+				"""
+				public static class CounterDriver
+				{
+					public static double Use()
+					{
+						Counter counter = new Counter();
+						int count = counter.count;
+						double ratio = counter.ratio;
+						string label = counter.label;
+						return count + ratio + label.Length;
+					}
+				}
+				""");
+			File.WriteAllText(Path.Combine(directory, "Generated.cs"), source);
+
+			(int exitCode, string output) = ToolchainHarness.Run("dotnet", "build -nologo", directory);
+			Assert.AreEqual(0, exitCode, $"C# rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+		});
+	}
+
+	/// <summary>
+	/// Builds a class whose members are inferred variables: one with no declared type, one whose
+	/// declared type is wider than its initialiser's, and one holding a string.
+	/// </summary>
+	/// <returns>The class.</returns>
+	internal static ClassDeclaration InferredMembers()
+	{
+		ClassDeclaration counter = new("Counter");
+		counter.Members.Add(new VariableDeclaration("count") { IsTypeInferred = true, InitialValue = new LiteralExpression<int>(0) });
+		counter.Members.Add(new VariableDeclaration("ratio", "double") { IsTypeInferred = true, InitialValue = new LiteralExpression<int>(1) });
+		counter.Members.Add(new VariableDeclaration("label") { IsTypeInferred = true, InitialValue = Literal.Text("c") });
+		return counter;
 	}
 }
