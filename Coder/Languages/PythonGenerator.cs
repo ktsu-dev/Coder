@@ -703,6 +703,12 @@ public class PythonGenerator : StandardLanguageGenerator
 			return;
 		}
 
+		if (type is not null && EnumZeroMember(type) is EnumMember { Name: string member })
+		{
+			code.Write($"{PythonTypeFromGenericType(type)}.{EscapeIdentifier(member)}");
+			return;
+		}
+
 		code.Write("None");
 	}
 

@@ -414,11 +414,51 @@ public abstract class StandardLanguageGenerator : LanguageGeneratorBase
 
 		return name switch
 		{
-			"float" or "double" => Literal.DecimalValue(0.0),
+			"float" or "double" or "decimal" => Literal.DecimalValue(0.0),
 			"bool" => Literal.Bool(false),
 			"string" or "str" => Literal.Text(string.Empty),
+			"char" => Literal.Text("\0"),
 			_ => null,
 		};
+	}
+
+	/// <summary>
+	/// Finds the member a field of an enumeration declared in the document starts at before anything
+	/// is assigned to it.
+	/// </summary>
+	/// <param name="type">The declared type, or null where none is declared.</param>
+	/// <returns>The member whose value is 0, or else the first member; null where the type is not
+	/// exactly one enumeration declared in the document, or that enumeration has no members.</returns>
+	/// <remarks>
+	/// Every typed target value-initialises an enumeration to 0, which is the member declared as 0, and
+	/// the first member when none is given a value. A target that leaves an undeclared value unset
+	/// names that member instead (#449). A member whose value is written in terms of another is not
+	/// worked out, so an enumeration with no literal 0 starts at its first member.
+	/// </remarks>
+	protected EnumMember? EnumZeroMember(TypeReference? type)
+	{
+		if (type is not { IsArray: false, Indirection: TypeIndirection.None, TypeArguments.Count: 0, Name: string name }
+			|| GenerationRoot is not AstNode root)
+		{
+			return null;
+		}
+
+		List<EnumDeclaration> matches = [.. SelfAndDescendants(root).OfType<EnumDeclaration>().Where(enumDecl => enumDecl.Name == name)];
+		if (matches.Count != 1 || matches[0].Members.Count == 0)
+		{
+			return null;
+		}
+
+		EnumDeclaration enumeration = matches[0];
+		foreach ((EnumMember member, string value) in enumeration.Members.Zip(EnumMemberValues(enumeration)))
+		{
+			if (long.TryParse(value, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out long number) && number == 0)
+			{
+				return member;
+			}
+		}
+
+		return enumeration.Members[0];
 	}
 
 	private static readonly HashSet<string> IntegerTypeNames = new(StringComparer.Ordinal)
