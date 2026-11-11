@@ -1,4 +1,4 @@
-// Copyright (c) 2023-2026 ktsu-dev contributors
+﻿// Copyright (c) 2023-2026 ktsu-dev contributors
 
 namespace ktsu.Coder.Test.Languages;
 
@@ -49,6 +49,11 @@ public class UnassignedFieldValueTests
 				assert c.count == 1, c.count
 				assert c.total == 0 and c.ratio == 0.0 and c.flag is False and c.name == ""
 				assert c.origin is None
+				assert c.balance == 0 and c.initial == "\0"
+				c.balance += 2.5
+				assert c.balance == 2.5, c.balance
+				assert c.mode is counter.Mode.Off, c.mode
+				assert c.level is counter.Level.Low, c.level
 				assert c.Size == 0
 				c.Size += 2
 				assert c.Size == 2
@@ -82,6 +87,11 @@ public class UnassignedFieldValueTests
 			c.count += c.step;
 			assert(c.count === 1, `count is ${c.count}`);
 			assert(c.total === 0 && c.ratio === 0 && c.flag === false && c.name === "", "a zero was not written");
+			assert(c.balance === 0 && c.initial === "\0", "a decimal or char zero was not written");
+			c.balance += 2.5;
+			assert(c.balance === 2.5, `balance is ${c.balance}`);
+			assert(c.mode === Mode.Off, `mode is ${c.mode}`);
+			assert(c.level === Level.Low, `level is ${c.level}`);
 			c.Size += 2;
 			assert(c.Size === 2, `Size is ${c.Size}`);
 			assert(new Counter().count === 0, "a second instance shares the first's count");
@@ -103,6 +113,15 @@ public class UnassignedFieldValueTests
 	/// <returns>A file holding the class.</returns>
 	private static SourceFile Counter()
 	{
+		EnumDeclaration mode = new("Mode");
+		mode.Members.Add(new EnumMember("Off"));
+		mode.Members.Add(new EnumMember("On"));
+
+		// The member declared as 0 is the zero, wherever it is declared.
+		EnumDeclaration level = new("Level");
+		level.Members.Add(new EnumMember("High") { Value = "2" });
+		level.Members.Add(new EnumMember("Low") { Value = "0" });
+
 		ClassDeclaration counter = new("Counter");
 		counter.Members.Add(new FieldDeclaration("count", "int"));
 		counter.Members.Add(new FieldDeclaration("total", "long"));
@@ -110,10 +129,16 @@ public class UnassignedFieldValueTests
 		counter.Members.Add(new FieldDeclaration("flag", "bool"));
 		counter.Members.Add(new FieldDeclaration("name", "string"));
 		counter.Members.Add(new FieldDeclaration("origin", "Point"));
+		counter.Members.Add(new FieldDeclaration("balance", "decimal"));
+		counter.Members.Add(new FieldDeclaration("initial", "char"));
+		counter.Members.Add(new FieldDeclaration("mode", "Mode"));
+		counter.Members.Add(new FieldDeclaration("level", "Level"));
 		counter.Members.Add(new FieldDeclaration("step", "int") { InitialValue = Literal.Number(1) });
 		counter.Members.Add(new PropertyDeclaration("Size", "int") { HasSetter = true });
 
 		SourceFile file = new("counter");
+		file.Members.Add(mode);
+		file.Members.Add(level);
 		file.Members.Add(counter);
 		return file;
 	}

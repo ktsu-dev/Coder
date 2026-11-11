@@ -67,6 +67,18 @@ public abstract class CFamilyGenerator : StandardLanguageGenerator
 	protected abstract string SpellType(TypeReference type);
 
 	/// <summary>
+	/// Gets a value indicating whether the file being generated is a header.
+	/// </summary>
+	/// <remarks>
+	/// A header is included by every translation unit that uses it, and <c>#pragma once</c> keeps it
+	/// to once per unit and no further: a definition with external linkage in it is defined once in
+	/// each unit and the program does not link. So what a header defines is written so that a
+	/// definition in every unit is allowed, as <c>inline</c> in C++ and as <c>static</c> or
+	/// <c>static inline</c> in C, which has no inline variable (#423).
+	/// </remarks>
+	protected bool WritingHeader => GenerationRoot is SourceFile { IsHeader: true };
+
+	/// <summary>
 	/// Gets the file extension (without the dot) used for a header in this language.
 	/// </summary>
 	public virtual string HeaderFileExtension => "h";

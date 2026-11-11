@@ -413,4 +413,45 @@ public class CGeneratedSourceCompilesTests
 			Assert.AreNotEqual(0, exitCode, $"{compiler} let a constant string be reassigned:{Environment.NewLine}{header}");
 		});
 	}
+
+	/// <summary>
+	/// Tests that an array-typed struct member compiles, with and without an initialiser and with a
+	/// member after it, and that its constructor fills it (issue #410).
+	/// </summary>
+	/// <remarks>
+	/// <c>int items[];</c> is a flexible array member, an error unless it is the last member of a struct
+	/// with another named one, and storage for nothing when it does compile. The driver reads the
+	/// element the constructor was told to start it at, so a declaration that compiles but reserves
+	/// no storage fails too.
+	/// </remarks>
+	[TestMethod]
+	public void AnArrayStructMemberCompilesAndHoldsItsInitialiser()
+	{
+		string? compiler = ToolchainHarness.FindOnPath("--version", Compilers);
+		if (compiler is null)
+		{
+			Assert.Inconclusive("No C compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		string header = new CGenerator().Generate(CppGeneratedSourceCompilesTests.ArrayFieldExemplar());
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			File.WriteAllText(Path.Combine(directory, "bag.h"), header);
+			File.WriteAllText(
+				Path.Combine(directory, "driver.c"),
+				"#include \"bag.h\"\n\nint main(void)\n{\n\tBag bag = Bag_create();\n\treturn bag.items[0] == 3 && bag.spare == 0 && bag.count == 0 ? 0 : 1;\n}\n");
+
+			(int exitCode, string output) = ToolchainHarness.Run(
+				compiler,
+				"-std=c11 -Wall -Wextra -pedantic-errors -o driver driver.c",
+				directory);
+
+			Assert.AreEqual(0, exitCode, $"{compiler} rejected the generated header:{Environment.NewLine}{output}{Environment.NewLine}{header}");
+
+			(exitCode, output) = ToolchainHarness.Run(Path.Combine(directory, "driver"), string.Empty, directory);
+			Assert.AreEqual(0, exitCode, $"The constructed struct did not hold its declared values:{Environment.NewLine}{output}{Environment.NewLine}{header}");
+		});
+	}
 }
