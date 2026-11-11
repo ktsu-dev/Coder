@@ -988,4 +988,79 @@ public class CSharpGeneratedSourceCompilesTests
 			Assert.AreEqual(0, exitCode, $"C# rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
 		});
 	}
+
+	/// <summary>
+	/// Tests that a private or protected declaration in a position C# forbids the modifier compiles,
+	/// with a note saying what it was given (#428).
+	/// </summary>
+	/// <remarks>
+	/// A type directly in a namespace may be only public or internal (CS1527), the static class that
+	/// holds a namespace's members may not have protected ones (CS1057), and a struct may not declare
+	/// a protected member (CS0666). A protected member of a class is allowed, and stays as it was.
+	/// </remarks>
+	[TestMethod]
+	public void ForbiddenAccessModifiers_Compile()
+	{
+		if (ToolchainHarness.FindOnPath("--version", "dotnet") is null)
+		{
+			Assert.Inconclusive("No dotnet on the path, so nothing was compiled.");
+			return;
+		}
+
+		NamespaceDeclaration ns = new("Demo");
+		ns.Members.Add(new ClassDeclaration("Hidden") { Visibility = Visibility.Private });
+		ns.Members.Add(new ClassDeclaration("Prot") { Visibility = Visibility.Protected });
+		ns.Members.Add(new EnumDeclaration("E") { Visibility = Visibility.Private });
+		ns.Members.Add(new FieldDeclaration("counter", "int") { Visibility = Visibility.Protected });
+
+		FunctionDeclaration helper = new("helper") { ReturnType = "int", Visibility = Visibility.Protected };
+		helper.Body.Add(new ReturnStatement(Literal.Number(1)));
+		ns.Members.Add(helper);
+
+		ClassDeclaration point = new("S") { Kind = TypeDeclarationKind.Struct };
+		point.Members.Add(new PropertyDeclaration("P", "int") { Visibility = Visibility.Protected, HasSetter = true });
+		point.Members.Add(new FieldDeclaration("id", "int") { Visibility = Visibility.Protected });
+		point.Members.Add(new VariableDeclaration("v", "int", Literal.Number(0)) { Visibility = Visibility.Protected });
+		point.Members.Add(new ClassDeclaration("Nested") { Visibility = Visibility.Protected });
+		FunctionDeclaration m = new("m") { ReturnType = "int", Visibility = Visibility.Protected };
+		m.Body.Add(new ReturnStatement(new VariableReference("id")));
+		point.Members.Add(m);
+		ns.Members.Add(point);
+
+		ClassDeclaration shape = new("Shape") { Visibility = Visibility.Public };
+		shape.Members.Add(new FieldDeclaration("sides", "int") { Visibility = Visibility.Protected });
+		ns.Members.Add(shape);
+
+		SourceFile file = new("Generated");
+		file.Members.Add(ns);
+
+		string source = new CSharpGenerator().Generate(file);
+		StringAssert.Contains(source, "internal class Hidden", source);
+		StringAssert.Contains(source, "internal enum E", source);
+		StringAssert.Contains(source, "protected int sides", source);
+		StringAssert.Contains(source, "protected: Prot is internal", source);
+		StringAssert.Contains(source, "protected: helper is internal", source);
+		StringAssert.Contains(source, "protected: m is private", source);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			File.WriteAllText(Path.Combine(directory, "Generated.csproj"), Project);
+			File.WriteAllText(
+				Path.Combine(directory, "AccessDriver.cs"),
+				"""
+				public static class AccessDriver
+				{
+					public static int Use() =>
+						global::Demo.Demo.helper()
+						+ global::Demo.Demo.counter
+						+ (new global::Demo.Hidden() is null ? 0 : 1)
+						+ (int)default(global::Demo.E);
+				}
+				""");
+			File.WriteAllText(Path.Combine(directory, "Generated.cs"), source);
+
+			(int exitCode, string output) = ToolchainHarness.Run("dotnet", "build -nologo", directory);
+			Assert.AreEqual(0, exitCode, $"C# rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+		});
+	}
 }
