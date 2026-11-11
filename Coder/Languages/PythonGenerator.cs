@@ -23,6 +23,12 @@ public class PythonGenerator : StandardLanguageGenerator
 	private HashSet<FieldDeclaration>? instanceInitialisedFields;
 
 	/// <summary>
+	/// The names the class being written holds at class scope, which a static getter's invented name
+	/// must stay clear of.
+	/// </summary>
+	private HashSet<string> classScopeNames = new(StringComparer.Ordinal);
+
+	/// <summary>
 	/// The root <see cref="writtenModuleFields"/> was worked out for.
 	/// </summary>
 	private AstNode? writtenModuleFieldsRoot;
@@ -203,13 +209,25 @@ public class PythonGenerator : StandardLanguageGenerator
 	/// object itself rather than calling the getter. Python has no static property, so this one
 	/// becomes the two <c>@staticmethod</c> functions C, Rust and Go already lower it to, named the
 	/// way they name them (<c>limit()</c> and <c>set_limit(value)</c>), and reachable from the class.
+	/// <para>
+	/// A class attribute and a function of one name are one name in Python, and the function written
+	/// second replaces the attribute, so a getter that would take the name of something else in the
+	/// class is <c>get_limit()</c> instead, as it is in the other targets (#444).
+	/// </para>
 	/// </remarks>
 	private void GenerateStaticAccessors(PropertyDeclaration declaration, string annotation, string result, CodeBlocker code)
 	{
 		if (declaration.CanRead)
 		{
 			code.WriteLine("@staticmethod");
-			code.Write($"def {EscapeIdentifier(declaration.GetterName(NamingStyle.Snake))}(){result}:");
+			string getter = declaration.GetterName(NamingStyle.Snake);
+			if (classScopeNames.Contains(getter))
+			{
+				getter = NameStyles.Spell($"get {declaration.Name ?? "value"}", NamingStyle.Snake);
+			}
+
+			classScopeNames.Add(getter);
+			code.Write($"def {EscapeIdentifier(getter)}(){result}:");
 			WriteAccessorBody(declaration, isSetter: false, code);
 		}
 
@@ -833,6 +851,8 @@ public class PythonGenerator : StandardLanguageGenerator
 		instanceInitialisedFields = new HashSet<FieldDeclaration>(
 			InstanceInitialised(classDecl, NeedsConstruction),
 			ReferenceEqualityComparer.Instance);
+		HashSet<string> previousNames = classScopeNames;
+		classScopeNames = NamesOf(classDecl.Members);
 		try
 		{
 			// Python's body is delimited by indentation alone, so there is no brace scope to open.
@@ -885,6 +905,7 @@ public class PythonGenerator : StandardLanguageGenerator
 		finally
 		{
 			instanceInitialisedFields = previousFields;
+			classScopeNames = previousNames;
 		}
 	}
 

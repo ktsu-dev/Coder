@@ -235,6 +235,31 @@ public class GoGenerator : StandardLanguageGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
+	/// A static getter is a package-level function, joined to its type's name the way a static or
+	/// constant field is, so a getter <c>Limit</c> beside a field <c>limit</c> would be a second
+	/// <c>GaugeLimit</c> in the package (#444). A method sits on its receiver, beside the other
+	/// methods.
+	/// </remarks>
+	protected override bool SharesNameWithGetter(AstNode member, PropertyDeclaration declaration)
+	{
+		Ensure.NotNull(declaration);
+		return member switch
+		{
+			FieldDeclaration field => declaration.IsStatic && IsPackageLevelField(field),
+			FunctionDeclaration function => function.IsStatic == declaration.IsStatic,
+			_ => false,
+		};
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// Capitalised, because that is what <see cref="Join"/> does to a member's name on the way out.
+	/// </remarks>
+	protected override string MemberNameKey(string name) =>
+		Join(string.Empty, Ensure.NotNull(name));
+
+	/// <inheritdoc/>
+	/// <remarks>
 	/// A tab, because <c>gofmt</c> writes a tab. This is the one target where the indentation is not
 	/// the generator's to pick.
 	/// </remarks>
