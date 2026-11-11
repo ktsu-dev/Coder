@@ -1968,9 +1968,16 @@ public class GoGenerator : StandardLanguageGenerator
 		switch (condition)
 		{
 			case BinaryExpression binary when !IsBooleanBitwise(binary.Operator, binary.Left, binary.Right):
-				WriteConditionOperand(binary.Left, code);
+				// The operands meet at the wider of their types, as GenerateBinary widens them
+				// everywhere else (#395). A shift's count is not such an operand, and a logical
+				// operator's operands are booleans.
+				TypeReference? common = binary.Operator is BinaryOperator.LeftShift or BinaryOperator.RightShift
+					or BinaryOperator.LogicalAnd or BinaryOperator.LogicalOr
+					? null
+					: Promoted(StaticType(binary.Left), StaticType(binary.Right));
+				WriteWidenedConditionOperand(binary.Left, common, code);
 				code.Write($" {GetOperatorSpelling(binary.Operator)} ");
-				WriteConditionOperand(binary.Right, code);
+				WriteWidenedConditionOperand(binary.Right, common, code);
 				return;
 
 			case BinaryExpression binary when BooleanBitwiseSpelling(binary) is string spelling:
@@ -1988,6 +1995,28 @@ public class GoGenerator : StandardLanguageGenerator
 				WriteConditionOperand(condition, code);
 				return;
 		}
+	}
+
+	/// <summary>
+	/// Writes one operand of a comparison an <c>if</c> tests, converted to the type it meets the other
+	/// operand at when it is the narrower number.
+	/// </summary>
+	/// <param name="operand">The operand to write.</param>
+	/// <param name="common">The type the two operands meet at, or null where they are not widened.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// A struct literal is never a number, so it is never converted, and is left to
+	/// <see cref="WriteConditionOperand"/>, which parenthesises it.
+	/// </remarks>
+	private void WriteWidenedConditionOperand(AstNode operand, TypeReference? common, CodeBlocker code)
+	{
+		if (common is not null && !StartsWithCompositeLiteral(operand))
+		{
+			GenerateWidenedTo(operand, common, code);
+			return;
+		}
+
+		WriteConditionOperand(operand, code);
 	}
 
 	/// <summary>
