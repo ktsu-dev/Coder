@@ -5,6 +5,7 @@ namespace ktsu.Coder.Languages;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using ktsu.Coder.Ast;
 using ktsu.CodeBlocker;
 
@@ -56,6 +57,7 @@ public class CppGenerator : CFamilyGenerator
 		{ "sbyte", "signed char" },
 		{ "float", "float" },
 		{ "double", "double" },
+		{ "decimal", "double" },
 		{ "bool", "bool" },
 		{ "list", "std::vector" },
 		{ "dict", "std::map" },
@@ -153,7 +155,7 @@ public class CppGenerator : CFamilyGenerator
 	/// A data member and a member function of one class may not share a name, so a getter that would
 	/// take its backing field's name is <c>get_count()</c> instead.
 	/// </remarks>
-	protected override bool MemberNamesMustDiffer => true;
+	protected override bool SharesNameWithGetter(AstNode member, PropertyDeclaration declaration) => true;
 
 	/// <inheritdoc/>
 	/// <remarks>
@@ -205,11 +207,40 @@ public class CppGenerator : CFamilyGenerator
 			yield return CMathHeader;
 		}
 
-		if (SelfAndDescendants(file).OfType<EntryPoint>().Any(entryPoint => entryPoint.AcceptsArguments))
+		bool acceptsArguments = SelfAndDescendants(file).OfType<EntryPoint>().Any(entryPoint => entryPoint.AcceptsArguments);
+		if (acceptsArguments)
 		{
 			yield return VectorHeader;
+		}
+
+		if (acceptsArguments || SelfAndDescendants(file).Any(node => node is LiteralExpression<string> { Value: { } value } && value.Contains('\0', StringComparison.Ordinal)))
+		{
 			yield return StringHeader;
 		}
+
+		if (SelfAndDescendants(file).OfType<ClassDeclaration>().Any(type => type.Members.OfType<FieldDeclaration>()
+			.Any(field => field is { IsStatic: false, IsConstant: false, Type.IsArray: true })))
+		{
+			yield return VectorHeader;
+		}
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// A literal holding a NUL is written as <c>std::string("…", N)</c>, with <c>N</c> its UTF-8 byte
+	/// count. <c>string</c> is <c>std::string</c> here, and a bare <c>"a\000b"</c> reaches one through
+	/// <c>std::string(const char*)</c>, which stops at the first NUL, so the value would silently become
+	/// <c>a</c> (issue #482). The <c>""s</c> literal would also keep the length, but it needs a
+	/// <c>using namespace std::string_literals</c> that the AST's imports do not carry. Every other
+	/// literal stays a plain one, which converts to <c>std::string</c> and <c>const char*</c> alike.
+	/// </remarks>
+	protected override string FormatString(string value)
+	{
+		Ensure.NotNull(value);
+		string literal = base.FormatString(value);
+		return value.Contains('\0', StringComparison.Ordinal)
+			? $"std::string({literal}, {Encoding.UTF8.GetByteCount(value)})"
+			: literal;
 	}
 
 	/// <summary>
@@ -250,6 +281,51 @@ public class CppGenerator : CFamilyGenerator
 		code.Write(")");
 	}
 
+	/// <summary>
+	/// Decides whether a declaration's <c>virtual</c> or <c>abstract</c> can be written as
+	/// <c>virtual</c>, and writes a note saying what was dropped where it cannot.
+	/// </summary>
+	/// <param name="funcDecl">The declaration being emitted.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <param name="enclosingType">The name of the type it belongs to, when it belongs to one.</param>
+	/// <returns>True when the declaration is written <c>virtual</c>.</returns>
+	/// <remarks>
+	/// C++ allows <c>virtual</c> only on a non-static member function that is not a constructor:
+	/// a static member cannot be both (it has no object to dispatch on), a constructor runs before
+	/// there is a dynamic type to dispatch to, and a function outside a class has nothing to be
+	/// overridden by. A destructor keeps it, since a virtual destructor is how a base class is
+	/// deleted through a pointer to it.
+	/// </remarks>
+	private bool WriteVirtualNote(FunctionDeclaration funcDecl, CodeBlocker code, string? enclosingType)
+	{
+		if (!(funcDecl.IsVirtual || funcDecl.IsAbstract))
+		{
+			return false;
+		}
+
+		string obstacle;
+		if (enclosingType is null)
+		{
+			obstacle = "is not a member of a class";
+		}
+		else if (funcDecl.Kind == FunctionKind.Constructor)
+		{
+			obstacle = "is a constructor";
+		}
+		else if (funcDecl.IsStatic)
+		{
+			obstacle = "is static";
+		}
+		else
+		{
+			return true;
+		}
+
+		string modifier = funcDecl.IsAbstract ? "abstract" : "virtual";
+		WriteInexpressible(code, $"{modifier}: {funcDecl.Name} {obstacle}, which C++ cannot declare virtual");
+		return false;
+	}
+
 	/// <inheritdoc/>
 	/// <remarks>
 	/// A constructor and a destructor are named after the type rather than after themselves, so the
@@ -269,6 +345,7 @@ public class CppGenerator : CFamilyGenerator
 		Ensure.NotNull(code);
 
 		WritePreamble(funcDecl, code, enclosingType is null ? PreambleSite.Function : PreambleSite.Method);
+		bool isVirtual = WriteVirtualNote(funcDecl, code, enclosingType);
 		WriteUnaskedConstraints(funcDecl.TypeParameters, code);
 		WriteTemplateHead(funcDecl.TypeParameters, code);
 
@@ -298,9 +375,14 @@ public class CppGenerator : CFamilyGenerator
 			code.Write("static ");
 		}
 
+		if (NeedsInline(funcDecl, enclosingType))
+		{
+			code.Write("inline ");
+		}
+
 		// An abstract declaration is virtual whether or not it was asked to be: there is nothing else
 		// `= 0` could mean.
-		if (funcDecl.IsVirtual || funcDecl.IsAbstract)
+		if (isVirtual)
 		{
 			code.Write("virtual ");
 		}
@@ -334,9 +416,11 @@ public class CppGenerator : CFamilyGenerator
 			code.Write(" noexcept");
 		}
 
+		// Where virtual cannot be written, `= 0` has nothing to mean either, so an abstract declaration
+		// is declared and left for something else to define.
 		if (funcDecl.IsAbstract)
 		{
-			code.WriteLine(" = 0;");
+			code.WriteLine(isVirtual ? " = 0;" : ";");
 			return;
 		}
 
@@ -365,6 +449,24 @@ public class CppGenerator : CFamilyGenerator
 			GenerateInternal(statement, code);
 		}
 	}
+
+	/// <summary>
+	/// Reports whether a function has to say <c>inline</c> to be defined in a header.
+	/// </summary>
+	/// <param name="funcDecl">The declaration being emitted.</param>
+	/// <param name="enclosingType">The type it is a member of, or null for a free function.</param>
+	/// <returns>True for a free function defined in a header that is not inline already.</returns>
+	/// <remarks>
+	/// A function defined in a class is inline already, and so are a friend defined there and a
+	/// <c>constexpr</c> one; anything else defined in a header is defined again in every translation
+	/// unit that includes it, and the program does not link (#423).
+	/// </remarks>
+	private bool NeedsInline(FunctionDeclaration funcDecl, string? enclosingType) =>
+		WritingHeader
+		&& enclosingType is null
+		&& !funcDecl.IsFriend
+		&& !funcDecl.IsCompileTimeEvaluable
+		&& !funcDecl.IsAbstract;
 
 	/// <summary>
 	/// Writes what the type's members start at, between a constructor's signature and its body.
@@ -722,7 +824,7 @@ public class CppGenerator : CFamilyGenerator
 		WritePreamble(field, code, PreambleSite.Field);
 
 		string storage = SpellStorage(field);
-		TypeReference fieldType = field.Type ?? new TypeReference(UnknownTypeName);
+		TypeReference fieldType = HeldArrayType(field) ?? field.Type ?? new TypeReference(UnknownTypeName);
 		string fieldName = field.Name ?? string.Empty;
 
 		// A storage that ends in const leaves the type's own const, or a pointer's, to the
@@ -749,6 +851,31 @@ public class CppGenerator : CFamilyGenerator
 		}
 
 		EndStatement(code);
+	}
+
+	/// <summary>
+	/// Spells an array-typed instance field as a container that holds its elements.
+	/// </summary>
+	/// <param name="field">The field.</param>
+	/// <returns>A <c>std::vector</c> of the element type, or null when the field is not one (#410).</returns>
+	/// <remarks>
+	/// A data member's brackets need a bound C++ can see, and <see cref="TypeReference.IsArray"/>
+	/// carries none, so <c>T name[]</c> inside a type is a flexible array member, which ISO C++ does
+	/// not have and no compiler lets an initialiser stand on. A static or constant one is left alone:
+	/// it is defined rather than laid out, so its initialiser gives it a bound the way a
+	/// namespace-scope table's does.
+	/// </remarks>
+	private TypeReference? HeldArrayType(FieldDeclaration field)
+	{
+		if (insideType == 0 || field.IsStatic || field.IsConstant || field.Type is not { IsArray: true } type)
+		{
+			return null;
+		}
+
+		TypeReference element = type.Clone();
+		element.IsArray = false;
+
+		return new TypeReference("list") { TypeArguments = { element } };
 	}
 
 	/// <summary>
@@ -792,6 +919,10 @@ public class CppGenerator : CFamilyGenerator
 
 			code.Write(SpellConstantVariableDeclarator(field));
 		}
+		else if (field.IsTypeInferred && field.InitialValue is Expression initialValue)
+		{
+			code.Write(SpellDeclarator(InferredMemberType(field, initialValue, code), field.Name));
+		}
 		else
 		{
 			code.Write(SpellVariableDeclarator(field));
@@ -804,6 +935,30 @@ public class CppGenerator : CFamilyGenerator
 		}
 
 		EndStatement(code);
+	}
+
+	/// <summary>
+	/// Reads the type a non-static data member that asked for inference is declared with.
+	/// </summary>
+	/// <param name="field">The member being emitted.</param>
+	/// <param name="initialValue">The member's initialiser.</param>
+	/// <param name="code">The writer to emit into, for a note where no type can be said.</param>
+	/// <returns>The declared type if there is one, else the type the initialiser establishes, else
+	/// <c>object</c>, which is <c>std::any</c>.</returns>
+	/// <remarks>
+	/// A non-static data member cannot be declared with the placeholder <c>auto</c>, whatever its
+	/// initialiser, so the type is said for it, as C# does for a field (#432). A <c>static constexpr</c>
+	/// member is unaffected, because <c>auto</c> is allowed there.
+	/// </remarks>
+	private TypeReference InferredMemberType(VariableDeclaration field, Expression initialValue, CodeBlocker code)
+	{
+		if ((field.Type ?? StaticType(initialValue)) is TypeReference type)
+		{
+			return type;
+		}
+
+		WriteInexpressible(code, $"{field.Name}: C++ infers no type for a non-static data member, and nothing here says one");
+		return new TypeReference("object");
 	}
 
 	/// <inheritdoc/>
@@ -904,7 +1059,7 @@ public class CppGenerator : CFamilyGenerator
 	/// has no type text to inspect, so its <c>const</c> stands in front of <c>auto</c>.
 	/// </remarks>
 	private string SpellConstantVariableDeclarator(VariableDeclaration varDecl) =>
-		!varDecl.IsTypeInferred && varDecl.Type is TypeReference declared
+		!InfersType(varDecl) && varDecl.Type is TypeReference declared
 			? SpellConstantDeclarator(declared, varDecl.Name)
 			: $"const {SpellVariableDeclarator(varDecl)}";
 
@@ -923,7 +1078,7 @@ public class CppGenerator : CFamilyGenerator
 	/// </remarks>
 	private string SpellVariableDeclarator(VariableDeclaration varDecl)
 	{
-		if (!varDecl.IsTypeInferred && varDecl.Type is TypeReference declared)
+		if (!InfersType(varDecl) && varDecl.Type is TypeReference declared)
 		{
 			return SpellDeclarator(declared, varDecl.Name);
 		}
@@ -1038,7 +1193,10 @@ public class CppGenerator : CFamilyGenerator
 			return insideType > 0 ? "inline static " : "static ";
 		}
 
-		return string.Empty;
+		// A mutable variable at namespace scope has external linkage, so a header defining one
+		// defines it again in every translation unit that includes it. C++17's inline variable is
+		// one object however many units define it (#423).
+		return insideType == 0 && WritingHeader ? "inline " : string.Empty;
 	}
 
 	/// <summary>

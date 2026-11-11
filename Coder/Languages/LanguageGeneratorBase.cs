@@ -183,7 +183,7 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 				return true;
 
 			case LiteralExpression<string> stringLit:
-				code.Write($"\"{EscapeString(stringLit.Value ?? string.Empty)}\"");
+				code.Write(FormatString(stringLit.Value ?? string.Empty));
 				return true;
 
 			case LiteralExpression<int> intLit:
@@ -208,7 +208,7 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 
 			// Legacy support for AstLeafNode types
 			case AstLeafNode<string> strLeaf:
-				code.Write($"\"{EscapeString(strLeaf.Value ?? string.Empty)}\"");
+				code.Write(FormatString(strLeaf.Value ?? string.Empty));
 				return true;
 
 			case AstLeafNode<int> intLeaf:
@@ -256,6 +256,34 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 		Ensure.NotNull(code);
 		WriteComment(code, CommentPrefix, what);
 	}
+
+	/// <summary>
+	/// Determines whether a variable's type is left for the target to infer from its initialiser.
+	/// </summary>
+	/// <param name="varDecl">The declaration being emitted.</param>
+	/// <returns>
+	/// True when the declaration asked for inference and its initialiser can supply a type; false when
+	/// it says its type.
+	/// </returns>
+	/// <remarks>
+	/// A typeless list takes its type from the declaration it initialises, so it has none to give
+	/// back: C# has no natural type for <c>[1, 2]</c> (CS9176), Go none for <c>{1, 2}</c>, and C++
+	/// and Rust infer an <c>std::initializer_list</c> and an array where a list was declared. Such a
+	/// declaration keeps the type it was given even when it was marked inferred (#447).
+	/// </remarks>
+	protected static bool InfersType(VariableDeclaration varDecl)
+	{
+		Ensure.NotNull(varDecl);
+		return varDecl.IsTypeInferred && !(varDecl.Type is not null && IsTypelessList(varDecl.InitialValue));
+	}
+
+	/// <summary>
+	/// Determines whether an initialiser is a list that relies on its declaration for its type.
+	/// </summary>
+	/// <param name="initialValue">The initialiser, if there is one.</param>
+	/// <returns>True for a <see cref="ConstructionExpression"/> that names no type.</returns>
+	protected static bool IsTypelessList(Expression? initialValue) =>
+		initialValue is ConstructionExpression { Type: null };
 
 	/// <summary>
 	/// Gets what an ordinary comment starts with in this language.
@@ -911,7 +939,7 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 			code.Write(SpellMemberAccess(callExpr.Receiver));
 		}
 
-		code.Write(SpellCallee(callExpr.Callee));
+		code.Write(callExpr.Receiver is not null && !EscapesMemberNames ? callExpr.Callee : SpellCallee(callExpr.Callee));
 		code.Write("(");
 		for (int index = 0; index < callExpr.Arguments.Count; index++)
 		{
@@ -1214,6 +1242,18 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	protected virtual bool IsReceiverWord(string word) => false;
 
 	/// <summary>
+	/// Gets whether a member's name, where it follows a <c>.</c>, is escaped like any other name.
+	/// </summary>
+	/// <remarks>
+	/// True by default, because most targets reserve a keyword everywhere: C++ cannot read
+	/// <c>holder.default</c>, so the member is declared <c>default_</c> and every access says so.
+	/// A target that accepts a keyword as a member name after a <c>.</c> — JavaScript reads
+	/// <c>holder.default</c> and <c>this.delete()</c> as written — returns false, and then only the
+	/// names a keyword would bind are escaped: what leads a reference, and a call with no receiver.
+	/// </remarks>
+	protected virtual bool EscapesMemberNames => true;
+
+	/// <summary>
 	/// Spells a reference so any segment naming a declared member escapes as its declaration did.
 	/// </summary>
 	/// <param name="reference">The reference's text, possibly a dotted member access such as <c>self.type</c>.</param>
@@ -1237,6 +1277,11 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 		string[] segments = reference.Split('.');
 		for (int i = 0; i < segments.Length; i++)
 		{
+			if (i > 0 && !EscapesMemberNames)
+			{
+				continue;
+			}
+
 			string[] path = segments[i].Split("::");
 			if (path.Length > 1)
 			{
@@ -1270,18 +1315,42 @@ public abstract class LanguageGeneratorBase : ILanguageGenerator
 	/// keyword. A callee is otherwise text and stays verbatim: C++'s <c>sizeof</c> and <c>delete</c>
 	/// are reserved but not declared, and escaping them would break the call. Any function or method
 	/// of the name counts, whatever its receiver, because every one of them was escaped the same way
-	/// and no target accepts the bare keyword as a callee.
+	/// and no target accepts the bare keyword as a callee. A target that does not escape member names
+	/// (<see cref="EscapesMemberNames"/>) counts only free functions, since only they were escaped.
 	/// </remarks>
 	protected string SpellCallee(string callee)
 	{
 		Ensure.NotNull(callee);
 
-		return ReservedWords.Contains(callee)
-			&& GenerationRoot is AstNode root
-			&& SelfAndDescendants(root).OfType<FunctionDeclaration>().Any(function => function.Name == callee)
-			? EscapeIdentifier(callee)
-			: callee;
+		if (!ReservedWords.Contains(callee) || GenerationRoot is not AstNode root)
+		{
+			return callee;
+		}
+
+		IEnumerable<FunctionDeclaration> functions = SelfAndDescendants(root).OfType<FunctionDeclaration>();
+		if (!EscapesMemberNames)
+		{
+			// A method keeps its keyword name, so only a free function was escaped where it was declared.
+			HashSet<FunctionDeclaration> methods = SelfAndDescendants(root)
+				.OfType<ClassDeclaration>()
+				.SelectMany(type => type.Members.OfType<FunctionDeclaration>())
+				.ToHashSet<FunctionDeclaration>(ReferenceEqualityComparer.Instance);
+			functions = functions.Where(function => !methods.Contains(function));
+		}
+
+		return functions.Any(function => function.Name == callee) ? EscapeIdentifier(callee) : callee;
 	}
+
+	/// <summary>
+	/// Writes a string literal: its escaped contents between double quotes.
+	/// </summary>
+	/// <param name="value">The raw string value.</param>
+	/// <returns>The literal as the target language spells it.</returns>
+	/// <remarks>
+	/// A generator overrides this where a quoted literal does not hold every string: C++ converts one to
+	/// <c>std::string</c> through a constructor that stops at the first NUL.
+	/// </remarks>
+	protected virtual string FormatString(string value) => $"\"{EscapeString(value)}\"";
 
 	/// <summary>
 	/// Escapes a string literal's contents for a target language using C-style backslash escapes.
