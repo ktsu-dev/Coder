@@ -505,7 +505,7 @@ public static class AstFields
 			(Parameter parameter, "Name") => Assign(() => parameter.Name = OrNull(value)),
 			(Parameter parameter, "Type") => Assign(() => parameter.Type = OrNull(value)),
 			(Parameter parameter, "Optional") => AssignFlag(value, optional => parameter.IsOptional = optional),
-			(Parameter parameter, "Default") => Assign(() => parameter.DefaultValue = Parameter.ParseDefaultValue(value)),
+			(Parameter parameter, "Default") => Assign(() => parameter.DefaultValue = Parameter.ParseDefaultValue(value, parameter.Type)),
 
 			(VariableDeclaration varDecl, "Name") => value.Length > 0 && Assign(() => varDecl.Name = value),
 			(VariableDeclaration varDecl, "Type") => Assign(() => varDecl.Type = OrNull(value)),

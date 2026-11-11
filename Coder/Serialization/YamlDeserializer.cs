@@ -6,6 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using ktsu.Coder.Ast;
@@ -47,10 +48,64 @@ public partial class YamlDeserializer
 
 		// Process the first node type found
 		(string nodeType, object nodeData) = rootDict.First();
-		return DeserializeNode(nodeType, nodeData);
+		try
+		{
+			return DeserializeNode(nodeType, nodeData);
+		}
+		catch (InvalidDataException ex)
+		{
+			throw UnreadableDocument.Described(ex);
+		}
 	}
 
+	/// <summary>
+	/// Reads one node, failing when its key names no node this library has.
+	/// </summary>
+	/// <param name="nodeType">The key the node was written under.</param>
+	/// <param name="nodeData">What was written under it.</param>
+	/// <returns>The node read.</returns>
+	/// <remarks>
+	/// An unknown key used to read as <see langword="null"/>, which every list reader skips, so a
+	/// mistyped statement or one from a newer build vanished from the tree, and the next save erased it
+	/// from disk too. Refusing the document is the only answer that cannot lose what is in it. Each
+	/// enclosing node adds its key on the way out, so the message says where the problem is.
+	/// </remarks>
 	private AstNode? DeserializeNode(string nodeType, object? nodeData)
+	{
+		try
+		{
+			return DeserializeKnownNode(nodeType, nodeData);
+		}
+		catch (InvalidDataException ex) when (UnreadableDocument.Enclose(ex, nodeType))
+		{
+			throw;
+		}
+	}
+
+	/// <summary>
+	/// Reads one node as <see cref="DeserializeNode"/> does, but answers <see langword="null"/> for a
+	/// key that names no node.
+	/// </summary>
+	/// <param name="nodeType">The key the node was written under.</param>
+	/// <param name="nodeData">What was written under it.</param>
+	/// <returns>The node read, or <see langword="null"/> when the key is not a node's.</returns>
+	/// <remarks>
+	/// For the one place a key may be a node or a property of the node holding it: keyed children
+	/// written without a <c>children</c> mapping sit beside the node's own properties.
+	/// </remarks>
+	private AstNode? TryDeserializeNode(string nodeType, object? nodeData)
+	{
+		try
+		{
+			return DeserializeNode(nodeType, nodeData);
+		}
+		catch (InvalidDataException ex) when (UnreadableDocument.IsUnknownNode(ex, nodeType))
+		{
+			return null;
+		}
+	}
+
+	private AstNode? DeserializeKnownNode(string nodeType, object? nodeData)
 	{
 		return nodeType switch
 		{
@@ -104,7 +159,7 @@ public partial class YamlDeserializer
 			"Unfilled" => new UnfilledExpression(),
 			_ when nodeType.StartsWith("literal<", StringComparison.OrdinalIgnoreCase) || nodeType.StartsWith("Literal<", StringComparison.OrdinalIgnoreCase) => DeserializeLiteralExpression(nodeType, nodeData),
 			_ when nodeType.StartsWith("leaf<", StringComparison.OrdinalIgnoreCase) || nodeType.StartsWith("Leaf<", StringComparison.OrdinalIgnoreCase) => DeserializeLeafNode(nodeType, nodeData),
-			_ => null,
+			_ => throw UnreadableDocument.UnknownNode(nodeType),
 		};
 	}
 
@@ -229,11 +284,51 @@ public partial class YamlDeserializer
 			? parsed
 			: null;
 
-	private static T? ReadEnum<T>(Dictionary<object, object> dict, string key, bool ignoreCase = false)
-		where T : struct, Enum =>
-		dict.TryGetValue(key, out object? value) && Enum.TryParse(value?.ToString(), ignoreCase, out T parsed)
+	/// <summary>
+	/// Reads an enumeration by member name, in any case.
+	/// </summary>
+	/// <typeparam name="T">The enumeration.</typeparam>
+	/// <param name="dict">The mapping the node was written as.</param>
+	/// <param name="key">The key to read.</param>
+	/// <returns>The member named, or <see langword="null"/> when the document does not say.</returns>
+	/// <exception cref="InvalidDataException">The value names no member of <typeparamref name="T"/>.</exception>
+	/// <remarks>
+	/// A value that did not parse used to leave the property at its default, so <c>operator: Minus</c>
+	/// generated an addition, and a number parsed whether or not it was a member, so
+	/// <c>operator: 999</c> loaded and threw during generation. Only a member's name is accepted.
+	/// </remarks>
+	private static T? ReadEnum<T>(Dictionary<object, object> dict, string key)
+		where T : struct, Enum
+	{
+		if (!dict.TryGetValue(key, out object? value) || value is null)
+		{
+			return null;
+		}
+
+		string text = value.ToString() ?? string.Empty;
+		return TryReadEnumName(text, out T parsed)
+			? parsed
+			: throw UnreadableDocument.Value($"{key} '{text}' is not a {typeof(T).Name}");
+	}
+
+	/// <summary>
+	/// Reads a declaration's visibility, which is the one enumeration a document may spell in a way
+	/// that is no longer a member.
+	/// </summary>
+	/// <param name="dict">The mapping the node was written as.</param>
+	/// <param name="key">The key to read.</param>
+	/// <returns>The member named, or <see langword="null"/> when the value names none.</returns>
+	private static Visibility? ReadVisibility(Dictionary<object, object> dict, string key) =>
+		dict.TryGetValue(key, out object? value) && TryReadEnumName(value?.ToString() ?? string.Empty, out Visibility parsed)
 			? parsed
 			: null;
+
+	private static bool TryReadEnumName<T>(string text, out T parsed)
+		where T : struct, Enum =>
+		Enum.TryParse(text, ignoreCase: true, out parsed)
+			&& Enum.IsDefined(parsed)
+			&& !text.TrimStart().StartsWith('-')
+			&& !char.IsAsciiDigit(text.TrimStart().FirstOrDefault());
 
 	private static int? ReadInt(Dictionary<object, object> dict, string key) =>
 		dict.TryGetValue(key, out object? value) && int.TryParse(value?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed)
@@ -272,8 +367,8 @@ public partial class YamlDeserializer
 	/// </remarks>
 	private static void DeserializeVisibility(IHasVisibility declaration, Dictionary<object, object> dict)
 	{
-		if ((ReadEnum<Visibility>(dict, "visibility", ignoreCase: true)
-			?? ReadEnum<Visibility>(dict, "accessModifier", ignoreCase: true)) is Visibility visibility)
+		if ((ReadVisibility(dict, "visibility")
+			?? ReadVisibility(dict, "accessModifier")) is Visibility visibility)
 		{
 			declaration.Visibility = visibility;
 		}
@@ -481,6 +576,8 @@ public partial class YamlDeserializer
 				}
 			}
 		}
+
+		construction.ExpectedType = ReadString(dict, "expectedType");
 
 		DeserializeMetadata(construction, dict);
 		return construction;
@@ -1120,15 +1217,15 @@ public partial class YamlDeserializer
 	{
 		if (dict.TryGetValue(ChildrenKey, out object? childrenObj) && childrenObj is Dictionary<object, object> children)
 		{
-			ReadKeyedChildren(node, children);
+			ReadKeyedChildren(node, children, readsChildrenMapping: true);
 			return;
 		}
 
 		HashSet<string> knownKeys = ["name", "returnType", "visibility", "accessModifier", "parameters", "body", "metadata", "expression"];
-		ReadKeyedChildren(node, dict.Where(entry => !knownKeys.Contains(entry.Key.ToString() ?? string.Empty)));
+		ReadKeyedChildren(node, dict.Where(entry => !knownKeys.Contains(entry.Key.ToString() ?? string.Empty)), readsChildrenMapping: false);
 	}
 
-	private void ReadKeyedChildren(AstCompositeNode node, IEnumerable<KeyValuePair<object, object>> entries)
+	private void ReadKeyedChildren(AstCompositeNode node, IEnumerable<KeyValuePair<object, object>> entries, bool readsChildrenMapping)
 	{
 		foreach ((object key, object value) in entries)
 		{
@@ -1140,7 +1237,10 @@ public partial class YamlDeserializer
 			string keyString = key.ToString() ?? string.Empty;
 			foreach ((object childType, object childData) in childDict)
 			{
-				AstNode? child = DeserializeNode(childType.ToString() ?? string.Empty, childData);
+				string childKey = childType.ToString() ?? string.Empty;
+				AstNode? child = readsChildrenMapping
+					? DeserializeNode(childKey, childData)
+					: TryDeserializeNode(childKey, childData);
 				if (child != null)
 				{
 					node.SetChild(keyString, child);
@@ -1165,7 +1265,7 @@ public partial class YamlDeserializer
 					&& defaultObj is Dictionary<object, object> defaultDict
 					&& defaultDict.Count > 0
 					? DeserializeNode(defaultDict.First().Key.ToString() ?? string.Empty, defaultDict.First().Value) as Expression
-					: Parameter.ParseDefaultValue(ReadString(dict, "defaultValue"));
+					: Parameter.ParseDefaultValue(ReadString(dict, "defaultValue"), param.Type);
 			}
 
 			// Parse metadata if present
@@ -1295,7 +1395,10 @@ public partial class YamlDeserializer
 			return null;
 		}
 
-		if (!dict.TryGetValue(ValueKey, out object? value))
+		// The serializer leaves out a null value, and every generator writes a null string literal as
+		// "", so a string literal with no value reads back as the empty string rather than vanishing
+		// from its parent (ktsu-dev/Coder#251).
+		if (!dict.TryGetValue(ValueKey, out object? value) && valueType != "String")
 		{
 			return null;
 		}
@@ -1314,6 +1417,7 @@ public partial class YamlDeserializer
 		if (result is Expression expression)
 		{
 			expression.ExpectedType = ReadString(dict, "expectedType");
+			DeserializeMetadata(expression, dict);
 		}
 
 		return result;

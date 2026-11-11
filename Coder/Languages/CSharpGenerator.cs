@@ -80,7 +80,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 				GenerateBinary(binaryExpr, code);
 				break;
 			case UnaryExpression unaryExpr:
-				GenerateUnaryExpression(unaryExpr, code, GetUnaryOperator(unaryExpr.Operator));
+				GenerateUnary(unaryExpr, code);
 				break;
 			case CallExpression call:
 				GenerateCallExpression(call, code);
@@ -213,9 +213,13 @@ public class CSharpGenerator : LanguageGeneratorBase
 
 	/// <inheritdoc/>
 	/// <remarks>
-	/// The reserved keywords. The contextual ones — <c>var</c>, <c>value</c>, <c>where</c>,
-	/// <c>record</c>, <c>nameof</c> and the rest — are keywords only where the grammar expects one
-	/// and are legal names everywhere else, so they are left alone.
+	/// The reserved keywords, and <c>field</c>. The other contextual ones — <c>var</c>, <c>value</c>,
+	/// <c>where</c>, <c>record</c>, <c>nameof</c> and the rest — are keywords only where the grammar
+	/// expects one and are legal names everywhere else, so they are left alone. <c>field</c> is not:
+	/// since C# 14, inside a property accessor it names the property's synthesized backing field, so
+	/// a member named <c>field</c> read there silently reads that instead (CS9258) and a local of
+	/// that name fails to compile (CS9273). <c>@field</c> is the same identifier everywhere, so it is
+	/// escaped everywhere rather than only inside accessors, and a declaration and its uses agree.
 	/// </remarks>
 	protected override IReadOnlySet<string> ReservedWords { get; } = new HashSet<string>(StringComparer.Ordinal)
 	{
@@ -226,6 +230,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 		"override", "params", "private", "protected", "public", "readonly", "ref", "return", "sbyte", "sealed",
 		"short", "sizeof", "stackalloc", "static", "string", "struct", "switch", "this", "throw", "true", "try",
 		"typeof", "uint", "ulong", "unchecked", "unsafe", "ushort", "using", "virtual", "void", "volatile", "while",
+		"field",
 	};
 
 	/// <inheritdoc/>
@@ -355,7 +360,12 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// Determines whether C# gives an expression's result at least the width of <c>int</c>.
 	/// </summary>
 	/// <param name="value">The expression.</param>
-	/// <returns>True for an arithmetic, bitwise or shift operator, a numeric unary one, or a conditional either of whose branches is one.</returns>
+	/// <returns>True for an arithmetic, bitwise or shift operator, a numeric unary one, or any conditional.</returns>
+	/// <remarks>
+	/// Every conditional counts, not only one with an operator in a branch: <c>flag ? 1 : 2</c> is not
+	/// a constant, so its type is <c>int</c> and it does not convert to <c>short</c> (CS0266), and a
+	/// cast is harmless on a conditional whose branches already have the narrow type (#448).
+	/// </remarks>
 	private static bool PromotesToInt(AstNode value) => value switch
 	{
 		BinaryExpression binary => binary.Operator is BinaryOperator.Add
@@ -369,9 +379,56 @@ public class CSharpGenerator : LanguageGeneratorBase
 			or BinaryOperator.LeftShift
 			or BinaryOperator.RightShift,
 		UnaryExpression unary => unary.Operator is UnaryOperator.Negate or UnaryOperator.Plus or UnaryOperator.BitwiseNot,
-		ConditionalExpression conditional => PromotesToInt(conditional.WhenTrue) || PromotesToInt(conditional.WhenFalse),
+		ConditionalExpression => true,
 		_ => false,
 	};
+
+	/// <summary>
+	/// Emits a unary expression.
+	/// </summary>
+	/// <param name="unary">The expression to emit.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// C# promotes <c>-</c> on a <c>uint</c> to <c>long</c>, so returning it as a <c>uint</c> is CS0266,
+	/// and has no <c>-</c> on a <c>ulong</c> at all (CS0023), where the C family wraps (#373). Subtracting
+	/// from zero unchecked is the same wrap at the operand's own type.
+	/// </remarks>
+	private void GenerateUnary(UnaryExpression unary, CodeBlocker code)
+	{
+		if (unary.Operator == UnaryOperator.Negate && UnsignedSuffix(unary.Operand) is string suffix)
+		{
+			code.Write($"unchecked(0{suffix} - ");
+			GenerateInternal(unary.Operand, code);
+			code.Write(")");
+			return;
+		}
+
+		GenerateUnaryExpression(unary, code, GetUnaryOperator(unary.Operator));
+	}
+
+	/// <summary>
+	/// Reads the literal suffix of the unsigned type an expression is known to have.
+	/// </summary>
+	/// <param name="expression">The expression to inspect.</param>
+	/// <returns><c>u</c> for a <c>uint</c>, <c>UL</c> for a <c>ulong</c>, or null for any other or unknown type.</returns>
+	private string? UnsignedSuffix(Expression expression)
+	{
+		TypeReference? type = expression switch
+		{
+			{ ExpectedType: string expected } => new TypeReference(expected),
+			VariableReference reference when shiftCountTypes.TryGetValue(reference.Name, out TypeReference? local) => local,
+			_ => null,
+		};
+
+		return type is { IsArray: false, Indirection: TypeIndirection.None, TypeArguments.Count: 0 }
+			? type.Name switch
+			{
+				"uint" => "u",
+				"ulong" => "UL",
+				_ => null,
+			}
+			: null;
+	}
 
 	/// <summary>
 	/// Reads the declared type of the target of a plain assignment.
@@ -405,6 +462,78 @@ public class CSharpGenerator : LanguageGeneratorBase
 			.Select(field => field.Type)
 			.Take(2)];
 		return fields.Length == 1 ? fields[0] : null;
+	}
+
+	/// <summary>
+	/// Finds the one type the document declares under a reference's name.
+	/// </summary>
+	/// <param name="type">The reference.</param>
+	/// <returns>The declaration, or null when none or more than one has the name.</returns>
+	private ClassDeclaration? DeclaredType(TypeReference? type)
+	{
+		if (type is null || GenerationRoot is null)
+		{
+			return null;
+		}
+
+		ClassDeclaration[] matches = [.. SelfAndDescendants(GenerationRoot)
+			.OfType<ClassDeclaration>()
+			.Where(declaration => declaration.Name == type.Name)
+			.Take(2)];
+		return matches.Length == 1 ? matches[0] : null;
+	}
+
+	/// <summary>
+	/// Reads the declared type of a type's field or property.
+	/// </summary>
+	/// <param name="type">The type, when it is known.</param>
+	/// <param name="name">The member's name.</param>
+	/// <returns>The member's type, or null when the type is unknown or does not declare the member.</returns>
+	private static TypeReference? MemberType(ClassDeclaration? type, string? name) =>
+		type?.Members.Select(member => member switch
+		{
+			FieldDeclaration field when field.Name == name => field.Type,
+			PropertyDeclaration property when property.Name == name => property.Type,
+			_ => null,
+		}).FirstOrDefault(memberType => memberType is not null);
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// A narrow parameter's argument is cast back to its type; see <see cref="WriteNarrowed"/> (#448).
+	/// </remarks>
+	protected override void GenerateArgument(CallExpression callExpr, int index, CodeBlocker code)
+	{
+		Ensure.NotNull(callExpr);
+		Ensure.NotNull(code);
+		WriteNarrowed(ParameterType(callExpr, index), callExpr.Arguments[index], code);
+	}
+
+	/// <summary>
+	/// Reads the declared type of the parameter a call passes an argument as.
+	/// </summary>
+	/// <param name="callExpr">The call.</param>
+	/// <param name="index">The argument's position.</param>
+	/// <returns>
+	/// The parameter's type when every method the document declares under the callee's name, and
+	/// taking that many arguments, agrees on it; otherwise null.
+	/// </returns>
+	private TypeReference? ParameterType(CallExpression callExpr, int index)
+	{
+		if (GenerationRoot is null || string.IsNullOrEmpty(callExpr.Callee))
+		{
+			return null;
+		}
+
+		TypeReference?[] types = [.. SelfAndDescendants(GenerationRoot)
+			.OfType<FunctionDeclaration>()
+			.Where(function => function.Kind is FunctionKind.Method
+				&& function.Name == callExpr.Callee
+				&& function.Parameters.Count >= callExpr.Arguments.Count)
+			.Select(function => function.Parameters[index].Type)];
+
+		return types.Length > 0 && types.All(type => type is not null && type.ToString() == types[0]!.ToString())
+			? types[0]
+			: null;
 	}
 
 	private static bool IsShift(BinaryOperator op) => op is BinaryOperator.LeftShift or BinaryOperator.RightShift;
@@ -1284,7 +1413,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 
 			foreach (AstNode argument in elements)
 			{
-				WriteListElement(argument, code);
+				WriteListElement(argument, construction.Type, code);
 				code.WriteLine(",");
 			}
 
@@ -1302,7 +1431,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 				code.Write(", ");
 			}
 
-			WriteListElement(elements[index], code);
+			WriteListElement(elements[index], construction.Type, code);
 		}
 
 		code.Write($"{padding}{close}");
@@ -1312,13 +1441,17 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// Emits one element of a braced list, which may name the member it is for.
 	/// </summary>
 	/// <param name="argument">The element to write.</param>
+	/// <param name="listType">The type the list builds, when it names one.</param>
 	/// <param name="code">The writer to emit into.</param>
-	private void WriteListElement(AstNode argument, CodeBlocker code)
+	/// <remarks>
+	/// A value for a narrow member is cast back to its type; see <see cref="WriteNarrowed"/> (#448).
+	/// </remarks>
+	private void WriteListElement(AstNode argument, TypeReference? listType, CodeBlocker code)
 	{
 		if (argument is MemberInitialiser designated)
 		{
 			code.Write($"{EscapeIdentifier(designated.Name ?? string.Empty)} = ");
-			GenerateInternal(designated.Value!, code);
+			WriteNarrowed(MemberType(DeclaredType(listType), designated.Name), designated.Value!, code);
 			return;
 		}
 
@@ -1626,7 +1759,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 		InShiftCountScope(scope, () =>
 		{
 			using Scope body = new(code);
-			WriteInitialisers(function, code);
+			WriteInitialisers(function, enclosingType, code);
 
 			foreach (AstNode statement in function.Body)
 			{
@@ -1668,8 +1801,12 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// Writes a constructor's member initialisers as the assignments that open its body.
 	/// </summary>
 	/// <param name="function">The declaration being emitted.</param>
+	/// <param name="enclosingType">The type it belongs to, whose members the initialisers name.</param>
 	/// <param name="code">The writer to emit into.</param>
-	private void WriteInitialisers(FunctionDeclaration function, CodeBlocker code)
+	/// <remarks>
+	/// A narrow member's value is cast back to its type; see <see cref="WriteNarrowed"/> (#448).
+	/// </remarks>
+	private void WriteInitialisers(FunctionDeclaration function, ClassDeclaration? enclosingType, CodeBlocker code)
 	{
 		// C# assigns where C++ initialises. Written before the body's own statements and in the order
 		// declared, which is what the initialiser means where there is no initialiser list. One with no
@@ -1680,7 +1817,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 
 			if (initialiser.Value is not null)
 			{
-				GenerateInternal(initialiser.Value, code);
+				WriteNarrowed(MemberType(enclosingType, initialiser.Name), initialiser.Value, code);
 			}
 			else
 			{
@@ -1776,8 +1913,20 @@ public class CSharpGenerator : LanguageGeneratorBase
 			case OverrideObstacleKind.Struct when function.IsAbstract:
 				WriteInexpressible(code, $"{name} is abstract, which a C# struct cannot declare: nothing can derive from it to supply a body.");
 				return false;
+			case OverrideObstacleKind.Constructor when function.IsAbstract:
+				WriteInexpressible(code, $"{name} is an abstract constructor, which C# cannot declare: a constructor is never overridden, so it has no body to declare.");
+				return false;
+			case OverrideObstacleKind.Destructor when function.IsAbstract:
+				WriteInexpressible(code, $"{name} is an abstract destructor, which C# cannot declare: a finalizer is never overridden, so it has no body to declare.");
+				return false;
 			case OverrideObstacleKind.Static:
 				WriteInexpressible(code, $"{modifier}: {name} is static, which C# cannot override outside an interface");
+				return true;
+			case OverrideObstacleKind.Constructor:
+				WriteInexpressible(code, $"{modifier}: {name} is a constructor, which C# never overrides");
+				return true;
+			case OverrideObstacleKind.Destructor:
+				WriteInexpressible(code, $"{modifier}: {name} is a finalizer, which C# chains to its base without being overridden");
 				return true;
 			case OverrideObstacleKind.Struct:
 				WriteInexpressible(code, $"{modifier}: {name} belongs to a struct, which C# cannot derive from");
@@ -1801,6 +1950,12 @@ public class CSharpGenerator : LanguageGeneratorBase
 
 		/// <summary>The member is private, which nothing outside the type can override (CS0621).</summary>
 		Private,
+
+		/// <summary>The member is a constructor, which C# never overrides (CS0106).</summary>
+		Constructor,
+
+		/// <summary>The member is a destructor, a finalizer C# chains to its base itself (CS0106).</summary>
+		Destructor,
 	}
 
 	/// <summary>
@@ -1822,6 +1977,18 @@ public class CSharpGenerator : LanguageGeneratorBase
 			|| enclosingType?.Kind == TypeDeclarationKind.Interface)
 		{
 			return null;
+		}
+
+		// A C++ base class's destructor is virtual by convention, and a constructor may be marked so by
+		// mistake; C# accepts the modifier on neither (CS0106).
+		if (function.Kind == FunctionKind.Constructor)
+		{
+			return OverrideObstacleKind.Constructor;
+		}
+
+		if (function.Kind == FunctionKind.Destructor)
+		{
+			return OverrideObstacleKind.Destructor;
 		}
 
 		if (function.IsStatic || ReferenceEquals(function, heldMember))
@@ -1923,7 +2090,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 		}
 
 		// An operator outside an interface can be neither virtual nor abstract (CS0106), and neither
-		// can a static or struct member (CS0112, CS0106); the note written above the declaration says
+		// can a static or struct member, a constructor or a destructor (CS0112, CS0106); the note written above the declaration says
 		// what was dropped. A private one is written protected instead, so it keeps its modifier.
 		bool canOverride = (!IsOperator(function) || enclosingType?.Kind == TypeDeclarationKind.Interface)
 			&& OverrideObstacle(function, enclosingType) is null or OverrideObstacleKind.Private;
@@ -2335,7 +2502,9 @@ public class CSharpGenerator : LanguageGeneratorBase
 	{
 		// C# infers a type only from an initialiser (CS0818), so a declaration without one says the
 		// type it was given, whether or not it asked for inference.
-		TypeReference? saidType = varDecl.IsTypeInferred && varDecl.InitialValue is not null ? null : varDecl.Type;
+		// A typeless list has no type of its own to infer, so a declaration it initialises keeps the
+		// one it was given (#447).
+		TypeReference? saidType = InfersType(varDecl) && varDecl.InitialValue is not null ? null : varDecl.Type;
 		if (saidType is not null)
 		{
 			shiftCountTypes[varDecl.Name] = saidType;
@@ -2374,6 +2543,13 @@ public class CSharpGenerator : LanguageGeneratorBase
 			WriteInexpressible(code, $"{varDecl.Name}: C# infers a type only from an initialiser, and nothing here says one");
 			type = UnknownTypeName;
 		}
+		else if (IsTypelessList(varDecl.InitialValue) && string.Equals(type, "var", StringComparison.Ordinal))
+		{
+			// Nor has one whose initialiser is a list waiting to be told its type (CS9176).
+			WriteInexpressible(code, $"{varDecl.Name}: C# infers no type for a list without one, and nothing here says one");
+			type = UnknownTypeName;
+		}
+
 		if (isField)
 		{
 			WriteForbiddenAccessNote(varDecl, varDecl.Visibility, TypeMemberOwner(varDecl), varDecl.Name, code);
