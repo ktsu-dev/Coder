@@ -34,6 +34,10 @@ public interface ILanguageGeneratorResolver
 	/// Finds the generator whose <see cref="ILanguageGenerator.FileExtension"/> matches
 	/// <paramref name="extensionOrPath"/>, ignoring case.
 	/// </summary>
+	/// <remarks>
+	/// The header extensions the C-family generators write (<c>h</c> for C, <c>hpp</c> for C++) count
+	/// too, after every generator's primary extension has been tried.
+	/// </remarks>
 	/// <param name="extensionOrPath">
 	/// An extension with or without its leading dot (<c>py</c>, <c>.py</c>), or a file path whose
 	/// extension is used (<c>out/model.py</c>).

@@ -37,9 +37,15 @@ functionDeclaration:
       defaultValue: false
   body:
     - returnStatement:
-        leaf:
-          value: "a + b"
-          type: "String"
+        expression:
+          binaryExpression:
+            left:
+              variableReference:
+                name: "a"
+            operator: Add
+            right:
+              variableReference:
+                name: "b"
 ```
 
 ### Core Components
