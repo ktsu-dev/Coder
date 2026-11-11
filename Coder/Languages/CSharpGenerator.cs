@@ -2432,11 +2432,18 @@ public class CSharpGenerator : LanguageGeneratorBase
 		bool isHeld = ReferenceEquals(varDecl, heldMember);
 		bool isField = isHeld || ReferenceEquals(varDecl, typeMember);
 
-		// `var` is only for a local (CS0825), so a held variable says the type its initialiser
-		// establishes, and one whose initialiser establishes none is an object with a note saying so.
-		if (isHeld && string.Equals(type, "var", StringComparison.Ordinal))
+		// `var` is only for a local (CS0825), so a field, held or a member of a type (#432), says the
+		// type it was declared with, else the type its initialiser establishes, and one whose
+		// initialiser establishes none is an object with a note saying so.
+		if (isField && string.Equals(type, "var", StringComparison.Ordinal))
 		{
-			if (InferredFieldType(varDecl.InitialValue) is string inferred)
+			if (varDecl.Type is TypeReference declared)
+			{
+				saidType = declared;
+				shiftCountTypes[varDecl.Name] = declared;
+				type = MapToCSType(declared);
+			}
+			else if (InferredFieldType(varDecl.InitialValue) is string inferred)
 			{
 				type = inferred;
 			}
