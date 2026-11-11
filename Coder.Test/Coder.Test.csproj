@@ -27,5 +27,7 @@
     <ProjectReference Include="..\Coder\Coder.csproj" />
     <ProjectReference Include="..\Coder.Graph\Coder.Graph.csproj" />
     <ProjectReference Include="..\Coder.Editor\Coder.Editor.csproj" />
+    <!-- The sample tests generate the function the CLI demonstrates. -->
+    <ProjectReference Include="..\Coder.Cli\Coder.Cli.csproj" />
   </ItemGroup>
 </Project>
