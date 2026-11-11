@@ -503,4 +503,101 @@ public class CppGeneratedSourceCompilesTests
 			Assert.AreEqual(0, exitCode, $"{compiler} rejected the generated constants:{Environment.NewLine}{output}{Environment.NewLine}{header}");
 		});
 	}
+
+	/// <summary>
+	/// Tests that an array-typed instance field compiles inside a type, with and without an
+	/// initialiser and with a member after it (issue #410).
+	/// </summary>
+	/// <remarks>
+	/// A data member's brackets need a bound C++ can see, and <see cref="TypeReference.IsArray"/>
+	/// carries none, so <c>int items[] = { 3 };</c> is an "initializer for flexible array member"
+	/// error in every case. The driver reads an element, so the field has to hold one.
+	/// </remarks>
+	[TestMethod]
+	public void AnArrayInstanceFieldCompilesInsideAType()
+	{
+		string? compiler = ToolchainHarness.FindOnPath("--version", Compilers);
+		if (compiler is null)
+		{
+			Assert.Inconclusive("No C++ compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		string header = new CppGenerator().Generate(ArrayFieldExemplar());
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			File.WriteAllText(Path.Combine(directory, "bag.h"), header);
+			File.WriteAllText(
+				Path.Combine(directory, "driver.cpp"),
+				"#include \"bag.h\"\n\nint main()\n{\n\tBag bag;\n\tbag.items[0] = bag.count;\n\treturn bag.items[0] * 0;\n}\n");
+
+			(int exitCode, string output) = ToolchainHarness.Run(
+				compiler,
+				"-std=c++20 -Wall -Wextra -pedantic -c driver.cpp -o driver.o",
+				directory);
+
+			Assert.AreEqual(0, exitCode, $"{compiler} rejected the generated header:{Environment.NewLine}{output}{Environment.NewLine}{header}");
+		});
+	}
+
+	/// <summary>
+	/// Builds a header holding a type whose array fields are not static.
+	/// </summary>
+	/// <returns>The file to generate.</returns>
+	internal static SourceFile ArrayFieldExemplar()
+	{
+		SourceFile file = new("bag") { IsHeader = true };
+
+		ConstructionExpression three = new(type: null);
+		three.Arguments.Add(new LiteralExpression<int>(3));
+
+		ClassDeclaration bag = new("Bag") { Kind = TypeDeclarationKind.Struct };
+		bag.Members.Add(new FieldDeclaration("items", new TypeReference("int") { IsArray = true }) { InitialValue = three });
+		bag.Members.Add(new FieldDeclaration("spare", new TypeReference("int") { IsArray = true }));
+		bag.Members.Add(new FieldDeclaration("count", "int"));
+		bag.Members.Add(new FunctionDeclaration("Bag") { Kind = FunctionKind.Constructor, Visibility = Visibility.Public });
+		file.Members.Add(bag);
+
+		return file;
+	}
+
+	/// <summary>
+	/// Tests that an inferred variable declared as a member of a type compiles, with the type it was
+	/// declared with or else the one its initialiser establishes (#432).
+	/// </summary>
+	/// <remarks>
+	/// A non-static data member cannot be declared <c>auto</c>, whatever its initialiser. The driver
+	/// binds each member to a reference of its type, which only compiles where that type was said.
+	/// </remarks>
+	[TestMethod]
+	public void AnInferredDataMemberCompiles()
+	{
+		string? compiler = ToolchainHarness.FindOnPath("--version", Compilers);
+		if (compiler is null)
+		{
+			Assert.Inconclusive("No C++ compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		SourceFile file = new("counter") { IsHeader = true };
+		file.Members.Add(CSharpGeneratedSourceCompilesTests.InferredMembers());
+		string header = new CppGenerator().Generate(file);
+
+		// The driver includes <string> ahead of the header: that a string member brings no include is #334.
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			File.WriteAllText(Path.Combine(directory, "counter.h"), header);
+			File.WriteAllText(
+				Path.Combine(directory, "driver.cpp"),
+				"#include <string>\n#include \"counter.h\"\n\nint main()\n{\n\tCounter counter;\n\tint& count = counter.count;\n\tdouble& ratio = counter.ratio;\n\tstd::string& label = counter.label;\n\treturn count + static_cast<int>(ratio) + static_cast<int>(label.size()) - 2;\n}\n");
+
+			(int exitCode, string output) = ToolchainHarness.Run(
+				compiler,
+				"-std=c++20 -Wall -Wextra -pedantic -c driver.cpp -o driver.o",
+				directory);
+
+			Assert.AreEqual(0, exitCode, $"{compiler} rejected the generated header:{Environment.NewLine}{output}{Environment.NewLine}{header}");
+		});
+	}
 }

@@ -28,6 +28,33 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	private const string StaticKeyword = "static ";
 
 	/// <summary>
+	/// Gets the words JavaScript will not bind as a name in a class body or a module, which is strict
+	/// code: the reserved words, the strict-mode future reserved words, the literals, and the two
+	/// names strict code may not bind.
+	/// </summary>
+	/// <remarks>
+	/// A binding — a function, class, parameter, local or top-level name — has no escape here, so it
+	/// gets an underscore: <c>delete</c> becomes <c>delete_</c>. A member keeps its name, because
+	/// JavaScript reads a keyword after a <c>.</c> and as a method, accessor or field name as written
+	/// (<see cref="EscapesMemberNames"/>), and renaming one would change the object's shape for no
+	/// reason.
+	/// </remarks>
+	protected override IReadOnlySet<string> ReservedWords { get; } = new HashSet<string>(StringComparer.Ordinal)
+	{
+		"arguments", "await", "break", "case", "catch", "class", "const", "continue", "debugger",
+		"default", "delete", "do", "else", "enum", "eval", "export", "extends", "false", "finally",
+		"for", "function", "if", "implements", "import", "in", "instanceof", "interface", "let",
+		"new", "null", "package", "private", "protected", "public", "return", "static", "super",
+		"switch", "this", "throw", "true", "try", "typeof", "var", "void", "while", "with", "yield",
+	};
+
+	/// <inheritdoc/>
+	protected override bool IsReceiverWord(string word) => word is "this" or "super" or "true" or "false" or "null";
+
+	/// <inheritdoc/>
+	protected override bool EscapesMemberNames => false;
+
+	/// <summary>
 	/// Gets the unique identifier for this language generator.
 	/// </summary>
 	public override string LanguageId => "javascript";
@@ -136,81 +163,126 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		expression is LiteralExpression<long> literal && IsBigIntLong(literal.Value);
 
 	/// <summary>
-	/// Writes <c>==</c> or <c>!=</c> between a BigInt literal and an operand that is not one.
+	/// How far <see cref="MayBeBigInt(Expression, int)"/> follows names to their initialisers, so a
+	/// name initialised from itself, or a cycle of them, ends.
+	/// </summary>
+	private const int BigIntSearchDepth = 8;
+
+	/// <summary>
+	/// Reads whether an expression may evaluate to a BigInt in the generated JavaScript.
+	/// </summary>
+	/// <param name="expression">The expression to inspect.</param>
+	/// <returns>True for a BigInt literal, its negation, a name initialised with one, or a call that returns a <c>long</c>.</returns>
+	/// <remarks>
+	/// A BigInt reaches a comparison as a literal, which #424 handled, or through a name or a call,
+	/// which it did not (#481): <c>const LIMIT = 1152921504606846976n;</c> compared as <c>x === LIMIT</c>
+	/// is always false. A name is followed to every declaration of it, because the generator does
+	/// not resolve scopes; a declaration that is not the one meant only costs a <c>BigInt(...)</c>
+	/// that changes nothing, since <c>BigInt</c> of an integral number is exact. A call returning a
+	/// <c>long</c> may return either kind, depending on the value.
+	/// </remarks>
+	private bool MayBeBigInt(Expression expression) => MayBeBigInt(expression, 0);
+
+	private bool MayBeBigInt(Expression expression, int depth) => depth < BigIntSearchDepth && expression switch
+	{
+		LiteralExpression<long> literal => IsBigIntLong(literal.Value),
+		UnaryExpression { Operator: UnaryOperator.Negate } unary => MayBeBigInt(unary.Operand, depth + 1),
+		VariableReference reference => InitialValuesOf(reference.Name).Any(value => MayBeBigInt(value, depth + 1)),
+		CallExpression call => StaticType(call) is { IsArray: false, Indirection: TypeIndirection.None, TypeArguments.Count: 0, Name: "long" or "ulong" },
+		_ => false,
+	};
+
+	/// <summary>
+	/// Reads the initialisers of every variable or field in the tree being generated with a name.
+	/// </summary>
+	private IEnumerable<Expression> InitialValuesOf(string name)
+	{
+		if (GenerationRoot is not AstNode root)
+		{
+			yield break;
+		}
+
+		foreach (AstNode node in SelfAndDescendants(root))
+		{
+			Expression? value = node switch
+			{
+				VariableDeclaration variable when variable.Name == name => variable.InitialValue,
+				FieldDeclaration field when field.Name == name => field.InitialValue,
+				_ => null,
+			};
+
+			if (value is not null)
+			{
+				yield return value;
+			}
+		}
+	}
+
+	/// <summary>
+	/// Writes <c>==</c> or <c>!=</c> where either operand may hold a BigInt.
 	/// </summary>
 	/// <param name="binary">The comparison.</param>
 	/// <param name="code">The writer to emit into.</param>
-	/// <returns>False when neither or both operands are BigInt literals, and nothing was written.</returns>
+	/// <returns>False when neither operand may hold a BigInt, or both are BigInt literals, and nothing was written.</returns>
 	/// <remarks>
 	/// <c>===</c> between a BigInt and a number is always <c>false</c>, whatever their values, so
-	/// <c>x == 9007199254740993</c> would never hold and <c>!=</c> always would (#424). The other operand
-	/// is converted with <c>BigInt(...)</c>, which is exact for any integral number, so the comparison is
-	/// of values. A floating operand is compared the way every other target compares it, against the
-	/// literal converted to a double, which is what the digits written as a number read as.
-	/// <c>&lt;</c>, <c>&gt;</c>, <c>&lt;=</c> and <c>&gt;=</c> already compare a BigInt and a number by
-	/// value.
+	/// <c>x == 9007199254740993</c> would never hold and <c>!=</c> always would (#424), and the same went
+	/// for a constant, a local or a call holding such a value (#481). Each operand that is not a
+	/// BigInt literal is converted with <c>BigInt(...)</c>, which is exact for any integral number and
+	/// leaves a BigInt as it is, so the comparison is of values. Against a floating operand the
+	/// comparison is the one every other target makes, of doubles: a literal is written as the digits
+	/// a number reads them as, and any other operand that may hold a BigInt is converted with
+	/// <c>Number(...)</c>. <c>&lt;</c>, <c>&gt;</c>, <c>&lt;=</c> and <c>&gt;=</c> already compare a
+	/// BigInt and a number by value.
 	/// </remarks>
 	private bool TryWriteBigIntEquality(BinaryExpression binary, CodeBlocker code)
 	{
 		if (binary.Operator is not (BinaryOperator.Equal or BinaryOperator.NotEqual)
-			|| IsBigIntLiteral(binary.Left) == IsBigIntLiteral(binary.Right))
+			|| !(MayBeBigInt(binary.Left) || MayBeBigInt(binary.Right))
+			|| (IsBigIntLiteral(binary.Left) && IsBigIntLiteral(binary.Right)))
 		{
 			return false;
 		}
 
-		bool literalOnLeft = IsBigIntLiteral(binary.Left);
-		Expression literal = literalOnLeft ? binary.Left : binary.Right;
-		Expression other = literalOnLeft ? binary.Right : binary.Left;
-		bool otherIsFloating = StaticType(other) is { IsArray: false, Indirection: TypeIndirection.None, TypeArguments.Count: 0, Name: "float" or "double" };
+		bool floating = IsFloating(binary.Left) || IsFloating(binary.Right);
 
-		void WriteLiteral()
+		void WriteOperand(Expression operand)
 		{
-			if (otherIsFloating)
+			if (IsBigIntLiteral(operand))
 			{
-				code.Write(base.FormatLong(((LiteralExpression<long>)literal).Value));
-			}
-			else
-			{
-				GenerateInternal(literal, code);
-			}
-		}
+				if (floating)
+				{
+					code.Write(base.FormatLong(((LiteralExpression<long>)operand).Value));
+				}
+				else
+				{
+					GenerateInternal(operand, code);
+				}
 
-		void WriteOther()
-		{
-			if (otherIsFloating)
-			{
-				GenerateInternal(other, code);
 				return;
 			}
 
-			code.Write("BigInt(");
-			GenerateInternal(other, code);
+			if (floating && !MayBeBigInt(operand))
+			{
+				GenerateInternal(operand, code);
+				return;
+			}
+
+			code.Write(floating ? "Number(" : "BigInt(");
+			GenerateInternal(operand, code);
 			code.Write(")");
 		}
 
 		code.Write("(");
-		if (literalOnLeft)
-		{
-			WriteLiteral();
-		}
-		else
-		{
-			WriteOther();
-		}
-
+		WriteOperand(binary.Left);
 		code.Write($" {GetOperatorSpelling(binary.Operator)} ");
-		if (literalOnLeft)
-		{
-			WriteOther();
-		}
-		else
-		{
-			WriteLiteral();
-		}
-
+		WriteOperand(binary.Right);
 		code.Write(")");
 		return true;
 	}
+
+	private bool IsFloating(Expression expression) =>
+		StaticType(expression) is { IsArray: false, Indirection: TypeIndirection.None, TypeArguments.Count: 0, Name: "float" or "double" };
 
 	/// <inheritdoc/>
 	protected override string? SpellImport(string import)
@@ -334,11 +406,11 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	/// </summary>
 	/// <param name="aliased">The type the alias names, if any.</param>
 	/// <returns>A built-in type's JavaScript constructor, an array's <c>Array</c>, or the name itself.</returns>
-	private static string AliasedValue(TypeReference? aliased) => aliased switch
+	private string AliasedValue(TypeReference? aliased) => aliased switch
 	{
 		null => "Object",
 		{ IsArray: true } => "Array",
-		_ => BuiltInAliasValues.TryGetValue(aliased.Name, out string? value) ? value : aliased.Name,
+		_ => BuiltInAliasValues.TryGetValue(aliased.Name, out string? value) ? value : EscapeReference(aliased.Name),
 	};
 
 	/// <inheritdoc/>
@@ -353,7 +425,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		Ensure.NotNull(code);
 
 		WritePreamble(usingAlias, code, PreambleSite.Type);
-		code.Write($"const {usingAlias.Name} = {AliasedValue(usingAlias.AliasedType)}");
+		code.Write($"const {EscapeIdentifier(usingAlias.Name ?? string.Empty)} = {AliasedValue(usingAlias.AliasedType)}");
 		EndStatement(code);
 	}
 
@@ -377,7 +449,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 			return;
 		}
 
-		code.Write($"new {construction.Type.Name}(");
+		code.Write($"new {EscapeReference(construction.Type.Name)}(");
 
 		if (named)
 		{
@@ -443,7 +515,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		Ensure.NotNull(code);
 
 		WritePreamble(enumDecl, code, PreambleSite.Enum);
-		code.WriteLine($"const {enumDecl.Name ?? "UnnamedEnum"} = Object.freeze({{");
+		code.WriteLine($"const {EscapeIdentifier(enumDecl.Name ?? "UnnamedEnum")} = Object.freeze({{");
 
 		using (IndentScope members = new(code))
 		{
@@ -466,7 +538,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		Ensure.NotNull(field);
 		Ensure.NotNull(code);
 
-		WriteField(field, field.IsConstant && field.InitialValue is not null ? "const " : "let ", code);
+		WriteField(field, field.IsConstant && field.InitialValue is not null ? "const " : "let ", isBinding: true, code);
 	}
 
 	/// <summary>
@@ -484,19 +556,21 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	/// class holds one value rather than each instance holding its own.
 	/// </remarks>
 	private void GenerateClassField(FieldDeclaration field, CodeBlocker code) =>
-		WriteField(field, field.IsStatic || field.IsConstant ? StaticKeyword : string.Empty, code);
+		WriteField(field, field.IsStatic || field.IsConstant ? StaticKeyword : string.Empty, isBinding: false, code);
 
 	/// <summary>
 	/// Writes a field declaration after the keyword its scope calls for.
 	/// </summary>
 	/// <param name="field">The declaration to emit.</param>
 	/// <param name="keyword">The keyword, with its trailing space, or empty for none.</param>
+	/// <param name="isBinding">True when the field is a top-level name, which a keyword cannot be; false for a class field, which keeps its name.</param>
 	/// <param name="code">The writer to emit into.</param>
-	private void WriteField(FieldDeclaration field, string keyword, CodeBlocker code)
+	private void WriteField(FieldDeclaration field, string keyword, bool isBinding, CodeBlocker code)
 	{
 		WritePreamble(field, code, PreambleSite.Field);
 		code.Write(keyword);
-		code.Write(field.Name ?? "unnamed");
+		string name = field.Name ?? "unnamed";
+		code.Write(isBinding ? EscapeIdentifier(name) : name);
 
 		if (field.InitialValue is not null)
 		{
@@ -517,8 +591,9 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	/// <param name="type">The declared type, or null where none is declared.</param>
 	/// <param name="code">The writer to emit into.</param>
 	/// <remarks>
-	/// A type with no obvious zero is left uninitialised, so it reads as <c>undefined</c>, which is
-	/// JavaScript's own value for a property nothing has set.
+	/// An enumeration declared in the document starts at its member whose value is 0, as it does in
+	/// every typed target (#449). A type with no obvious zero is left uninitialised, so it reads as
+	/// <c>undefined</c>, which is JavaScript's own value for a property nothing has set.
 	/// </remarks>
 	private void WriteZeroInitialiser(TypeReference? type, CodeBlocker code)
 	{
@@ -526,6 +601,10 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		{
 			code.Write(" = ");
 			GenerateInternal(zero, code);
+		}
+		else if (type is { Name: string enumName } && EnumZeroMember(type) is EnumMember { Name: string member })
+		{
+			code.Write($" = {enumName}.{member}");
 		}
 	}
 
@@ -541,7 +620,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		// JavaScript has no generics, so what a function is written over is written down.
 		WriteTypeParametersDown(funcDecl.TypeParameters, code);
 
-		code.Write($"function {funcDecl.Name ?? "unnamedFunction"}(");
+		code.Write($"function {EscapeIdentifier(funcDecl.Name ?? "unnamedFunction")}(");
 		GenerateParameterList(funcDecl.Parameters, code);
 
 		// The line is left open, so the scope's brace lands on it: JavaScript braces hang.
@@ -634,11 +713,13 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 			WriteInexpressible(code, $"implements {string.Join(", ", classDecl.Interfaces.Select(contract => contract.Name))}");
 		}
 
-		code.Write($"{binding}class {classDecl.Name ?? "UnnamedClass"}");
+		// The class's own name is a binding even where a static field holds it, so it escapes; the
+		// field in front of it, a member, keeps the name as declared.
+		code.Write($"{binding}class {EscapeIdentifier(classDecl.Name ?? "UnnamedClass")}");
 
 		if (classDecl.BaseType is TypeReference baseType)
 		{
-			code.Write($" extends {baseType.Name}");
+			code.Write($" extends {EscapeReference(baseType.Name)}");
 		}
 	}
 
@@ -843,7 +924,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		Ensure.NotNull(parameter);
 		Ensure.NotNull(code);
 
-		code.Write(parameter.Name ?? $"param{position}");
+		code.Write(EscapeIdentifier(parameter.Name ?? $"param{position}"));
 		AppendDefaultValue(parameter, code);
 	}
 
@@ -856,7 +937,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 
 		// `const` needs an initializer, so an uninitialized constant has to be declared with `let`.
 		string keyword = varDecl.IsConstant && varDecl.InitialValue is not null ? "const" : "let";
-		code.Write($"{keyword} {varDecl.Name}");
+		code.Write($"{keyword} {EscapeIdentifier(varDecl.Name)}");
 
 		if (varDecl.InitialValue is not null)
 		{
@@ -1008,13 +1089,40 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
+	/// <para>
 	/// <c>~</c> converts its operand to a signed 32-bit integer, the same as the binary bitwise
 	/// operators, so on a <c>long</c>, <c>ulong</c> or <c>uint</c> it is written out the way they are.
+	/// </para>
+	/// <para>
+	/// <c>-</c> on a <c>uint</c> or <c>ulong</c> wraps in the C family, so <c>-5</c> is 4294967291, where
+	/// JavaScript's numbers go negative (#373). It is read back unsigned at the operand's width. On a
+	/// signed integer it is left as it is.
+	/// </para>
 	/// </remarks>
 	protected override void GenerateUnary(UnaryExpression unary, CodeBlocker code)
 	{
 		Ensure.NotNull(unary);
 		Ensure.NotNull(code);
+
+		if (unary.Operator == UnaryOperator.Negate)
+		{
+			switch (IntegerWidthOf(StaticType(unary.Operand)))
+			{
+				case IntegerWidth.Unsigned32:
+					code.Write("(");
+					base.GenerateUnary(unary, code);
+					code.Write(" >>> 0)");
+					return;
+				case IntegerWidth.Unsigned64:
+					code.Write("Number(BigInt.asUintN(64, -BigInt(");
+					GenerateInternal(unary.Operand, code);
+					code.Write(")))");
+					return;
+				default:
+					base.GenerateUnary(unary, code);
+					return;
+			}
+		}
 
 		IntegerWidth? width = unary.Operator == UnaryOperator.BitwiseNot ? IntegerWidthOf(StaticType(unary.Operand)) : null;
 		switch (width)

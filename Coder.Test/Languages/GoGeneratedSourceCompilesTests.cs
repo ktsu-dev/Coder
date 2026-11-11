@@ -400,6 +400,60 @@ public class GoGeneratedSourceCompilesTests
 	}
 
 	/// <summary>
+	/// Tests that a conditional whose condition compares numbers of different widths widens the
+	/// narrower one, as the same comparison outside a conditional does, so the output compiles and is
+	/// still what <c>gofmt</c> writes (issue #395).
+	/// </summary>
+	[TestMethod]
+	public void ConditionComparingMixedNumericWidths_Compiles()
+	{
+		SourceFile file = new("conditions");
+		file.Members.Add(Size("size", "int", new VariableReference("limit"), "long"));
+		file.Members.Add(Size("half", "int", Literal.DecimalValue(0.5), null));
+		file.Members.Add(Size("single", "float", new VariableReference("limit"), "double"));
+
+		string source = new GoGenerator().Generate(file);
+		Assert.Contains("if int64(n) < limit {", source, StringComparison.Ordinal, source);
+		Assert.Contains("if float64(n) < 0.5 {", source, StringComparison.Ordinal, source);
+		Assert.Contains("if float64(n) < limit {", source, StringComparison.Ordinal, source);
+
+		if (ToolchainHarness.FindOnPath("version", "go") is null)
+		{
+			Assert.Inconclusive("No Go toolchain on the path, so nothing was compiled.");
+			return;
+		}
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			File.WriteAllText(Path.Combine(directory, "go.mod"), Module);
+			File.WriteAllText(Path.Combine(directory, "conditions.go"), source);
+			(int exitCode, string output) = ToolchainHarness.Run("go", "build ./...", directory);
+			Assert.AreEqual(0, exitCode, $"Go rejected the generated source:{Environment.NewLine}{output}{Environment.NewLine}{source}");
+
+			(int formatted, string differs) = ToolchainHarness.Run("gofmt", "-l conditions.go", directory);
+			Assert.AreEqual(0, formatted, $"gofmt did not run:{Environment.NewLine}{differs}");
+			Assert.AreEqual(string.Empty, differs.Trim(), $"gofmt would rewrite the generated source.{Environment.NewLine}{source}");
+		});
+
+		// string name(<type> n[, <limitType> limit]) => n < limit ? "small" : "large";
+		static FunctionDeclaration Size(string name, string type, Expression limit, string? limitType)
+		{
+			FunctionDeclaration function = new(name) { ReturnType = new TypeReference("string") };
+			function.Parameters.Add(new Parameter("n", type));
+			if (limitType is not null)
+			{
+				function.Parameters.Add(new Parameter("limit", limitType));
+			}
+
+			function.Body.Add(new ReturnStatement(new ConditionalExpression(
+				new BinaryExpression(new VariableReference("n"), BinaryOperator.LessThan, limit),
+				new LiteralExpression<string>("small"),
+				new LiteralExpression<string>("large"))));
+			return function;
+		}
+	}
+
+	/// <summary>
 	/// Tests that a condition comparing against a struct literal compiles in every position a
 	/// conditional is lowered to an <c>if</c>, and is still what <c>gofmt</c> writes.
 	/// </summary>

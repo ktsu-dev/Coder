@@ -57,7 +57,7 @@ public class Parameter : AstNode
 	/// An expression rather than source text, for the reason <see cref="TypeReference"/> is
 	/// structure: <c>False</c>, <c>false</c> and <c>None</c> are each one language's spelling, and a
 	/// default written in one of them fails to compile, or throws when called, in the others. Each
-	/// generator spells the expression with its own literal writer. <see cref="ParseDefaultValue"/>
+	/// generator spells the expression with its own literal writer. <see cref="ParseDefaultValue(string?)"/>
 	/// turns the text form older documents hold into one.
 	/// </remarks>
 	public Expression? DefaultValue { get; set; }
@@ -128,6 +128,14 @@ public class Parameter : AstNode
 			return new LiteralExpression<long>(bigNumber);
 		}
 
+		if (trimmed.Length > 1 && trimmed[^1] is 'f' or 'F'
+			&& LooksNumeric(trimmed)
+			&& float.TryParse(trimmed.AsSpan(0, trimmed.Length - 1), NumberStyles.Float, CultureInfo.InvariantCulture, out float single)
+			&& float.IsFinite(single))
+		{
+			return new LiteralExpression<float>(single);
+		}
+
 		if (LooksNumeric(trimmed)
 			&& double.TryParse(trimmed, NumberStyles.Float, CultureInfo.InvariantCulture, out double fraction)
 			&& double.IsFinite(fraction))
@@ -144,7 +152,39 @@ public class Parameter : AstNode
 	}
 
 	/// <summary>
-	/// Writes a default value in the text form <see cref="ParseDefaultValue"/> reads.
+	/// Reads a default value from its text form, in light of the type of the parameter it is for.
+	/// </summary>
+	/// <param name="text">The text, or null or empty for no default.</param>
+	/// <param name="type">The parameter's type, or null when it has none.</param>
+	/// <returns>
+	/// What <see cref="ParseDefaultValue(string?)"/> reads, except that a fractional number for a
+	/// <c>float</c> parameter is a <see cref="float"/> literal rather than a <see cref="double"/> one.
+	/// </returns>
+	/// <remarks>
+	/// The text form writes a <see cref="float"/> with no suffix, the way a document written by hand
+	/// does, so without the parameter's type <c>1.5f</c> would read back as a double and C# would
+	/// write <c>float factor = 1.5d</c>, which fails with CS1750 (ktsu-dev/Coder#337).
+	/// </remarks>
+	public static Expression? ParseDefaultValue(string? text, TypeReference? type)
+	{
+		Expression? value = ParseDefaultValue(text);
+		if (value is not LiteralExpression<double> fraction || !IsSingle(type))
+		{
+			return value;
+		}
+
+		float single = (float)fraction.Value;
+		return float.IsFinite(single) ? new LiteralExpression<float>(single) : value;
+	}
+
+	/// <summary>
+	/// Whether a type is a plain <c>float</c>, rather than an array of, or an indirection to, one.
+	/// </summary>
+	private static bool IsSingle(TypeReference? type) =>
+		type is { Name: "float", IsArray: false, Indirection: TypeIndirection.None, TypeArguments.Count: 0 };
+
+	/// <summary>
+	/// Writes a default value in the text form <see cref="ParseDefaultValue(string?)"/> reads.
 	/// </summary>
 	/// <param name="value">The default value.</param>
 	/// <returns>

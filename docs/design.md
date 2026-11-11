@@ -42,7 +42,7 @@ functionDeclaration:
             left:
               variableReference:
                 name: "a"
-            operator: "Add"
+            operator: Add
             right:
               variableReference:
                 name: "b"
@@ -214,8 +214,7 @@ var function = new FunctionDeclaration("calculate_sum")
 
 function.Parameters.Add(new Parameter("a", "int"));
 function.Parameters.Add(new Parameter("b", "int"));
-function.Body.Add(new ReturnStatement(
-    new BinaryExpression(new VariableReference("a"), BinaryOperator.Add, new VariableReference("b"))));
+function.Body.Add(new ReturnStatement(new AstLeafNode<string>("a + b")));
 
 // Serialize to YAML
 var serializer = new YamlSerializer();
