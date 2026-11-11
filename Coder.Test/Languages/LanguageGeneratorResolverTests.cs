@@ -52,6 +52,11 @@ public class LanguageGeneratorResolverTests
 	[DataRow("model.py", typeof(PythonGenerator))]
 	[DataRow("out/model.CS", typeof(CSharpGenerator))]
 	[DataRow(@"out\nested.dir\model.go", typeof(GoGenerator))]
+	[DataRow("hpp", typeof(CppGenerator))]
+	[DataRow(".hpp", typeof(CppGenerator))]
+	[DataRow("include/Vector.HPP", typeof(CppGenerator))]
+	[DataRow("h", typeof(CGenerator))]
+	[DataRow("vector.h", typeof(CGenerator))]
 	public void TryGetByFileExtension_AcceptsABareOrDottedExtensionOrAPath(string extensionOrPath, Type expected)
 	{
 		Assert.IsTrue(RegisteredResolver().TryGetByFileExtension(extensionOrPath, out ILanguageGenerator? generator));
@@ -100,6 +105,17 @@ public class LanguageGeneratorResolverTests
 		Assert.AreSame(first, byId);
 		Assert.IsTrue(resolver.TryGetByFileExtension("py", out ILanguageGenerator? byExtension));
 		Assert.AreSame(first, byExtension);
+	}
+
+	[TestMethod]
+	public void APrimaryExtension_WinsOverAnEarlierGeneratorsHeaderExtension()
+	{
+		ILanguageGenerator headerOwner = new CppGenerator();
+		ILanguageGenerator primaryOwner = new StubGenerator("headers", "hpp");
+		LanguageGeneratorResolver resolver = new([headerOwner, primaryOwner]);
+
+		Assert.IsTrue(resolver.TryGetByFileExtension("hpp", out ILanguageGenerator? generator));
+		Assert.AreSame(primaryOwner, generator);
 	}
 
 	[TestMethod]

@@ -4,6 +4,7 @@ namespace ktsu.Coder.Test.Graph;
 
 using ktsu.Coder.Ast;
 using ktsu.Coder.Graph;
+using ktsu.Coder.Serialization;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 /// <summary>
@@ -50,6 +51,42 @@ public class AstGraphEditorInspectorTests
 
 		editor.Redo();
 		Assert.AreEqual(42, literal.Value);
+	}
+
+	/// <summary>
+	/// Tests that undoing an edit of a parameter's default puts back a default its text form cannot
+	/// spell. A unary, a construction and an infinite double all read as empty text, and parsing that
+	/// back used to leave the parameter with no default at all.
+	/// </summary>
+	/// <param name="kind">Which structured default the parameter starts with.</param>
+	[TestMethod]
+	[DataRow("unary")]
+	[DataRow("construction")]
+	[DataRow("infinity")]
+	public void SetField_UndoingADefaultEdit_RestoresAStructuredDefault(string kind)
+	{
+		Expression original = kind switch
+		{
+			"unary" => new UnaryExpression(UnaryOperator.Negate, new LiteralExpression<double>(1.5)),
+			"construction" => new ConstructionExpression(TypeReference.Parse("Point")) { Arguments = { Literal.Number(1), Literal.Number(2) } },
+			_ => new LiteralExpression<double>(double.PositiveInfinity),
+		};
+		FunctionDeclaration function = new("scale") { ReturnType = "double" };
+		Parameter parameter = new("factor", "double") { IsOptional = true, DefaultValue = original };
+		function.Parameters.Add(parameter);
+		function.Body.Add(new ReturnStatement(new VariableReference("factor")));
+		string before = new YamlSerializer().Serialize(function);
+		AstGraphEditor editor = new(function);
+
+		Assert.IsTrue(editor.SetField(parameter, "Default", "2"));
+		Assert.AreEqual(2, Assert.IsInstanceOfType<LiteralExpression<int>>(parameter.DefaultValue).Value);
+
+		editor.Undo();
+		Assert.AreSame(original, parameter.DefaultValue);
+		Assert.AreEqual(before, new YamlSerializer().Serialize(function));
+
+		editor.Redo();
+		Assert.AreEqual(2, Assert.IsInstanceOfType<LiteralExpression<int>>(parameter.DefaultValue).Value);
 	}
 
 	/// <summary>

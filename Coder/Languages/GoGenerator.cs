@@ -146,6 +146,8 @@ public class GoGenerator : StandardLanguageGenerator
 		{ "sbyte", "int8" },
 		{ "float", "float32" },
 		{ "double", "float64" },
+		{ "decimal", "float64" },
+		{ "char", "rune" },
 		{ "bool", "bool" },
 		{ "void", "" },
 		{ "object", "any" },
@@ -233,6 +235,31 @@ public class GoGenerator : StandardLanguageGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
+	/// A static getter is a package-level function, joined to its type's name the way a static or
+	/// constant field is, so a getter <c>Limit</c> beside a field <c>limit</c> would be a second
+	/// <c>GaugeLimit</c> in the package (#444). A method sits on its receiver, beside the other
+	/// methods.
+	/// </remarks>
+	protected override bool SharesNameWithGetter(AstNode member, PropertyDeclaration declaration)
+	{
+		Ensure.NotNull(declaration);
+		return member switch
+		{
+			FieldDeclaration field => declaration.IsStatic && IsPackageLevelField(field),
+			FunctionDeclaration function => function.IsStatic == declaration.IsStatic,
+			_ => false,
+		};
+	}
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// Capitalised, because that is what <see cref="Join"/> does to a member's name on the way out.
+	/// </remarks>
+	protected override string MemberNameKey(string name) =>
+		Join(string.Empty, Ensure.NotNull(name));
+
+	/// <inheritdoc/>
+	/// <remarks>
 	/// A tab, because <c>gofmt</c> writes a tab. This is the one target where the indentation is not
 	/// the generator's to pick.
 	/// </remarks>
@@ -310,10 +337,13 @@ public class GoGenerator : StandardLanguageGenerator
 		Ensure.NotNull(code);
 		if (floatingType == "double")
 		{
+			// math.Mod takes float64 alone, and Go converts nothing implicitly, so an int or a
+			// float32 operand is widened here as the float32 path below widens both (#376).
+			TypeReference float64 = new("double");
 			code.Write("math.Mod(");
-			GenerateInternal(dividend, code);
+			GenerateWidenedTo(dividend, float64, code);
 			code.Write(", ");
-			GenerateInternal(divisor, code);
+			GenerateWidenedTo(divisor, float64, code);
 			code.Write(")");
 			return;
 		}
@@ -1396,7 +1426,16 @@ public class GoGenerator : StandardLanguageGenerator
 	{
 		RegisterStaticType(varDecl);
 
-		bool inferred = varDecl.IsTypeInferred || varDecl.Type is null;
+		// A typeless list has no type of its own for `:=` to infer, so a declaration it initialises
+		// keeps the one it was given (#447).
+		bool inferred = InfersType(varDecl) || varDecl.Type is null;
+
+		// With no type at all there is nothing to say for it, and `:=` cannot infer one from a list.
+		if (inferred && varDecl.Type is null && IsTypelessList(varDecl.InitialValue))
+		{
+			WriteInexpressible(code, $"{varDecl.Name}: Go infers no type for a list without one, and nothing here says one");
+			inferred = false;
+		}
 
 		// `:=` gives an untyped constant Go's default type, so a long or a float would come out an
 		// `int` or a `float64` — and Go never converts between those implicitly. Such a declaration
@@ -1957,9 +1996,16 @@ public class GoGenerator : StandardLanguageGenerator
 		switch (condition)
 		{
 			case BinaryExpression binary when !IsBooleanBitwise(binary.Operator, binary.Left, binary.Right):
-				WriteConditionOperand(binary.Left, code);
+				// The operands meet at the wider of their types, as GenerateBinary widens them
+				// everywhere else (#395). A shift's count is not such an operand, and a logical
+				// operator's operands are booleans.
+				TypeReference? common = binary.Operator is BinaryOperator.LeftShift or BinaryOperator.RightShift
+					or BinaryOperator.LogicalAnd or BinaryOperator.LogicalOr
+					? null
+					: Promoted(StaticType(binary.Left), StaticType(binary.Right));
+				WriteWidenedConditionOperand(binary.Left, common, code);
 				code.Write($" {GetOperatorSpelling(binary.Operator)} ");
-				WriteConditionOperand(binary.Right, code);
+				WriteWidenedConditionOperand(binary.Right, common, code);
 				return;
 
 			case BinaryExpression binary when BooleanBitwiseSpelling(binary) is string spelling:
@@ -1977,6 +2023,28 @@ public class GoGenerator : StandardLanguageGenerator
 				WriteConditionOperand(condition, code);
 				return;
 		}
+	}
+
+	/// <summary>
+	/// Writes one operand of a comparison an <c>if</c> tests, converted to the type it meets the other
+	/// operand at when it is the narrower number.
+	/// </summary>
+	/// <param name="operand">The operand to write.</param>
+	/// <param name="common">The type the two operands meet at, or null where they are not widened.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <remarks>
+	/// A struct literal is never a number, so it is never converted, and is left to
+	/// <see cref="WriteConditionOperand"/>, which parenthesises it.
+	/// </remarks>
+	private void WriteWidenedConditionOperand(AstNode operand, TypeReference? common, CodeBlocker code)
+	{
+		if (common is not null && !StartsWithCompositeLiteral(operand))
+		{
+			GenerateWidenedTo(operand, common, code);
+			return;
+		}
+
+		WriteConditionOperand(operand, code);
 	}
 
 	/// <summary>
