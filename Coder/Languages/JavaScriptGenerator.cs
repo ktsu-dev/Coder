@@ -28,6 +28,33 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	private const string StaticKeyword = "static ";
 
 	/// <summary>
+	/// Gets the words JavaScript will not bind as a name in a class body or a module, which is strict
+	/// code: the reserved words, the strict-mode future reserved words, the literals, and the two
+	/// names strict code may not bind.
+	/// </summary>
+	/// <remarks>
+	/// A binding — a function, class, parameter, local or top-level name — has no escape here, so it
+	/// gets an underscore: <c>delete</c> becomes <c>delete_</c>. A member keeps its name, because
+	/// JavaScript reads a keyword after a <c>.</c> and as a method, accessor or field name as written
+	/// (<see cref="EscapesMemberNames"/>), and renaming one would change the object's shape for no
+	/// reason.
+	/// </remarks>
+	protected override IReadOnlySet<string> ReservedWords { get; } = new HashSet<string>(StringComparer.Ordinal)
+	{
+		"arguments", "await", "break", "case", "catch", "class", "const", "continue", "debugger",
+		"default", "delete", "do", "else", "enum", "eval", "export", "extends", "false", "finally",
+		"for", "function", "if", "implements", "import", "in", "instanceof", "interface", "let",
+		"new", "null", "package", "private", "protected", "public", "return", "static", "super",
+		"switch", "this", "throw", "true", "try", "typeof", "var", "void", "while", "with", "yield",
+	};
+
+	/// <inheritdoc/>
+	protected override bool IsReceiverWord(string word) => word is "this" or "super" or "true" or "false" or "null";
+
+	/// <inheritdoc/>
+	protected override bool EscapesMemberNames => false;
+
+	/// <summary>
 	/// Gets the unique identifier for this language generator.
 	/// </summary>
 	public override string LanguageId => "javascript";
@@ -379,11 +406,11 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	/// </summary>
 	/// <param name="aliased">The type the alias names, if any.</param>
 	/// <returns>A built-in type's JavaScript constructor, an array's <c>Array</c>, or the name itself.</returns>
-	private static string AliasedValue(TypeReference? aliased) => aliased switch
+	private string AliasedValue(TypeReference? aliased) => aliased switch
 	{
 		null => "Object",
 		{ IsArray: true } => "Array",
-		_ => BuiltInAliasValues.TryGetValue(aliased.Name, out string? value) ? value : aliased.Name,
+		_ => BuiltInAliasValues.TryGetValue(aliased.Name, out string? value) ? value : EscapeReference(aliased.Name),
 	};
 
 	/// <inheritdoc/>
@@ -398,7 +425,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		Ensure.NotNull(code);
 
 		WritePreamble(usingAlias, code, PreambleSite.Type);
-		code.Write($"const {usingAlias.Name} = {AliasedValue(usingAlias.AliasedType)}");
+		code.Write($"const {EscapeIdentifier(usingAlias.Name ?? string.Empty)} = {AliasedValue(usingAlias.AliasedType)}");
 		EndStatement(code);
 	}
 
@@ -422,7 +449,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 			return;
 		}
 
-		code.Write($"new {construction.Type.Name}(");
+		code.Write($"new {EscapeReference(construction.Type.Name)}(");
 
 		if (named)
 		{
@@ -488,7 +515,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		Ensure.NotNull(code);
 
 		WritePreamble(enumDecl, code, PreambleSite.Enum);
-		code.WriteLine($"const {enumDecl.Name ?? "UnnamedEnum"} = Object.freeze({{");
+		code.WriteLine($"const {EscapeIdentifier(enumDecl.Name ?? "UnnamedEnum")} = Object.freeze({{");
 
 		using (IndentScope members = new(code))
 		{
@@ -511,7 +538,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		Ensure.NotNull(field);
 		Ensure.NotNull(code);
 
-		WriteField(field, field.IsConstant && field.InitialValue is not null ? "const " : "let ", code);
+		WriteField(field, field.IsConstant && field.InitialValue is not null ? "const " : "let ", isBinding: true, code);
 	}
 
 	/// <summary>
@@ -529,19 +556,21 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	/// class holds one value rather than each instance holding its own.
 	/// </remarks>
 	private void GenerateClassField(FieldDeclaration field, CodeBlocker code) =>
-		WriteField(field, field.IsStatic || field.IsConstant ? StaticKeyword : string.Empty, code);
+		WriteField(field, field.IsStatic || field.IsConstant ? StaticKeyword : string.Empty, isBinding: false, code);
 
 	/// <summary>
 	/// Writes a field declaration after the keyword its scope calls for.
 	/// </summary>
 	/// <param name="field">The declaration to emit.</param>
 	/// <param name="keyword">The keyword, with its trailing space, or empty for none.</param>
+	/// <param name="isBinding">True when the field is a top-level name, which a keyword cannot be; false for a class field, which keeps its name.</param>
 	/// <param name="code">The writer to emit into.</param>
-	private void WriteField(FieldDeclaration field, string keyword, CodeBlocker code)
+	private void WriteField(FieldDeclaration field, string keyword, bool isBinding, CodeBlocker code)
 	{
 		WritePreamble(field, code, PreambleSite.Field);
 		code.Write(keyword);
-		code.Write(field.Name ?? "unnamed");
+		string name = field.Name ?? "unnamed";
+		code.Write(isBinding ? EscapeIdentifier(name) : name);
 
 		if (field.InitialValue is not null)
 		{
@@ -562,8 +591,9 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 	/// <param name="type">The declared type, or null where none is declared.</param>
 	/// <param name="code">The writer to emit into.</param>
 	/// <remarks>
-	/// A type with no obvious zero is left uninitialised, so it reads as <c>undefined</c>, which is
-	/// JavaScript's own value for a property nothing has set.
+	/// An enumeration declared in the document starts at its member whose value is 0, as it does in
+	/// every typed target (#449). A type with no obvious zero is left uninitialised, so it reads as
+	/// <c>undefined</c>, which is JavaScript's own value for a property nothing has set.
 	/// </remarks>
 	private void WriteZeroInitialiser(TypeReference? type, CodeBlocker code)
 	{
@@ -571,6 +601,10 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		{
 			code.Write(" = ");
 			GenerateInternal(zero, code);
+		}
+		else if (type is { Name: string enumName } && EnumZeroMember(type) is EnumMember { Name: string member })
+		{
+			code.Write($" = {enumName}.{member}");
 		}
 	}
 
@@ -586,7 +620,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		// JavaScript has no generics, so what a function is written over is written down.
 		WriteTypeParametersDown(funcDecl.TypeParameters, code);
 
-		code.Write($"function {funcDecl.Name ?? "unnamedFunction"}(");
+		code.Write($"function {EscapeIdentifier(funcDecl.Name ?? "unnamedFunction")}(");
 		GenerateParameterList(funcDecl.Parameters, code);
 
 		// The line is left open, so the scope's brace lands on it: JavaScript braces hang.
@@ -679,11 +713,13 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 			WriteInexpressible(code, $"implements {string.Join(", ", classDecl.Interfaces.Select(contract => contract.Name))}");
 		}
 
-		code.Write($"{binding}class {classDecl.Name ?? "UnnamedClass"}");
+		// The class's own name is a binding even where a static field holds it, so it escapes; the
+		// field in front of it, a member, keeps the name as declared.
+		code.Write($"{binding}class {EscapeIdentifier(classDecl.Name ?? "UnnamedClass")}");
 
 		if (classDecl.BaseType is TypeReference baseType)
 		{
-			code.Write($" extends {baseType.Name}");
+			code.Write($" extends {EscapeReference(baseType.Name)}");
 		}
 	}
 
@@ -888,7 +924,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 		Ensure.NotNull(parameter);
 		Ensure.NotNull(code);
 
-		code.Write(parameter.Name ?? $"param{position}");
+		code.Write(EscapeIdentifier(parameter.Name ?? $"param{position}"));
 		AppendDefaultValue(parameter, code);
 	}
 
@@ -901,7 +937,7 @@ public class JavaScriptGenerator : StandardLanguageGenerator
 
 		// `const` needs an initializer, so an uninitialized constant has to be declared with `let`.
 		string keyword = varDecl.IsConstant && varDecl.InitialValue is not null ? "const" : "let";
-		code.Write($"{keyword} {varDecl.Name}");
+		code.Write($"{keyword} {EscapeIdentifier(varDecl.Name)}");
 
 		if (varDecl.InitialValue is not null)
 		{

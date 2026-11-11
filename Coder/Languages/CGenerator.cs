@@ -176,6 +176,15 @@ public class CGenerator : CFamilyGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
+	/// C has no static data member, so a static field is written beside the struct under the same
+	/// <c>Type_</c> prefix every lowered function takes, and a getter <c>limit()</c> beside a static
+	/// field <c>limit</c> would be a second <c>Gauge_limit</c> at file scope (#444).
+	/// </remarks>
+	protected override bool SharesNameWithGetter(AstNode member, PropertyDeclaration declaration) =>
+		member is FieldDeclaration { IsStatic: true } or FunctionDeclaration;
+
+	/// <inheritdoc/>
+	/// <remarks>
 	/// The <c>&lt;math.h&gt;</c> macros, which is why a file holding one includes it.
 	/// </remarks>
 	protected override string SpellNonFiniteDouble(double value) =>
@@ -189,7 +198,17 @@ public class CGenerator : CFamilyGenerator
 		{
 			yield return MathHeader;
 		}
+
+		if (ContainsInScope(file, node => node is BinaryExpression binary && IsStringComparison(binary)))
+		{
+			yield return StringHeader;
+		}
 	}
+
+	/// <summary>
+	/// The header that declares <c>strcmp</c>.
+	/// </summary>
+	private const string StringHeader = "<string.h>";
 
 	/// <summary>
 	/// The header that declares <c>NAN</c>, <c>INFINITY</c>, <c>fmod</c> and <c>fmodf</c>.
@@ -256,9 +275,20 @@ public class CGenerator : CFamilyGenerator
 		// C has no generics, so what a function is written over is written down, as for a type.
 		WriteTypeParametersDown(funcDecl.TypeParameters, code);
 
-		// Internal linkage is the only privacy C has, and it is what a private function wants: the
-		// declaration is visible to this translation unit and to nothing else.
-		if (funcDecl.Visibility == Visibility.Private)
+		// A declaration with no definition is a prototype, which is all C has to offer for either of
+		// them: an abstract declaration is one an implementation must supply, and a defaulted one is
+		// one the language would have supplied had it been C++.
+		bool isPrototype = funcDecl.IsAbstract || funcDecl.Definition == FunctionDefinition.Defaulted;
+
+		// A definition in a header is made in every translation unit that includes it, and only
+		// `static inline` lets each of them have one without the program defining it twice (#423).
+		// Otherwise internal linkage is the only privacy C has, and it is what a private function
+		// wants: the declaration is visible to this translation unit and to nothing else.
+		if (WritingHeader && !isPrototype)
+		{
+			code.Write("static inline ");
+		}
+		else if (funcDecl.Visibility == Visibility.Private)
 		{
 			code.Write("static ");
 		}
@@ -269,10 +299,7 @@ public class CGenerator : CFamilyGenerator
 		code.Write(SpellFunctionName(funcDecl, enclosingType));
 		WriteParameterList(ParametersOf(funcDecl, enclosingType), code);
 
-		// A declaration with no definition is a prototype, which is all C has to offer for either of
-		// them: an abstract declaration is one an implementation must supply, and a defaulted one is
-		// one the language would have supplied had it been C++.
-		if (funcDecl.IsAbstract || funcDecl.Definition == FunctionDefinition.Defaulted)
+		if (isPrototype)
 		{
 			code.WriteLine(";");
 			return;
@@ -1197,7 +1224,10 @@ public class CGenerator : CFamilyGenerator
 
 		TypeReference type = field.Type ?? new TypeReference(UnknownTypeName);
 
-		if (field.IsConstant || field.IsStatic || field.Visibility == Visibility.Private)
+		// C has no inline variable, so a mutable one in a header is static too: every translation
+		// unit that includes the header has its own copy, which is the one way the header can define
+		// it without the program defining it twice (#423).
+		if (field.IsConstant || field.IsStatic || field.Visibility == Visibility.Private || WritingHeader)
 		{
 			code.Write("static ");
 		}
@@ -1266,11 +1296,26 @@ public class CGenerator : CFamilyGenerator
 	/// owns, which is a decision about the program rather than a spelling of the expression. So the
 	/// <c>+</c> stays, and a note in front of it says why the compiler rejects it and what to write
 	/// instead, rather than leaving the reader with <c>invalid operands to binary +</c> alone.
+	/// <para>
+	/// Comparing two strings is translated, because there is only one way to write it: <c>a == b</c>
+	/// becomes <c>(strcmp(a, b) == 0)</c>, and the ordering operators compare the result with zero
+	/// the same way. A file that does so includes <c>&lt;string.h&gt;</c>.
+	/// </para>
 	/// </remarks>
 	protected override void GenerateBinary(BinaryExpression binary, CodeBlocker code)
 	{
 		Ensure.NotNull(binary);
 		Ensure.NotNull(code);
+
+		if (IsStringComparison(binary))
+		{
+			code.Write("(strcmp(");
+			GenerateInternal(binary.Left, code);
+			code.Write(", ");
+			GenerateInternal(binary.Right, code);
+			code.Write($") {GetOperatorSpelling(binary.Operator)} 0)");
+			return;
+		}
 
 		if (binary.Operator == BinaryOperator.Add
 			&& (IsCString(StaticType(binary.Left)) || IsCString(StaticType(binary.Right))))
@@ -1280,6 +1325,25 @@ public class CGenerator : CFamilyGenerator
 
 		base.GenerateBinary(binary, code);
 	}
+
+	/// <summary>
+	/// Reports whether a binary expression compares two strings, which C writes with <c>strcmp</c>.
+	/// </summary>
+	/// <param name="binary">The expression.</param>
+	/// <returns>True for an equality or ordering operator whose operands are both known to be strings.</returns>
+	/// <remarks>
+	/// The AST's <c>==</c> on strings means the same text, which is what every other target compares.
+	/// On two <c>const char*</c> C compares the addresses instead, which compiles, usually without a
+	/// warning, and gives a different answer (#239). Both operands have to be known strings: a string
+	/// compared with <c>NULL</c>, or with an operand whose type nobody knows, is still a pointer
+	/// comparison, and <c>strcmp</c> on a null pointer is undefined.
+	/// </remarks>
+	private bool IsStringComparison(BinaryExpression binary) =>
+		binary.Operator is BinaryOperator.Equal or BinaryOperator.NotEqual
+			or BinaryOperator.LessThan or BinaryOperator.LessThanOrEqual
+			or BinaryOperator.GreaterThan or BinaryOperator.GreaterThanOrEqual
+		&& IsCString(StaticType(binary.Left))
+		&& IsCString(StaticType(binary.Right));
 
 	/// <inheritdoc/>
 	/// <remarks>

@@ -155,7 +155,7 @@ public class CppGenerator : CFamilyGenerator
 	/// A data member and a member function of one class may not share a name, so a getter that would
 	/// take its backing field's name is <c>get_count()</c> instead.
 	/// </remarks>
-	protected override bool MemberNamesMustDiffer => true;
+	protected override bool SharesNameWithGetter(AstNode member, PropertyDeclaration declaration) => true;
 
 	/// <inheritdoc/>
 	/// <remarks>
@@ -281,6 +281,51 @@ public class CppGenerator : CFamilyGenerator
 		code.Write(")");
 	}
 
+	/// <summary>
+	/// Decides whether a declaration's <c>virtual</c> or <c>abstract</c> can be written as
+	/// <c>virtual</c>, and writes a note saying what was dropped where it cannot.
+	/// </summary>
+	/// <param name="funcDecl">The declaration being emitted.</param>
+	/// <param name="code">The writer to emit into.</param>
+	/// <param name="enclosingType">The name of the type it belongs to, when it belongs to one.</param>
+	/// <returns>True when the declaration is written <c>virtual</c>.</returns>
+	/// <remarks>
+	/// C++ allows <c>virtual</c> only on a non-static member function that is not a constructor:
+	/// a static member cannot be both (it has no object to dispatch on), a constructor runs before
+	/// there is a dynamic type to dispatch to, and a function outside a class has nothing to be
+	/// overridden by. A destructor keeps it, since a virtual destructor is how a base class is
+	/// deleted through a pointer to it.
+	/// </remarks>
+	private bool WriteVirtualNote(FunctionDeclaration funcDecl, CodeBlocker code, string? enclosingType)
+	{
+		if (!(funcDecl.IsVirtual || funcDecl.IsAbstract))
+		{
+			return false;
+		}
+
+		string obstacle;
+		if (enclosingType is null)
+		{
+			obstacle = "is not a member of a class";
+		}
+		else if (funcDecl.Kind == FunctionKind.Constructor)
+		{
+			obstacle = "is a constructor";
+		}
+		else if (funcDecl.IsStatic)
+		{
+			obstacle = "is static";
+		}
+		else
+		{
+			return true;
+		}
+
+		string modifier = funcDecl.IsAbstract ? "abstract" : "virtual";
+		WriteInexpressible(code, $"{modifier}: {funcDecl.Name} {obstacle}, which C++ cannot declare virtual");
+		return false;
+	}
+
 	/// <inheritdoc/>
 	/// <remarks>
 	/// A constructor and a destructor are named after the type rather than after themselves, so the
@@ -300,6 +345,7 @@ public class CppGenerator : CFamilyGenerator
 		Ensure.NotNull(code);
 
 		WritePreamble(funcDecl, code, enclosingType is null ? PreambleSite.Function : PreambleSite.Method);
+		bool isVirtual = WriteVirtualNote(funcDecl, code, enclosingType);
 		WriteUnaskedConstraints(funcDecl.TypeParameters, code);
 		WriteTemplateHead(funcDecl.TypeParameters, code);
 
@@ -329,9 +375,14 @@ public class CppGenerator : CFamilyGenerator
 			code.Write("static ");
 		}
 
+		if (NeedsInline(funcDecl, enclosingType))
+		{
+			code.Write("inline ");
+		}
+
 		// An abstract declaration is virtual whether or not it was asked to be: there is nothing else
 		// `= 0` could mean.
-		if (funcDecl.IsVirtual || funcDecl.IsAbstract)
+		if (isVirtual)
 		{
 			code.Write("virtual ");
 		}
@@ -365,9 +416,11 @@ public class CppGenerator : CFamilyGenerator
 			code.Write(" noexcept");
 		}
 
+		// Where virtual cannot be written, `= 0` has nothing to mean either, so an abstract declaration
+		// is declared and left for something else to define.
 		if (funcDecl.IsAbstract)
 		{
-			code.WriteLine(" = 0;");
+			code.WriteLine(isVirtual ? " = 0;" : ";");
 			return;
 		}
 
@@ -396,6 +449,24 @@ public class CppGenerator : CFamilyGenerator
 			GenerateInternal(statement, code);
 		}
 	}
+
+	/// <summary>
+	/// Reports whether a function has to say <c>inline</c> to be defined in a header.
+	/// </summary>
+	/// <param name="funcDecl">The declaration being emitted.</param>
+	/// <param name="enclosingType">The type it is a member of, or null for a free function.</param>
+	/// <returns>True for a free function defined in a header that is not inline already.</returns>
+	/// <remarks>
+	/// A function defined in a class is inline already, and so are a friend defined there and a
+	/// <c>constexpr</c> one; anything else defined in a header is defined again in every translation
+	/// unit that includes it, and the program does not link (#423).
+	/// </remarks>
+	private bool NeedsInline(FunctionDeclaration funcDecl, string? enclosingType) =>
+		WritingHeader
+		&& enclosingType is null
+		&& !funcDecl.IsFriend
+		&& !funcDecl.IsCompileTimeEvaluable
+		&& !funcDecl.IsAbstract;
 
 	/// <summary>
 	/// Writes what the type's members start at, between a constructor's signature and its body.
@@ -1094,7 +1165,10 @@ public class CppGenerator : CFamilyGenerator
 			return insideType > 0 ? "inline static " : "static ";
 		}
 
-		return string.Empty;
+		// A mutable variable at namespace scope has external linkage, so a header defining one
+		// defines it again in every translation unit that includes it. C++17's inline variable is
+		// one object however many units define it (#423).
+		return insideType == 0 && WritingHeader ? "inline " : string.Empty;
 	}
 
 	/// <summary>
