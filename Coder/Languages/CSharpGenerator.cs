@@ -1063,6 +1063,11 @@ public class CSharpGenerator : LanguageGeneratorBase
 	private const string GlobalsClassName = "Globals";
 
 	/// <summary>
+	/// The name C# gives the program's entry point.
+	/// </summary>
+	private const string EntryPointName = "Main";
+
+	/// <summary>
 	/// The segments of the namespaces enclosing what is being written, outermost first.
 	/// </summary>
 	private readonly List<string> namespacePath = [];
@@ -1281,6 +1286,11 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// <remarks>
 	/// A nested namespace claims the first segment of its name, because that is the name it declares
 	/// in this scope: <c>namespace Physics.Units</c> beside the class takes <c>Physics</c> (#429).
+	/// <para>
+	/// The fields, functions, variables and entry point going into the class claim their names too,
+	/// because C# forbids a member named after its enclosing type (CS0542): a file-scope
+	/// <c>Globals()</c> is held by <c>GlobalsGlobals</c> (#450).
+	/// </para>
 	/// </remarks>
 	private static string UnclaimedName(string name, IEnumerable<AstNode> siblings)
 	{
@@ -1290,6 +1300,10 @@ public class CSharpGenerator : LanguageGeneratorBase
 			EnumDeclaration type => type.Name,
 			UsingAlias alias => alias.Name,
 			NamespaceDeclaration ns => NamespaceDeclaration.Split(ns.Name) is [string head, ..] ? head : null,
+			FieldDeclaration field => field.Name,
+			FunctionDeclaration function when function.Kind is FunctionKind.Method => function.Name,
+			VariableDeclaration variable => variable.Name,
+			EntryPoint => EntryPointName,
 			_ => null,
 		}).OfType<string>(), StringComparer.Ordinal);
 
@@ -2517,7 +2531,7 @@ public class CSharpGenerator : LanguageGeneratorBase
 	/// </remarks>
 	private void GenerateEntryPoint(EntryPoint entryPoint, CodeBlocker code)
 	{
-		code.Write($"public static {(entryPoint.ReturnsExitCode ? "int" : "void")} Main(");
+		code.Write($"public static {(entryPoint.ReturnsExitCode ? "int" : "void")} {EntryPointName}(");
 
 		if (entryPoint.AcceptsArguments)
 		{
