@@ -792,4 +792,82 @@ public class ReservedWordIdentifierTests
 		file.Members.Add(holder);
 		return file;
 	}
+
+	/// <summary>
+	/// Tests that C appends an underscore to a keyword-named field, parameter, local and function,
+	/// at their declarations and where they are used.
+	/// </summary>
+	[TestMethod]
+	public void C_KeywordNamesCompileAndResolve()
+	{
+		string? compiler = ToolchainHarness.FindOnPath("--version", "cc", "gcc", "clang");
+		if (compiler is null)
+		{
+			Assert.Inconclusive("No C compiler on the path, so nothing was compiled.");
+			return;
+		}
+
+		ClassDeclaration holder = new("Holder") { Kind = TypeDeclarationKind.Struct };
+		holder.Members.Add(new VariableDeclaration("auto", "int"));
+		holder.Members.Add(new VariableDeclaration("register", "int"));
+
+		ConstructionExpression built = new(new TypeReference("Holder"));
+		built.Arguments.Add(new MemberInitialiser("auto", new LiteralExpression<int>(3)));
+		built.Arguments.Add(new MemberInitialiser("register", new LiteralExpression<int>(4)));
+		FunctionDeclaration make = new("make") { ReturnType = "Holder" };
+		make.Body.Add(new ReturnStatement(built));
+
+		FunctionDeclaration sum = new("for") { ReturnType = "int" };
+		sum.Parameters.Add(new Parameter("do", "int"));
+		sum.Parameters.Add(new Parameter("case", "int"));
+		sum.Body.Add(new VariableDeclaration(
+			"goto",
+			"int",
+			new BinaryExpression(new VariableReference("do"), BinaryOperator.Add, new VariableReference("case"))));
+		sum.Body.Add(new VariableDeclaration("unused", "bool", new VariableReference("true")));
+		sum.Body.Add(new ReturnStatement(new VariableReference("goto")));
+
+		CallExpression callSum = new("for");
+		callSum.Arguments.Add(new LiteralExpression<int>(5));
+		callSum.Arguments.Add(new LiteralExpression<int>(6));
+		FunctionDeclaration relay = new("relay") { ReturnType = "int" };
+		relay.Body.Add(new ReturnStatement(callSum));
+
+		SourceFile file = new("keywords");
+		file.Members.Add(holder);
+		file.Members.Add(make);
+		file.Members.Add(sum);
+		file.Members.Add(relay);
+
+		ToolchainHarness.InTemporaryDirectory(directory =>
+		{
+			string program = OperatingSystem.IsWindows() ? "keywords.exe" : "keywords";
+			string header = new CGenerator().Generate(file);
+			Assert.DoesNotContain("true_", header, StringComparison.Ordinal, header);
+			File.WriteAllText(Path.Combine(directory, "keywords.h"), header);
+			File.WriteAllText(Path.Combine(directory, "driver.c"), """
+				#include <stdbool.h>
+				#include "keywords.h"
+
+				int main(void)
+				{
+					Holder holder = make();
+					if (holder.auto_ != 3 || holder.register_ != 4) { return 1; }
+					if (for_(5, 6) != 11) { return 2; }
+					if (relay() != 11) { return 3; }
+					return 0;
+				}
+
+				""");
+
+			(int built, string output) = ToolchainHarness.Run(
+				compiler,
+				$"-std=c11 -Wall -Wextra -Wno-unused-variable -Wno-unused-but-set-variable -pedantic-errors -o {program} driver.c",
+				directory);
+			Assert.AreEqual(0, built, $"{compiler} rejected the generated header:{Environment.NewLine}{output}{Environment.NewLine}{header}");
+
+			(int ran, _) = ToolchainHarness.Run(Path.Combine(directory, program), string.Empty, directory);
+			Assert.AreEqual(0, ran, $"a keyword-named member read back wrongly (driver check {ran}):{Environment.NewLine}{header}");
+		});
+	}
 }

@@ -176,6 +176,30 @@ public class CGenerator : CFamilyGenerator
 
 	/// <inheritdoc/>
 	/// <remarks>
+	/// The C11 keywords, and the ones C23 adds (<c>bool</c>, <c>true</c>, <c>nullptr</c>,
+	/// <c>typeof</c> and the rest), which <c>&lt;stdbool.h&gt;</c> and friends already make macros
+	/// before C23. An escaped name has an underscore appended, which is a rename: C has no way to use
+	/// a keyword as a name. A member function never needs it, since it is spelled after its type
+	/// (<c>Holder_default</c>), but a field, a parameter, a local and a free function do.
+	/// </remarks>
+	protected override IReadOnlySet<string> ReservedWords { get; } = new HashSet<string>(StringComparer.Ordinal)
+	{
+		"_Alignas", "_Alignof", "_Atomic", "_Bool", "_Complex", "_Generic", "_Imaginary", "_Noreturn",
+		"_Static_assert", "_Thread_local", "alignas", "alignof", "auto", "bool", "break", "case", "char",
+		"const", "constexpr", "continue", "default", "do", "double", "else", "enum", "extern", "false",
+		"float", "for", "goto", "if", "inline", "int", "long", "nullptr", "register", "restrict", "return",
+		"short", "signed", "sizeof", "static", "static_assert", "struct", "switch", "thread_local", "true",
+		"typedef", "typeof", "typeof_unqual", "union", "unsigned", "void", "volatile", "while",
+	};
+
+	/// <inheritdoc/>
+	/// <remarks>
+	/// The literal words, which a reference written as text means as C means them.
+	/// </remarks>
+	protected override bool IsReceiverWord(string word) => word is "true" or "false" or "nullptr";
+
+	/// <inheritdoc/>
+	/// <remarks>
 	/// C has no static data member, so a static field is written beside the struct under the same
 	/// <c>Type_</c> prefix every lowered function takes, and a getter <c>limit()</c> beside a static
 	/// field <c>limit</c> would be a second <c>Gauge_limit</c> at file scope (#444).
@@ -404,7 +428,7 @@ public class CGenerator : CFamilyGenerator
 	/// C has one namespace for functions and no overloading, so a member's name has to carry the
 	/// type's: two types with a <c>reset</c> each would otherwise be one function declared twice.
 	/// </remarks>
-	private static string SpellFunctionName(FunctionDeclaration funcDecl, string? enclosingType)
+	private string SpellFunctionName(FunctionDeclaration funcDecl, string? enclosingType)
 	{
 		string bare = funcDecl.Kind switch
 		{
@@ -416,7 +440,7 @@ public class CGenerator : CFamilyGenerator
 			_ => funcDecl.Name ?? "unnamedFunction",
 		};
 
-		return enclosingType is null ? bare : $"{enclosingType}_{bare}";
+		return enclosingType is null ? EscapeIdentifier(bare) : $"{enclosingType}_{bare}";
 	}
 
 	/// <summary>
@@ -953,7 +977,10 @@ public class CGenerator : CFamilyGenerator
 		Ensure.NotNull(callExpr);
 		Ensure.NotNull(code);
 
-		code.Write(callExpr.Callee);
+		// A call with no receiver names a free function, which was declared under its escaped name if
+		// it is a keyword. One with a receiver names the lowered member function, Point_translate,
+		// which the caller spelled and which no keyword can be.
+		code.Write(callExpr.Receiver is null ? SpellCallee(callExpr.Callee) : callExpr.Callee);
 		code.Write("(");
 
 		if (callExpr.Receiver is not null)
