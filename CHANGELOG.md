@@ -2,6 +2,10 @@
 
 Changes since v3.19.0:
 
+- Escape keyword-named identifiers in the Go generator [patch] (#445) (matt-edmondson)
+- Keep C#'s scope holder class clear of the names of the members it holds [patch] (#451) (matt-edmondson)
+- Escape keyword-named identifiers in the C generator [patch] (#446) (matt-edmondson)
+- Say an inferred member's type in C# and C++ instead of var/auto [patch] (#454) (matt-edmondson)
 - Cast narrow integer results passed as arguments and member initialisers in C# [patch] (#452) (matt-edmondson)
 - Start decimal, char and enum fields at their zero in Python and JavaScript [patch] (#453) (matt-edmondson)
 - Keep a static getter clear of a same-named static field in C, Go, Rust and Python [patch] (#456) (matt-edmondson)
