@@ -10,6 +10,7 @@
     <PackageReference Include="ktsu.CodeBlocker" />
     <PackageReference Include="ktsu.DeepClone" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Testably.Abstractions.FileSystem.Interface" VersionOverride="11.0.0" />
     <PackageReference Include="YamlDotNet" />
   
     <PackageReference Include="Polyfill" PrivateAssets="all" /></ItemGroup>
