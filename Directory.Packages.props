@@ -22,8 +22,8 @@
     <PackageVersion Include="ktsu.ForceDirectedLayout" Version="3.32.0" />
     <PackageVersion Include="ktsu.CodeBlocker" Version="2.0.4" />
     <PackageVersion Include="ktsu.DeepClone" Version="2.0.2" />
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.11" />
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="11.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="11.0.0" />
     <PackageVersion Include="Microsoft.Testing.Extensions.CrashDump" Version="1.7.2" />
     <PackageVersion Include="Microsoft.Testing.Extensions.Fakes" Version="17.14.1" />
     <PackageVersion Include="Microsoft.Testing.Extensions.HangDump" Version="1.7.2" />
