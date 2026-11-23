@@ -30,6 +30,6 @@
     <PackageVersion Include="Microsoft.Testing.Extensions.HotReload" Version="1.7.2" />
     <PackageVersion Include="Microsoft.Testing.Extensions.Retry" Version="1.7.2" />
     <PackageVersion Include="YamlDotNet" Version="18.1.0" />
-    <PackageVersion Include="Polyfill" Version="11.4.5" />
+    <PackageVersion Include="Polyfill" Version="12.0.0" />
   </ItemGroup>
 </Project>
