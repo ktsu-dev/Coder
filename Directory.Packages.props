@@ -18,7 +18,7 @@
     <PackageVersion Include="ktsu.ImGui.Probes" Version="3.80.0" />
     <PackageVersion Include="ktsu.ImGui.Widgets" Version="3.80.0" />
     <PackageVersion Include="Silk.NET.Windowing.Common" Version="2.23.0" />
-    <PackageVersion Include="ktsu.ImGui.NodeEditor" Version="3.32.0" />
+    <PackageVersion Include="ktsu.ImGui.NodeEditor" Version="3.80.0" />
     <PackageVersion Include="ktsu.ForceDirectedLayout" Version="3.80.0" />
     <PackageVersion Include="ktsu.CodeBlocker" Version="2.4.3" />
     <PackageVersion Include="ktsu.DeepClone" Version="2.8.0" />
